@@ -81,6 +81,16 @@ export function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
+/**
+ * Normaliza quebras de linha do corpo de e-mail:
+ * - CRLF (\r\n) → LF (\n)
+ * - CR isolado (\r) → LF (\n)
+ * Preserva todos os demais caracteres (Unicode, acentos, travessões).
+ */
+export function normalizeEmailBodyLineEndings(value: string): string {
+  return value.replace(/\r\n?/g, '\n');
+}
+
 function sanitizeAttachmentFilename(originalName: string, mimeType: string, index: number): string {
   const baseName = path.basename(originalName || `anexo-${index + 1}`);
   const originalExt = path.extname(baseName).toLowerCase();

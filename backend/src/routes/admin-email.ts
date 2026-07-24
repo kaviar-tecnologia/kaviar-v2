@@ -12,6 +12,7 @@ import {
   handleOfficialAttachmentsUpload,
   isEmailSendLogsTableMissing,
   mapAttachments,
+  normalizeEmailBodyLineEndings,
   parseSender,
   writeEmailSendLog,
 } from '../services/email/official-email-support';
@@ -265,7 +266,7 @@ router.post('/send', handleOfficialAttachmentsUpload, async (req: Request, res: 
 
     const normalizedTo = normalizeEmailList(parsed.to);
     const normalizedSubject = parsed.subject.trim();
-    const normalizedMessage = parsed.message.trim();
+    const normalizedMessage = normalizeEmailBodyLineEndings(parsed.message).trim();
     const sender = parseSender(parsed.from);
     const normalizedCc = normalizeEmailList(parsed.cc);
     const normalizedBcc = normalizeEmailList(parsed.bcc);

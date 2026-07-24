@@ -12,6 +12,7 @@ import {
   handleOfficialAttachmentsUpload,
   isAttachmentValidationError,
   mapAttachments,
+  normalizeEmailBodyLineEndings,
   parseSender,
   writeEmailSendLog,
 } from '../services/email/official-email-support';
@@ -377,7 +378,7 @@ router.post('/:id/reply', handleOfficialAttachmentsUpload, async (req: Request, 
 
     const attachments = mapAttachments(files);
     attachmentMetadata = buildAttachmentMetadata(attachments);
-    const normalizedMessage = parsed.message.trim();
+    const normalizedMessage = normalizeEmailBodyLineEndings(parsed.message).trim();
     const normalizedCc = (parsed.cc || []).map((e: string) => e.trim().toLowerCase()).filter(Boolean);
     const normalizedBcc = (parsed.bcc || []).map((e: string) => e.trim().toLowerCase()).filter(Boolean);
     const sender = parseSender(replyPreview.from);
