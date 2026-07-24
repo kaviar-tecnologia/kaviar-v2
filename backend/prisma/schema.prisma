@@ -1668,6 +1668,7 @@ model email_send_logs {
   from_name            String?  @db.VarChar(255)
   to_email             String   @db.VarChar(255)
   cc_email             String?  @db.VarChar(255)
+  bcc_email            String?  @db.Text
   subject              String   @db.VarChar(180)
   provider             String   @db.VarChar(40)
   status               String   @db.VarChar(20)

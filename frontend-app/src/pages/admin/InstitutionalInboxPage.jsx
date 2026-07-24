@@ -198,6 +198,25 @@ function buildSentListParams(filters, page) {
   return params;
 }
 
+function parseEmailList(raw) {
+  if (!raw || typeof raw !== 'string') return [];
+  return raw
+    .split(/[,;\n]+/)
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function validateEmailList(emails, fieldLabel) {
+  for (const email of emails) {
+    if (!EMAIL_REGEX.test(email)) {
+      return `${fieldLabel}: endereco "${email}" e invalido.`;
+    }
+  }
+  return null;
+}
+
 export default function InstitutionalInboxPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('RECEBIDOS');
@@ -225,6 +244,8 @@ export default function InstitutionalInboxPage() {
 
   const [statusSaving, setStatusSaving] = useState(false);
   const [replyMessage, setReplyMessage] = useState('');
+  const [replyCc, setReplyCc] = useState('');
+  const [replyBcc, setReplyBcc] = useState('');
   const [replyAttachments, setReplyAttachments] = useState([]);
   const [replySending, setReplySending] = useState(false);
   const [replyError, setReplyError] = useState('');
@@ -258,6 +279,8 @@ export default function InstitutionalInboxPage() {
 
   const resetReplyState = () => {
     setReplyMessage('');
+    setReplyCc('');
+    setReplyBcc('');
     setReplyAttachments([]);
     setReplySending(false);
     setReplyError('');
@@ -451,6 +474,15 @@ export default function InstitutionalInboxPage() {
       return;
     }
 
+    const ccList = parseEmailList(replyCc);
+    const bccList = parseEmailList(replyBcc);
+
+    const ccErr = validateEmailList(ccList, 'CC');
+    if (ccErr) { setReplyError(ccErr); return; }
+
+    const bccErr = validateEmailList(bccList, 'CCO');
+    if (bccErr) { setReplyError(bccErr); return; }
+
     setReplySending(true);
     setReplyError('');
     setReplySuccess('');
@@ -458,6 +490,8 @@ export default function InstitutionalInboxPage() {
     try {
       const formData = new FormData();
       formData.append('message', trimmedMessage);
+      ccList.forEach((email) => formData.append('cc', email));
+      bccList.forEach((email) => formData.append('bcc', email));
       replyAttachments.forEach((file) => {
         formData.append('attachments', file);
       });
@@ -470,6 +504,8 @@ export default function InstitutionalInboxPage() {
 
       setReplySuccess(response.data?.message || 'Resposta enviada com sucesso.');
       setReplyMessage('');
+      setReplyCc('');
+      setReplyBcc('');
       setReplyAttachments([]);
     } catch (error) {
       setReplyError(buildFriendlyError(error, 'Nao foi possivel enviar a resposta.'));
@@ -844,6 +880,26 @@ export default function InstitutionalInboxPage() {
                     <TextField label="De" size="small" value={replyPreview.from || '-'} InputProps={{ readOnly: true }} />
                     <TextField label="Assunto" size="small" value={replyPreview.subject || ''} InputProps={{ readOnly: true }} />
 
+                    <TextField
+                      label="CC — Copia (opcional)"
+                      size="small"
+                      placeholder="copia@exemplo.com, outro@exemplo.com"
+                      value={replyCc}
+                      onChange={(event) => setReplyCc(event.target.value)}
+                      disabled={replySending || replyBlocked}
+                      helperText="Os destinatarios poderao ver os enderecos adicionados neste campo."
+                    />
+
+                    <TextField
+                      label="CCO — Copia oculta (opcional)"
+                      size="small"
+                      placeholder="oculto@exemplo.com"
+                      value={replyBcc}
+                      onChange={(event) => setReplyBcc(event.target.value)}
+                      disabled={replySending || replyBlocked}
+                      helperText="Os enderecos adicionados neste campo ficarao ocultos para os demais destinatarios."
+                    />
+
                     {replyBlocked ? (
                       <Alert severity="warning">{replyPreview.blocked_reason || 'Este email nao pode ser respondido a partir da inbox institucional.'}</Alert>
                     ) : null}
@@ -971,6 +1027,8 @@ export default function InstitutionalInboxPage() {
             <Stack spacing={1.2}>
               <Typography><strong>Remetente completo:</strong> {selectedSentEmail.from_name ? `${selectedSentEmail.from_name} <${selectedSentEmail.from_email}>` : (selectedSentEmail.from_email || '-')}</Typography>
               <Typography><strong>Destinatario:</strong> {selectedSentEmail.to_email || '-'}</Typography>
+              <Typography><strong>CC:</strong> {selectedSentEmail.cc_email || 'Nao informado'}</Typography>
+              <Typography><strong>CCO:</strong> {selectedSentEmail.bcc_email || 'Nao informado'}</Typography>
               <Typography><strong>Assunto completo:</strong> {selectedSentEmail.subject || '-'}</Typography>
               <Typography><strong>Data/hora:</strong> {formatDateTime(selectedSentEmail.created_at)}</Typography>
               <Typography><strong>Status:</strong> {selectedSentEmail.status || '-'}</Typography>

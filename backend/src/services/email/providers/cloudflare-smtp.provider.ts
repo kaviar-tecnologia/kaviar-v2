@@ -2,10 +2,13 @@ import nodemailer from 'nodemailer';
 
 interface SendEmailParams {
   to: string;
+  additionalTo?: string[];
   subject: string;
   html: string;
   text: string;
   from: string;
+  cc?: string[];
+  bcc?: string[];
   replyTo?: string[];
   inReplyTo?: string;
   references?: string[];
@@ -45,9 +48,12 @@ export class CloudflareSMTPProvider {
   }
 
   async send(params: SendEmailParams): Promise<{ messageId?: string }> {
+    const toList = [params.to, ...(params.additionalTo || [])].join(',');
     const info = await this.transporter.sendMail({
       from: params.from,
-      to: params.to,
+      to: toList,
+      cc: params.cc?.length ? params.cc.join(',') : undefined,
+      bcc: params.bcc?.length ? params.bcc.join(',') : undefined,
       subject: params.subject,
       html: params.html,
       text: params.text,

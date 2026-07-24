@@ -3,10 +3,13 @@ import { SESProvider } from './providers/ses.provider';
 
 interface EmailParams {
   to: string;
+  additionalTo?: string[];
   subject: string;
   html: string;
   text: string;
   from?: string;
+  cc?: string[];
+  bcc?: string[];
   replyTo?: string[];
   inReplyTo?: string;
   references?: string[];
@@ -206,6 +209,8 @@ class EmailService {
           ...params,
           from: fromResolved,
           replyTo: replyToResolved,
+          cc: params.cc,
+          bcc: params.bcc,
         });
         providerMessageId = sendResult?.messageId;
       } else {
@@ -213,6 +218,8 @@ class EmailService {
           ...params,
           from: fromResolved,
           replyTo: replyToResolved,
+          cc: params.cc,
+          bcc: params.bcc,
         });
         providerMessageId = sendResult?.messageId;
       }

@@ -2,10 +2,13 @@ import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 
 interface SendEmailParams {
   to: string;
+  additionalTo?: string[];
   subject: string;
   html: string;
   text: string;
   from?: string;
+  cc?: string[];
+  bcc?: string[];
   replyTo?: string[];
   inReplyTo?: string;
   references?: string[];
@@ -27,10 +30,13 @@ export class SESProvider {
   }
 
   async send(params: SendEmailParams): Promise<{ messageId?: string }> {
+    const toAddresses = [params.to, ...(params.additionalTo || [])];
     const command = new SendEmailCommand({
       Source: params.from || this.fromEmail,
       Destination: {
-        ToAddresses: [params.to],
+        ToAddresses: toAddresses,
+        CcAddresses: params.cc?.length ? params.cc : undefined,
+        BccAddresses: params.bcc?.length ? params.bcc : undefined,
       },
       ReplyToAddresses: params.replyTo,
       Message: {

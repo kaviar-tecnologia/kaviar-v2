@@ -165,6 +165,7 @@ export async function writeEmailSendLog(params: {
   fromName: string | null;
   toEmail: string;
   ccEmail?: string | null;
+  bccEmail?: string | null;
   subject: string;
   provider: string;
   status: typeof EMAIL_LOG_STATUS[keyof typeof EMAIL_LOG_STATUS];
@@ -182,6 +183,7 @@ export async function writeEmailSendLog(params: {
         from_name: params.fromName,
         to_email: params.toEmail,
         cc_email: params.ccEmail || null,
+        bcc_email: params.bccEmail || null,
         subject: params.subject,
         provider: params.provider,
         status: params.status,

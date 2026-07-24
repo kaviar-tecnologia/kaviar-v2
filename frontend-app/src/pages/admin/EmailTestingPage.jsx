@@ -55,6 +55,54 @@ function buildFriendlyError(error) {
   return apiMessage || 'Nao foi possivel enviar o email agora. Tente novamente.';
 }
 
+/**
+ * Extrai enderecos de email de uma string multi-endereço.
+ * Aceita separação por vírgula, ponto e vírgula ou quebra de linha.
+ */
+function parseEmailList(raw) {
+  if (!raw || typeof raw !== 'string') return [];
+  return raw
+    .split(/[,;\n]+/)
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Valida uma lista de emails. Retorna a primeira mensagem de erro ou null.
+ */
+function validateEmailList(emails, fieldLabel) {
+  for (const email of emails) {
+    if (!EMAIL_REGEX.test(email)) {
+      return `${fieldLabel}: endereco "${email}" e invalido.`;
+    }
+    if (/[\r\n]/.test(email)) {
+      return `${fieldLabel}: endereco contem caracteres invalidos.`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Verifica duplicatas cruzadas entre listas.
+ */
+function findCrossListDuplicates(to, cc, bcc) {
+  const seen = new Map();
+  for (const email of to) seen.set(email, 'Para');
+  for (const email of cc) {
+    const existing = seen.get(email);
+    if (existing) return `Endereco "${email}" repetido entre ${existing} e CC.`;
+    seen.set(email, 'CC');
+  }
+  for (const email of bcc) {
+    const existing = seen.get(email);
+    if (existing) return `Endereco "${email}" repetido entre ${existing} e CCO.`;
+    seen.set(email, 'CCO');
+  }
+  return null;
+}
+
 function formatFileSize(bytes) {
   if (!Number.isFinite(bytes)) return '-';
   if (bytes < 1024) return `${bytes} B`;
@@ -74,6 +122,8 @@ function isAllowedAttachment(file) {
 export default function EmailTestingPage() {
   const [officialFrom, setOfficialFrom] = useState(OFFICIAL_SENDER_OPTIONS[0].value);
   const [officialTo, setOfficialTo] = useState('');
+  const [officialCc, setOfficialCc] = useState('');
+  const [officialBcc, setOfficialBcc] = useState('');
   const [officialSubject, setOfficialSubject] = useState('');
   const [officialMessage, setOfficialMessage] = useState('');
   const [officialAttachments, setOfficialAttachments] = useState([]);
@@ -196,6 +246,27 @@ export default function EmailTestingPage() {
       return;
     }
 
+    const toList = parseEmailList(officialTo);
+    const ccList = parseEmailList(officialCc);
+    const bccList = parseEmailList(officialBcc);
+
+    if (toList.length === 0) {
+      setErrorMessage('Informe ao menos um destinatario valido.');
+      return;
+    }
+
+    const toErr = validateEmailList(toList, 'Para');
+    if (toErr) { setErrorMessage(toErr); return; }
+
+    const ccErr = validateEmailList(ccList, 'CC');
+    if (ccErr) { setErrorMessage(ccErr); return; }
+
+    const bccErr = validateEmailList(bccList, 'CCO');
+    if (bccErr) { setErrorMessage(bccErr); return; }
+
+    const dupErr = findCrossListDuplicates(toList, ccList, bccList);
+    if (dupErr) { setErrorMessage(dupErr); return; }
+
     if (officialAttachments.length > MAX_ATTACHMENTS) {
       setErrorMessage('Voce pode enviar no maximo 3 anexos por email.');
       return;
@@ -222,12 +293,17 @@ export default function EmailTestingPage() {
     setResult(null);
 
     try {
+      const toList = parseEmailList(officialTo);
+      const ccList = parseEmailList(officialCc);
+      const bccList = parseEmailList(officialBcc);
       const hasAttachments = officialAttachments.length > 0;
       let response;
 
       if (hasAttachments) {
         const formData = new FormData();
-        formData.append('to', officialTo.trim());
+        toList.forEach((email) => formData.append('to', email));
+        ccList.forEach((email) => formData.append('cc', email));
+        bccList.forEach((email) => formData.append('bcc', email));
         formData.append('from', officialFrom);
         formData.append('subject', officialSubject.trim());
         formData.append('message', officialMessage.trim());
@@ -242,11 +318,13 @@ export default function EmailTestingPage() {
         });
       } else {
         const payload = {
-          to: officialTo.trim(),
+          to: toList,
           from: officialFrom,
           subject: officialSubject.trim(),
           message: officialMessage.trim(),
         };
+        if (ccList.length) payload.cc = ccList;
+        if (bccList.length) payload.bcc = bccList;
         response = await api.post('/api/admin/email/send', payload);
       }
 
@@ -254,6 +332,8 @@ export default function EmailTestingPage() {
 
       // Evita reenvio acidental: limpa formulario real apos sucesso.
       setOfficialTo('');
+      setOfficialCc('');
+      setOfficialBcc('');
       setOfficialSubject('');
       setOfficialMessage('');
       setOfficialAttachments([]);
@@ -405,11 +485,38 @@ export default function EmailTestingPage() {
                 <TextField
                   fullWidth
                   label="Destinatario externo"
-                  type="email"
-                  placeholder="contato@prefeitura.gov.br"
+                  placeholder="contato@prefeitura.gov.br, outro@orgao.gov.br"
                   value={officialTo}
                   onChange={(event) => setOfficialTo(event.target.value)}
                   required
+                  helperText="Separe varios enderecos por virgula, ponto e virgula ou quebra de linha."
+                  multiline
+                  minRows={1}
+                  maxRows={3}
+                />
+
+                <TextField
+                  fullWidth
+                  label="CC — Copia"
+                  placeholder="copia@exemplo.com, outro@exemplo.com"
+                  value={officialCc}
+                  onChange={(event) => setOfficialCc(event.target.value)}
+                  helperText="Os destinatarios poderao ver os enderecos adicionados neste campo."
+                  multiline
+                  minRows={1}
+                  maxRows={3}
+                />
+
+                <TextField
+                  fullWidth
+                  label="CCO — Copia oculta"
+                  placeholder="oculto@exemplo.com"
+                  value={officialBcc}
+                  onChange={(event) => setOfficialBcc(event.target.value)}
+                  helperText="Os enderecos adicionados neste campo ficarao ocultos para os demais destinatarios."
+                  multiline
+                  minRows={1}
+                  maxRows={3}
                 />
 
                 <TextField
@@ -713,6 +820,8 @@ export default function EmailTestingPage() {
                               <strong>Remetente completo:</strong> {item.from_name ? `${item.from_name} <${item.from_email}>` : item.from_email || '-'}
                             </Typography>
                             <Typography variant="body2"><strong>Destinatário:</strong> {item.to_email || '-'}</Typography>
+                            <Typography variant="body2"><strong>CC:</strong> {item.cc_email || 'Nao informado'}</Typography>
+                            <Typography variant="body2"><strong>CCO:</strong> {item.bcc_email || 'Nao informado'}</Typography>
                             <Typography variant="body2"><strong>Assunto completo:</strong> {item.subject || '-'}</Typography>
                             <Typography variant="body2"><strong>Provider:</strong> {item.provider || '-'}</Typography>
                             <Typography variant="body2"><strong>Message ID:</strong> {item.provider_message_id || '-'}</Typography>
@@ -766,6 +875,8 @@ export default function EmailTestingPage() {
           <Stack spacing={1.2} sx={{ mt: 0.5 }}>
             <Typography><strong>Remetente:</strong> {officialFrom}</Typography>
             <Typography><strong>Destinatario:</strong> {officialTo.trim()}</Typography>
+            <Typography><strong>CC:</strong> {officialCc.trim() || 'Nao informado'}</Typography>
+            <Typography><strong>CCO:</strong> {officialBcc.trim() || 'Nao informado'}</Typography>
             <Typography><strong>Assunto:</strong> {officialSubject.trim()}</Typography>
             <Box>
               <Typography><strong>Anexos:</strong> {officialAttachments.length ? `${officialAttachments.length} arquivo(s)` : 'sem anexos'}</Typography>

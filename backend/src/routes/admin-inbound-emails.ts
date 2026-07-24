@@ -36,6 +36,8 @@ const patchStatusSchema = z.object({
 
 const replyInboundEmailSchema = z.object({
   message: z.string().trim().min(3, 'Mensagem obrigatoria').max(12000, 'Mensagem muito longa'),
+  cc: z.array(z.string().email('Email de CC invalido')).max(10, 'Maximo de 10 destinatarios em CC').optional(),
+  bcc: z.array(z.string().email('Email de CCO invalido')).max(10, 'Maximo de 10 destinatarios em CCO').optional(),
 });
 
 function normalizeStatus(raw: unknown): InboundStatus | null {
@@ -358,7 +360,12 @@ router.post('/:id/reply', handleOfficialAttachmentsUpload, async (req: Request, 
       });
     }
 
-    const parsed = replyInboundEmailSchema.parse(req.body || {});
+    const rawBody = req.body || {};
+    const parsed = replyInboundEmailSchema.parse({
+      message: rawBody.message,
+      cc: Array.isArray(rawBody.cc) ? rawBody.cc : (rawBody.cc ? [rawBody.cc] : undefined),
+      bcc: Array.isArray(rawBody.bcc) ? rawBody.bcc : (rawBody.bcc ? [rawBody.bcc] : undefined),
+    });
     const files = ((req.files as Express.Multer.File[]) || []);
 
     if (files.length > MAX_ATTACHMENTS) {
@@ -371,6 +378,8 @@ router.post('/:id/reply', handleOfficialAttachmentsUpload, async (req: Request, 
     const attachments = mapAttachments(files);
     attachmentMetadata = buildAttachmentMetadata(attachments);
     const normalizedMessage = parsed.message.trim();
+    const normalizedCc = (parsed.cc || []).map((e: string) => e.trim().toLowerCase()).filter(Boolean);
+    const normalizedBcc = (parsed.bcc || []).map((e: string) => e.trim().toLowerCase()).filter(Boolean);
     const sender = parseSender(replyPreview.from);
     const html = `<div style="font-family: Arial, Helvetica, sans-serif; color: #111; line-height: 1.6; white-space: pre-wrap;">${escapeHtml(normalizedMessage).replace(/\n/g, '<br/>')}</div>`;
 
@@ -380,6 +389,8 @@ router.post('/:id/reply', handleOfficialAttachmentsUpload, async (req: Request, 
       text: normalizedMessage,
       html,
       from: replyPreview.from,
+      cc: normalizedCc.length ? normalizedCc : undefined,
+      bcc: normalizedBcc.length ? normalizedBcc : undefined,
       inReplyTo: replyPreview.inReplyTo,
       references: replyPreview.references,
       attachments,
@@ -392,6 +403,8 @@ router.post('/:id/reply', handleOfficialAttachmentsUpload, async (req: Request, 
         fromEmail: sender.fromEmail,
         fromName: sender.fromName,
         toEmail: replyPreview.to,
+        ccEmail: normalizedCc.length ? normalizedCc.join(', ') : null,
+        bccEmail: normalizedBcc.length ? normalizedBcc.join(', ') : null,
         subject: replyPreview.subject,
         provider: result.provider,
         status: EMAIL_LOG_STATUS.ERROR,
@@ -441,6 +454,8 @@ router.post('/:id/reply', handleOfficialAttachmentsUpload, async (req: Request, 
       fromEmail: sender.fromEmail,
       fromName: sender.fromName,
       toEmail: replyPreview.to,
+      ccEmail: normalizedCc.length ? normalizedCc.join(', ') : null,
+      bccEmail: normalizedBcc.length ? normalizedBcc.join(', ') : null,
       subject: replyPreview.subject,
       provider: result.provider,
       status: EMAIL_LOG_STATUS.SENT,

@@ -41,8 +41,52 @@ const sendTestEmailSchema = z.object({
   message: z.string().min(3).max(4000).optional(),
 });
 
+/**
+ * Rejeita enderecos com caracteres CR/LF (header injection).
+ */
+function containsHeaderInjection(value: string): boolean {
+  return /[\r\n]/.test(value);
+}
+
+/**
+ * Normaliza lista de emails: trim, lowercase, remove vazios.
+ */
+function normalizeEmailList(raw: string[] | undefined): string[] {
+  if (!raw || !raw.length) return [];
+  return raw
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * Valida que não há duplicatas cruzadas entre to, cc e bcc.
+ * Retorna mensagem de erro ou null se OK.
+ */
+function findDuplicateBetweenLists(to: string[], cc: string[], bcc: string[]): string | null {
+  const seen = new Map<string, string>();
+  for (const email of to) {
+    seen.set(email, 'Para');
+  }
+  for (const email of cc) {
+    const existing = seen.get(email);
+    if (existing) return `Endereco "${email}" duplicado entre ${existing} e CC.`;
+    seen.set(email, 'CC');
+  }
+  for (const email of bcc) {
+    const existing = seen.get(email);
+    if (existing) return `Endereco "${email}" duplicado entre ${existing} e CCO.`;
+    seen.set(email, 'CCO');
+  }
+  return null;
+}
+
 const sendOfficialEmailSchema = z.object({
-  to: z.string().email('Email de destino invalido'),
+  to: z.union([
+    z.string().email('Email de destino invalido').transform((v) => [v]),
+    z.array(z.string().email('Email de destino invalido')).min(1, 'Informe ao menos um destinatario').max(20, 'Maximo de 20 destinatarios'),
+  ]),
+  cc: z.array(z.string().email('Email de CC invalido')).max(10, 'Maximo de 10 destinatarios em CC').optional(),
+  bcc: z.array(z.string().email('Email de CCO invalido')).max(10, 'Maximo de 10 destinatarios em CCO').optional(),
   subject: z.string().trim().min(3, 'Assunto obrigatorio').max(180, 'Assunto muito longo'),
   message: z.string().trim().min(3, 'Mensagem obrigatoria').max(12000, 'Mensagem muito longa'),
   from: z.enum([
@@ -78,10 +122,19 @@ function isAllowedTestRecipient(email: string): boolean {
   return false;
 }
 
+function normalizeToArray(value: unknown): string[] | undefined {
+  if (!value) return undefined;
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') return [value];
+  return undefined;
+}
+
 function parseOfficialRequestBody(req: Request) {
   const body = req.body || {};
   return sendOfficialEmailSchema.parse({
-    to: body.to,
+    to: normalizeToArray(body.to) || body.to,
+    cc: normalizeToArray(body.cc),
+    bcc: normalizeToArray(body.bcc),
     from: body.from,
     subject: body.subject,
     message: body.message,
@@ -115,6 +168,7 @@ function serializeEmailSendLog(log: any) {
     from_name: log.from_name,
     to_email: log.to_email,
     cc_email: log.cc_email,
+    bcc_email: log.bcc_email,
     subject: log.subject,
     provider: log.provider,
     status: log.status,
@@ -209,21 +263,45 @@ router.post('/send', handleOfficialAttachmentsUpload, async (req: Request, res: 
     const attachments = mapAttachments(files);
     const attachmentMetadata = buildAttachmentMetadata(attachments);
 
-    const normalizedTo = parsed.to.trim().toLowerCase();
+    const normalizedTo = normalizeEmailList(parsed.to);
     const normalizedSubject = parsed.subject.trim();
     const normalizedMessage = parsed.message.trim();
     const sender = parseSender(parsed.from);
+    const normalizedCc = normalizeEmailList(parsed.cc);
+    const normalizedBcc = normalizeEmailList(parsed.bcc);
+
+    // Validação: header injection
+    const allEmails = [...normalizedTo, ...normalizedCc, ...normalizedBcc];
+    for (const email of allEmails) {
+      if (containsHeaderInjection(email)) {
+        return res.status(400).json({ success: false, error: 'Endereco de email contem caracteres invalidos.' });
+      }
+    }
+    if (containsHeaderInjection(normalizedSubject)) {
+      return res.status(400).json({ success: false, error: 'Assunto contem caracteres invalidos.' });
+    }
+
+    // Validação: duplicatas cruzadas
+    const dupError = findDuplicateBetweenLists(normalizedTo, normalizedCc, normalizedBcc);
+    if (dupError) {
+      return res.status(400).json({ success: false, error: dupError });
+    }
 
     const html = `<div style="font-family: Arial, Helvetica, sans-serif; color: #111; line-height: 1.6; white-space: pre-wrap;">${escapeHtml(normalizedMessage).replace(/\n/g, '<br/>')}</div>`;
 
     const result = await emailService.sendMail({
-      to: normalizedTo,
+      to: normalizedTo[0],
       subject: normalizedSubject,
       text: normalizedMessage,
       html,
       from: parsed.from,
+      cc: normalizedCc.length ? normalizedCc : undefined,
+      bcc: normalizedBcc.length ? normalizedBcc : undefined,
+      additionalTo: normalizedTo.length > 1 ? normalizedTo.slice(1) : undefined,
       attachments,
     });
+
+    const toDisplay = normalizedTo.join(', ');
 
     if (!result.ok) {
       await writeEmailSendLog({
@@ -231,7 +309,9 @@ router.post('/send', handleOfficialAttachmentsUpload, async (req: Request, res: 
         adminEmail,
         fromEmail: sender.fromEmail,
         fromName: sender.fromName,
-        toEmail: normalizedTo,
+        toEmail: toDisplay,
+        ccEmail: normalizedCc.length ? normalizedCc.join(', ') : null,
+        bccEmail: normalizedBcc.length ? normalizedBcc.join(', ') : null,
         subject: normalizedSubject,
         provider: result.provider,
         status: EMAIL_LOG_STATUS.ERROR,
@@ -248,7 +328,9 @@ router.post('/send', handleOfficialAttachmentsUpload, async (req: Request, res: 
         entityId: auditEntityId,
         newValue: {
           from: parsed.from,
-          to: normalizedTo,
+          to: toDisplay,
+          cc: normalizedCc.length ? normalizedCc : undefined,
+          bcc: normalizedBcc.length ? normalizedBcc : undefined,
           subject: normalizedSubject,
           provider: result.provider,
           attachments: attachmentMetadata,
@@ -265,7 +347,7 @@ router.post('/send', handleOfficialAttachmentsUpload, async (req: Request, res: 
         data: {
           provider: result.provider,
           from: result.from,
-          to: normalizedTo,
+          to: toDisplay,
           subject: normalizedSubject,
           attachments: attachmentMetadata,
         },
@@ -277,7 +359,9 @@ router.post('/send', handleOfficialAttachmentsUpload, async (req: Request, res: 
       adminEmail,
       fromEmail: sender.fromEmail,
       fromName: sender.fromName,
-      toEmail: normalizedTo,
+      toEmail: toDisplay,
+      ccEmail: normalizedCc.length ? normalizedCc.join(', ') : null,
+      bccEmail: normalizedBcc.length ? normalizedBcc.join(', ') : null,
       subject: normalizedSubject,
       provider: result.provider,
       status: EMAIL_LOG_STATUS.SENT,
@@ -293,7 +377,9 @@ router.post('/send', handleOfficialAttachmentsUpload, async (req: Request, res: 
       entityId: auditEntityId,
       newValue: {
         from: result.from,
-        to: normalizedTo,
+        to: toDisplay,
+        cc: normalizedCc.length ? normalizedCc : undefined,
+        bcc: normalizedBcc.length ? normalizedBcc : undefined,
         subject: normalizedSubject,
         provider: result.provider,
         attachments: attachmentMetadata,
@@ -311,7 +397,7 @@ router.post('/send', handleOfficialAttachmentsUpload, async (req: Request, res: 
         status: 'success',
         provider: result.provider,
         from: result.from,
-        to: normalizedTo,
+        to: toDisplay,
         subject: normalizedSubject,
         attachments: attachmentMetadata,
         messageId: result.messageId || null,
