@@ -39,8 +39,13 @@ interface BonusPolicy {
   policy_id: string;
   approved_by: string;
   approved_at: string;
+  last_updated?: string;
+  status?: string;
+  status_description?: string;
   frozen: boolean;
   summary: string;
+  superseded_rules?: Record<string, string>;
+  addendum_reference?: string;
   rules: BonusRule[];
   conceptual_journal_entries: JournalEntry[];
 }
@@ -87,6 +92,7 @@ interface Decision {
 interface DecisionRegister {
   phase: string;
   blueprint_version: string;
+  decision_register_revision?: string;
   status: string;
   title: string;
   description: string;
@@ -285,13 +291,16 @@ function genDecisionPackage(register: DecisionRegister): string {
 
 function genBonusPolicy(register: DecisionRegister): string {
   const policy = register.business_policies.bonus;
+  const statusLabel = policy.status_description
+    || policy.status
+    || (policy.frozen ? 'CONGELADA para esta implementação' : 'DRAFT');
   const lines: string[] = [
     `# Fase ${register.phase} — Política Oficial do Bônus KAVIAR`,
     '',
     `**Política:** \`${policy.policy_id}\`<br>`,
     `**Aprovado por:** ${policy.approved_by}<br>`,
     `**Data de aprovação:** ${policy.approved_at}<br>`,
-    `**Status:** ${policy.frozen ? 'CONGELADA para esta implementação' : 'DRAFT'}`,
+    `**Status:** ${statusLabel}`,
     '',
     policy.summary,
     '',

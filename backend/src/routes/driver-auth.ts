@@ -32,9 +32,7 @@ const driverRegisterSchema = z.object({
   communityId: z.string().optional(),
   lat: z.number({ required_error: 'Localização GPS é obrigatória' }),
   lng: z.number({ required_error: 'Localização GPS é obrigatória' }),
-  verificationMethod: z.enum(['GPS_AUTO', 'MANUAL_SELECTION']).optional(),
-  familyBonusAccepted: z.boolean().optional(),
-  familyProfile: z.enum(['individual', 'familiar']).optional()
+  verificationMethod: z.enum(['GPS_AUTO', 'MANUAL_SELECTION']).optional()
 });
 
 // POST /api/auth/driver/register - Cadastro público (sem token)
@@ -59,8 +57,6 @@ router.post('/driver/register', async (req, res) => {
       lat: data.lat,
       lng: data.lng,
       verificationMethod: data.verificationMethod || 'GPS_AUTO',
-      familyBonusAccepted: data.familyBonusAccepted,
-      familyProfile: data.familyProfile,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'] || undefined
     });

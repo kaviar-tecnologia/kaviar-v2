@@ -23,8 +23,6 @@ interface DriverRegistrationInput {
   vehicle_type?: 'CAR' | 'MOTORCYCLE';
   communityId?: string;
   verificationMethod?: 'GPS_AUTO' | 'MANUAL_SELECTION';
-  familyBonusAccepted?: boolean;
-  familyProfile?: 'individual' | 'familiar';
   
   // Metadata
   ipAddress?: string;
@@ -158,8 +156,6 @@ export class DriverRegistrationService {
             territory_type: territoryType,
             territory_verified_at: new Date(),
             territory_verification_method: verificationMethod,
-            family_bonus_accepted: input.familyBonusAccepted ?? false,
-            family_bonus_profile: input.familyProfile ?? 'individual',
             created_at: new Date(),
             updated_at: new Date()
           }

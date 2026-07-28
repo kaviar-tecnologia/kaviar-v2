@@ -14,7 +14,7 @@ Blueprint: `1.1.0` | Status: `PARTIALLY_DECIDED`
 - **Decididas:** 6
 - **Abertas:** 19
 
-Próximo passo: Aguardar respostas do contador (15 itens) e do jurídico (4 itens) para atualizar o blueprint para v1.2.0.
+Próximo passo: Aguardar validações externas (LEGAL, ACCOUNTANT, REGULATORY) e respostas do contador (15 itens) e do jurídico (4 itens) para atualizar o blueprint.
 
 ## Arquivos
 

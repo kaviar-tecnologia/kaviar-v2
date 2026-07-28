@@ -16,7 +16,6 @@ const EDITABLE_FIELDS = [
   { key: 'vehicle_color', label: 'Cor', type: 'text' },
   { key: 'pix_key', label: 'Chave PIX', type: 'text' },
   { key: 'pix_key_type', label: 'Tipo PIX', type: 'select', options: ['cpf', 'cnpj', 'email', 'phone', 'random'] },
-  { key: 'family_bonus_profile', label: 'Perfil Familiar', type: 'select', options: ['individual', 'familiar'] },
 ];
 
 export function DriverEditCard({ driverId, driver, onUpdated }) {
@@ -99,7 +98,7 @@ export function DriverEditCard({ driverId, driver, onUpdated }) {
       </Box>
 
       <Typography variant="body2" color="text.secondary">
-        Campos operacionais editáveis: telefone, email, veículo, PIX, perfil familiar.
+        Campos operacionais editáveis: telefone, email, veículo, PIX.
       </Typography>
 
       {/* Audit log */}

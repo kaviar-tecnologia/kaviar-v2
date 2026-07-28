@@ -287,10 +287,7 @@ export default function DriverApproval() {
                   </Alert>
                 </Grid>
               )}
-              <Grid item xs={12}>
-                <Typography variant="caption" color="text.secondary">Bônus Familiar</Typography>
-                <Typography>{(selectedDriver.family_bonus_accepted === true) ? `Aceito — ${selectedDriver.family_bonus_profile || 'individual'}` : 'Não declarado'}</Typography>
-              </Grid>
+
               <Grid item xs={12}>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>Documentos</Typography>
                 {documentsLoading ? (

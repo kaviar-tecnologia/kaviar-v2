@@ -99,9 +99,7 @@ APP_RESPONSE=$(curl -s -X POST "$STAGING_API/api/auth/driver/register" \
     \"communityId\": \"$COMMUNITY_ID\",
     \"lat\": -22.9068,
     \"lng\": -43.1729,
-    \"verificationMethod\": \"GPS_AUTO\",
-    \"familyBonusAccepted\": true,
-    \"familyProfile\": \"individual\"
+    \"verificationMethod\": \"GPS_AUTO\"
   }")
 
 echo "   Resposta: $APP_RESPONSE"
@@ -140,9 +138,7 @@ WEB_RESPONSE=$(curl -s -X POST "$STAGING_API/api/driver/onboarding" \
     \"vehicle_plate\": \"XYZ9876\",
     \"accepted_terms\": true,
     \"neighborhoodId\": \"$NEIGHBORHOOD_ID\",
-    \"communityId\": \"$COMMUNITY_ID\",
-    \"familyBonusAccepted\": false,
-    \"familyProfile\": \"individual\"
+    \"communityId\": \"$COMMUNITY_ID\"
   }")
 
 echo "   Resposta: $WEB_RESPONSE"

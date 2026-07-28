@@ -23,8 +23,6 @@ const driverOnboardingSchema = z.object({
   communityId: z.string().optional(),
   lat: z.number({ required_error: 'Localização GPS é obrigatória' }),
   lng: z.number({ required_error: 'Localização GPS é obrigatória' }),
-  familyBonusAccepted: z.boolean().optional(),
-  familyProfile: z.string().optional(),
   partner_code: z.string().optional(),
 });
 
@@ -48,8 +46,6 @@ router.post('/onboarding', async (req: Request, res: Response) => {
       communityId: data.communityId,
       lat: data.lat,
       lng: data.lng,
-      familyBonusAccepted: data.familyBonusAccepted,
-      familyProfile: data.familyProfile as 'individual' | 'familiar' | undefined,
       verificationMethod: 'GPS_AUTO',
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'] || undefined

@@ -392,7 +392,13 @@ model drivers {
   certidao_nada_consta_url    String?
   pix_key                     String?
   pix_key_type                String?
+  // @deprecated 2026-07-27 — Aceite legado removido. Campo mantido para compatibilidade.
+  // Não ler/escrever no código. Remoção física somente após período de compatibilidade,
+  // auditoria de uso e migration específica aprovada.
   family_bonus_accepted       Boolean?                      @default(false)
+  // @deprecated 2026-07-27 — Perfil legado removido. Campo mantido para compatibilidade.
+  // Não ler/escrever no código. Remoção física somente após período de compatibilidade,
+  // auditoria de uso e migration específica aprovada.
   family_bonus_profile        String?                       @default("individual")
   approved_at                 DateTime?
   approved_by                 String?

@@ -36,7 +36,7 @@ router.get('/drivers', allowReadAccess, applyTerritoryScope, async (req, res) =>
     const originalJson = res.json.bind(res);
     res.json = (body: any) => {
       if (body?.data && Array.isArray(body.data)) {
-        body.data = body.data.map(({ documentCpf, documentRg, documentCnh, familyBonusAccepted, familyBonusProfile, ...safe }: any) => safe);
+        body.data = body.data.map(({ documentCpf, documentRg, documentCnh, ...safe }: any) => safe);
       }
       return originalJson(body);
     };

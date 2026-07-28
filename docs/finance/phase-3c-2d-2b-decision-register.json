@@ -1,9 +1,10 @@
 {
   "phase": "3C-2D.2B",
   "blueprint_version": "1.1.0",
+  "decision_register_revision": "2026-07-27-v1",
   "status": "PARTIALLY_DECIDED",
   "title": "Fase 3C-2D.2B — Decisões Administrativas e Política de Bônus",
-  "description": "Registro formal das 25 decisões pendentes da fase 3C-2D.2B. Inclui as 6 decisões administrativas aprovadas em 2026-07-21, a política oficial do bônus KAVIAR e as decisões contábeis e jurídicas ainda abertas.",
+  "description": "Registro formal das decisões da fase 3C-2D.2B. Inclui as 6 decisões administrativas de 2026-07-21, a política oficial do bônus KAVIAR, as 10 decisões operacionais de 2026-07-22 e as 31 decisões de 2026-07-27 (remoção do aceite legado, gratificação anual, gestor, compensação e estrutura futura). Decisões contábeis e jurídicas permanecem abertas.",
   "materialization_authorized": false,
   "database_write_authorized": false,
   "summary": {
@@ -21,7 +22,33 @@
     "admin_decided": 6,
     "admin_open": 0,
     "accountant_open": 15,
-    "legal_open": 4
+    "legal_open": 4,
+    "addendum_2026_07_27": {
+      "total_new_decisions": 32,
+      "document": "phase-3c-2d-2b-decisions-2026-07-27.md",
+      "scope": "aceite_legado_removal_gratificacao_anual_gestor_compensacao_estrutura",
+      "supersedes": [
+        "BP-11",
+        "BP-12",
+        "BP-13",
+        "BP-14",
+        "BP-15",
+        "BP-16",
+        "BP-17",
+        "BP-18",
+        "BP-19",
+        "BP-20",
+        "BP-21",
+        "BP-22",
+        "BP-23",
+        "BP-24",
+        "BP-25",
+        "BP-26",
+        "BP-27",
+        "BP-28",
+        "BP-29"
+      ]
+    }
   },
   "administrative_approval": {
     "approved_by": "KAVIAR Administration",
@@ -31,12 +58,18 @@
   },
   "business_policies": {
     "bonus": {
-      "policy_id": "BONUS-POLICY-v1.2",
-      "approved_by": "KAVIAR Administration",
-      "approved_at": "2026-07-21T15:20:04Z",
-      "last_updated": "2026-07-22T09:20:17Z",
+      "policy_id": "BONUS-POLICY-v1.3",
+      "approved_by": "Aparecido de Góes (Proprietário KAVIAR)",
+      "approved_at": "2026-07-27T23:12:27Z",
+      "last_updated": "2026-07-27T23:12:27Z",
+      "status": "ACTIVE_FROZEN",
+      "status_description": "Política vigente, congelada para a próxima implementação. Regras definitivas para o Commit 2.",
       "frozen": true,
-      "summary": "Política oficial do bônus KAVIAR — congelada para esta implementação. Contém duas modalidades: bônus por campanha (BP-01 a BP-10) e bônus anual de reconhecimento (BP-11 a BP-29).",
+      "summary": "Gratificação Anual de Incentivo KAVIAR — 10% dos 18% efetivamente consumidos em operação elegível. Liquidação exclusivamente em dinheiro (PIX ou transferência). Aceite individual eliminado. Múltiplas solicitações Oct-Dez. Carry-over automático. Regras BP-11 a BP-29 integralmente substituídas em relação à v1.2.",
+      "superseded_rules": {
+        "BP-11..BP-29": "As regras BP-11 a BP-29 da BONUS-POLICY-v1.2 foram integralmente substituídas pelas regras BP-11 a BP-29 da BONUS-POLICY-v1.3. historical_rules_v1.2 existe somente para preservação histórica e não possui vigência operacional."
+      },
+      "addendum_reference": "phase-3c-2d-2b-decisions-2026-07-27.md",
       "rules": [
         {
           "id": "BP-01",
@@ -82,13 +115,127 @@
         {
           "id": "BP-09",
           "part": "I",
-          "description": "O bônus pode ser liquidado por PIX/transferência ou conversão para créditos no aplicativo."
+          "description": "A Gratificação Anual de Incentivo KAVIAR é liquidada exclusivamente em dinheiro, por PIX ou transferência bancária, para a chave ou conta validada do motorista. Não é permitida conversão em créditos do aplicativo."
         },
         {
           "id": "BP-10",
           "part": "I",
           "description": "Tratamento contábil: contraprestação a pagar ao cliente, redução da receita, passivo certo após o evento gerador."
         },
+        {
+          "id": "BP-11",
+          "part": "II",
+          "description": "Nome funcional: Gratificação Anual de Incentivo KAVIAR. Percentual vigente: 10%. Base: os 18% efetivamente consumidos/reconhecidos em operação elegível. Não é calculada sobre o valor total da corrida."
+        },
+        {
+          "id": "BP-12",
+          "part": "II",
+          "description": "Evento gerador: operação elegível que consome crédito pré-pago e reconhece os 18% como receita da KAVIAR. A gratificação nasce automaticamente nesse momento. Não depende de aceite individual do motorista."
+        },
+        {
+          "id": "BP-13",
+          "part": "II",
+          "description": "Notas baixas não cancelam a gratificação adquirida."
+        },
+        {
+          "id": "BP-14",
+          "part": "II",
+          "description": "Indisciplina não cancela a gratificação adquirida. Consequências disciplinares são tratadas separadamente."
+        },
+        {
+          "id": "BP-15",
+          "part": "II",
+          "description": "Remoção da plataforma não cancela a gratificação adquirida. Não elimina valores legítimos, não autoriza confisco nem expiração antecipada."
+        },
+        {
+          "id": "BP-16",
+          "part": "II",
+          "description": "Canal alternativo obrigatório para motorista removido solicitar gratificação na janela anual."
+        },
+        {
+          "id": "BP-17",
+          "part": "II",
+          "description": "Janela anual de solicitação: 1º de outubro a 31 de dezembro. O motorista pode realizar quantas solicitações desejar dentro da janela. Cada solicitação congela o valor solicitado. Prazo de pagamento: até 48 horas da solicitação. Valor não solicitado até 31 de dezembro é transportado ao ano seguinte."
+        },
+        {
+          "id": "BP-18",
+          "part": "II",
+          "description": "Proibição de confisco ou compensação do valor legitimamente adquirido por fatos não relacionados à operação que gerou a gratificação."
+        },
+        {
+          "id": "BP-19",
+          "part": "II",
+          "description": "Reversão somente quando a operação que gerou a gratificação for revertida, estornada, fraudulenta, duplicada, inválida ou sofrer chargeback. Problemas em outras operações não afetam gratificações legítimas."
+        },
+        {
+          "id": "BP-20",
+          "part": "II",
+          "description": "Fraude ou invalidação de uma operação afeta apenas a gratificação vinculada a ela. Outros valores legítimos de outras operações permanecem protegidos."
+        },
+        {
+          "id": "BP-21",
+          "part": "II",
+          "description": "Registro do direito adquirido vinculado a: motorista, operação/corrida ou CANCEL_COMPENSATION, fee de 18%, base de cálculo, percentual vigente, campanha/versão, ciclo anual, status, reversões, solicitações, pagamentos e auditoria."
+        },
+        {
+          "id": "BP-22",
+          "part": "II",
+          "description": "Comunicação clara ao motorista: a gratificação nasce do consumo dos 18% em operações elegíveis; não é perdida por nota, suspensão ou encerramento; janela anual informada; financiada integralmente pela KAVIAR."
+        },
+        {
+          "id": "BP-23",
+          "part": "II",
+          "description": "Regra consolidada: 10% dos 18% consumidos em operação elegível, presente de reconhecimento pela confiança, não depende de nota/disciplina/permanência, não expira, janela anual com múltiplas solicitações, KAVIAR financia integralmente, gestor e parceiro não participam do financiamento, reversão somente por problema na operação geradora."
+        },
+        {
+          "id": "BP-24",
+          "part": "II",
+          "description": "A gratificação é registrada e acumulada após a conclusão da operação elegível (corrida concluída ou CANCEL_COMPENSATION processada). Exibição no aplicativo ocorre após o settlement da operação."
+        },
+        {
+          "id": "BP-25",
+          "part": "II",
+          "description": "Operações elegíveis concluídas desde 1º de janeiro geram gratificação continuamente. A acumulação ocorre o ano inteiro, dentro e fora da janela de solicitação (outubro-dezembro). Solicitações anteriores não interrompem a geração de novos valores."
+        },
+        {
+          "id": "BP-26",
+          "part": "II",
+          "description": "Solicitação enviada entre 1º de outubro e 31 de dezembro permanece válida. O prazo de pagamento é de até 48 horas contadas do momento da solicitação. Atrasos administrativos ou bancários não prejudicam o motorista."
+        },
+        {
+          "id": "BP-27",
+          "part": "II",
+          "description": "O fluxo de solicitação é exclusivo para gratificação anual. Não permite solicitar saldo principal, compensação de cancelamento, reembolso, ganhos de corridas, ajustes ou outros créditos promocionais."
+        },
+        {
+          "id": "BP-28",
+          "part": "II",
+          "description": "A gratificação anual é controlada separadamente na wallet: PURCHASED_BALANCE, ANNUAL_BONUS, CANCELLATION_COMPENSATION. A exibição identifica claramente dinheiro do motorista, presente da KAVIAR e compensação."
+        },
+        {
+          "id": "BP-29",
+          "part": "II",
+          "description": "CANCEL_COMPENSATION gera gratificação de 10% sobre os 18% da compensação. Cancelamento sem compensação voluntária não gera gratificação. Não geram gratificação: taxa de cancelamento futura, créditos manuais, reembolsos, valores de corridas, ajustes administrativos ou créditos promocionais."
+        }
+      ],
+      "conceptual_journal_entries": [
+        {
+          "event": "Conclusão da corrida",
+          "debit": "Créditos pré-pagos de motoristas (2101)",
+          "credit": "Receita bruta de intermediação (3101)"
+        },
+        {
+          "event": "Reconhecimento do bônus",
+          "debit": "Dedução da receita — bônus adquirido (3301)",
+          "credit": "Bônus adquirido a pagar aos motoristas (2103)"
+        },
+        {
+          "event": "Pagamento em dinheiro",
+          "debit": "Bônus adquirido a pagar (2103)",
+          "credit": "Banco"
+        }
+      ],
+      "historical_rules_v1.2": [
         {
           "id": "BP-11",
           "part": "II",
@@ -185,28 +332,13 @@
           "description": "Compensação de cancelamento não constitui recarga elegível e não gera bônus. Também não geram bônus: taxa de cancelamento futura, créditos manuais, reembolsos, valores de corridas, bônus anteriores, créditos promocionais ou ajustes administrativos. Somente dinheiro novo pago pelo motorista gera bônus."
         }
       ],
-      "conceptual_journal_entries": [
-        {
-          "event": "Conclusão da corrida",
-          "debit": "Créditos pré-pagos de motoristas (2101)",
-          "credit": "Receita bruta de intermediação (3101)"
-        },
-        {
-          "event": "Reconhecimento do bônus",
-          "debit": "Dedução da receita — bônus adquirido (3301)",
-          "credit": "Bônus adquirido a pagar aos motoristas (2103)"
-        },
-        {
-          "event": "Pagamento em dinheiro",
-          "debit": "Bônus adquirido a pagar (2103)",
-          "credit": "Banco"
-        },
-        {
-          "event": "Conversão em créditos",
-          "debit": "Bônus adquirido a pagar (2103)",
-          "credit": "Créditos pré-pagos de motoristas (2101)"
-        }
-      ]
+      "historical_journal_entry_conversion_v1.2": {
+        "event": "Conversão em créditos",
+        "debit": "Bônus adquirido a pagar (2103)",
+        "credit": "Créditos pré-pagos de motoristas (2101)",
+        "status": "SUPERSEDED",
+        "note": "Liquidação por conversão em créditos proibida desde BONUS-POLICY-v1.3 (decisão CASH_ONLY de 2026-07-27)."
+      }
     }
   },
   "decision_progress": {
@@ -227,7 +359,9 @@
         "title": "Origem da comissão do parceiro",
         "response": "OUTRA",
         "summary": "Contratos atuais: KAVIAR paga despesa separada. Novos contratos: fatia territorial máxima (X+Y<=40%).",
-        "external_validation": ["LEGAL_CONFIRMATION"]
+        "external_validation": [
+          "LEGAL_CONFIRMATION"
+        ]
       },
       {
         "id": "OP-02",
@@ -241,28 +375,37 @@
         "title": "Expiração dos créditos comprados",
         "response": "D",
         "summary": "Não expiram. Contas inativas >12m sinalizadas para contato. Sinalização não autoriza confisco.",
-        "external_validation": ["ACCOUNTANT_CONFIRMATION"]
+        "external_validation": [
+          "ACCOUNTANT_CONFIRMATION"
+        ]
       },
       {
         "id": "OP-04",
         "title": "Saldo comprado é sacável",
         "response": "A_AJUSTADA",
         "summary": "Não sacável livremente. Finalidade: pagar taxas. Pertence ao motorista. Reembolso conforme OP-05.",
-        "external_validation": ["LEGAL_CONFIRMATION", "REGULATORY_CONFIRMATION"]
+        "external_validation": [
+          "LEGAL_CONFIRMATION",
+          "REGULATORY_CONFIRMATION"
+        ]
       },
       {
         "id": "OP-05",
         "title": "Reembolso de créditos não utilizados",
         "response": "OUTRA",
         "summary": "Política objetiva: reembolso obrigatório em 8 hipóteses + solicitações comuns com processo. Reembolso cancela bônus proporcional.",
-        "external_validation": ["LEGAL_CONFIRMATION"]
+        "external_validation": [
+          "LEGAL_CONFIRMATION"
+        ]
       },
       {
         "id": "OP-06",
         "title": "Limite do saldo comprado na wallet",
         "response": "D",
         "summary": "Configurável pelo admin. Inicial: R$500. Aplica-se apenas ao saldo comprado. Não elimina risco regulatório.",
-        "external_validation": ["REGULATORY_CONFIRMATION"]
+        "external_validation": [
+          "REGULATORY_CONFIRMATION"
+        ]
       },
       {
         "id": "OP-07",
@@ -283,14 +426,18 @@
         "title": "Ajustes negativos do gestor",
         "response": "OUTRA",
         "summary": "Somente fraude/dolo/erro/prejuízo/contrato. Processo obrigatório com 15 dias de contestação e SUPER_ADMIN. Proibido ajuste por bônus, risco normal ou meta.",
-        "external_validation": ["LEGAL_CONFIRMATION"]
+        "external_validation": [
+          "LEGAL_CONFIRMATION"
+        ]
       },
       {
         "id": "OP-10",
         "title": "Encerramento e transição do gestor",
         "response": "A_AJUSTADA",
         "summary": "Normal: fim do mês + 30 dias para pagamento. Excepcional: suspensão imediata por fraude/risco. Valores adquiridos preservados. Parceiros reatribuídos.",
-        "external_validation": ["LEGAL_CONFIRMATION"]
+        "external_validation": [
+          "LEGAL_CONFIRMATION"
+        ]
       }
     ]
   },

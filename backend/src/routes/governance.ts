@@ -270,8 +270,6 @@ const driverCreateSchema = z.object({
   password: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres'),
   neighborhoodId: z.string().min(1, 'Bairro é obrigatório'),
   communityId: z.string().optional(),
-  familyBonusAccepted: z.boolean().optional(),
-  familyProfile: z.string().optional(),
   lat: z.number().optional(),
   lng: z.number().optional(),
   verificationMethod: z.enum(['GPS_AUTO', 'MANUAL_SELECTION']).optional()
@@ -354,13 +352,7 @@ router.post('/driver', async (req, res) => {
     const hashedPassword = await bcrypt.hash(data.password, 10);
     
     // Log incoming data
-    console.log('[GOV] familyBonusAccepted incoming:', data.familyBonusAccepted);
-    console.log('[GOV] familyProfile incoming:', data.familyProfile);
     console.log('[GOV] Territory type:', territoryType);
-    
-    // Aceitar formato camelCase (já validado pelo schema)
-    const familyBonusAccepted = data.familyBonusAccepted ?? false;
-    const familyProfile = data.familyProfile ?? 'individual';
     
     // Create driver - CADASTRO INICIAL com território
     const driver = await prisma.drivers.create({
@@ -373,8 +365,6 @@ router.post('/driver', async (req, res) => {
         status: 'pending',
         neighborhood_id: data.neighborhoodId,
         community_id: data.communityId || null,
-        family_bonus_accepted: familyBonusAccepted,
-        family_bonus_profile: familyProfile,
         territory_type: territoryType,
         territory_verified_at: new Date(),
         territory_verification_method: data.verificationMethod || 'MANUAL_SELECTION',
@@ -385,8 +375,6 @@ router.post('/driver', async (req, res) => {
       }
     });
 
-    console.log('[GOV] persisted family_bonus_accepted:', driver.family_bonus_accepted);
-    console.log('[GOV] persisted family_bonus_profile:', driver.family_bonus_profile);
     console.log('[GOV] persisted territory_type:', driver.territory_type);
 
     res.status(201).json({ 

@@ -58,9 +58,6 @@ export default function Register() {
   const [vehiclePlate, setVehiclePlate] = useState('');
   const [modality, setModality] = useState<string>('CAR');
   
-  // Bônus familiar
-  const [familyBonusAccepted, setFamilyBonusAccepted] = useState(false);
-  
   // Território
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [neighborhoods, setNeighborhoods] = useState<any[]>([]);
@@ -278,8 +275,6 @@ export default function Register() {
         vehicle_color: vehicleColor,
         vehicle_model: vehicleModel || null,
         vehicle_plate: vehiclePlate || null,
-        familyBonusAccepted: familyBonusAccepted,
-        familyProfile: familyBonusAccepted ? 'familiar' : 'individual',
       };
 
       // ✅ KAVIAR: Só envia neighborhoodId se existir (backend resolve via geo-resolve)
@@ -538,24 +533,6 @@ export default function Register() {
               />
             </View>
 
-            <View style={styles.bonusSection}>
-              <Text style={styles.bonusTitle}>Bônus Anual KAVIAR</Text>
-              <Text style={styles.bonusDescription}>
-                Motoristas parceiros podem acompanhar campanhas e benefícios vigentes pelo app. O modelo atual prevê bônus anual de 10% conforme regras do período de apuração e elegibilidade.
-              </Text>
-              
-              <TouchableOpacity
-                style={styles.checkboxRow}
-                onPress={() => setFamilyBonusAccepted(!familyBonusAccepted)}
-              >
-                <View style={[styles.checkbox, familyBonusAccepted && styles.checkboxChecked]}>
-                  {familyBonusAccepted && <Ionicons name="checkmark" size={18} color="#FFF" />}
-                </View>
-                <Text style={styles.checkboxLabel}>
-                  Quero receber comunicações sobre campanhas e benefícios KAVIAR.
-                </Text>
-              </TouchableOpacity>
-            </View>
 
             <View style={styles.buttonRow}>
               <TouchableOpacity

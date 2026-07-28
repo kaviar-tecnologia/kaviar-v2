@@ -57,9 +57,6 @@ export default function CompleteOnboarding() {
     isBilingual: false,
     languages: [],
     alsoDriver: false,
-    // Family bonus
-    familyProfile: 'individual', // individual | familiar
-    familyBonusAccepted: false,
     // Terms
     acceptedTerms: false
   });
@@ -118,8 +115,6 @@ export default function CompleteOnboarding() {
     isBilingual: !!formData.isBilingual,
     languages: formData.languages ?? [],
     alsoDriver: !!formData.alsoDriver,
-    familyProfile: formData.familyProfile ?? 'individual',
-    familyBonusAccepted: !!formData.familyBonusAccepted,
     acceptedTerms: !!formData.acceptedTerms,
   };
 
@@ -274,8 +269,6 @@ export default function CompleteOnboarding() {
             accepted_terms: true,
             neighborhoodId: clean.neighborhoodId,
             communityId: clean.communityId || undefined,
-            familyBonusAccepted: clean.familyBonusAccepted,
-            familyProfile: clean.familyProfile
           })
         });
 
@@ -554,48 +547,7 @@ export default function CompleteOnboarding() {
                   helperText="* Apenas para visualização. Não será enviado nesta versão."
                 />
 
-                <Typography variant="h6" sx={{ mt: 3, mb: 2 }}>
-                  Programa de Reconhecimento KAVIAR
-                </Typography>
-                <Typography variant="body2" sx={{ mb: 2 }}>
-                  Selecione seu perfil para participar de programas futuros de reconhecimento (sujeitos a regras, disponibilidade e aprovação):
-                </Typography>
-                <FormControl component="fieldset" sx={{ mb: 2 }}>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          checked={clean.familyProfile === 'individual'}
-                          onChange={() => setFormData(prev => ({ ...prev, familyProfile: 'individual' }))}
-                        />
-                      }
-                      label="Perfil Individual"
-                    />
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          checked={clean.familyProfile === 'familiar'}
-                          onChange={() => setFormData(prev => ({ ...prev, familyProfile: 'familiar' }))}
-                        />
-                      }
-                      label="Perfil Familiar"
-                    />
-                  </Box>
-                </FormControl>
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={clean.familyBonusAccepted}
-                      onChange={(e) => setFormData(prev => ({ ...prev, familyBonusAccepted: e.target.checked }))}
-                      required
-                    />
-                  }
-                  label={
-                    <Typography variant="caption">
-                      Desejo participar de programas futuros de reconhecimento KAVIAR, ciente de que dependem de regras vigentes, disponibilidade e aprovação administrativa.
-                    </Typography>
-                  }
-                />
+
               </>
             )}
 

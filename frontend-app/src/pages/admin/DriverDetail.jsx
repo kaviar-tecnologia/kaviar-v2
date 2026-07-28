@@ -100,9 +100,7 @@ export default function AdminDriverDetail() {
           id: driverData.id,
           vehicle_color: driverData.vehicle_color,
           vehicle_plate: driverData.vehicle_plate,
-          vehicle_model: driverData.vehicle_model,
-          family_bonus_accepted: driverData.family_bonus_accepted,
-          family_bonus_profile: driverData.family_bonus_profile
+          vehicle_model: driverData.vehicle_model
         });
         setDriver(driverData);
       } else {
@@ -485,60 +483,7 @@ export default function AdminDriverDetail() {
             </Grid>
           </Grid>
 
-          <Grid item xs={12}>
-            <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>Bônus Familiar</Typography>
-            {(() => {
-              // Converter para boolean (pode vir como string do DB)
-              const isFamilyBonusAccepted = driver.family_bonus_accepted === true || driver.family_bonus_accepted === 't' || driver.family_bonus_accepted === 'true';
-              
-              if (!isFamilyBonusAccepted) {
-                return (
-                  <Typography variant="body2" color="text.secondary">
-                    Não declarado
-                  </Typography>
-                );
-              }
 
-              const familyProfile = driver.family_bonus_profile || 'individual';
-              const bonusPercent = 50;
-              const bonusAmount = (100 * bonusPercent) / 100;
-              const acceptedAt = driver.created_at;
-
-              return (
-                <Box sx={{ bgcolor: 'grey.100', p: 2, borderRadius: 1 }}>
-                  <Grid container spacing={1}>
-                    <Grid item xs={6}>
-                      <Typography variant="body2" color="text.secondary">Perfil:</Typography>
-                    </Grid>
-                    <Grid item xs={6}>
-                      <Chip 
-                        label={familyProfile === 'familiar' ? 'Familiar' : 'Individual'} 
-                        color={familyProfile === 'familiar' ? 'success' : 'info'}
-                        size="small"
-                      />
-                    </Grid>
-                    <Grid item xs={6}>
-                      <Typography variant="body2" color="text.secondary">Percentual:</Typography>
-                    </Grid>
-                    <Grid item xs={6}>
-                      <Typography variant="body2">{bonusPercent}%</Typography>
-                    </Grid>
-                    <Grid item xs={6}>
-                      <Typography variant="body2" color="text.secondary">Crédito mensal:</Typography>
-                    </Grid>
-                    <Grid item xs={6}>
-                      <Typography variant="body2" fontWeight="bold">R$ {bonusAmount.toFixed(2)}</Typography>
-                    </Grid>
-                    <Grid item xs={12}>
-                      <Typography variant="caption" color="text.secondary">
-                        Declarado em: {acceptedAt ? formatDate(acceptedAt) : '—'}
-                      </Typography>
-                    </Grid>
-                  </Grid>
-                </Box>
-              );
-            })()}
-          </Grid>
 
           <Grid item xs={12}>
             <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>Kaviar Premium Turismo</Typography>

@@ -140,8 +140,6 @@ router.get('/drivers', allowReadAccess, applyTerritoryScope, requireTerritorySco
           vehicle_model: true,
           vehicle_plate: true,
           vehicle_type: true,
-          family_bonus_accepted: true,
-          family_bonus_profile: true,
           neighborhoods: {
             select: {
               name: true
@@ -194,8 +192,6 @@ router.get('/drivers', allowReadAccess, applyTerritoryScope, requireTerritorySco
         base.certidaoNadaConstaUrl = d.certidao_nada_consta_url;
         base.pixKey = d.pix_key;
         base.pixKeyType = d.pix_key_type;
-        base.familyBonusAccepted = d.family_bonus_accepted;
-        base.familyBonusProfile = d.family_bonus_profile;
       }
       return base;
     });
@@ -252,7 +248,7 @@ router.get('/drivers/:id', allowReadAccess, applyTerritoryScope, async (req: Req
       d.suspension_reason, d.suspended_at, d.suspended_by, d.rejected_reason, d.rejected_at, d.rejected_by,
       d.document_cpf, d.document_rg, d.document_cnh, d.pix_key, d.pix_key_type,
       d.certidao_nada_consta_url, d.territory_type, d.active_since,
-      d.family_bonus_accepted, d.family_bonus_profile, d.last_active_at,
+      d.last_active_at,
       d.banned_at, d.banned_reason, d.banned_by, d.deleted_at, d.deleted_by,
       d.women_preference_eligible, d.women_matching_opt_in,
       d.virtual_fence_center_lat, d.virtual_fence_center_lng,
@@ -795,11 +791,12 @@ const driverEditSchema = z.object({
   vehicle_color: z.string().optional(),
   neighborhood_id: z.string().nullable().optional(),
   community_id: z.string().nullable().optional(),
-  family_bonus_accepted: z.boolean().optional(),
-  family_bonus_profile: z.enum(['individual', 'familiar']).optional(),
   pix_key: z.string().nullable().optional(),
   pix_key_type: z.string().nullable().optional(),
-}).strict();
+  // @deprecated 2026-07-27 — aceitos para compatibilidade, ignorados antes do Prisma
+  family_bonus_accepted: z.unknown().optional(),
+  family_bonus_profile: z.unknown().optional(),
+}).strict().transform(({ family_bonus_accepted, family_bonus_profile, ...clean }) => clean);
 
 // PATCH /api/admin/drivers/:id — edit driver operational data
 router.patch('/drivers/:id', requireSuperAdmin, async (req: Request, res: Response) => {

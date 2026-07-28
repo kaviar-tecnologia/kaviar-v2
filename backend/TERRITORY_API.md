@@ -98,9 +98,7 @@ POST /api/governance/driver
   "communityId": "uuid",  // opcional
   "lat": -22.9881,  // NOVO (opcional)
   "lng": -43.2492,  // NOVO (opcional)
-  "verificationMethod": "GPS_AUTO",  // NOVO (opcional): GPS_AUTO | MANUAL_SELECTION
-  "familyBonusAccepted": false,
-  "familyProfile": "individual"
+  "verificationMethod": "GPS_AUTO"  // NOVO (opcional): GPS_AUTO | MANUAL_SELECTION
 }
 ```
 
