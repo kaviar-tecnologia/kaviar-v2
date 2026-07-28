@@ -475,6 +475,7 @@ model drivers {
   wallet_v2_recharges          wallet_recharges[]
   wallet_v2_pending_debits     pending_debits[]
   referral_reward              driver_referral_rewards?
+  annual_incentive_ledger      annual_incentive_ledger[]
 }
 
 model elderly_contracts {
@@ -3827,4 +3828,40 @@ model app_notifications {
   @@index([recipient_type, recipient_id, read_at])
   @@index([route_id])
   @@index([reservation_id])
+}
+
+
+// ─── Gratificação Anual de Incentivo KAVIAR ────────────────────────────────
+model annual_incentive_ledger {
+  id                String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  driver_id         String
+  program_year      Int
+  event_type        String
+  amount_cents      BigInt
+  base_amount_cents BigInt?
+  rate_basis_points Int?
+  policy_version    String
+  source_type       String
+  source_id         String?
+  source_event_id   String?
+  request_id        String?
+  correlation_id    String?
+  reversal_of_id    String?
+  idempotency_key   String   @unique
+  metadata          Json     @default("{}") @db.JsonB
+  occurred_at       DateTime @db.Timestamptz
+  created_at        DateTime @default(now()) @db.Timestamptz
+
+  driver            drivers  @relation(fields: [driver_id], references: [id], onDelete: Restrict)
+  reversal_of       annual_incentive_ledger?  @relation("ledger_reversal", fields: [reversal_of_id], references: [id], onDelete: Restrict)
+  reversals         annual_incentive_ledger[] @relation("ledger_reversal")
+
+  @@index([driver_id, program_year])
+  @@index([driver_id, occurred_at(sort: Desc)])
+  @@index([event_type])
+  @@index([source_type, source_id])
+  @@index([request_id])
+  @@index([correlation_id])
+  @@index([reversal_of_id])
+  @@index([created_at(sort: Desc)])
 }
