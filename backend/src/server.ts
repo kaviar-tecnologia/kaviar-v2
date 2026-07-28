@@ -5,6 +5,7 @@ import { startOfferTimeoutJob } from './jobs/offer-timeout.job';
 import { startStaleDriverCleanupJob } from './jobs/stale-driver-cleanup.job';
 import { startScheduledDispatchJob } from './jobs/scheduled-dispatch.job';
 import { startSumUpRechargeReconcileScheduler } from './services/wallet-v2/sumup-recharge-reconcile-scheduler';
+import { startPayoutWorkerScheduler } from './services/finance/annual-incentive-payout/worker-scheduler';
 
 async function startServer() {
   try {
@@ -22,6 +23,7 @@ async function startServer() {
     if (process.env.SUMUP_RECONCILE_SCHEDULER_ENABLED === 'true') {
       startSumUpRechargeReconcileScheduler();
     }
+    startPayoutWorkerScheduler();
 
     // Test database connection (non-blocking startup)
     try {

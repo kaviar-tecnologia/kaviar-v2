@@ -476,6 +476,9 @@ model drivers {
   wallet_v2_pending_debits     pending_debits[]
   referral_reward              driver_referral_rewards?
   annual_incentive_ledger      annual_incentive_ledger[]
+  payout_destinations          driver_payout_destinations[]
+  annual_incentive_requests    annual_incentive_requests[]
+  annual_incentive_payouts     annual_incentive_payouts[]
 }
 
 model elderly_contracts {
@@ -3864,4 +3867,152 @@ model annual_incentive_ledger {
   @@index([correlation_id])
   @@index([reversal_of_id])
   @@index([created_at(sort: Desc)])
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Annual Incentive Payout System (Marco 3)
+// ═══════════════════════════════════════════════════════════════════
+
+model driver_payout_destinations {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  driver_id            String
+  provider             String    @default("pix")
+  method               String    @default("CPF")
+  pix_key_type         String
+  pix_key_encrypted    String
+  pix_key_hash         String
+  pix_key_masked       String
+  owner_document_hash  String
+  encryption_key_version String @default("1")
+  status               String    @default("active")
+  verified_at          DateTime? @db.Timestamptz
+  created_at           DateTime  @default(now()) @db.Timestamptz
+  updated_at           DateTime  @default(now()) @db.Timestamptz
+  superseded_at        DateTime? @db.Timestamptz
+
+  driver               drivers   @relation(fields: [driver_id], references: [id], onDelete: Restrict)
+
+  @@index([driver_id])
+}
+
+model annual_incentive_requests {
+  id                             String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  driver_id                      String
+  requested_amount_cents         BigInt
+  status                         String    @default("RESERVED")
+  destination_snapshot_encrypted String
+  destination_hash               String
+  destination_masked             String
+  requested_at                   DateTime  @db.Timestamptz
+  reserved_at                    DateTime? @db.Timestamptz
+  eligibility_checked_at         DateTime? @db.Timestamptz
+  queued_at                      DateTime? @db.Timestamptz
+  paid_at                        DateTime? @db.Timestamptz
+  failed_at                      DateTime? @db.Timestamptz
+  released_at                    DateTime? @db.Timestamptz
+  deadline_at                    DateTime  @db.Timestamptz
+  idempotency_key                String    @unique
+  correlation_id                 String    @default(dbgenerated("gen_random_uuid()::text"))
+  failure_code                   String?
+  failure_message_safe           String?
+  created_at                     DateTime  @default(now()) @db.Timestamptz
+  updated_at                     DateTime  @default(now()) @db.Timestamptz
+
+  driver                         drivers   @relation(fields: [driver_id], references: [id], onDelete: Restrict)
+  allocations                    annual_incentive_request_allocations[]
+  payouts                        annual_incentive_payouts[]
+  outbox                         annual_incentive_payout_outbox[]
+
+  @@index([driver_id])
+  @@index([status])
+  @@index([deadline_at])
+}
+
+model annual_incentive_request_allocations {
+  id           String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  request_id   String
+  program_year Int
+  amount_cents BigInt
+  created_at   DateTime @default(now()) @db.Timestamptz
+
+  request      annual_incentive_requests @relation(fields: [request_id], references: [id], onDelete: Restrict)
+
+  @@unique([request_id, program_year])
+  @@index([request_id])
+}
+
+model annual_incentive_payouts {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  request_id             String
+  driver_id              String
+  amount_cents           BigInt
+  provider_name          String
+  provider_payout_id     String?
+  external_reference     String    @unique
+  status                 String    @default("PENDING")
+  provider_status        String?
+  provider_response_safe Json?     @db.JsonB
+  submitted_at           DateTime? @db.Timestamptz
+  confirmed_at           DateTime? @db.Timestamptz
+  failed_at              DateTime? @db.Timestamptz
+  created_at             DateTime  @default(now()) @db.Timestamptz
+  updated_at             DateTime  @default(now()) @db.Timestamptz
+
+  request                annual_incentive_requests @relation(fields: [request_id], references: [id], onDelete: Restrict)
+  driver                 drivers                   @relation(fields: [driver_id], references: [id], onDelete: Restrict)
+  attempts               annual_incentive_payout_attempts[]
+
+  @@index([request_id])
+  @@index([status])
+}
+
+model annual_incentive_payout_attempts {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  payout_id              String
+  attempt_number         Int
+  status                 String
+  error_code             String?
+  error_safe             String?
+  provider_response_safe Json?     @db.JsonB
+  started_at             DateTime  @default(now()) @db.Timestamptz
+  finished_at            DateTime? @db.Timestamptz
+  next_retry_at          DateTime? @db.Timestamptz
+  created_at             DateTime  @default(now()) @db.Timestamptz
+
+  payout                 annual_incentive_payouts @relation(fields: [payout_id], references: [id], onDelete: Restrict)
+
+  @@index([payout_id])
+}
+
+model annual_incentive_payout_outbox {
+  id          String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  request_id  String    @unique
+  driver_id   String
+  status      String    @default("PENDING")
+  priority    Int       @default(0)
+  locked_at   DateTime? @db.Timestamptz
+  locked_by   String?
+  attempts    Int       @default(0)
+  next_at     DateTime  @default(now()) @db.Timestamptz
+  created_at  DateTime  @default(now()) @db.Timestamptz
+  updated_at  DateTime  @default(now()) @db.Timestamptz
+
+  request     annual_incentive_requests @relation(fields: [request_id], references: [id], onDelete: Restrict)
+
+  @@index([status, next_at])
+}
+
+model annual_incentive_webhook_events {
+  id                String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  provider_name     String
+  provider_event_id String
+  event_type        String
+  payout_id         String?
+  payload_safe      Json     @default("{}") @db.JsonB
+  processed         Boolean  @default(false)
+  processed_at      DateTime? @db.Timestamptz
+  created_at        DateTime @default(now()) @db.Timestamptz
+
+  @@unique([provider_name, provider_event_id])
+  @@index([payout_id])
 }
