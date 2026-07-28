@@ -5,7 +5,7 @@ import { startOfferTimeoutJob } from './jobs/offer-timeout.job';
 import { startStaleDriverCleanupJob } from './jobs/stale-driver-cleanup.job';
 import { startScheduledDispatchJob } from './jobs/scheduled-dispatch.job';
 import { startSumUpRechargeReconcileScheduler } from './services/wallet-v2/sumup-recharge-reconcile-scheduler';
-import { startPayoutWorkerScheduler } from './services/finance/annual-incentive-payout/worker-scheduler';
+import { startPayoutWorkerScheduler, stopPayoutWorkerScheduler } from './services/finance/annual-incentive-payout/worker-scheduler';
 
 async function startServer() {
   try {
@@ -45,16 +45,18 @@ async function startServer() {
 }
 
 // Handle graceful shutdown
-process.on('SIGINT', async () => {
-  console.log('\n🛑 Shutting down server...');
-  await prisma.$disconnect();
-  process.exit(0);
-});
+let shuttingDown = false;
 
-process.on('SIGTERM', async () => {
-  console.log('\n🛑 Shutting down server...');
+async function gracefulShutdown(signal: string) {
+  if (shuttingDown) return; // idempotent
+  shuttingDown = true;
+  console.log(`\n🛑 Shutting down server (${signal})...`);
+  await stopPayoutWorkerScheduler();
   await prisma.$disconnect();
   process.exit(0);
-});
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 startServer();
