@@ -59,6 +59,9 @@ async function cleanupAll() {
   await pool.query('DELETE FROM annual_incentive_request_allocations WHERE request_id IN (SELECT id FROM annual_incentive_requests WHERE driver_id = $1)', [TEST_DRIVER_ID]);
   await pool.query('DELETE FROM annual_incentive_requests WHERE driver_id = $1', [TEST_DRIVER_ID]);
   await pool.query('DELETE FROM driver_payout_destinations WHERE driver_id = $1', [TEST_DRIVER_ID]);
+  await pool.query(`DELETE FROM financial_payout_outbox WHERE payee_id IN (SELECT id FROM financial_payees WHERE reference_id = $1)`, [TEST_DRIVER_ID]);
+  await pool.query(`DELETE FROM financial_obligations WHERE payee_id IN (SELECT id FROM financial_payees WHERE reference_id = $1)`, [TEST_DRIVER_ID]);
+  await pool.query(`DELETE FROM financial_payees WHERE reference_id = $1`, [TEST_DRIVER_ID]);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -74,6 +77,7 @@ beforeEach(async () => {
   process.env.ANNUAL_INCENTIVE_WRITE_ENABLED = 'true';
   process.env.ANNUAL_INCENTIVE_PAYOUT_ENABLED = 'true';
   process.env.ANNUAL_INCENTIVE_PAYOUT_PROVIDER = 'fake';
+  process.env.ANNUAL_INCENTIVE_PAYOUT_ENGINE = 'legacy';
   process.env.NODE_ENV = 'test';
   await cleanupAll();
 });

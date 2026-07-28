@@ -6,6 +6,9 @@ import { startStaleDriverCleanupJob } from './jobs/stale-driver-cleanup.job';
 import { startScheduledDispatchJob } from './jobs/scheduled-dispatch.job';
 import { startSumUpRechargeReconcileScheduler } from './services/wallet-v2/sumup-recharge-reconcile-scheduler';
 import { startPayoutWorkerScheduler, stopPayoutWorkerScheduler } from './services/finance/annual-incentive-payout/worker-scheduler';
+import { shouldStartLegacyWorker } from './services/finance/annual-incentive-payout/engine-selection';
+import { startOutboundPaymentWorkerScheduler, stopOutboundPaymentWorkerScheduler } from './services/finance/outbound-payments/worker-scheduler';
+import { startEventWorkerScheduler, stopEventWorkerScheduler } from './services/finance/outbound-payments/event-worker-scheduler';
 
 async function startServer() {
   try {
@@ -23,7 +26,12 @@ async function startServer() {
     if (process.env.SUMUP_RECONCILE_SCHEDULER_ENABLED === 'true') {
       startSumUpRechargeReconcileScheduler();
     }
-    startPayoutWorkerScheduler();
+    // Annual incentive payout: engine selection prevents dual execution
+    if (shouldStartLegacyWorker()) {
+      startPayoutWorkerScheduler();
+    }
+    startOutboundPaymentWorkerScheduler();
+    startEventWorkerScheduler();
 
     // Test database connection (non-blocking startup)
     try {
@@ -52,6 +60,8 @@ async function gracefulShutdown(signal: string) {
   shuttingDown = true;
   console.log(`\n🛑 Shutting down server (${signal})...`);
   await stopPayoutWorkerScheduler();
+  await stopOutboundPaymentWorkerScheduler();
+  await stopEventWorkerScheduler();
   await prisma.$disconnect();
   process.exit(0);
 }

@@ -126,6 +126,7 @@ export interface CreateBillPaymentResult {
   errorCode?: string;
   errorMessage?: string;
   isDefinitiveFailure?: boolean;
+  isTimeout?: boolean;
 }
 
 export interface BillPaymentResult {

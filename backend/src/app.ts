@@ -122,6 +122,9 @@ import passengerNotificationsRoutes from './routes/passenger-notifications';
 import driverNotificationsRoutes from './routes/driver-notifications';
 import driverAnnualIncentiveRoutes from './routes/driver-annual-incentive';
 import adminAnnualIncentiveRoutes from './routes/admin-annual-incentive';
+import adminOutboundPaymentsRoutes from './routes/admin-outbound-payments';
+import managerFinanceRoutes from './routes/manager-finance';
+import webhooksAsaasRoutes from './routes/webhooks-asaas';
 
 const app = express();
 
@@ -417,6 +420,9 @@ app.use('/api/admin/private-rides', privateRidesRoutes);
 app.use('/api/public/region', publicRegionRoutes);
 app.use('/api/admin/finance', adminFinanceRoutes);
 app.use('/api/admin/finance/annual-incentive', adminAnnualIncentiveRoutes);
+app.use('/api/admin/finance/outbound', adminOutboundPaymentsRoutes);
+app.use('/api/manager/finance', managerFinanceRoutes);
+app.use('/api/webhooks/asaas', webhooksAsaasRoutes);
 app.use('/api/driver/annual-incentive', driverAnnualIncentiveRoutes);
 app.use('/api/admin/local-businesses', adminLocalBusinessesRoutes);
 app.use('/api/admin/crm', adminCrmRoutes);

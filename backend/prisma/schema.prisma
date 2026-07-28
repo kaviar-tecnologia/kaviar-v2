@@ -4191,19 +4191,24 @@ model financial_payout_outbox {
 }
 
 model financial_provider_events {
-  id                String    @id @default(dbgenerated("gen_random_uuid()::text"))
-  provider_name     String
-  provider_event_id String
-  event_category    String
-  event_type        String
-  payout_id         String?
-  payload_safe      Json      @default("{}") @db.JsonB
-  processed         Boolean   @default(false)
-  processed_at      DateTime? @db.Timestamptz
-  created_at        DateTime  @default(now()) @db.Timestamptz
+  id                  String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  provider_name       String
+  provider_event_id   String
+  event_category      String
+  event_type          String
+  payout_id           String?
+  payload_safe        Json      @default("{}") @db.JsonB
+  processed           Boolean   @default(false)
+  processed_at        DateTime? @db.Timestamptz
+  processing_status   String    @default("PENDING")
+  processing_attempts Int       @default(0)
+  next_processing_at  DateTime  @default(now()) @db.Timestamptz
+  processing_error_safe String?
+  created_at          DateTime  @default(now()) @db.Timestamptz
 
   @@unique([provider_name, provider_event_id])
   @@index([payout_id])
+  @@index([processing_status, next_processing_at])
 }
 
 model financial_recurring_obligations {

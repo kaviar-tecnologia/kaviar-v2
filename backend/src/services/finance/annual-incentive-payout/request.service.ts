@@ -266,12 +266,67 @@ export async function createRequest(
       });
     }
 
-    // 14. Create outbox entry
-    await client.query(
-      `INSERT INTO annual_incentive_payout_outbox (request_id, driver_id, status, priority)
-       VALUES ($1, $2, 'PENDING', 0)`,
-      [request.id, driverId]
-    );
+    // 14. Create outbox entry (engine-dependent)
+    const { getAnnualIncentivePayoutEngine } = await import('./engine-selection');
+    const engine = getAnnualIncentivePayoutEngine();
+
+    if (engine === 'outbound') {
+      // Outbound engine: create financial_obligation + financial_payout_outbox
+      // Find or create payee for this driver
+      let payeeId: string;
+      const { rows: existingPayee } = await client.query(
+        `SELECT id FROM financial_payees WHERE reference_id = $1 AND payee_type = 'DRIVER' LIMIT 1`,
+        [driverId]
+      );
+      if (existingPayee.length > 0) {
+        payeeId = existingPayee[0].id;
+      } else {
+        const { rows: [newPayee] } = await client.query(
+          `INSERT INTO financial_payees (payee_type, reference_id, legal_name_encrypted, cpf_cnpj_encrypted, cpf_cnpj_hmac, cpf_cnpj_masked, document_type, status, verification_status)
+           VALUES ('DRIVER', $1, $2, $3, $4, $5, 'CPF', 'ACTIVE', 'VERIFIED') RETURNING id`,
+          [driverId, destSnapshot, destination.pixKeyEncrypted, destination.pixKeyHash, destination.pixKeyMasked]
+        );
+        payeeId = newPayee.id;
+      }
+
+      // Create financial_obligation
+      const extRef = `kaviar-payment:driver-annual-incentive:${request.id}`;
+      const oblIdempotencyKey = `annual_incentive_obligation:${request.id}`;
+
+      await client.query(
+        `INSERT INTO financial_obligations
+         (payee_id, purpose, source_type, source_id, description_safe, gross_amount_cents,
+          net_amount_cents, due_date, idempotency_key, correlation_id, created_by_system,
+          destination_snapshot_encrypted, destination_hmac, destination_masked, deadline_at, status)
+         VALUES ($1, 'DRIVER_ANNUAL_INCENTIVE', 'ANNUAL_INCENTIVE_REQUEST', $2, 'Gratificação Anual',
+                 $3, $3, NULL, $4, $5, true, $6, $7, $8, $9, 'QUEUED')`,
+        [
+          payeeId, request.id, requestedAmountCents.toString(), oblIdempotencyKey,
+          request.correlationId, destSnapshot, destination.pixKeyHash,
+          destination.pixKeyMasked, deadlineAt,
+        ]
+      );
+
+      // Get obligation ID
+      const { rows: [oblRow] } = await client.query(
+        `SELECT id FROM financial_obligations WHERE idempotency_key = $1`, [oblIdempotencyKey]
+      );
+
+      // Create financial_payout_outbox
+      await client.query(
+        `INSERT INTO financial_payout_outbox (obligation_id, payee_id, purpose, status)
+         VALUES ($1, $2, 'DRIVER_ANNUAL_INCENTIVE', 'PENDING')`,
+        [oblRow.id, payeeId]
+      );
+    } else if (engine === 'legacy') {
+      // Legacy engine: use annual_incentive_payout_outbox
+      await client.query(
+        `INSERT INTO annual_incentive_payout_outbox (request_id, driver_id, status, priority)
+         VALUES ($1, $2, 'PENDING', 0)`,
+        [request.id, driverId]
+      );
+    }
+    // engine === 'disabled': no outbox entry — request stays RESERVED but cannot be submitted
 
     await client.query('COMMIT');
 

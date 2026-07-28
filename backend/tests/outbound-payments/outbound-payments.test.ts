@@ -177,6 +177,14 @@ describe('Account Ownership Preflight', () => {
 
 describe('Purpose Flags', () => {
   const original = { ...process.env };
+  beforeEach(() => {
+    delete process.env.OUTBOUND_PAYMENTS_ENABLED;
+    delete process.env.DRIVER_ANNUAL_INCENTIVE_ENABLED;
+    delete process.env.MANAGER_TERRITORIAL_COMMISSION_ENABLED;
+    delete process.env.ACCOUNTING_SERVICE_PAYMENT_ENABLED;
+    delete process.env.SUPPLIER_PAYMENT_ENABLED;
+    delete process.env.BILL_PAYMENT_ENABLED;
+  });
   afterEach(() => { process.env = { ...original }; });
 
   it('all purposes disabled by default', () => {

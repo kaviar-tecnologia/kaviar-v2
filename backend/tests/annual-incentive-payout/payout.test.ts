@@ -107,6 +107,7 @@ beforeEach(async () => {
   process.env.ANNUAL_INCENTIVE_WRITE_ENABLED = 'true';
   process.env.ANNUAL_INCENTIVE_PAYOUT_ENABLED = 'true';
   process.env.ANNUAL_INCENTIVE_PAYOUT_PROVIDER = 'fake';
+  process.env.ANNUAL_INCENTIVE_PAYOUT_ENGINE = 'legacy';
   process.env.NODE_ENV = 'test';
 
   // Clean state for each test
