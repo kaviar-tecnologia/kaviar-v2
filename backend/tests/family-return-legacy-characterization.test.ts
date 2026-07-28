@@ -177,8 +177,10 @@ describe('Characterization: pending_resolve does NOT generate annual incentive',
     const { pool } = await import('../src/db');
     const { WalletService } = await import('../src/services/wallet-v2/wallet.service');
     const { PendingDebitService } = await import('../src/services/wallet-v2/pending-debit.service');
+    const { DirectPendingDebitExecutor } = await import('../src/services/finance/annual-incentive-shadow.service');
     const walletService = new WalletService(pool as any);
     const pendingDebitService = new PendingDebitService(pool as any);
+    const executor = new DirectPendingDebitExecutor(walletService);
 
     // Mock: pool.query for PendingDebitService queries (outside transaction)
     let callCount = 0;
@@ -192,8 +194,13 @@ describe('Characterization: pending_resolve does NOT generate annual incentive',
         return { rows: [{ id: '77', ride_id: 'ride-resolve-1', fee_pending_cents: '270', driver_id: 'driver-resolve-1' }] };
       }
 
-      // WalletService idempotency check
-      if (sql.includes('SELECT id, balance_after_cents, reserved_after_cents FROM wallet_ledger WHERE idempotency_key')) {
+      // PendingDebitService: lock pending_debit row
+      if (sql.includes('FROM pending_debits WHERE id') && sql.includes('FOR UPDATE')) {
+        return { rows: [{ id: '77', ride_id: 'ride-resolve-1', driver_id: 'driver-resolve-1', fee_pending_cents: '270', fee_collected_cents: '0', fee_amount_cents: '270', status: 'pending' }] };
+      }
+
+      // WalletService idempotency check (both simple and full variants)
+      if (sql.includes('FROM wallet_ledger WHERE idempotency_key')) {
         return { rows: [] };
       }
 
@@ -209,7 +216,7 @@ describe('Characterization: pending_resolve does NOT generate annual incentive',
 
       // Insert ledger
       if (sql.includes('INSERT INTO wallet_ledger')) {
-        return { rows: [{ id: '3001' }] };
+        return { rows: [{ id: '3001', created_at: '2026-07-28T10:00:00.000Z' }] };
       }
 
       // Update pending_debits resolved
@@ -237,7 +244,7 @@ describe('Characterization: pending_resolve does NOT generate annual incentive',
     // Execute the real resolveOnRecharge flow
     const resolved = await pendingDebitService.resolveOnRecharge(
       'driver-resolve-1',
-      walletService,
+      executor,
       feeSplitService,
       territoryLedgerService
     );

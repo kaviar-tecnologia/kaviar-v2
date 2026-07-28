@@ -11,6 +11,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import pg from 'pg';
 import { assertSafeFinanceDatabase } from '../src/lib/assert-safe-finance-db';
+import { cleanupTestFixtures, assertTriggerEnabled } from './helpers/cleanup-incentive-fixtures';
 
 // Safety check before any DB connection
 assertSafeFinanceDatabase();
@@ -68,12 +69,8 @@ describe('annual_incentive_ledger structural tests', () => {
   });
 
   afterAll(async () => {
-    // Clean up: remove test ledger entries first (trigger blocks DELETE, so use raw bypass)
-    // Since DELETE is blocked by trigger, we need to drop the trigger, clean, then recreate
-    await pool.query('ALTER TABLE annual_incentive_ledger DISABLE TRIGGER annual_incentive_ledger_immutable_trg');
-    await pool.query('DELETE FROM annual_incentive_ledger WHERE driver_id = $1', [TEST_DRIVER_ID]);
-    await pool.query('ALTER TABLE annual_incentive_ledger ENABLE TRIGGER annual_incentive_ledger_immutable_trg');
-    await pool.query('DELETE FROM drivers WHERE id = $1', [TEST_DRIVER_ID]);
+    await cleanupTestFixtures(pool, TEST_DRIVER_ID);
+    await assertTriggerEnabled(pool);
     await pool.end();
   });
 

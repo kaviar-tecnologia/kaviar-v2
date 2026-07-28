@@ -14,6 +14,7 @@ import { PendingDebitService } from '../src/services/wallet-v2/pending-debit.ser
 import { WalletSettlementService } from '../src/services/wallet-v2/wallet-settlement.service';
 import { AnnualIncentiveLedgerService } from '../src/services/finance/annual-incentive-ledger.service';
 import { AnnualIncentiveShadowService } from '../src/services/finance/annual-incentive-shadow.service';
+import { cleanupTestFixtures, assertTriggerEnabled } from './helpers/cleanup-incentive-fixtures';
 
 assertSafeFinanceDatabase();
 
@@ -51,14 +52,8 @@ describe('Settlement → Shadow Wiring', () => {
   });
 
   afterAll(async () => {
-    await pool.query('ALTER TABLE annual_incentive_ledger DISABLE TRIGGER annual_incentive_ledger_immutable_trg');
-    await pool.query('DELETE FROM annual_incentive_ledger WHERE driver_id = $1', [TEST_DRIVER]);
-    await pool.query('ALTER TABLE annual_incentive_ledger ENABLE TRIGGER annual_incentive_ledger_immutable_trg');
-    await pool.query('DELETE FROM ride_fee_splits WHERE driver_id = $1', [TEST_DRIVER]);
-    await pool.query('DELETE FROM pending_debits WHERE driver_id = $1', [TEST_DRIVER]);
-    await pool.query('DELETE FROM wallet_ledger WHERE driver_id = $1', [TEST_DRIVER]);
-    await pool.query('DELETE FROM driver_wallets WHERE driver_id = $1', [TEST_DRIVER]);
-    await pool.query('DELETE FROM drivers WHERE id = $1', [TEST_DRIVER]);
+    await cleanupTestFixtures(pool, TEST_DRIVER);
+    await assertTriggerEnabled(pool);
     await pool.end();
   });
 

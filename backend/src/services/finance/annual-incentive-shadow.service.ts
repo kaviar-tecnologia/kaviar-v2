@@ -7,7 +7,7 @@
  */
 
 import { Pool, PoolClient } from 'pg';
-import { WalletService, DebitFeeResult, LedgerEntry } from '../wallet-v2/wallet.service';
+import { WalletService, DebitFeeResult, DebitPendingResult, LedgerEntry } from '../wallet-v2/wallet.service';
 import { AnnualIncentiveLedgerService } from './annual-incentive-ledger.service';
 import { AppendEventResult } from './annual-incentive-ledger.types';
 import { getProgramYearBrazil } from './annual-incentive-program-year';
@@ -48,12 +48,20 @@ function assertShadowConfiguration(): void {
   }
 }
 
-export class AnnualIncentiveShadowService {
+export class AnnualIncentiveShadowService implements PendingDebitExecutor {
   constructor(
     private pool: Pool,
     private walletService: WalletService,
     private ledgerService: AnnualIncentiveLedgerService,
   ) {}
+
+  /** PendingDebitExecutor interface implementation */
+  async resolvePendingInClient(
+    client: PoolClient,
+    input: PendingDebitExecutionInput,
+  ): Promise<PendingDebitExecutionResult> {
+    return this.resolvePendingWithAnnualIncentiveInClient(client, input);
+  }
 
   /**
    * Public wrapper for fee debit with optional annual incentive accrual.
@@ -152,5 +160,155 @@ export class AnnualIncentiveShadowService {
       incentive: incentiveResult,
       skippedReason: null,
     };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // PENDING RESOLVE — Accumulated incentive calculation
+  // Uses caller's PoolClient. No BEGIN/COMMIT/ROLLBACK/release.
+  // ═══════════════════════════════════════════════════════════════════
+
+  async resolvePendingWithAnnualIncentiveInClient(
+    client: PoolClient,
+    input: PendingDebitExecutionInput,
+  ): Promise<PendingDebitExecutionResult> {
+    // Validate shadow configuration before any financial operation
+    assertShadowConfiguration();
+
+    const shadowActive = isShadowEnabled() && isWriteEnabled();
+
+    // 1. Execute the wallet debit (pending_resolve)
+    const walletResult = await this.walletService.debitPendingInClient(
+      client, input.driverId, input.feePendingCents, input.pendingDebitId
+    );
+
+    if (!shadowActive) {
+      return { walletResult, incentiveResult: null, skippedReason: 'SHADOW_INACTIVE' };
+    }
+
+    // 2. Query accumulated base for this ride (fee_debit + pending_resolve in wallet_ledger)
+    const totalCollectedFee = await this.queryTotalCollectedFee(client, input.rideId, input.pendingDebitId);
+
+    // 3. Query already-accrued incentive for this ride
+    const netAlreadyAccrued = await this.queryNetAccrued(client, input.rideId);
+
+    // 4. Calculate incremental accrual
+    const targetEntitlement = (totalCollectedFee * RATE_BASIS_POINTS) / BASIS_POINTS_DENOMINATOR;
+    const incrementalAccrual = targetEntitlement - netAlreadyAccrued;
+
+    // 5. Skip if zero or negative increment
+    if (incrementalAccrual <= 0n) {
+      return { walletResult, incentiveResult: null, skippedReason: 'SKIPPED_ZERO_INCREMENT' };
+    }
+
+    // 6. Determine program year from wallet ledger timestamp
+    const programYear = getProgramYearBrazil(walletResult.createdAt);
+    const walletLedgerEntryId = walletResult.id.toString();
+    const idempotencyKey = `annual_incentive:accrual:wallet_ledger:${walletLedgerEntryId}`;
+
+    // 7. Append the incremental ACCRUAL event
+    const incentiveResult = await this.ledgerService.appendEventInClient(client, {
+      driverId: input.driverId,
+      programYear,
+      eventType: 'ACCRUAL',
+      amountCents: incrementalAccrual,
+      baseAmountCents: walletResult.amountCents, // the pending_resolve amount that triggered recalculation
+      rateBasisPoints: Number(RATE_BASIS_POINTS),
+      policyVersion: POLICY_VERSION,
+      sourceType: 'PENDING_RESOLVE',
+      sourceId: input.rideId,
+      sourceEventId: walletLedgerEntryId,
+      requestId: null,
+      correlationId: `ride:${input.rideId}`,
+      reversalOfId: null,
+      idempotencyKey,
+      metadata: {
+        writeMode: 'SHADOW',
+        walletLedgerEntryId,
+        pendingDebitId: input.pendingDebitId,
+        rideId: input.rideId,
+        cumulativeBaseAmountCents: totalCollectedFee.toString(),
+        targetEntitlementCents: targetEntitlement.toString(),
+      },
+      occurredAt: walletResult.createdAt,
+    });
+
+    return { walletResult, incentiveResult, skippedReason: null };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // PRIVATE — Accumulated queries
+  // ═══════════════════════════════════════════════════════════════════
+
+  private async queryTotalCollectedFee(client: PoolClient, rideId: string, pendingDebitId: string): Promise<bigint> {
+    const r = await client.query(
+      `SELECT COALESCE(SUM(ABS(balance_delta_cents)), 0)::bigint AS total
+       FROM wallet_ledger
+       WHERE (
+         (reference_type = 'ride' AND reference_id = $1 AND entry_type = 'fee_debit')
+         OR
+         (reference_type = 'pending_debit' AND reference_id = $2 AND entry_type = 'pending_resolve')
+       )`,
+      [rideId, pendingDebitId]
+    );
+    return BigInt(r.rows[0].total);
+  }
+
+  private async queryNetAccrued(client: PoolClient, rideId: string): Promise<bigint> {
+    // Defensive: normalize direction regardless of how REVERSAL amount is stored
+    const r = await client.query(
+      `SELECT COALESCE(
+        SUM(
+          CASE
+            WHEN event_type = 'ACCRUAL' THEN ABS(amount_cents)
+            WHEN event_type = 'REVERSAL' THEN -ABS(amount_cents)
+            ELSE 0
+          END
+        ),
+        0
+      )::bigint AS net
+       FROM annual_incentive_ledger
+       WHERE source_id = $1 AND event_type IN ('ACCRUAL', 'REVERSAL')`,
+      [rideId]
+    );
+    return BigInt(r.rows[0].net);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// INTERFACES — PendingDebitExecutor
+// ═══════════════════════════════════════════════════════════════════
+
+export interface PendingDebitExecutionInput {
+  driverId: string;
+  pendingDebitId: string;
+  rideId: string;
+  feePendingCents: bigint;
+}
+
+export interface PendingDebitExecutionResult {
+  walletResult: DebitPendingResult;
+  incentiveResult: AppendEventResult | null;
+  skippedReason: string | null;
+}
+
+export interface PendingDebitExecutor {
+  resolvePendingInClient(
+    client: PoolClient,
+    input: PendingDebitExecutionInput,
+  ): Promise<PendingDebitExecutionResult>;
+}
+
+/** Direct executor — resolves pending via WalletService without annual incentive */
+export class DirectPendingDebitExecutor implements PendingDebitExecutor {
+  constructor(private walletService: WalletService) {}
+
+  async resolvePendingInClient(
+    client: PoolClient,
+    input: PendingDebitExecutionInput,
+  ): Promise<PendingDebitExecutionResult> {
+    const walletResult = await this.walletService.debitPendingInClient(
+      client, input.driverId, input.feePendingCents, input.pendingDebitId
+    );
+    return { walletResult, incentiveResult: null, skippedReason: 'DIRECT_EXECUTOR' };
   }
 }

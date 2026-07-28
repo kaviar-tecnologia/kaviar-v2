@@ -15,6 +15,7 @@ import pg from 'pg';
 import { assertSafeFinanceDatabase } from '../src/lib/assert-safe-finance-db';
 import { AnnualIncentiveLedgerService } from '../src/services/finance/annual-incentive-ledger.service';
 import { AppendEventInput, ANNUAL_INCENTIVE_ERRORS } from '../src/services/finance/annual-incentive-ledger.types';
+import { cleanupTestFixtures, assertTriggerEnabled } from './helpers/cleanup-incentive-fixtures';
 
 assertSafeFinanceDatabase();
 
@@ -62,10 +63,8 @@ describe('AnnualIncentiveLedgerService', () => {
   });
 
   afterAll(async () => {
-    await pool.query('ALTER TABLE annual_incentive_ledger DISABLE TRIGGER annual_incentive_ledger_immutable_trg');
-    await pool.query('DELETE FROM annual_incentive_ledger WHERE driver_id = $1', [TEST_DRIVER_ID]);
-    await pool.query('ALTER TABLE annual_incentive_ledger ENABLE TRIGGER annual_incentive_ledger_immutable_trg');
-    await pool.query('DELETE FROM drivers WHERE id = $1', [TEST_DRIVER_ID]);
+    await cleanupTestFixtures(pool, TEST_DRIVER_ID);
+    await assertTriggerEnabled(pool);
     await pool.end();
   });
 

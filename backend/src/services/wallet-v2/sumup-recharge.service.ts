@@ -5,11 +5,15 @@ import { WalletService } from './wallet.service';
 import { FeeSplitService } from './fee-split.service';
 import { TerritoryLedgerService } from './territory-ledger.service';
 import { PendingDebitService } from './pending-debit.service';
+import { AnnualIncentiveLedgerService } from '../finance/annual-incentive-ledger.service';
+import { AnnualIncentiveShadowService } from '../finance/annual-incentive-shadow.service';
 
 const walletService = new WalletService(pool);
 const feeSplitService = new FeeSplitService(pool);
 const territoryLedgerService = new TerritoryLedgerService(pool);
 const pendingDebitService = new PendingDebitService(pool);
+const incentiveLedgerService = new AnnualIncentiveLedgerService(pool);
+const shadowService = new AnnualIncentiveShadowService(pool, walletService, incentiveLedgerService);
 
 export type SumUpRechargeReconcileResult = {
   recharge_id: string;
@@ -49,7 +53,11 @@ async function applyRechargePostConfirmation(recharge: { id: string; driver_id: 
   }
 
   try {
-    await pendingDebitService.resolveOnRecharge(recharge.driver_id, walletService, feeSplitService, territoryLedgerService);
+    // Shadow service handles flag evaluation internally:
+    // - flags off → debit only, no accrual
+    // - flags on → debit + accrual atomically
+    // - SHADOW=true WRITE=false → throws before any mutation
+    await pendingDebitService.resolveOnRecharge(recharge.driver_id, shadowService, feeSplitService, territoryLedgerService);
   } catch (pendErr: any) {
     console.error('[SUMUP_RECONCILE] resolveOnRecharge error:', pendErr.message);
   }
