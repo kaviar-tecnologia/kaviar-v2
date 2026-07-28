@@ -21,6 +21,8 @@ import { FeeSplitService } from '../services/wallet-v2/fee-split.service';
 import { TerritoryLedgerService } from '../services/wallet-v2/territory-ledger.service';
 import { PendingDebitService } from '../services/wallet-v2/pending-debit.service';
 import { WalletSettlementService } from '../services/wallet-v2/wallet-settlement.service';
+import { AnnualIncentiveLedgerService } from '../services/finance/annual-incentive-ledger.service';
+import { AnnualIncentiveShadowService } from '../services/finance/annual-incentive-shadow.service';
 import { pool } from '../db';
 import { sendPushToDriver, sendPushToPassenger } from '../services/push.service';
 import { estimateFeeCentsFromPrice, calculateFeeCents } from '../services/wallet-v2/fee-helper';
@@ -1009,7 +1011,9 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
           const feeSplitSvc = new FeeSplitService(pool);
           const ledgerSvc = new TerritoryLedgerService(pool);
           const pendingSvc = new PendingDebitService(pool);
-          const settlementSvc = new WalletSettlementService(walletSvc, feeSplitSvc, ledgerSvc, pendingSvc);
+          const incentiveLedgerSvc = new AnnualIncentiveLedgerService(pool);
+          const shadowSvc = new AnnualIncentiveShadowService(pool, walletSvc, incentiveLedgerSvc);
+          const settlementSvc = new WalletSettlementService(walletSvc, feeSplitSvc, ledgerSvc, pendingSvc, shadowSvc);
 
           const result = await settlementSvc.settleRide({
             rideId: ride_id, driverId, finalPriceCents: BigInt(finalPriceCents),

@@ -7,7 +7,7 @@ describe('WalletSettlementService', () => {
   const mockLedger = { recordFeeShare: vi.fn() };
   const mockPending = { create: vi.fn() };
 
-  const svc = new WalletSettlementService(mockWallet as any, mockFeeSplit as any, mockLedger as any, mockPending as any);
+  const svc = new WalletSettlementService(mockWallet as any, mockFeeSplit as any, mockLedger as any, mockPending as any, mockWallet as any);
 
   beforeEach(() => { Object.values(mockWallet).forEach(m => m.mockReset()); Object.values(mockFeeSplit).forEach(m => m.mockReset()); mockLedger.recordFeeShare.mockReset(); mockPending.create.mockReset(); });
 
