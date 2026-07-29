@@ -4250,3 +4250,43 @@ model financial_payment_audit {
   @@index([admin_id])
   @@index([created_at(sort: Desc)])
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Territory Payout Cycles (Marco 3.2A)
+// ═══════════════════════════════════════════════════════════════════
+
+model territory_payout_cycles {
+  id                            String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  territory_id                  String
+  manager_id                    String?
+  manager_assignment_id         String?
+  reference_month               String
+  policy_version                String
+  commission_rate_basis_points  Int       @default(4000)
+  gross_platform_fee_cents      BigInt    @default(0)
+  gross_manager_commission_cents BigInt   @default(0)
+  approved_adjustments_cents    BigInt    @default(0)
+  approved_amount_cents         BigInt    @default(0)
+  status                        String    @default("OPEN")
+  fiscal_document_required      Boolean   @default(false)
+  fiscal_document_type          String?
+  fiscal_document_status        String?   @default("NOT_REQUIRED")
+  fiscal_document_reference     String?
+  fiscal_document_url           String?
+  calculated_at                 DateTime? @db.Timestamptz
+  submitted_for_review_at       DateTime? @db.Timestamptz
+  approved_at                   DateTime? @db.Timestamptz
+  approved_by                   String?
+  cancelled_at                  DateTime? @db.Timestamptz
+  cancelled_by                  String?
+  cancel_reason                 String?
+  created_at                    DateTime  @default(now()) @db.Timestamptz
+  updated_at                    DateTime  @default(now()) @db.Timestamptz
+  idempotency_key               String    @unique
+
+  @@unique([territory_id, manager_id, reference_month, policy_version])
+  @@index([territory_id])
+  @@index([manager_id])
+  @@index([status])
+  @@index([reference_month])
+}
