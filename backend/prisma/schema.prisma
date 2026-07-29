@@ -3458,24 +3458,29 @@ model pending_debits {
 }
 
 model ride_fee_splits {
-  id                    BigInt   @id @default(autoincrement())
-  ride_id               String   @unique
-  driver_id             String
-  final_price_cents     BigInt
-  fee_percent           Decimal  @default(18.00) @db.Decimal(5, 2)
-  fee_amount_cents      BigInt
-  fee_collected_cents   BigInt   @default(0)
-  fee_pending_cents     BigInt   @default(0)
-  matrix_share_percent  Decimal  @default(60.00) @db.Decimal(5, 2)
-  matrix_share_cents    BigInt
-  manager_share_percent Decimal  @default(40.00) @db.Decimal(5, 2)
-  manager_share_cents   BigInt
-  territory_id          String?
-  manager_id            String?
-  reference_month       String
-  collection_status     String   @default("collected")
-  idempotency_key       String?  @unique
-  created_at            DateTime @default(now())
+  id                         BigInt    @id @default(autoincrement())
+  ride_id                    String    @unique
+  driver_id                  String
+  final_price_cents          BigInt
+  fee_percent                Decimal   @default(18.00) @db.Decimal(5, 2)
+  fee_amount_cents           BigInt
+  fee_collected_cents        BigInt    @default(0)
+  fee_pending_cents          BigInt    @default(0)
+  matrix_share_percent       Decimal   @default(60.00) @db.Decimal(5, 2)
+  matrix_share_cents         BigInt
+  manager_share_percent      Decimal   @default(40.00) @db.Decimal(5, 2)
+  manager_share_cents        BigInt
+  territory_id               String?
+  manager_id                 String?
+  manager_assignment_id      String?
+  reference_month            String
+  collection_status          String    @default("collected")
+  recognized_at              DateTime? @db.Timestamptz
+  recognized_at_source       String?
+  platform_fee_rate_bps      Int       @default(1800)
+  manager_commission_rate_bps Int      @default(4000)
+  idempotency_key            String?   @unique
+  created_at                 DateTime  @default(now())
 
   @@index([territory_id, reference_month])
 }
@@ -3521,6 +3526,7 @@ model territory_ledger {
   id              BigInt   @id @default(autoincrement())
   territory_id    String
   manager_id      String?
+  manager_assignment_id String?
   reference_month String
   entry_type      String
   amount_cents    BigInt
@@ -3529,6 +3535,8 @@ model territory_ledger {
   reference_id    String?
   idempotency_key String?  @unique
   created_at      DateTime @default(now())
+
+  allocations     territory_cycle_allocations[]
 
   @@index([territory_id, reference_month])
   @@index([entry_type, reference_month])
@@ -4255,38 +4263,67 @@ model financial_payment_audit {
 // Territory Payout Cycles (Marco 3.2A)
 // ═══════════════════════════════════════════════════════════════════
 
-model territory_payout_cycles {
-  id                            String    @id @default(dbgenerated("gen_random_uuid()::text"))
-  territory_id                  String
-  manager_id                    String?
-  manager_assignment_id         String?
-  reference_month               String
-  policy_version                String
-  commission_rate_basis_points  Int       @default(4000)
-  gross_platform_fee_cents      BigInt    @default(0)
-  gross_manager_commission_cents BigInt   @default(0)
-  approved_adjustments_cents    BigInt    @default(0)
-  approved_amount_cents         BigInt    @default(0)
-  status                        String    @default("OPEN")
-  fiscal_document_required      Boolean   @default(false)
-  fiscal_document_type          String?
-  fiscal_document_status        String?   @default("NOT_REQUIRED")
-  fiscal_document_reference     String?
-  fiscal_document_url           String?
-  calculated_at                 DateTime? @db.Timestamptz
-  submitted_for_review_at       DateTime? @db.Timestamptz
-  approved_at                   DateTime? @db.Timestamptz
-  approved_by                   String?
-  cancelled_at                  DateTime? @db.Timestamptz
-  cancelled_by                  String?
-  cancel_reason                 String?
-  created_at                    DateTime  @default(now()) @db.Timestamptz
-  updated_at                    DateTime  @default(now()) @db.Timestamptz
-  idempotency_key               String    @unique
+// territory_payout_cycles — see below (Marco 3.2A expanded version)
 
-  @@unique([territory_id, manager_id, reference_month, policy_version])
+// ─── Territory Payout Cycles (Marco 3.2A) ─────────────────────────────────────
+
+model territory_payout_cycles {
+  id                              String    @id @default(dbgenerated("gen_random_uuid()"))
+  territory_id                    String
+  manager_id                      String?
+  reference_month                 String
+  policy_version                  String
+  commission_rate_basis_points    Int       @default(4000)
+  platform_fee_rate_basis_points  Int       @default(1800)
+  competence_timezone             String    @default("America/Sao_Paulo")
+  cycle_type                      String    @default("REGULAR")
+  parent_cycle_id                 String?
+  sequence_number                 Int       @default(1)
+  gross_platform_fee_cents        BigInt    @default(0)
+  gross_manager_commission_cents  BigInt    @default(0)
+  approved_adjustments_cents      BigInt    @default(0)
+  approved_amount_cents           BigInt    @default(0)
+  status                          String    @default("OPEN")
+  fiscal_document_required        Boolean   @default(false)
+  fiscal_document_type            String?
+  fiscal_document_status          String?   @default("NOT_REQUIRED")
+  fiscal_document_reference       String?
+  fiscal_document_url             String?
+  calculated_at                   DateTime? @db.Timestamptz
+  recognized_at                   DateTime? @db.Timestamptz
+  submitted_for_review_at         DateTime? @db.Timestamptz
+  approved_at                     DateTime? @db.Timestamptz
+  approved_by                     String?
+  cancelled_at                    DateTime? @db.Timestamptz
+  cancelled_by                    String?
+  cancel_reason                   String?
+  created_at                      DateTime  @default(now()) @db.Timestamptz
+  updated_at                      DateTime  @default(now()) @db.Timestamptz
+  idempotency_key                 String    @unique
+
+  parent                          territory_payout_cycles?  @relation("cycle_parent", fields: [parent_cycle_id], references: [id], onDelete: Restrict)
+  children                        territory_payout_cycles[] @relation("cycle_parent")
+  allocations                     territory_cycle_allocations[]
+
   @@index([territory_id])
   @@index([manager_id])
   @@index([status])
   @@index([reference_month])
+}
+
+model territory_cycle_allocations {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()"))
+  cycle_id              String
+  ledger_entry_id       BigInt
+  ride_id               String
+  entry_type            String
+  amount_cents          BigInt
+  manager_assignment_id String?
+  created_at            DateTime @default(now()) @db.Timestamptz
+
+  cycle                 territory_payout_cycles @relation(fields: [cycle_id], references: [id], onDelete: Restrict)
+  ledger_entry          territory_ledger        @relation(fields: [ledger_entry_id], references: [id], onDelete: Restrict)
+
+  @@unique([ledger_entry_id])
+  @@index([cycle_id])
 }
