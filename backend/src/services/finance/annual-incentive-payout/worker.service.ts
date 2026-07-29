@@ -58,8 +58,14 @@ export async function processOutboxBatch(deps: WorkerDeps): Promise<number> {
     const { rows } = await client.query(
       `SELECT id, request_id, driver_id, status, attempts
        FROM annual_incentive_payout_outbox
-       WHERE status IN ('PENDING', 'PROCESSING')
+       WHERE (
+         status = 'PENDING'
          AND next_at <= NOW()
+       ) OR (
+         status = 'PROCESSING'
+         AND locked_at IS NOT NULL
+         AND locked_at <= NOW() - INTERVAL '15 minutes'
+       )
        ORDER BY priority DESC, next_at ASC
        LIMIT $1
        FOR UPDATE SKIP LOCKED`,
@@ -168,7 +174,29 @@ async function processOneItem(deps: WorkerDeps, item: OutboxItem): Promise<void>
 
   // At this point, request should be QUEUED or RETRYABLE_FAILURE
   const freshRequest = await getRequestById(pool, item.requestId);
-  if (!freshRequest || !['QUEUED', 'RETRYABLE_FAILURE'].includes(freshRequest.status)) {
+
+  if (!freshRequest) {
+    await markOutboxDone(pool, item.id, 'FAILED');
+    return;
+  }
+
+  // A previous worker may have committed SUBMITTING and crashed before or
+  // immediately after the provider request. Never retry blindly — move the
+  // payout to the reconciliation workflow.
+  if (freshRequest.status === 'SUBMITTING') {
+    await pool.query(
+      `UPDATE annual_incentive_payouts
+       SET status = 'UNKNOWN_SUBMISSION',
+           updated_at = NOW()
+       WHERE request_id = $1
+         AND status = 'SUBMITTING'`,
+      [freshRequest.id],
+    );
+    await markOutboxBlocked(pool, item.id);
+    return;
+  }
+
+  if (!['QUEUED', 'RETRYABLE_FAILURE'].includes(freshRequest.status)) {
     await markOutboxDone(pool, item.id, 'DONE');
     return;
   }

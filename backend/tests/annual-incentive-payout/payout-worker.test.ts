@@ -8,7 +8,7 @@ import pg from 'pg';
 import { assertSafeFinanceDatabase } from '../../src/lib/assert-safe-finance-db';
 import { AnnualIncentiveLedgerService } from '../../src/services/finance/annual-incentive-ledger.service';
 import { projectBalance } from '../../src/services/finance/annual-incentive-payout/balance-projection';
-import { createRequest, getRequestById } from '../../src/services/finance/annual-incentive-payout/request.service';
+import { createRequest, getRequestById, transitionRequest } from '../../src/services/finance/annual-incentive-payout/request.service';
 import { setDestination } from '../../src/services/finance/annual-incentive-payout/destination.service';
 import { processOutboxBatch } from '../../src/services/finance/annual-incentive-payout/worker.service';
 import { processWebhookEvent } from '../../src/services/finance/annual-incentive-payout/webhook.service';
@@ -165,6 +165,88 @@ describe('Worker', () => {
     expect(rows[0].status).toBe('PENDING');
     expect(rows[0].attempts).toBe(1);
     expect(new Date(rows[0].next_at).getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('moves stale SUBMITTING to reconciliation without retrying provider', async () => {
+    await seedAccrual(2026, 5000n, 'stale-submitting');
+    const { request } = await setupAndCreateRequest(3000n);
+
+    // Manually transition to SUBMITTING and create payout record
+    const setupClient = await pool.connect();
+    try {
+      await setupClient.query('BEGIN');
+      await transitionRequest(setupClient, request.id, 'ELIGIBILITY_CHECKED');
+      await transitionRequest(setupClient, request.id, 'QUEUED');
+      await transitionRequest(setupClient, request.id, 'SUBMITTING');
+      await setupClient.query(
+        `INSERT INTO annual_incentive_payouts
+          (request_id, driver_id, amount_cents, provider_name, external_reference, status)
+         VALUES ($1, $2, 3000, 'fake', $3, 'SUBMITTING')`,
+        [request.id, TEST_DRIVER_ID, `annual-incentive-request:${request.id}`],
+      );
+      // Make outbox stale (locked_at > 15 min ago)
+      await setupClient.query(
+        `UPDATE annual_incentive_payout_outbox
+         SET status = 'PROCESSING', locked_at = NOW() - INTERVAL '16 minutes',
+             updated_at = NOW() - INTERVAL '16 minutes'
+         WHERE request_id = $1`,
+        [request.id],
+      );
+      await setupClient.query('COMMIT');
+    } finally {
+      setupClient.release();
+    }
+
+    const processed = await processOutboxBatch({ pool, ledgerService, provider: fakeProvider });
+    expect(processed).toBe(1);
+    expect(fakeProvider.createCallCount).toBe(0);
+
+    const { rows: [payout] } = await pool.query(
+      `SELECT status FROM annual_incentive_payouts WHERE request_id = $1`, [request.id],
+    );
+    const { rows: [outbox] } = await pool.query(
+      `SELECT status FROM annual_incentive_payout_outbox WHERE request_id = $1`, [request.id],
+    );
+    expect(payout.status).toBe('UNKNOWN_SUBMISSION');
+    expect(outbox.status).toBe('BLOCKED');
+  });
+
+  it('does not reclaim a freshly processing outbox item', async () => {
+    await seedAccrual(2026, 5000n, 'fresh-processing');
+    const { request } = await setupAndCreateRequest(3000n);
+
+    // Set as PROCESSING with recent locked_at (< 15 min)
+    await pool.query(
+      `UPDATE annual_incentive_payout_outbox
+       SET status = 'PROCESSING', locked_at = NOW(), updated_at = NOW()
+       WHERE request_id = $1`,
+      [request.id],
+    );
+
+    const processed = await processOutboxBatch({ pool, ledgerService, provider: fakeProvider });
+    expect(processed).toBe(0);
+    expect(fakeProvider.createCallCount).toBe(0);
+  });
+
+  it('reclaims a stale processing outbox item after 15 minutes', async () => {
+    await seedAccrual(2026, 5000n, 'stale-processing');
+    const { request } = await setupAndCreateRequest(3000n);
+
+    // Set as PROCESSING with stale locked_at (> 15 min)
+    await pool.query(
+      `UPDATE annual_incentive_payout_outbox
+       SET status = 'PROCESSING', locked_at = NOW() - INTERVAL '16 minutes',
+           updated_at = NOW() - INTERVAL '16 minutes'
+       WHERE request_id = $1`,
+      [request.id],
+    );
+
+    const processed = await processOutboxBatch({ pool, ledgerService, provider: fakeProvider });
+    expect(processed).toBe(1);
+    expect(fakeProvider.createCallCount).toBe(1);
+
+    const updated = await getRequestById(pool, request.id);
+    expect(updated!.status).toBe('SUBMITTED');
   });
 
   it('two workers do not duplicate payout', async () => {
