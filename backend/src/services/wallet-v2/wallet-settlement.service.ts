@@ -72,6 +72,18 @@ export class WalletSettlementService {
       // ═══ IDEMPOTENCY: check existing split ═══
       const existingSnapshot = await this.feeSplit.getExistingSnapshot(client, params.rideId);
       if (existingSnapshot) {
+        // Validate caller identity against persisted snapshot
+        if (
+          existingSnapshot.driverId !== params.driverId ||
+          existingSnapshot.finalPriceCents !== params.finalPriceCents ||
+          (existingSnapshot.territoryId ?? undefined) !== (params.territoryId ?? undefined)
+        ) {
+          await client.query('ROLLBACK');
+          throw Object.assign(
+            new Error('Attempt to settle ride with different parameters than persisted'),
+            { code: 'FEE_SPLIT_IDEMPOTENCY_MISMATCH' }
+          );
+        }
         await client.query('COMMIT');
         return { collected: existingSnapshot.collectionStatus === 'collected' };
       }
@@ -199,7 +211,7 @@ export class WalletSettlementService {
 
         // Proportional territorial recognition for partial amount
         if (recorded.territoryId && collectableAmount > 0n) {
-          const partialManagerShare = applyBasisPoints(collectableAmount, MANAGER_COMMISSION_RATE_BPS);
+          const partialManagerShare = applyBasisPoints(collectableAmount, recorded.managerCommissionRateBps);
           await this.territoryLedger.recordCollectedFeeInClient(
             client,
             recorded.territoryId,

@@ -126,11 +126,39 @@ describe('Atomic Settlement', () => {
 
     // Only one pair of ledger entries
     const { rows: ledger } = await pool.query('SELECT COUNT(*) FROM territory_ledger WHERE reference_id = $1', [rideId]);
-    expect(Number(ledger[0].count)).toBeLessThanOrEqual(2);
+    expect(Number(ledger[0].count)).toBe(2);
 
     // No spurious pending debit
     const { rows: pendings } = await pool.query('SELECT COUNT(*) FROM pending_debits WHERE ride_id = $1', [rideId]);
     expect(pendings[0].count).toBe('0');
+  });
+
+  it('replay with different finalPrice → FEE_SPLIT_IDEMPOTENCY_MISMATCH', async () => {
+    const driverId = await setupDriver(10000n);
+    const { territoryId } = await setupTerritory();
+    const svc = createSettlement(driverId);
+    const rideId = `ride-mismatch-price-${RUN}`;
+
+    await svc.handleReserve(rideId, driverId, 1800n);
+    await svc.settleRide({ rideId, driverId, finalPriceCents: 10000n, reservedCents: 1800n, territoryId });
+
+    // Replay with different price
+    await expect(svc.settleRide({ rideId, driverId, finalPriceCents: 9999n, reservedCents: 1800n, territoryId }))
+      .rejects.toMatchObject({ code: 'FEE_SPLIT_IDEMPOTENCY_MISMATCH' });
+  });
+
+  it('replay with different driver → FEE_SPLIT_IDEMPOTENCY_MISMATCH', async () => {
+    const driverId1 = await setupDriver(10000n);
+    const driverId2 = await setupDriver(10000n);
+    const { territoryId } = await setupTerritory();
+    const svc = createSettlement(driverId1);
+    const rideId = `ride-mismatch-driver-${RUN}`;
+
+    await svc.handleReserve(rideId, driverId1, 1800n);
+    await svc.settleRide({ rideId, driverId: driverId1, finalPriceCents: 10000n, reservedCents: 1800n, territoryId });
+
+    await expect(svc.settleRide({ rideId, driverId: driverId2, finalPriceCents: 10000n, reservedCents: 1800n, territoryId }))
+      .rejects.toMatchObject({ code: 'FEE_SPLIT_IDEMPOTENCY_MISMATCH' });
   });
 
   it('partial collection records proportional territorial recognition', async () => {

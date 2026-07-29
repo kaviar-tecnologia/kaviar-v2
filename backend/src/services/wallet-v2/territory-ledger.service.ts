@@ -14,8 +14,8 @@ export class TerritoryLedgerService {
   /**
    * Records platform_fee and fee_share atomically in caller's transaction.
    * Validates idempotency: same key with different data throws MISMATCH.
-   *
-   * For regions without manager: fee_share uses "Parcela territorial reservada".
+   * Validates non-negative amounts.
+   * Validates reference_type and entry_type match the expected keys.
    */
   async recordCollectedFeeInClient(
     client: PoolClient,
@@ -28,6 +28,10 @@ export class TerritoryLedgerService {
     month: string,
     keySuffix?: string,
   ): Promise<{ platformEntryId: bigint; shareEntryId: bigint }> {
+    // Validate non-negative
+    if (platformFeeCents < 0n) throw new Error('TERRITORY_LEDGER_INVALID_AMOUNT: platformFeeCents must be >= 0');
+    if (managerShareCents < 0n) throw new Error('TERRITORY_LEDGER_INVALID_AMOUNT: managerShareCents must be >= 0');
+
     const suffix = keySuffix ? `:${keySuffix}` : '';
     const platformKey = `territory_platform_fee:${rideId}${suffix}`;
     const managerKey = `territory_fee_share:${rideId}${suffix}`;
@@ -36,7 +40,7 @@ export class TerritoryLedgerService {
       ? 'Parcela contratual gestor'
       : 'Parcela territorial reservada';
 
-    // Attempt INSERT with ON CONFLICT DO NOTHING
+    // INSERT with ON CONFLICT DO NOTHING
     const { rows: inserted } = await client.query(
       `INSERT INTO territory_ledger
         (territory_id, manager_id, manager_assignment_id, reference_month, entry_type,
@@ -47,30 +51,30 @@ export class TerritoryLedgerService {
        ON CONFLICT (idempotency_key) DO NOTHING
        RETURNING id, idempotency_key, entry_type, amount_cents,
                  territory_id, manager_id, manager_assignment_id,
-                 reference_month, reference_id`,
+                 reference_month, reference_id, reference_type`,
       [territoryId, managerId, managerAssignmentId, month,
        platformFeeCents.toString(), managerShareCents.toString(),
        rideId, platformKey, managerKey, shareDescription]
     );
 
     if (inserted.length === 2) {
-      const pf = inserted.find(r => r.entry_type === 'platform_fee')!;
-      const fs = inserted.find(r => r.entry_type === 'fee_share')!;
+      const pf = inserted.find(r => r.idempotency_key === platformKey)!;
+      const fs = inserted.find(r => r.idempotency_key === managerKey)!;
       return { platformEntryId: BigInt(pf.id), shareEntryId: BigInt(fs.id) };
     }
 
-    // One or both conflicted — load and validate
+    // One or both conflicted — load by exact idempotency_keys and validate
     const { rows: existing } = await client.query(
       `SELECT id, idempotency_key, entry_type, amount_cents,
               territory_id, manager_id, manager_assignment_id,
-              reference_month, reference_id
+              reference_month, reference_id, reference_type
        FROM territory_ledger
-       WHERE idempotency_key IN ($1, $2)`,
+       WHERE idempotency_key = $1 OR idempotency_key = $2`,
       [platformKey, managerKey]
     );
 
     for (const row of existing) {
-      // Validate key matches correct entry_type
+      // Validate key→entry_type correspondence
       if (row.idempotency_key === platformKey && row.entry_type !== 'platform_fee') {
         throw Object.assign(
           new Error(`Key ${platformKey} associated with '${row.entry_type}' instead of 'platform_fee'`),
@@ -80,6 +84,14 @@ export class TerritoryLedgerService {
       if (row.idempotency_key === managerKey && row.entry_type !== 'fee_share') {
         throw Object.assign(
           new Error(`Key ${managerKey} associated with '${row.entry_type}' instead of 'fee_share'`),
+          { code: 'TERRITORY_LEDGER_IDEMPOTENCY_MISMATCH' }
+        );
+      }
+
+      // Validate reference_type
+      if (row.reference_type !== 'ride') {
+        throw Object.assign(
+          new Error(`Key ${row.idempotency_key} has reference_type '${row.reference_type}' instead of 'ride'`),
           { code: 'TERRITORY_LEDGER_IDEMPOTENCY_MISMATCH' }
         );
       }
@@ -106,12 +118,8 @@ export class TerritoryLedgerService {
 
     // Combine inserted + existing to find both IDs
     const allEntries = [...inserted, ...existing];
-    const pfEntry = allEntries.find(r =>
-      r.idempotency_key === platformKey || r.entry_type === 'platform_fee'
-    );
-    const fsEntry = allEntries.find(r =>
-      r.idempotency_key === managerKey || r.entry_type === 'fee_share'
-    );
+    const pfEntry = allEntries.find(r => r.idempotency_key === platformKey);
+    const fsEntry = allEntries.find(r => r.idempotency_key === managerKey);
 
     if (!pfEntry || !fsEntry) {
       throw Object.assign(
@@ -123,17 +131,7 @@ export class TerritoryLedgerService {
     return { platformEntryId: BigInt(pfEntry.id), shareEntryId: BigInt(fsEntry.id) };
   }
 
-  // ═══ Legacy methods (used by existing code, not yet refactored) ═══
-
-  async recordFeeShare(territoryId: string, managerId: string | null, amountCents: bigint, rideId: string, month: string): Promise<void> {
-    const key = `territory_fee_share:${rideId}`;
-    await this.pool.query(
-      `INSERT INTO territory_ledger (territory_id, manager_id, reference_month, entry_type, amount_cents, description, reference_type, reference_id, idempotency_key)
-       VALUES ($1,$2,$3,'fee_share',$4,'Parcela gestor 40% da taxa','ride',$5,$6)
-       ON CONFLICT (idempotency_key) DO NOTHING`,
-      [territoryId, managerId, month, amountCents.toString(), rideId, key]
-    );
-  }
+  // ═══ Legacy methods — no runtime callers, kept for reference during transition ═══
 
   async recordReferralCost(territoryId: string, managerId: string | null, amountCents: bigint, rewardId: string, month: string): Promise<void> {
     const key = `territory_referral_cost:${rewardId}`;

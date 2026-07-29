@@ -5,8 +5,6 @@ export const COMPETENCE_TIMEZONE = 'America/Sao_Paulo';
 
 /**
  * Computes reference month from a Date using America/Sao_Paulo timezone.
- * No service should call new Date() to derive competence — use this function
- * with the persisted recognizedAt.
  */
 export function referenceMonthFromDate(date: Date, timezone: string = COMPETENCE_TIMEZONE): string {
   const formatter = new Intl.DateTimeFormat('en-CA', {
@@ -28,6 +26,8 @@ export interface FeeSplitSnapshot {
   id: bigint;
   alreadyProcessed: boolean;
   rideId: string;
+  driverId: string;
+  finalPriceCents: bigint;
   feeAmountCents: bigint;
   matrixShareCents: bigint;
   managerShareCents: bigint;
@@ -62,20 +62,23 @@ export interface RecordSplitParams {
 export class FeeSplitService {
   constructor(private pool: Pool) {}
 
-  calculateSplit(finalPriceCents: bigint): FeeSplit {
-    const fee = applyBasisPoints(finalPriceCents, PLATFORM_FEE_RATE_BPS);
-    const manager = applyBasisPoints(fee, MANAGER_COMMISSION_RATE_BPS);
+  /**
+   * Calculates split using the provided rates (defaults to global constants).
+   */
+  calculateSplit(finalPriceCents: bigint, platformRateBps: number = PLATFORM_FEE_RATE_BPS, commissionRateBps: number = MANAGER_COMMISSION_RATE_BPS): FeeSplit {
+    const fee = applyBasisPoints(finalPriceCents, platformRateBps);
+    const manager = applyBasisPoints(fee, commissionRateBps);
     const matrix = fee - manager;
     return { fee_amount_cents: fee, matrix_share_cents: matrix, manager_share_cents: manager };
   }
 
   /**
-   * Check if a split already exists for this ride. Returns persisted snapshot or null.
-   * Must be called inside a transaction (uses client).
+   * Check existing split. Returns persisted snapshot or null.
    */
   async getExistingSnapshot(client: PoolClient, rideId: string): Promise<FeeSplitSnapshot | null> {
     const { rows } = await client.query(
-      `SELECT id, ride_id, fee_amount_cents, matrix_share_cents, manager_share_cents,
+      `SELECT id, ride_id, driver_id, final_price_cents,
+              fee_amount_cents, matrix_share_cents, manager_share_cents,
               reference_month, territory_id, manager_id, manager_assignment_id,
               recognized_at, platform_fee_rate_bps, manager_commission_rate_bps,
               fee_collected_cents, fee_pending_cents, collection_status
@@ -88,12 +91,12 @@ export class FeeSplitService {
 
   /**
    * Records a fee split inside the caller's transaction.
-   * Validates invariants before INSERT.
-   * On idempotency conflict, returns the persisted snapshot.
+   * Uses INSERT ... ON CONFLICT DO NOTHING for race-safety.
+   * Validates invariants and idempotency.
    */
   async recordSplitInClient(client: PoolClient, params: RecordSplitParams): Promise<FeeSplitSnapshot> {
-    // Validate invariants
-    const split = this.calculateSplit(params.finalPriceCents);
+    // Validate invariants using the provided rates (not global constants)
+    const split = this.calculateSplit(params.finalPriceCents, params.platformFeeRateBps, params.managerCommissionRateBps);
     if (params.feeCollectedCents < 0n) throw new Error('INVARIANT: feeCollectedCents must be >= 0');
     if (params.feePendingCents < 0n) throw new Error('INVARIANT: feePendingCents must be >= 0');
     if (params.feeCollectedCents + params.feePendingCents !== split.fee_amount_cents) {
@@ -102,24 +105,20 @@ export class FeeSplitService {
     if (params.platformFeeRateBps < 0 || params.platformFeeRateBps > 10000) throw new Error('INVARIANT: platformFeeRateBps out of range');
     if (params.managerCommissionRateBps < 0 || params.managerCommissionRateBps > 10000) throw new Error('INVARIANT: managerCommissionRateBps out of range');
 
-    // Validate collectionStatus consistency
     if (params.collectionStatus === 'collected' && (params.feePendingCents !== 0n || params.feeCollectedCents !== split.fee_amount_cents)) {
-      throw new Error('INVARIANT: collected status requires pending=0 and collected=total');
+      throw new Error('INVARIANT: collected requires pending=0 and collected=total');
     }
     if (params.collectionStatus === 'pending' && params.feeCollectedCents !== 0n) {
-      throw new Error('INVARIANT: pending status requires collected=0');
+      throw new Error('INVARIANT: pending requires collected=0');
     }
     if (params.collectionStatus === 'partial' && (params.feeCollectedCents <= 0n || params.feePendingCents <= 0n)) {
-      throw new Error('INVARIANT: partial status requires collected>0 and pending>0');
+      throw new Error('INVARIANT: partial requires collected>0 and pending>0');
     }
 
     const key = `ride_fee_split:${params.rideId}`;
 
-    // Check idempotency
-    const existing = await this.getExistingSnapshot(client, params.rideId);
-    if (existing) return existing;
-
-    const { rows } = await client.query(
+    // INSERT ... ON CONFLICT DO NOTHING (race-safe even without advisory lock)
+    const { rows: inserted } = await client.query(
       `INSERT INTO ride_fee_splits (
          ride_id, driver_id, final_price_cents,
          fee_percent, fee_amount_cents, fee_collected_cents, fee_pending_cents,
@@ -140,10 +139,12 @@ export class FeeSplitService {
          $14, 'DB_SETTLEMENT_CLOCK',
          $15, $16,
          $17
-       ) RETURNING id, ride_id, fee_amount_cents, matrix_share_cents, manager_share_cents,
-                   reference_month, territory_id, manager_id, manager_assignment_id,
-                   recognized_at, platform_fee_rate_bps, manager_commission_rate_bps,
-                   fee_collected_cents, fee_pending_cents, collection_status`,
+       ) ON CONFLICT (ride_id) DO NOTHING
+       RETURNING id, ride_id, driver_id, final_price_cents,
+                 fee_amount_cents, matrix_share_cents, manager_share_cents,
+                 reference_month, territory_id, manager_id, manager_assignment_id,
+                 recognized_at, platform_fee_rate_bps, manager_commission_rate_bps,
+                 fee_collected_cents, fee_pending_cents, collection_status`,
       [
         params.rideId, params.driverId, params.finalPriceCents.toString(),
         split.fee_amount_cents.toString(), params.feeCollectedCents.toString(), params.feePendingCents.toString(),
@@ -157,58 +158,45 @@ export class FeeSplitService {
       ]
     );
 
-    return this.mapSnapshot(rows[0], false);
+    if (inserted.length === 1) {
+      return this.mapSnapshot(inserted[0], false);
+    }
+
+    // Conflict: load existing and validate economic identity
+    const existing = await this.getExistingSnapshot(client, params.rideId);
+    if (!existing) {
+      throw new Error('FEE_SPLIT_IDEMPOTENCY_MISMATCH: conflict but no row found');
+    }
+
+    // Validate caller identity against persisted snapshot
+    if (
+      existing.driverId !== params.driverId ||
+      existing.finalPriceCents !== params.finalPriceCents ||
+      (existing.territoryId ?? null) !== (params.territoryId ?? null)
+    ) {
+      throw Object.assign(
+        new Error('Attempt to settle ride with different economic parameters than persisted'),
+        { code: 'FEE_SPLIT_IDEMPOTENCY_MISMATCH' }
+      );
+    }
+
+    return existing;
   }
 
   /**
-   * Marks a split as fully collected. Used by pending debit resolution.
+   * Marks a split as fully collected. Requires exactly 1 row updated.
    */
   async markCollectedInClient(client: PoolClient, rideId: string): Promise<void> {
-    await client.query(
+    const { rowCount } = await client.query(
       `UPDATE ride_fee_splits
        SET fee_collected_cents = fee_amount_cents, fee_pending_cents = 0,
            collection_status = 'collected'
        WHERE ride_id = $1 AND collection_status IN ('pending', 'partial')`,
       [rideId]
     );
-  }
-
-  // Legacy method kept for backward compatibility during transition
-  async recordSplit(params: {
-    rideId: string; driverId: string; finalPriceCents: bigint;
-    territoryId?: string; managerId?: string; collected: boolean;
-  }): Promise<{ id: bigint; already_processed: boolean } & FeeSplit> {
-    const key = `ride_fee_split:${params.rideId}`;
-    const existing = await this.pool.query(
-      `SELECT id, fee_amount_cents, matrix_share_cents, manager_share_cents
-       FROM ride_fee_splits WHERE idempotency_key = $1`, [key]);
-    if (existing.rows[0]) {
-      const row = existing.rows[0];
-      return {
-        fee_amount_cents: BigInt(row.fee_amount_cents),
-        matrix_share_cents: BigInt(row.matrix_share_cents),
-        manager_share_cents: BigInt(row.manager_share_cents),
-        id: BigInt(row.id), already_processed: true,
-      };
+    if (rowCount !== 1) {
+      throw new Error(`MARK_COLLECTED_UNEXPECTED_ROWCOUNT: expected 1, got ${rowCount} for ride ${rideId}`);
     }
-    const split = this.calculateSplit(params.finalPriceCents);
-    const collectedCents = params.collected ? split.fee_amount_cents : 0n;
-    const pendingCents = params.collected ? 0n : split.fee_amount_cents;
-    const status = params.collected ? 'collected' : 'pending';
-    const month = referenceMonthFromDate(new Date());
-    const r = await this.pool.query(
-      `INSERT INTO ride_fee_splits (ride_id, driver_id, final_price_cents, fee_percent, fee_amount_cents, fee_collected_cents, fee_pending_cents, matrix_share_percent, matrix_share_cents, manager_share_percent, manager_share_cents, territory_id, manager_id, reference_month, collection_status, recognized_at, recognized_at_source, platform_fee_rate_bps, manager_commission_rate_bps, idempotency_key)
-       VALUES ($1,$2,$3,18.00,$4,$5,$6,60.00,$7,40.00,$8,$9,$10,$11,$12,clock_timestamp(),'DB_SETTLEMENT_CLOCK',1800,4000,$13) RETURNING id`,
-      [params.rideId, params.driverId, params.finalPriceCents.toString(), split.fee_amount_cents.toString(), collectedCents.toString(), pendingCents.toString(), split.matrix_share_cents.toString(), split.manager_share_cents.toString(), params.territoryId || null, params.managerId || null, month, status, key]
-    );
-    return { ...split, id: BigInt(r.rows[0].id), already_processed: false };
-  }
-
-  async markCollected(rideId: string): Promise<void> {
-    await this.pool.query(
-      `UPDATE ride_fee_splits SET fee_collected_cents = fee_amount_cents, fee_pending_cents = 0, collection_status = 'collected' WHERE ride_id = $1 AND collection_status IN ('pending', 'partial')`,
-      [rideId]
-    );
   }
 
   private mapSnapshot(row: any, alreadyProcessed: boolean): FeeSplitSnapshot {
@@ -216,6 +204,8 @@ export class FeeSplitService {
       id: BigInt(row.id),
       alreadyProcessed,
       rideId: row.ride_id,
+      driverId: row.driver_id,
+      finalPriceCents: BigInt(row.final_price_cents),
       feeAmountCents: BigInt(row.fee_amount_cents),
       matrixShareCents: BigInt(row.matrix_share_cents),
       managerShareCents: BigInt(row.manager_share_cents),

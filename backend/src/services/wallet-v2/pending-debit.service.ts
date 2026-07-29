@@ -43,8 +43,7 @@ export class PendingDebitService {
 
   /**
    * Resolves pending debits on recharge — fully atomic.
-   * All financial writes (debit, split update, territory ledger) happen
-   * in the same transaction. No post-commit effects.
+   * All validations happen BEFORE debit. Any error causes full rollback.
    */
   async resolveOnRecharge(
     driverId: string,
@@ -68,22 +67,29 @@ export class PendingDebitService {
       try {
         await client.query('BEGIN');
 
-        // Advisory lock per ride (same as settlement)
+        // Advisory lock per ride
         await client.query(
           `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
           [`wallet-settlement:${rideId}`]
         );
 
-        // Lock the pending_debit row and validate
-        const locked = await client.query(
+        // Lock pending_debit row
+        const { rows: lockedRows } = await client.query(
           `SELECT id, ride_id, driver_id, fee_pending_cents, fee_collected_cents, fee_amount_cents, status
            FROM pending_debits WHERE id = $1 AND driver_id = $2 FOR UPDATE`,
           [p.id, driverId]
         );
 
-        if (!locked.rows[0]) { await client.query('ROLLBACK'); break; }
-        const lockedRow = locked.rows[0];
-        if (lockedRow.status !== 'pending') { await client.query('ROLLBACK'); continue; }
+        if (!lockedRows[0]) {
+          await client.query('ROLLBACK');
+          continue; // Row disappeared — try next pending
+        }
+
+        const lockedRow = lockedRows[0];
+        if (lockedRow.status !== 'pending') {
+          await client.query('ROLLBACK');
+          continue; // Already resolved
+        }
 
         const lockedFee = BigInt(lockedRow.fee_pending_cents);
         if (lockedFee !== feePending) {
@@ -91,47 +97,77 @@ export class PendingDebitService {
           throw new Error(`PENDING_DEBIT_ECONOMIC_MISMATCH: expected ${feePending}, found ${lockedFee}`);
         }
 
-        // Execute wallet debit (+ optional annual incentive)
+        // Lock and validate ride_fee_splits BEFORE debit
+        const { rows: splitRows } = await client.query(
+          `SELECT ride_id, driver_id, territory_id, manager_id, manager_assignment_id,
+                  fee_amount_cents, fee_collected_cents, fee_pending_cents,
+                  manager_commission_rate_bps, reference_month, collection_status
+           FROM ride_fee_splits WHERE ride_id = $1 FOR UPDATE`,
+          [rideId]
+        );
+
+        if (splitRows.length !== 1) {
+          await client.query('ROLLBACK');
+          throw Object.assign(
+            new Error(`Expected exactly 1 split for ride ${rideId}, found ${splitRows.length}`),
+            { code: 'PENDING_DEBIT_SPLIT_MISSING' }
+          );
+        }
+
+        const split = splitRows[0];
+
+        // Validate split consistency with pending_debit
+        if (split.driver_id !== driverId) {
+          await client.query('ROLLBACK');
+          throw Object.assign(new Error('Split driver mismatch'), { code: 'PENDING_DEBIT_SPLIT_MISMATCH' });
+        }
+        if (BigInt(split.fee_pending_cents) !== feePending) {
+          await client.query('ROLLBACK');
+          throw Object.assign(new Error('Split fee_pending mismatch'), { code: 'PENDING_DEBIT_SPLIT_MISMATCH' });
+        }
+        if (BigInt(split.fee_collected_cents) + BigInt(split.fee_pending_cents) !== BigInt(split.fee_amount_cents)) {
+          await client.query('ROLLBACK');
+          throw Object.assign(new Error('Split collected+pending != total'), { code: 'PENDING_DEBIT_SPLIT_MISMATCH' });
+        }
+        if (!['pending', 'partial'].includes(split.collection_status)) {
+          await client.query('ROLLBACK');
+          throw Object.assign(new Error(`Split status '${split.collection_status}' not resolvable`), { code: 'PENDING_DEBIT_SPLIT_MISMATCH' });
+        }
+
+        // All validations passed — execute debit
         const input: PendingDebitExecutionInput = { driverId, pendingDebitId, rideId, feePendingCents: feePending };
         await executor.resolvePendingInClient(client, input);
 
-        // Update pending_debits within the same transaction
+        // Update pending_debits
         await client.query(
           "UPDATE pending_debits SET status = 'resolved', fee_collected_cents = fee_amount_cents, fee_pending_cents = 0, resolved_at = NOW() WHERE id = $1",
           [p.id]
         );
 
-        // Load persisted snapshot from ride_fee_splits (NEVER recalculate)
-        const { rows: [splitRow] } = await client.query(
-          `SELECT territory_id, manager_id, manager_assignment_id,
-                  fee_amount_cents, fee_collected_cents, manager_commission_rate_bps, reference_month
-           FROM ride_fee_splits WHERE ride_id = $1`,
-          [rideId]
-        );
-
-        // Mark split as fully collected
+        // Mark split as collected (requires exactly 1 row)
         await feeSplitService.markCollectedInClient(client, rideId);
 
         // Incremental territorial recognition using persisted snapshot
-        if (splitRow?.territory_id) {
-          const previouslyCollected = BigInt(splitRow.fee_collected_cents);
-          const totalNowCollected = BigInt(splitRow.fee_amount_cents);
+        if (split.territory_id) {
+          const previouslyCollected = BigInt(split.fee_collected_cents);
+          const totalNowCollected = BigInt(split.fee_amount_cents);
           const incrementalPlatformFee = totalNowCollected - previouslyCollected;
 
           if (incrementalPlatformFee > 0n) {
-            const targetManagerShare = applyBasisPoints(totalNowCollected, splitRow.manager_commission_rate_bps);
-            const previousManagerShare = applyBasisPoints(previouslyCollected, splitRow.manager_commission_rate_bps);
+            const rateBps = split.manager_commission_rate_bps;
+            const targetManagerShare = applyBasisPoints(totalNowCollected, rateBps);
+            const previousManagerShare = applyBasisPoints(previouslyCollected, rateBps);
             const incrementalManagerShare = targetManagerShare - previousManagerShare;
 
             await territoryLedgerService.recordCollectedFeeInClient(
               client,
-              splitRow.territory_id,
-              splitRow.manager_id,
-              splitRow.manager_assignment_id,
+              split.territory_id,
+              split.manager_id,
+              split.manager_assignment_id,
               incrementalPlatformFee,
               incrementalManagerShare,
               rideId,
-              splitRow.reference_month,
+              split.reference_month,
               `resolve:${pendingDebitId}`,
             );
           }
@@ -147,6 +183,7 @@ export class PendingDebitService {
           break;
         }
         if (err?.message?.includes('SHADOW_CONFIGURATION_INVALID')) { throw err; }
+        if (err?.code === 'PENDING_DEBIT_SPLIT_MISSING' || err?.code === 'PENDING_DEBIT_SPLIT_MISMATCH') { throw err; }
 
         await this.pool.query('UPDATE pending_debits SET attempts = attempts + 1 WHERE id = $1', [p.id]);
         break;
