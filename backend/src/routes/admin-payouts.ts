@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma';
 import { authenticateAdmin, requireSuperAdmin } from '../middlewares/auth';
 import { audit, auditCtx } from '../utils/audit';
 import { COMPANY } from '../config/company';
+import { isLegacyPayAllowed, isMonthLegacy, isValidReferenceMonth } from '../services/finance/territory/engine-selection';
 
 const router = Router();
 router.use(authenticateAdmin, requireSuperAdmin);
@@ -195,7 +196,8 @@ router.post('/payouts/calculate', async (req: Request, res: Response) => {
   try {
     const { territory_id, reference_month } = req.body;
     if (!territory_id || !reference_month) return res.status(400).json({ success: false, error: 'territory_id e reference_month obrigatórios' });
-    if (!/^\d{4}-\d{2}$/.test(reference_month)) return res.status(400).json({ success: false, error: 'reference_month deve ser YYYY-MM' });
+    if (!isValidReferenceMonth(reference_month)) return res.status(400).json({ success: false, error: 'reference_month deve ser YYYY-MM com mês entre 01 e 12' });
+    if (!isMonthLegacy(reference_month)) return res.status(409).json({ success: false, error: 'MANAGER_PAYOUT_LEGACY_CALCULATION_DISABLED' });
 
     const territory = await prisma.operational_territories.findUnique({ where: { id: territory_id } });
     if (!territory) return res.status(404).json({ success: false, error: 'Território não encontrado' });
@@ -286,6 +288,7 @@ router.patch('/payouts/:id/pay', async (req: Request, res: Response) => {
   try {
     const payout = await prisma.territory_payouts.findUnique({ where: { id: req.params.id }, include: { operator: true } });
     if (!payout) return res.status(404).json({ success: false, error: 'Repasse não encontrado' });
+    if (!isLegacyPayAllowed(payout.reference_month)) return res.status(409).json({ success: false, error: 'MANAGER_PAYOUT_LEGACY_PAYMENT_DISABLED' });
     if (payout.status !== 'approved') return res.status(400).json({ success: false, error: `Status "${payout.status}" não permite registro de pagamento` });
 
     const { payment_method, payment_ref, receipt_url, notes } = req.body;

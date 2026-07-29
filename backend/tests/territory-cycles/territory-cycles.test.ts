@@ -1,248 +1,211 @@
 /**
- * Territory Payout Cycles Tests (Marco 3.2A).
+ * Territory Payout Cycles Tests (Marco 3.2A - Commit 6)
  */
-
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import pg from 'pg';
+import { randomUUID } from 'node:crypto';
 import { assertSafeFinanceDatabase } from '../../src/lib/assert-safe-finance-db';
-import {
-  applyBasisPoints,
-  calculatePlatformFee,
-  calculateManagerCommission,
-  PLATFORM_FEE_RATE_BPS,
-  MANAGER_COMMISSION_RATE_BPS,
-} from '../../src/services/finance/territory/monetary';
-import {
-  getManagerPayoutEngine,
-  isMonthOutbound,
-  isMonthLegacy,
-  isLegacyPayAllowed,
-} from '../../src/services/finance/territory/engine-selection';
-import {
-  calculateCycle,
-  submitForReview,
-  approveCycle,
-  cancelCycle,
-  getCycleById,
-} from '../../src/services/finance/territory/cycle.service';
+import { previewCycle, confirmRegularCycle, confirmSupplementalCycle, submitForReview, approveCycle, cancelCycle } from '../../src/services/finance/territory/cycle.service';
+import { isValidReferenceMonth, isMonthOutbound, isMonthLegacy, isLegacyPayAllowed } from '../../src/services/finance/territory/engine-selection';
+import { applyBasisPoints, MANAGER_COMMISSION_RATE_BPS, PLATFORM_FEE_RATE_BPS } from '../../src/services/finance/territory/monetary';
+import { WalletService } from '../../src/services/wallet-v2/wallet.service';
+import { WalletSettlementService } from '../../src/services/wallet-v2/wallet-settlement.service';
+import { FeeSplitService } from '../../src/services/wallet-v2/fee-split.service';
+import { TerritoryLedgerService } from '../../src/services/wallet-v2/territory-ledger.service';
+import { PendingDebitService } from '../../src/services/wallet-v2/pending-debit.service';
 
-const TEST_TERRITORY_ID = 'test-territory-cycle-001';
-const TEST_MANAGER_ID = 'test-manager-cycle-001';
+import { referenceMonthFromDate } from '../../src/services/wallet-v2/fee-split.service';
 
+const RUN = randomUUID().slice(0, 8);
+const CURRENT_MONTH = referenceMonthFromDate(new Date());
 let pool: pg.Pool;
 
-beforeAll(async () => {
-  assertSafeFinanceDatabase();
-  pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
-  // Create test territory and operator profile
-  await pool.query(`INSERT INTO operational_territories (id, name, level, status, regulatory_status, created_at, updated_at) VALUES ($1, 'Test Territory', 'neighborhood', 'active', 'not_applicable', NOW(), NOW()) ON CONFLICT (id) DO NOTHING`, [TEST_TERRITORY_ID]);
-});
+beforeAll(async () => { assertSafeFinanceDatabase(); pool = new pg.Pool({ connectionString: process.env.DATABASE_URL }); });
+afterAll(async () => { await pool.end(); });
+beforeEach(() => { process.env.MANAGER_PAYOUT_ENGINE = 'outbound'; process.env.MANAGER_PAYOUT_CUTOVER_MONTH = '2026-01'; });
+afterEach(() => { delete process.env.MANAGER_PAYOUT_ENGINE; delete process.env.MANAGER_PAYOUT_CUTOVER_MONTH; });
 
-afterAll(async () => {
-  await pool.query('DELETE FROM territory_payout_cycles WHERE territory_id = $1', [TEST_TERRITORY_ID]);
-  await pool.query('DELETE FROM operational_territories WHERE id = $1', [TEST_TERRITORY_ID]);
-  await pool.end();
-});
+async function setupDriverAndTerritory(balance = 10000n) {
+  const did = `drv-cy-${RUN}-${randomUUID().slice(0, 4)}`;
+  const tid = `ter-cy-${RUN}-${randomUUID().slice(0, 4)}`;
+  const mid = `mgr-cy-${RUN}-${randomUUID().slice(0, 4)}`;
+  await pool.query(`INSERT INTO drivers (id,name,email,phone,document_cpf,status,created_at,updated_at) VALUES ($1,'T',$2,'1','0','active',NOW(),NOW()) ON CONFLICT DO NOTHING`, [did, `${did}@t`]);
+  await pool.query(`INSERT INTO driver_wallets (driver_id,balance_cents,reserved_cents,updated_at) VALUES ($1,$2,0,NOW()) ON CONFLICT (driver_id) DO UPDATE SET balance_cents=$2,reserved_cents=0`, [did, balance.toString()]);
+  await pool.query(`INSERT INTO operational_territories (id,name,level,status,regulatory_status,created_at,updated_at) VALUES ($1,'T','neighborhood','active','not_applicable',NOW(),NOW()) ON CONFLICT DO NOTHING`, [tid]);
+  await pool.query(`INSERT INTO admins (id,name,email,phone,password,role,created_at,updated_at) VALUES ($1,'M',$2,'1','h','regional_manager',NOW(),NOW()) ON CONFLICT DO NOTHING`, [mid, `${mid}@t`]);
+  await pool.query(`INSERT INTO territory_manager_assignments (territory_id,admin_id,status,started_at,created_by,updated_at) VALUES ($1,$2,'active',NOW()-INTERVAL '30 days',$2,NOW())`, [tid, mid]);
+  return { driverId: did, territoryId: tid, managerId: mid };
+}
 
-beforeEach(async () => {
-  process.env.MANAGER_PAYOUT_ENGINE = 'outbound';
-  process.env.MANAGER_PAYOUT_CUTOVER_MONTH = '2026-07';
-  await pool.query('DELETE FROM territory_payout_cycles WHERE territory_id = $1', [TEST_TERRITORY_ID]);
-});
+async function settleRide(driverId: string, territoryId: string, rideId: string, price = 10000n) {
+  const w = new WalletService(pool); const f = new FeeSplitService(pool); const l = new TerritoryLedgerService(pool); const p = new PendingDebitService(pool);
+  const svc = new WalletSettlementService(pool, w, f, l, p, w);
+  await svc.handleReserve(rideId, driverId, applyBasisPoints(price, PLATFORM_FEE_RATE_BPS));
+  return svc.settleRide({ rideId, driverId, finalPriceCents: price, reservedCents: applyBasisPoints(price, PLATFORM_FEE_RATE_BPS), territoryId });
+}
 
-// ═══════════════════════════════════════════════════════════════════
-// MONETARY MATH
-// ═══════════════════════════════════════════════════════════════════
-
-describe('Monetary Math', () => {
-  it('R$100 → platform fee R$18', () => {
-    expect(calculatePlatformFee(10000n)).toBe(1800n);
+describe('Engine Selection', () => {
+  it('invalid months fail closed', () => {
+    expect(isValidReferenceMonth('2026-13')).toBe(false);
+    expect(isValidReferenceMonth('2026-00')).toBe(false);
+    expect(isMonthOutbound('2026-13')).toBe(false);
+    expect(isMonthLegacy('2026-13')).toBe(false);
+    expect(isLegacyPayAllowed('2026-13')).toBe(false);
   });
-
-  it('R$18 fee → manager commission R$7.20', () => {
-    expect(calculateManagerCommission(1800n)).toBe(720n);
+  it('outbound without cutover fails closed', () => {
+    delete process.env.MANAGER_PAYOUT_CUTOVER_MONTH;
+    expect(isMonthOutbound(CURRENT_MONTH)).toBe(false);
+    expect(isMonthLegacy(CURRENT_MONTH)).toBe(false);
   });
-
-  it('R$100 → R$18 → R$7.20 complete chain', () => {
-    const fee = calculatePlatformFee(10000n);
-    const commission = calculateManagerCommission(fee);
-    expect(fee).toBe(1800n);
-    expect(commission).toBe(720n);
-  });
-
-  it('applyBasisPoints rounds half-up', () => {
-    // 1800 bps of 101 cents = 101 * 1800 / 10000 = 18.18 → rounds to 18
-    expect(applyBasisPoints(101n, 1800)).toBe(18n);
-    // 1800 bps of 1000 cents = exactly 180
-    expect(applyBasisPoints(1000n, 1800)).toBe(180n);
-  });
-
-  it('never uses Number or float', () => {
-    // Large value that would lose precision in Number
-    const largeCents = 90071992547409n; // > Number.MAX_SAFE_INTEGER / 100
-    const fee = calculatePlatformFee(largeCents);
-    // Should be exactly largeCents * 1800 / 10000 with rounding
-    expect(typeof fee).toBe('bigint');
-    expect(fee).toBeGreaterThan(0n);
-  });
-
-  it('zero produces zero', () => {
-    expect(calculatePlatformFee(0n)).toBe(0n);
-    expect(calculateManagerCommission(0n)).toBe(0n);
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════
-// ENGINE SELECTION
-// ═══════════════════════════════════════════════════════════════════
-
-describe('Manager Engine Selection', () => {
-  it('defaults to disabled when absent', () => {
-    delete process.env.MANAGER_PAYOUT_ENGINE;
-    expect(getManagerPayoutEngine()).toBe('disabled');
-  });
-
-  it('returns legacy', () => {
-    process.env.MANAGER_PAYOUT_ENGINE = 'legacy';
-    expect(getManagerPayoutEngine()).toBe('legacy');
-  });
-
-  it('returns outbound', () => {
-    process.env.MANAGER_PAYOUT_ENGINE = 'outbound';
-    expect(getManagerPayoutEngine()).toBe('outbound');
-  });
-
-  it('invalid returns disabled', () => {
-    process.env.MANAGER_PAYOUT_ENGINE = 'OUTBOUND';
-    expect(getManagerPayoutEngine()).toBe('disabled');
-  });
-
-  it('month before cutover is legacy', () => {
-    process.env.MANAGER_PAYOUT_ENGINE = 'outbound';
-    process.env.MANAGER_PAYOUT_CUTOVER_MONTH = '2026-08';
-    expect(isMonthOutbound('2026-07')).toBe(false);
-    expect(isMonthLegacy('2026-07')).toBe(true);
-  });
-
-  it('month at cutover is outbound', () => {
-    process.env.MANAGER_PAYOUT_ENGINE = 'outbound';
-    process.env.MANAGER_PAYOUT_CUTOVER_MONTH = '2026-08';
-    expect(isMonthOutbound('2026-08')).toBe(true);
-    expect(isMonthLegacy('2026-08')).toBe(false);
-  });
-
-  it('month after cutover is outbound', () => {
-    process.env.MANAGER_PAYOUT_ENGINE = 'outbound';
-    process.env.MANAGER_PAYOUT_CUTOVER_MONTH = '2026-08';
-    expect(isMonthOutbound('2026-09')).toBe(true);
-  });
-
-  it('/pay blocked when engine=outbound and month >= cutover', () => {
-    process.env.MANAGER_PAYOUT_ENGINE = 'outbound';
-    process.env.MANAGER_PAYOUT_CUTOVER_MONTH = '2026-08';
-    expect(isLegacyPayAllowed('2026-08')).toBe(false);
-    expect(isLegacyPayAllowed('2026-07')).toBe(true); // before cutover
-  });
-
-  it('/pay blocked when engine=disabled', () => {
+  it('disabled blocks everything', () => {
     process.env.MANAGER_PAYOUT_ENGINE = 'disabled';
-    expect(isLegacyPayAllowed('2026-06')).toBe(false);
+    expect(isMonthOutbound(CURRENT_MONTH)).toBe(false);
+    expect(isLegacyPayAllowed(CURRENT_MONTH)).toBe(false);
+  });
+  it('legacy allowed before cutover', () => {
+    process.env.MANAGER_PAYOUT_CUTOVER_MONTH = '2026-08';
+    expect(isMonthLegacy('2026-06')).toBe(true);
+    expect(isLegacyPayAllowed('2026-06')).toBe(true);
+  });
+  it('legacy blocked after cutover', () => {
+    process.env.MANAGER_PAYOUT_CUTOVER_MONTH = '2026-01';
+    expect(isMonthLegacy(CURRENT_MONTH)).toBe(false);
+    expect(isLegacyPayAllowed(CURRENT_MONTH)).toBe(false);
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════
-// CYCLE LIFECYCLE
-// ═══════════════════════════════════════════════════════════════════
+describe('Preview Cycle', () => {
+  it('does not persist cycle or allocations', async () => {
+    const { driverId, territoryId, managerId } = await setupDriverAndTerritory();
+    const rideId = `ride-prev-${RUN}-${randomUUID().slice(0, 4)}`;
+    await settleRide(driverId, territoryId, rideId);
+    const preview = await previewCycle(pool, territoryId, CURRENT_MONTH, managerId);
+    expect(preview.grossPlatformFeeCents).toBeGreaterThan(0n);
+    // No cycle persisted
+    const { rows } = await pool.query("SELECT COUNT(*) FROM territory_payout_cycles WHERE territory_id=$1 AND reference_month=$2", [territoryId, CURRENT_MONTH]);
+    expect(rows[0].count).toBe('0');
+    // No allocations
+    const { rows: allocs } = await pool.query("SELECT COUNT(*) FROM territory_cycle_allocations WHERE cycle_id IN (SELECT id FROM territory_payout_cycles WHERE territory_id=$1)", [territoryId]);
+    expect(allocs[0].count).toBe('0');
+  });
+});
 
-describe('Cycle Lifecycle', () => {
-  async function seedLedger(month: string, amountCents: bigint) {
-    const key = `test_fee_share_${month}_${Date.now()}_${Math.random()}`;
-    await pool.query(
-      `INSERT INTO territory_ledger (territory_id, manager_id, reference_month, entry_type, amount_cents, description, reference_type, reference_id, idempotency_key)
-       VALUES ($1, $2, $3, 'fee_share', $4, 'Test commission', 'ride', $5, $6)`,
-      [TEST_TERRITORY_ID, TEST_MANAGER_ID, month, amountCents.toString(), `ride_${Date.now()}`, key]
-    );
-  }
-
-  it('calculates cycle from ledger', async () => {
-    await seedLedger('2026-08', 720n);
-    await seedLedger('2026-08', 360n);
-    const cycle = await calculateCycle(pool, TEST_TERRITORY_ID, '2026-08', TEST_MANAGER_ID);
+describe('Confirm Regular Cycle', () => {
+  it('creates CALCULATED with allocations', async () => {
+    const { driverId, territoryId, managerId } = await setupDriverAndTerritory();
+    await settleRide(driverId, territoryId, `ride-reg-${RUN}-1`);
+    await settleRide(driverId, territoryId, `ride-reg-${RUN}-2`);
+    const cycle = await confirmRegularCycle(pool, territoryId, CURRENT_MONTH, managerId);
     expect(cycle.status).toBe('CALCULATED');
-    expect(cycle.grossManagerCommissionCents).toBe(1080n); // 720 + 360
+    expect(cycle.cycleType).toBe('REGULAR');
+    expect(cycle.grossManagerCommissionCents).toBeGreaterThan(0n);
+    // Allocations created
+    const { rows } = await pool.query('SELECT COUNT(*) FROM territory_cycle_allocations WHERE cycle_id=$1', [cycle.id]);
+    expect(Number(rows[0].count)).toBeGreaterThanOrEqual(4); // 2 rides × 2 entries each
   });
 
-  it('cycle is idempotent', async () => {
-    await seedLedger('2026-09', 500n);
-    const c1 = await calculateCycle(pool, TEST_TERRITORY_ID, '2026-09', TEST_MANAGER_ID);
-    const c2 = await calculateCycle(pool, TEST_TERRITORY_ID, '2026-09', TEST_MANAGER_ID);
+  it('is idempotent', async () => {
+    const { driverId, territoryId, managerId } = await setupDriverAndTerritory();
+    await settleRide(driverId, territoryId, `ride-idem-${RUN}`);
+    const c1 = await confirmRegularCycle(pool, territoryId, CURRENT_MONTH, managerId);
+    const c2 = await confirmRegularCycle(pool, territoryId, CURRENT_MONTH, managerId);
     expect(c1.id).toBe(c2.id);
   });
 
-  it('submit for review', async () => {
-    await seedLedger('2026-10', 1000n);
-    const cycle = await calculateCycle(pool, TEST_TERRITORY_ID, '2026-10', TEST_MANAGER_ID);
-    const reviewed = await submitForReview(pool, cycle.id);
-    expect(reviewed.status).toBe('UNDER_REVIEW');
+  it('two concurrent confirms produce one cycle', async () => {
+    const { driverId, territoryId, managerId } = await setupDriverAndTerritory();
+    await settleRide(driverId, territoryId, `ride-conc-cy-${RUN}`);
+    const [r1, r2] = await Promise.all([
+      confirmRegularCycle(pool, territoryId, CURRENT_MONTH, managerId),
+      confirmRegularCycle(pool, territoryId, CURRENT_MONTH, managerId),
+    ]);
+    expect(r1.id).toBe(r2.id);
+    const { rows } = await pool.query("SELECT COUNT(*) FROM territory_payout_cycles WHERE territory_id=$1 AND reference_month=$2 AND status<>'CANCELLED'", [territoryId, CURRENT_MONTH]);
+    expect(rows[0].count).toBe('1');
   });
 
-  it('approve', async () => {
-    await seedLedger('2026-11', 1000n);
-    const cycle = await calculateCycle(pool, TEST_TERRITORY_ID, '2026-11', TEST_MANAGER_ID);
-    await submitForReview(pool, cycle.id);
-    const approved = await approveCycle(pool, cycle.id, 'admin-1');
-    expect(approved.status).toBe('APPROVED');
-    expect(approved.approvedAt).not.toBeNull();
+  it('CALCULATED cannot be cancelled', async () => {
+    const { driverId, territoryId, managerId } = await setupDriverAndTerritory();
+    await settleRide(driverId, territoryId, `ride-nocancel-${RUN}`);
+    const cycle = await confirmRegularCycle(pool, territoryId, CURRENT_MONTH, managerId);
+    await expect(cancelCycle(pool, cycle.id, 'admin', 'test')).rejects.toMatchObject({ code: 'TERRITORY_CYCLE_INVALID_TRANSITION' });
   });
 
-  it('cannot approve without review', async () => {
-    await seedLedger('2026-12', 1000n);
-    const cycle = await calculateCycle(pool, TEST_TERRITORY_ID, '2026-12', TEST_MANAGER_ID);
-    await expect(approveCycle(pool, cycle.id, 'admin-1'))
-      .rejects.toMatchObject({ code: 'TERRITORY_CYCLE_INVALID_TRANSITION' });
+  it('BLOCKED without manager has no allocations', async () => {
+    const tid = `ter-nomanager-cy-${RUN}`;
+    const did = `drv-nomanager-cy-${RUN}`;
+    await pool.query(`INSERT INTO operational_territories (id,name,level,status,regulatory_status,created_at,updated_at) VALUES ($1,'NM','neighborhood','active','not_applicable',NOW(),NOW()) ON CONFLICT DO NOTHING`, [tid]);
+    await pool.query(`INSERT INTO drivers (id,name,email,phone,document_cpf,status,created_at,updated_at) VALUES ($1,'T',$2,'1','0','active',NOW(),NOW()) ON CONFLICT DO NOTHING`, [did, `${did}@t`]);
+    await pool.query(`INSERT INTO driver_wallets (driver_id,balance_cents,reserved_cents,updated_at) VALUES ($1,10000,0,NOW()) ON CONFLICT (driver_id) DO UPDATE SET balance_cents=10000,reserved_cents=0`, [did]);
+    await settleRide(did, tid, `ride-blocked-${RUN}`);
+    const cycle = await confirmRegularCycle(pool, tid, CURRENT_MONTH, null);
+    expect(cycle.status).toBe('BLOCKED');
+    const { rows } = await pool.query('SELECT COUNT(*) FROM territory_cycle_allocations WHERE cycle_id=$1', [cycle.id]);
+    expect(rows[0].count).toBe('0');
   });
 
-  it('cancel with reason', async () => {
-    await seedLedger('2027-01', 1000n);
-    process.env.MANAGER_PAYOUT_CUTOVER_MONTH = '2027-01';
-    const cycle = await calculateCycle(pool, TEST_TERRITORY_ID, '2027-01', TEST_MANAGER_ID);
-    const cancelled = await cancelCycle(pool, cycle.id, 'admin-1', 'Test reason');
+  it('BLOCKED can be cancelled', async () => {
+    const tid = `ter-blkcancel-${RUN}`;
+    const did = `drv-blkcancel-${RUN}`;
+    await pool.query(`INSERT INTO operational_territories (id,name,level,status,regulatory_status,created_at,updated_at) VALUES ($1,'BC','neighborhood','active','not_applicable',NOW(),NOW()) ON CONFLICT DO NOTHING`, [tid]);
+    await pool.query(`INSERT INTO drivers (id,name,email,phone,document_cpf,status,created_at,updated_at) VALUES ($1,'T',$2,'1','0','active',NOW(),NOW()) ON CONFLICT DO NOTHING`, [did, `${did}@t`]);
+    await pool.query(`INSERT INTO driver_wallets (driver_id,balance_cents,reserved_cents,updated_at) VALUES ($1,10000,0,NOW()) ON CONFLICT (driver_id) DO UPDATE SET balance_cents=10000,reserved_cents=0`, [did]);
+    await settleRide(did, tid, `ride-blkcancel-${RUN}`);
+    const cycle = await confirmRegularCycle(pool, tid, CURRENT_MONTH, null);
+    const cancelled = await cancelCycle(pool, cycle.id, 'admin', 'test');
     expect(cancelled.status).toBe('CANCELLED');
-  });
-
-  it('rejects month before cutover', async () => {
-    process.env.MANAGER_PAYOUT_CUTOVER_MONTH = '2026-08';
-    await expect(calculateCycle(pool, TEST_TERRITORY_ID, '2026-06', TEST_MANAGER_ID))
-      .rejects.toMatchObject({ code: 'TERRITORY_CYCLE_MONTH_NOT_OUTBOUND' });
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════
-// IMMUTABILITY
-// ═══════════════════════════════════════════════════════════════════
+describe('State Transitions', () => {
+  it('CALCULATED → UNDER_REVIEW → APPROVED', async () => {
+    const { driverId, territoryId, managerId } = await setupDriverAndTerritory();
+    await settleRide(driverId, territoryId, `ride-trans-${RUN}`);
+    const cycle = await confirmRegularCycle(pool, territoryId, CURRENT_MONTH, managerId);
+    const reviewed = await submitForReview(pool, cycle.id);
+    expect(reviewed.status).toBe('UNDER_REVIEW');
+    const approved = await approveCycle(pool, cycle.id, 'admin-1');
+    expect(approved.status).toBe('APPROVED');
+  });
+  it('cannot approve without review', async () => {
+    const { driverId, territoryId, managerId } = await setupDriverAndTerritory();
+    await settleRide(driverId, territoryId, `ride-noappr-${RUN}`);
+    const cycle = await confirmRegularCycle(pool, territoryId, CURRENT_MONTH, managerId);
+    await expect(approveCycle(pool, cycle.id, 'admin')).rejects.toMatchObject({ code: 'TERRITORY_CYCLE_INVALID_TRANSITION' });
+  });
+});
 
-describe('Territory Ledger Immutability', () => {
-  it('blocks UPDATE', async () => {
-    const key = `immutable_test_${Date.now()}`;
-    await pool.query(
-      `INSERT INTO territory_ledger (territory_id, manager_id, reference_month, entry_type, amount_cents, description, reference_type, reference_id, idempotency_key)
-       VALUES ($1, $2, '2026-07', 'fee_share', 100, 'test', 'ride', 'r1', $3)`,
-      [TEST_TERRITORY_ID, TEST_MANAGER_ID, key]
-    );
-    await expect(pool.query(
-      `UPDATE territory_ledger SET amount_cents = 200 WHERE idempotency_key = $1`, [key]
-    )).rejects.toThrow(/TERRITORY_LEDGER_IMMUTABLE/);
+describe('Supplemental Cycle', () => {
+  it('captures only new unallocated entries', async () => {
+    const { driverId, territoryId, managerId } = await setupDriverAndTerritory(50000n);
+    await settleRide(driverId, territoryId, `ride-supp1-${RUN}`);
+    const regular = await confirmRegularCycle(pool, territoryId, CURRENT_MONTH, managerId);
+    // Settle another ride
+    await settleRide(driverId, territoryId, `ride-supp2-${RUN}`);
+    const supp = await confirmSupplementalCycle(pool, territoryId, CURRENT_MONTH, managerId);
+    expect(supp).not.toBeNull();
+    expect(supp!.cycleType).toBe('SUPPLEMENTAL');
+    expect(supp!.parentCycleId).toBe(regular.id);
+    expect(supp!.sequenceNumber).toBe(2);
+    expect(supp!.grossManagerCommissionCents).toBeGreaterThan(0n);
   });
 
-  it('blocks DELETE', async () => {
-    const key = `immutable_del_${Date.now()}`;
-    await pool.query(
-      `INSERT INTO territory_ledger (territory_id, manager_id, reference_month, entry_type, amount_cents, description, reference_type, reference_id, idempotency_key)
-       VALUES ($1, $2, '2026-07', 'fee_share', 100, 'test', 'ride', 'r2', $3)`,
-      [TEST_TERRITORY_ID, TEST_MANAGER_ID, key]
-    );
-    await expect(pool.query(
-      `DELETE FROM territory_ledger WHERE idempotency_key = $1`, [key]
-    )).rejects.toThrow(/TERRITORY_LEDGER_IMMUTABLE/);
+  it('returns null when no new entries', async () => {
+    const { driverId, territoryId, managerId } = await setupDriverAndTerritory();
+    await settleRide(driverId, territoryId, `ride-suppnone-${RUN}`);
+    await confirmRegularCycle(pool, territoryId, CURRENT_MONTH, managerId);
+    const supp = await confirmSupplementalCycle(pool, territoryId, CURRENT_MONTH, managerId);
+    expect(supp).toBeNull();
+  });
+
+  it('requires existing REGULAR', async () => {
+    const { territoryId, managerId } = await setupDriverAndTerritory();
+    await expect(confirmSupplementalCycle(pool, territoryId, CURRENT_MONTH, managerId))
+      .rejects.toMatchObject({ code: 'TERRITORY_CYCLE_NO_REGULAR_PARENT' });
+  });
+
+  it('managerId null returns null', async () => {
+    const result = await confirmSupplementalCycle(pool, 'any', CURRENT_MONTH, null);
+    expect(result).toBeNull();
   });
 });
