@@ -3475,8 +3475,8 @@ model ride_fee_splits {
   manager_assignment_id      String?
   reference_month            String
   collection_status          String    @default("collected")
-  recognized_at              DateTime? @db.Timestamptz
-  recognized_at_source       String?
+  recognized_at              DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz
+  recognized_at_source       String    @default("DB_SETTLEMENT_CLOCK")
   platform_fee_rate_bps      Int       @default(1800)
   manager_commission_rate_bps Int      @default(4000)
   idempotency_key            String?   @unique
