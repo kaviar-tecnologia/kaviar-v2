@@ -2,6 +2,7 @@ import { WalletService, LedgerEntry } from './wallet.service';
 import { FeeSplitService } from './fee-split.service';
 import { TerritoryLedgerService } from './territory-ledger.service';
 import { PendingDebitService } from './pending-debit.service';
+import { assertSettlementActive } from './settlement-gate';
 
 /** Interface for any service that can execute a fee debit (WalletService or ShadowService) */
 export interface FeeDebitExecutor {
@@ -31,6 +32,7 @@ export class WalletSettlementService {
   }
 
   async settleRide(params: { rideId: string; driverId: string; finalPriceCents: bigint; reservedCents: bigint; territoryId?: string; managerId?: string }): Promise<{ collected: boolean }> {
+    assertSettlementActive();
     const { rideId, driverId, finalPriceCents, reservedCents, territoryId, managerId } = params;
     const split = this.feeSplit.calculateSplit(finalPriceCents);
 

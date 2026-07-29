@@ -21,6 +21,7 @@ import { FeeSplitService } from '../services/wallet-v2/fee-split.service';
 import { TerritoryLedgerService } from '../services/wallet-v2/territory-ledger.service';
 import { PendingDebitService } from '../services/wallet-v2/pending-debit.service';
 import { WalletSettlementService } from '../services/wallet-v2/wallet-settlement.service';
+import { isSettlementPaused } from '../services/wallet-v2/settlement-gate';
 import { AnnualIncentiveLedgerService } from '../services/finance/annual-incentive-ledger.service';
 import { AnnualIncentiveShadowService } from '../services/finance/annual-incentive-shadow.service';
 import { pool } from '../db';
@@ -991,6 +992,11 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
       if (walletV2Active) {
         // Wallet V2: debitar taxa real via settlement service
         try {
+          if (isSettlementPaused()) {
+            console.warn(`[SETTLEMENT_PAUSED] ride=${ride_id} — skipping settlement during maintenance`);
+            return res.status(503).json({ error: 'SETTLEMENT_PAUSED', message: 'Settlement is temporarily paused for maintenance' });
+          }
+
           const finalPriceCents = Math.round(settlement.final_price * 100);
           const reservedCents = estimateFeeCentsFromPrice(Number(ride.quoted_price || ride.locked_price || 0));
 

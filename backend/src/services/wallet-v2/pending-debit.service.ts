@@ -1,5 +1,6 @@
 import { Pool, PoolClient } from 'pg';
 import { PendingDebitExecutor, PendingDebitExecutionInput } from '../finance/annual-incentive-shadow.service';
+import { assertSettlementActive } from './settlement-gate';
 
 export class PendingDebitService {
   constructor(private pool: Pool) {}
@@ -26,6 +27,7 @@ export class PendingDebitService {
     feeSplitService: any,
     territoryLedgerService: any,
   ): Promise<number> {
+    assertSettlementActive();
     const pendings = await this.pool.query(
       "SELECT id, ride_id, fee_pending_cents, driver_id FROM pending_debits WHERE driver_id = $1 AND status = 'pending' ORDER BY created_at ASC",
       [driverId]
