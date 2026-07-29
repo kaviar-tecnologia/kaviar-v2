@@ -277,6 +277,46 @@ export class WalletService {
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  // getLockedBalance — Returns wallet balance after FOR UPDATE lock
+  // Must be called inside a transaction.
+  // ═══════════════════════════════════════════════════════════════════
+
+  async getLockedBalance(client: PoolClient, driverId: string): Promise<WalletBalance> {
+    const wallet = await this.lockWallet(client, driverId);
+    return {
+      balance_cents: wallet.balance_cents,
+      reserved_cents: wallet.reserved_cents,
+      available_cents: wallet.balance_cents - wallet.reserved_cents,
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // releaseReserveInClient — Uses caller's transaction
+  // ═══════════════════════════════════════════════════════════════════
+
+  async releaseReserveInClient(client: PoolClient, driverId: string, amountCents: bigint, rideId: string): Promise<LedgerEntry> {
+    const key = `cancel_release:ride:${rideId}`;
+    const existing = await this.checkIdempotency(client, key);
+    if (existing) return existing;
+
+    const wallet = await this.lockWallet(client, driverId);
+    const newReserved = wallet.reserved_cents - amountCents;
+    const clampedReserved = newReserved < 0n ? 0n : newReserved;
+
+    await client.query(
+      'UPDATE driver_wallets SET reserved_cents = $2, updated_at = NOW() WHERE driver_id = $1',
+      [driverId, clampedReserved.toString()]
+    );
+
+    return this.insertLedger(client, {
+      driverId, entryType: 'cancel_release', balanceDelta: 0n, reservedDelta: -amountCents,
+      balanceAfter: wallet.balance_cents, reservedAfter: clampedReserved,
+      referenceType: 'ride', referenceId: rideId,
+      actorType: 'system', actorId: 'ride_cancel', reason: `cancel_release:ride:${rideId}`, key,
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // PRIVATE
   // ═══════════════════════════════════════════════════════════════════
 

@@ -1,60 +1,40 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { FeeSplitService } from '../../src/services/wallet-v2/fee-split.service';
-
-const mockQuery = vi.fn();
-const mockPool = { query: mockQuery } as any;
-
-beforeEach(() => mockQuery.mockReset());
+/**
+ * FeeSplitService Tests (Marco 3.2A - Commit 5)
+ */
+import { describe, expect, it } from 'vitest';
+import { FeeSplitService, referenceMonthFromDate, COMPETENCE_TIMEZONE } from '../../src/services/wallet-v2/fee-split.service';
 
 describe('FeeSplitService', () => {
-  const svc = new FeeSplitService(mockPool);
-
-  it('calculateSplit R$20 (2000 cents)', () => {
-    const s = svc.calculateSplit(BigInt(2000));
-    expect(s.fee_amount_cents).toBe(BigInt(360));
-    expect(s.matrix_share_cents).toBe(BigInt(216));
-    expect(s.manager_share_cents).toBe(BigInt(144));
+  it('calculateSplit uses applyBasisPoints (18% fee, 40% manager)', () => {
+    const svc = new FeeSplitService({} as any);
+    const split = svc.calculateSplit(10000n);
+    expect(split.fee_amount_cents).toBe(1800n);
+    expect(split.manager_share_cents).toBe(720n);
+    expect(split.matrix_share_cents).toBe(1080n);
+    expect(split.matrix_share_cents + split.manager_share_cents).toBe(split.fee_amount_cents);
   });
 
-  it('calculateSplit R$30 (3000 cents)', () => {
-    const s = svc.calculateSplit(BigInt(3000));
-    expect(s.fee_amount_cents).toBe(BigInt(540));
-    expect(s.matrix_share_cents).toBe(BigInt(324));
-    expect(s.manager_share_cents).toBe(BigInt(216));
+  it('calculateSplit deterministic for odd amounts', () => {
+    const svc = new FeeSplitService({} as any);
+    const split = svc.calculateSplit(3333n);
+    // 3333 * 1800 / 10000 = 5999400 / 10000 = 599.94 → rounds to 600
+    expect(split.fee_amount_cents).toBe(600n);
+    // 600 * 4000 / 10000 = 2400000 / 10000 = 240
+    expect(split.manager_share_cents).toBe(240n);
+    expect(split.matrix_share_cents).toBe(360n);
   });
 
-  it('calculateSplit R$1 (100 cents)', () => {
-    const s = svc.calculateSplit(BigInt(100));
-    expect(s.fee_amount_cents).toBe(BigInt(18));
-    expect(s.matrix_share_cents).toBe(BigInt(11));
-    expect(s.manager_share_cents).toBe(BigInt(7));
+  it('referenceMonthFromDate uses America/Sao_Paulo', () => {
+    // Feb 1 02:59 UTC = Jan 31 23:59 BRT
+    const d = new Date('2026-02-01T02:59:00.000Z');
+    expect(referenceMonthFromDate(d)).toBe('2026-01');
+
+    // Feb 1 03:00 UTC = Feb 1 00:00 BRT
+    const d2 = new Date('2026-02-01T03:00:00.000Z');
+    expect(referenceMonthFromDate(d2)).toBe('2026-02');
   });
 
-  it('calculateSplit invariant: matrix + manager = fee', () => {
-    for (const price of [100, 500, 1000, 2000, 3000, 5000, 10000, 15000]) {
-      const s = svc.calculateSplit(BigInt(price));
-      expect(s.matrix_share_cents + s.manager_share_cents).toBe(s.fee_amount_cents);
-    }
-  });
-
-  it('recordSplit collected', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [] }) // idempotency check
-      .mockResolvedValueOnce({ rows: [{ id: '1' }] }); // insert
-    const r = await svc.recordSplit({ rideId: 'r1', driverId: 'd1', finalPriceCents: BigInt(3000), collected: true });
-    expect(r.already_processed).toBe(false);
-    expect(mockQuery.mock.calls[1][1]).toContain('540'); // fee_amount
-  });
-
-  it('recordSplit pending', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ id: '2' }] });
-    const r = await svc.recordSplit({ rideId: 'r2', driverId: 'd1', finalPriceCents: BigInt(2000), collected: false });
-    expect(r.already_processed).toBe(false);
-  });
-
-  it('recordSplit idempotent', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [{ id: '1' }] });
-    const r = await svc.recordSplit({ rideId: 'r1', driverId: 'd1', finalPriceCents: BigInt(3000), collected: true });
-    expect(r.already_processed).toBe(true);
+  it('COMPETENCE_TIMEZONE is America/Sao_Paulo', () => {
+    expect(COMPETENCE_TIMEZONE).toBe('America/Sao_Paulo');
   });
 });

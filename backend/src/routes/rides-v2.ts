@@ -1003,14 +1003,9 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
           // Resolve territory for split
           const originNeighborhood = ride.origin_neighborhood_id;
           let territoryId: string | null = null;
-          let managerId: string | null = null;
           if (originNeighborhood) {
             const nRes = await pool.query('SELECT territory_id FROM neighborhoods WHERE id=$1', [originNeighborhood]);
             territoryId = nRes.rows[0]?.territory_id || null;
-            if (territoryId) {
-              const mRes = await pool.query("SELECT admin_id FROM territory_manager_assignments WHERE territory_id=$1 AND status='active' LIMIT 1", [territoryId]);
-              managerId = mRes.rows[0]?.admin_id || null;
-            }
           }
 
           const walletSvc = new WalletService(pool);
@@ -1019,11 +1014,11 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
           const pendingSvc = new PendingDebitService(pool);
           const incentiveLedgerSvc = new AnnualIncentiveLedgerService(pool);
           const shadowSvc = new AnnualIncentiveShadowService(pool, walletSvc, incentiveLedgerSvc);
-          const settlementSvc = new WalletSettlementService(walletSvc, feeSplitSvc, ledgerSvc, pendingSvc, shadowSvc);
+          const settlementSvc = new WalletSettlementService(pool, walletSvc, feeSplitSvc, ledgerSvc, pendingSvc, shadowSvc);
 
           const result = await settlementSvc.settleRide({
             rideId: ride_id, driverId, finalPriceCents: BigInt(finalPriceCents),
-            reservedCents: BigInt(reservedCents), territoryId: territoryId || undefined, managerId: managerId || undefined
+            reservedCents: BigInt(reservedCents), territoryId: territoryId || undefined,
           });
 
           const feeCents = calculateFeeCents(finalPriceCents);

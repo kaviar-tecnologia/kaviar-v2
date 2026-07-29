@@ -120,7 +120,7 @@ export async function acceptOfferInternal(offerId: string, driverId: string, adj
         const feeSplitSvc = new FeeSplitService(pool);
         const ledgerSvc = new TerritoryLedgerService(pool);
         const pendingSvc = new PendingDebitService(pool);
-        const settlement = new WalletSettlementService(walletSvc, feeSplitSvc, ledgerSvc, pendingSvc, walletSvc);
+        const settlement = new WalletSettlementService(pool, walletSvc, feeSplitSvc, ledgerSvc, pendingSvc, walletSvc);
         // Attempt reserve; if it fails we must revert the acceptance to avoid
         // leaving the ride assigned without reserve.
         try {

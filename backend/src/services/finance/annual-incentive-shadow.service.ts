@@ -67,6 +67,24 @@ export class AnnualIncentiveShadowService implements PendingDebitExecutor {
    * Public wrapper for fee debit with optional annual incentive accrual.
    * Preserves the same return type as the original debitFee for callers.
    */
+  /**
+   * FeeDebitExecutor.debitFeeInClient — uses caller's transaction.
+   * Composes wallet debit + annual incentive accrual when shadow is active.
+   */
+  async debitFeeInClient(client: PoolClient, driverId: string, feeCents: bigint, reservedCents: bigint, rideId: string): Promise<DebitFeeResult> {
+    assertShadowConfiguration();
+    const shadowActive = isShadowEnabled() && isWriteEnabled();
+
+    if (!shadowActive) {
+      return this.walletService.debitFeeInClient(client, driverId, feeCents, reservedCents, rideId);
+    }
+
+    const result = await this.debitFeeWithAnnualIncentiveInClient(
+      client, driverId, feeCents, reservedCents, rideId
+    );
+    return result.wallet;
+  }
+
   async debitFee(driverId: string, feeCents: bigint, reservedCents: bigint, rideId: string): Promise<LedgerEntry> {
     // Validate configuration before acquiring connection
     assertShadowConfiguration();
