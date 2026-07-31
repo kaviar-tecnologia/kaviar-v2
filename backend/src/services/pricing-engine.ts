@@ -18,6 +18,7 @@ import { pool } from '../db';
 import { resolveTerritory, TerritoryResolution } from './territory-resolver.service';
 import { getFloorForRoute } from './territory-floor.service';
 import { getRouteDistance } from './google-directions.service';
+import { PLATFORM_FEE_RATE_BPS } from './finance/territory/monetary';
 
 // --- Fee model flat 18% feature flag ---
 
@@ -57,29 +58,31 @@ async function getFlatFeeConfig(): Promise<{ id: string; percent: number } | nul
  * Resolves the effective platform fee percentage for the current ride.
  *
  * When FEE_MODEL_FLAT_18 is active:
- *   - Uses the approved flat config (platform_fee_configs) if available
- *   - Falls back to 18% if no config exists
- *   - IGNORES pricing profile territorial rates (fee_local, fee_adjacent, fee_external)
+ *   - Returns PLATFORM_FEE_RATE_BPS / 100 (currently 18%)
+ *   - This is the SAME constant used by fee-split and wallet-settlement
+ *   - IGNORES pricing profile territorial rates and platform_fee_configs
+ *   - Dynamic configuration (platform_fee_configs) is NOT supported in flat mode.
+ *     Changing that table does NOT affect the system. Full end-to-end support
+ *     for dynamic rates requires a separate implementation across all services.
  *
  * When FEE_MODEL_FLAT_18 is inactive:
  *   - Uses the pricing profile territorial rate for the given territory
  *
  * This function is the SINGLE SOURCE for determining the fee shown to the driver
- * in quote, refine, and settle stages. No other code path should independently
- * decide which rate to use.
+ * in quote, refine, and settle stages. It derives from the same constant
+ * (PLATFORM_FEE_RATE_BPS) that wallet-settlement and fee-split use, ensuring
+ * zero divergence between displayed and collected values.
+ *
+ * DYNAMIC_PLATFORM_FEE_CONFIGURATION_NOT_SUPPORTED_IN_FLAT_18_MODE
  */
 export async function resolveEffectivePlatformFeePercent(
   profile: PricingProfile,
   territory: TerritoryType,
   homebound = false,
-): Promise<{ percent: number; source: 'flat_config' | 'flat_fallback' | 'territorial' }> {
+): Promise<{ percent: number; source: 'flat_constant' | 'territorial' }> {
   const flatActive = await isFlatFeeEnabled();
   if (flatActive) {
-    const config = await getFlatFeeConfig();
-    if (config) {
-      return { percent: config.percent, source: 'flat_config' };
-    }
-    return { percent: 18, source: 'flat_fallback' };
+    return { percent: PLATFORM_FEE_RATE_BPS / 100, source: 'flat_constant' };
   }
   return { percent: feeForTerritory(profile, territory, homebound), source: 'territorial' };
 }
@@ -520,15 +523,33 @@ export async function settle(rideId: string): Promise<SettlementResult | null> {
   const settlement_territory: TerritoryType = s.driver_territory || s.route_territory;
   const final_price = Number(s.locked_price); // V1: final = locked
 
-  // Fee model: resolve effective rate (single source of truth)
+  // Fee model: resolve effective rate (single source of truth — PLATFORM_FEE_RATE_BPS)
   const { percent: fee_percent, source: fee_source } = await resolveEffectivePlatformFeePercent(p, settlement_territory);
+
+  // ═══ SNAPSHOT VALIDATION ═══
+  // Validate that the persisted fee_percent (set by quote/refine) matches what we're about to use.
+  // If flat mode is active and the snapshot shows a different rate, this indicates a data integrity
+  // issue (e.g., the ride was quoted before flat mode was enabled, or a bug).
+  const persistedFeePercent = Number(s.fee_percent);
+  if (fee_source === 'flat_constant' && persistedFeePercent !== fee_percent && persistedFeePercent > 0) {
+    throw Object.assign(
+      new Error(
+        `SETTLE_FEE_SNAPSHOT_MISMATCH: ride=${rideId} persisted_fee_percent=${persistedFeePercent} ` +
+        `effective_fee_percent=${fee_percent} source=${fee_source}. ` +
+        `The ride was quoted with a different rate than the current flat mode rate. ` +
+        `This settlement is blocked to prevent inconsistent charges.`
+      ),
+      { code: 'SETTLE_FEE_SNAPSHOT_MISMATCH' }
+    );
+  }
+
   let fee_amount: number, driver_earnings: number;
   let credit_cost: number, credit_match_type: string;
 
   fee_amount = round2(final_price * fee_percent / 100);
   driver_earnings = round2(final_price - fee_amount);
 
-  if (fee_source === 'flat_config' || fee_source === 'flat_fallback') {
+  if (fee_source === 'flat_constant') {
     credit_cost = 0;
     credit_match_type = 'FLAT_FEE';
   } else {
@@ -560,7 +581,6 @@ export async function settle(rideId: string): Promise<SettlementResult | null> {
     throw err;
   }
 
-  console.log(`[PRICING_SETTLE] ride=${rideId} final=${final_price} territory=${settlement_territory} credit=${credit_cost}(${credit_match_type})`);
-
+  console.log(`[PRICING_SETTLE] ride=${rideId} final=${final_price} territory=${settlement_territory} effective_fee=${fee_percent}% fee_source=${fee_source} credit=${credit_cost}(${credit_match_type})`);
   return { final_price, fee_percent, fee_amount, driver_earnings, credit_cost, credit_match_type, settlement_territory };
 }
