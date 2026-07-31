@@ -110,7 +110,9 @@ export async function previewCycle(
     if (e.entry_type === 'fee_share') grossCommission += BigInt(e.amount_cents);
   }
 
-  if (grossCommission < 0n || grossPlatformFee < 0n) blockers.push('NEGATIVE_ADJUSTMENT_UNSUPPORTED');
+  if (findNegativeCycleEntry(entries) || grossCommission < 0n || grossPlatformFee < 0n) {
+    blockers.push('NEGATIVE_ADJUSTMENT_UNSUPPORTED');
+  }
 
   // Check fiscal profile
   if (managerId) {
@@ -205,21 +207,7 @@ export async function confirmRegularCycle(
       throw Object.assign(new Error('Negative values not supported'), { code: 'TERRITORY_CYCLE_NEGATIVE_ADJUSTMENT_UNSUPPORTED' });
     }
 
-    // BLOCKED: diagnostic only, no allocations, no fiscal check
-    if (cycleStatus === 'BLOCKED') {
-      const cycle = await insertCycle(client, {
-        territoryId, managerId: null, referenceMonth,
-        cycleType: 'REGULAR', parentCycleId: null, sequenceNumber: 1,
-        grossPlatformFee, grossCommission,
-        approvedAmount: 0n, status: 'BLOCKED',
-        platformFeeRateBps: PLATFORM_FEE_RATE_BPS, managerCommissionRateBps: MANAGER_COMMISSION_RATE_BPS,
-        fiscalRequired: false, fiscalStatus: 'NOT_REQUIRED',
-      });
-      await client.query('COMMIT');
-      return cycle;
-    }
-
-    // CALCULATED: full validation
+    // Reconciliation and rate checks apply to BOTH BLOCKED and CALCULATED
     const divergences = await checkReconciliationInClient(client, territoryId, managerId, referenceMonth);
     if (divergences.length > 0) {
       await client.query('ROLLBACK');
@@ -233,6 +221,22 @@ export async function confirmRegularCycle(
       throw Object.assign(new Error('Mixed rates'), { code: 'TERRITORY_CYCLE_MIXED_RATES', rates: rates.rates });
     }
 
+    // BLOCKED: diagnostic only, no allocations, no fiscal check
+    if (cycleStatus === 'BLOCKED') {
+      const cycle = await insertCycle(client, {
+        territoryId, managerId: null, referenceMonth,
+        cycleType: 'REGULAR', parentCycleId: null, sequenceNumber: 1,
+        grossPlatformFee, grossCommission,
+        approvedAmount: 0n, status: 'BLOCKED',
+        platformFeeRateBps: rates.effectiveRates!.platform_fee_rate_bps,
+        managerCommissionRateBps: rates.effectiveRates!.manager_commission_rate_bps,
+        fiscalRequired: false, fiscalStatus: 'NOT_REQUIRED',
+      });
+      await client.query('COMMIT');
+      return cycle;
+    }
+
+    // CALCULATED: fiscal profile + allocations
     const fiscal = await resolveFiscalProfile(client, managerId!, territoryId);
 
     const cycle = await insertCycle(client, {
@@ -286,19 +290,20 @@ export async function confirmSupplementalCycle(
       throw Object.assign(new Error('No active REGULAR cycle'), { code: 'TERRITORY_CYCLE_NO_REGULAR_PARENT' });
     }
 
-    // Cumulative reconciliation BEFORE any no-op return
+    // a. Get unallocated entries
+    const entries = await getUnallocatedEntriesInClient(client, territoryId, managerId, referenceMonth);
+
+    // b. Reject any negative entry
+    assertNoNegativeCycleEntries(entries);
+
+    // c. Cumulative reconciliation (detects split-without-ledger even if entries is empty)
     const divergences = await checkReconciliationInClient(client, territoryId, managerId, referenceMonth);
     if (divergences.length > 0) {
       await client.query('ROLLBACK');
       throw Object.assign(new Error('Ledger divergent'), { code: 'TERRITORY_CYCLE_LEDGER_DIVERGENCE', divergences });
     }
 
-    const entries = await getUnallocatedEntriesInClient(client, territoryId, managerId, referenceMonth);
-
-    // Per-entry negative check (before reconciliation can mask it)
-    assertNoNegativeCycleEntries(entries);
-
-    // No unallocated entries → no supplemental needed
+    // d. No unallocated entries → no supplemental needed
     if (entries.length === 0) { await client.query('COMMIT'); return null; }
 
     let grossPlatformFee = 0n, grossCommission = 0n;
@@ -438,14 +443,20 @@ async function getUnallocatedEntriesInClient(client: PoolClient, territoryId: st
   return getUnallocatedEntries(client, territoryId, managerId, referenceMonth);
 }
 
-function assertNoNegativeCycleEntries(entries: LedgerEntry[]): void {
+function findNegativeCycleEntry(entries: LedgerEntry[]): LedgerEntry | null {
   for (const e of entries) {
-    if (BigInt(e.amount_cents) < 0n) {
-      throw Object.assign(
-        new Error(`Negative entry: ledger_id=${e.id} ride=${e.ride_id} type=${e.entry_type} amount=${e.amount_cents}`),
-        { code: 'TERRITORY_CYCLE_NEGATIVE_ADJUSTMENT_UNSUPPORTED' },
-      );
-    }
+    if (BigInt(e.amount_cents) < 0n) return e;
+  }
+  return null;
+}
+
+function assertNoNegativeCycleEntries(entries: LedgerEntry[]): void {
+  const neg = findNegativeCycleEntry(entries);
+  if (neg) {
+    throw Object.assign(
+      new Error(`Negative entry: ledger_id=${neg.id} ride=${neg.ride_id} type=${neg.entry_type} amount=${neg.amount_cents}`),
+      { code: 'TERRITORY_CYCLE_NEGATIVE_ADJUSTMENT_UNSUPPORTED' },
+    );
   }
 }
 
