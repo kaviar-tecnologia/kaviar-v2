@@ -51,6 +51,39 @@ async function getFlatFeeConfig(): Promise<{ id: string; percent: number } | nul
   return cachedFlatFeePercent;
 }
 
+// --- Effective platform fee resolver (single source of truth) ---
+
+/**
+ * Resolves the effective platform fee percentage for the current ride.
+ *
+ * When FEE_MODEL_FLAT_18 is active:
+ *   - Uses the approved flat config (platform_fee_configs) if available
+ *   - Falls back to 18% if no config exists
+ *   - IGNORES pricing profile territorial rates (fee_local, fee_adjacent, fee_external)
+ *
+ * When FEE_MODEL_FLAT_18 is inactive:
+ *   - Uses the pricing profile territorial rate for the given territory
+ *
+ * This function is the SINGLE SOURCE for determining the fee shown to the driver
+ * in quote, refine, and settle stages. No other code path should independently
+ * decide which rate to use.
+ */
+export async function resolveEffectivePlatformFeePercent(
+  profile: PricingProfile,
+  territory: TerritoryType,
+  homebound = false,
+): Promise<{ percent: number; source: 'flat_config' | 'flat_fallback' | 'territorial' }> {
+  const flatActive = await isFlatFeeEnabled();
+  if (flatActive) {
+    const config = await getFlatFeeConfig();
+    if (config) {
+      return { percent: config.percent, source: 'flat_config' };
+    }
+    return { percent: 18, source: 'flat_fallback' };
+  }
+  return { percent: feeForTerritory(profile, territory, homebound), source: 'territorial' };
+}
+
 // --- Types ---
 
 export interface PricingProfile {
@@ -328,7 +361,8 @@ export async function quote(rideId: string, originLat: number, originLng: number
     floor_id = floor.id;
   }
 
-  const fee_percent = feeForTerritory(profile, route_territory);
+  const pricing_profile_fee_percent = feeForTerritory(profile, route_territory);
+  const { percent: fee_percent, source: fee_source } = await resolveEffectivePlatformFeePercent(profile, route_territory);
 
   // MOTO_PASSENGER: 70% of car price, minimum R$18
   if (serviceCategory === 'MOTO_PASSENGER') {
@@ -380,7 +414,7 @@ export async function quote(rideId: string, originLat: number, originLng: number
     throw err;
   }
 
-  console.log(`[PRICING_QUOTE] ride=${rideId} profile=${profile.slug} dist=${distance_km}km dur=${duration_min.toFixed(1)}min price=${quoted_price} territory=${route_territory} fee=${fee_percent}% source=${pricing_source}${floor_applied ? ` FLOOR_APPLIED(${floor_id})` : ''}`);
+  console.log(`[PRICING_QUOTE] ride=${rideId} profile=${profile.slug} dist=${distance_km}km dur=${duration_min.toFixed(1)}min price=${quoted_price} territory=${route_territory} effective_fee=${fee_percent}% profile_fee=${pricing_profile_fee_percent}% fee_source=${fee_source} source=${pricing_source}${floor_applied ? ` FLOOR_APPLIED(${floor_id})` : ''}`);
 
   return { quoted_price, route_territory, fee_percent, fee_amount, driver_earnings, distance_km, pricing_profile_slug: profile.slug };
 }
@@ -417,7 +451,8 @@ export async function refine(rideId: string, driverNeighborhoodId: string | null
   const driver_territory = classifyWithDriver(
     driverNeighborhoodId, s.origin_neighborhood_id, s.dest_neighborhood_id
   );
-  const fee_percent = feeForTerritory(p, driver_territory, isHomebound);
+  const pricing_profile_fee_percent = feeForTerritory(p, driver_territory, isHomebound);
+  const { percent: fee_percent, source: fee_source } = await resolveEffectivePlatformFeePercent(p, driver_territory, isHomebound);
   const locked = Number(s.locked_price);
   const fee_amount = round2(locked * fee_percent / 100);
   const driver_earnings = round2(locked - fee_amount);
@@ -446,7 +481,7 @@ export async function refine(rideId: string, driverNeighborhoodId: string | null
     throw err;
   }
 
-  console.log(`[PRICING_REFINE] ride=${rideId} driver_territory=${driver_territory} fee=${fee_percent}% earnings=${driver_earnings} homebound=${isHomebound}`);
+  console.log(`[PRICING_REFINE] ride=${rideId} driver_territory=${driver_territory} effective_fee=${fee_percent}% profile_fee=${pricing_profile_fee_percent}% fee_source=${fee_source} earnings=${driver_earnings} homebound=${isHomebound}`);
 }
 
 /**
@@ -485,22 +520,18 @@ export async function settle(rideId: string): Promise<SettlementResult | null> {
   const settlement_territory: TerritoryType = s.driver_territory || s.route_territory;
   const final_price = Number(s.locked_price); // V1: final = locked
 
-  // Fee model: flat 18% or legacy territorial fee
-  const flatFeeActive = await isFlatFeeEnabled();
-  let fee_percent: number, fee_amount: number, driver_earnings: number;
+  // Fee model: resolve effective rate (single source of truth)
+  const { percent: fee_percent, source: fee_source } = await resolveEffectivePlatformFeePercent(p, settlement_territory);
+  let fee_amount: number, driver_earnings: number;
   let credit_cost: number, credit_match_type: string;
 
-  if (flatFeeActive) {
-    const feeConfig = await getFlatFeeConfig();
-    fee_percent = feeConfig ? feeConfig.percent : 18;
-    fee_amount = round2(final_price * fee_percent / 100);
-    driver_earnings = round2(final_price - fee_amount);
+  fee_amount = round2(final_price * fee_percent / 100);
+  driver_earnings = round2(final_price - fee_amount);
+
+  if (fee_source === 'flat_config' || fee_source === 'flat_fallback') {
     credit_cost = 0;
     credit_match_type = 'FLAT_FEE';
   } else {
-    fee_percent = Number(s.fee_percent);
-    fee_amount = Number(s.fee_amount);
-    driver_earnings = Number(s.driver_earnings);
     const cr = creditForTerritory(p, settlement_territory);
     credit_cost = cr.cost;
     credit_match_type = cr.matchType;
