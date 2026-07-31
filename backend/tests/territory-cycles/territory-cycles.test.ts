@@ -866,14 +866,136 @@ describe('Transitions & approvedAt', () => {
     const cycle = await confirmRegularCycle(pool, territoryId, CURRENT_MONTH, managerId);
     await submitForReview(pool, cycle.id);
     await approveCycle(pool, cycle.id, 'admin');
-    // Check no financial side effects
-    const checks = await Promise.all([
-      pool.query(`SELECT COUNT(*) FROM financial_obligations WHERE cycle_id=$1`, [cycle.id]).catch(() => ({ rows: [{ count: '0' }] })),
-      pool.query(`SELECT COUNT(*) FROM financial_payouts WHERE cycle_id=$1`, [cycle.id]).catch(() => ({ rows: [{ count: '0' }] })),
-      pool.query(`SELECT COUNT(*) FROM financial_payout_outbox WHERE cycle_id=$1`, [cycle.id]).catch(() => ({ rows: [{ count: '0' }] })),
-    ]);
-    for (const { rows } of checks) {
-      expect(rows[0].count).toBe('0');
-    }
+    // Check no financial side effects — queries must NOT be swallowed
+    const { rows: [obl] } = await pool.query(
+      `SELECT COUNT(*) FROM financial_obligations WHERE source_id=$1`, [cycle.id]);
+    expect(obl.count).toBe('0');
+    const { rows: [pay] } = await pool.query(
+      `SELECT COUNT(*) FROM financial_payouts fp JOIN financial_obligations fo ON fo.id=fp.obligation_id WHERE fo.source_id=$1`, [cycle.id]);
+    expect(pay.count).toBe('0');
+    const { rows: [outbox] } = await pool.query(
+      `SELECT COUNT(*) FROM financial_payout_outbox fpo JOIN financial_obligations fo ON fo.id=fpo.obligation_id WHERE fo.source_id=$1`, [cycle.id]);
+    expect(outbox.count).toBe('0');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Phase 6B2: Split-without-ledger, engine gates for confirm
+// ═══════════════════════════════════════════════════════════════
+
+describe('Split Without Ledger Detection', () => {
+  it('split with collected fee but no ledger blocks cycle', async () => {
+    const { driverId, territoryId, managerId } = await setupFull(50000n);
+    const { rows: [assign] } = await pool.query(
+      `SELECT id FROM territory_manager_assignments WHERE territory_id=$1 AND admin_id=$2 AND status='active'`,
+      [territoryId, managerId]);
+    const fee = 1800n, comm = (fee * 4000n + 5000n) / 10000n;
+
+    // Ride A: fully valid (split + ledger)
+    const rideA = `ride-swl-a-${RUN}-${randomUUID().slice(0,4)}`;
+    await pool.query(
+      `INSERT INTO ride_fee_splits (ride_id, driver_id, final_price_cents, fee_amount_cents,
+        fee_collected_cents, fee_pending_cents, matrix_share_cents, manager_share_cents,
+        territory_id, manager_id, reference_month, collection_status,
+        manager_assignment_id, platform_fee_rate_bps, manager_commission_rate_bps)
+       VALUES ($1,$2,10000,$3,$3,0,$4,$5,$6,$7,$8,'collected',$9,1800,4000)`,
+      [rideA, driverId, fee.toString(), (fee - comm).toString(),
+       comm.toString(), territoryId, managerId, CURRENT_MONTH, assign.id]);
+    await pool.query(
+      `INSERT INTO territory_ledger (territory_id, manager_id, reference_month, entry_type, amount_cents, reference_type, reference_id, manager_assignment_id)
+       VALUES ($1,$2,$3,'platform_fee',$4,'ride',$5,$6), ($1,$2,$3,'fee_share',$7,'ride',$5,$6)`,
+      [territoryId, managerId, CURRENT_MONTH, fee.toString(), rideA, assign.id, comm.toString()]);
+
+    // Ride B: split exists with collected fee but NO ledger entries
+    const rideB = `ride-swl-b-${RUN}-${randomUUID().slice(0,4)}`;
+    await pool.query(
+      `INSERT INTO ride_fee_splits (ride_id, driver_id, final_price_cents, fee_amount_cents,
+        fee_collected_cents, fee_pending_cents, matrix_share_cents, manager_share_cents,
+        territory_id, manager_id, reference_month, collection_status,
+        manager_assignment_id, platform_fee_rate_bps, manager_commission_rate_bps)
+       VALUES ($1,$2,10000,$3,$3,0,$4,$5,$6,$7,$8,'collected',$9,1800,4000)`,
+      [rideB, driverId, fee.toString(), (fee - comm).toString(),
+       comm.toString(), territoryId, managerId, CURRENT_MONTH, assign.id]);
+    // NO ledger for rideB
+
+    await expect(confirmRegularCycle(pool, territoryId, CURRENT_MONTH, managerId))
+      .rejects.toMatchObject({ code: 'TERRITORY_CYCLE_LEDGER_DIVERGENCE' });
+    const { rows: cycles } = await pool.query(
+      `SELECT COUNT(*) FROM territory_payout_cycles WHERE territory_id=$1 AND reference_month=$2 AND status<>'CANCELLED'`,
+      [territoryId, CURRENT_MONTH]);
+    expect(cycles[0].count).toBe('0');
+  });
+
+  it('ledger without split blocks cycle', async () => {
+    const { driverId, territoryId, managerId } = await setupFull(50000n);
+    const { rows: [assign] } = await pool.query(
+      `SELECT id FROM territory_manager_assignments WHERE territory_id=$1 AND admin_id=$2 AND status='active'`,
+      [territoryId, managerId]);
+    const fee = 1800n, comm = (fee * 4000n + 5000n) / 10000n;
+
+    // Ride A: fully valid
+    const rideA = `ride-lwos-a-${RUN}-${randomUUID().slice(0,4)}`;
+    await pool.query(
+      `INSERT INTO ride_fee_splits (ride_id, driver_id, final_price_cents, fee_amount_cents,
+        fee_collected_cents, fee_pending_cents, matrix_share_cents, manager_share_cents,
+        territory_id, manager_id, reference_month, collection_status,
+        manager_assignment_id, platform_fee_rate_bps, manager_commission_rate_bps)
+       VALUES ($1,$2,10000,$3,$3,0,$4,$5,$6,$7,$8,'collected',$9,1800,4000)`,
+      [rideA, driverId, fee.toString(), (fee - comm).toString(),
+       comm.toString(), territoryId, managerId, CURRENT_MONTH, assign.id]);
+    await pool.query(
+      `INSERT INTO territory_ledger (territory_id, manager_id, reference_month, entry_type, amount_cents, reference_type, reference_id, manager_assignment_id)
+       VALUES ($1,$2,$3,'platform_fee',$4,'ride',$5,$6), ($1,$2,$3,'fee_share',$7,'ride',$5,$6)`,
+      [territoryId, managerId, CURRENT_MONTH, fee.toString(), rideA, assign.id, comm.toString()]);
+
+    // Ride B: ledger exists but NO split
+    const rideB = `ride-lwos-b-${RUN}-${randomUUID().slice(0,4)}`;
+    await pool.query(
+      `INSERT INTO territory_ledger (territory_id, manager_id, reference_month, entry_type, amount_cents, reference_type, reference_id, manager_assignment_id)
+       VALUES ($1,$2,$3,'platform_fee',$4,'ride',$5,$6), ($1,$2,$3,'fee_share',$7,'ride',$5,$6)`,
+      [territoryId, managerId, CURRENT_MONTH, fee.toString(), rideB, assign.id, comm.toString()]);
+
+    await expect(confirmRegularCycle(pool, territoryId, CURRENT_MONTH, managerId))
+      .rejects.toMatchObject({ code: 'TERRITORY_CYCLE_LEDGER_DIVERGENCE' });
+    const { rows: allocs } = await pool.query(
+      `SELECT COUNT(*) FROM territory_cycle_allocations WHERE cycle_id IN (SELECT id FROM territory_payout_cycles WHERE territory_id=$1)`,
+      [territoryId]);
+    expect(allocs[0].count).toBe('0');
+  });
+});
+
+describe('Confirm Engine Gates', () => {
+  it('REGULAR with engine disabled rejects', async () => {
+    process.env.MANAGER_PAYOUT_ENGINE = 'disabled';
+    await expect(confirmRegularCycle(pool, 'any', CURRENT_MONTH, 'any'))
+      .rejects.toMatchObject({ code: 'MANAGER_PAYOUT_ENGINE_NOT_OUTBOUND' });
+  });
+
+  it('REGULAR with engine legacy rejects', async () => {
+    process.env.MANAGER_PAYOUT_ENGINE = 'legacy';
+    await expect(confirmRegularCycle(pool, 'any', CURRENT_MONTH, 'any'))
+      .rejects.toMatchObject({ code: 'MANAGER_PAYOUT_ENGINE_NOT_OUTBOUND' });
+  });
+
+  it('SUPPLEMENTAL with engine disabled rejects', async () => {
+    process.env.MANAGER_PAYOUT_ENGINE = 'disabled';
+    await expect(confirmSupplementalCycle(pool, 'any', CURRENT_MONTH, 'mgr'))
+      .rejects.toMatchObject({ code: 'MANAGER_PAYOUT_ENGINE_NOT_OUTBOUND' });
+  });
+
+  it('SUPPLEMENTAL with engine legacy rejects', async () => {
+    process.env.MANAGER_PAYOUT_ENGINE = 'legacy';
+    await expect(confirmSupplementalCycle(pool, 'any', CURRENT_MONTH, 'mgr'))
+      .rejects.toMatchObject({ code: 'MANAGER_PAYOUT_ENGINE_NOT_OUTBOUND' });
+  });
+
+  it('engine gates do not alter the database', async () => {
+    const before = await pool.query('SELECT COUNT(*) FROM territory_payout_cycles');
+    process.env.MANAGER_PAYOUT_ENGINE = 'disabled';
+    await confirmRegularCycle(pool, 'x', CURRENT_MONTH, 'y').catch(() => {});
+    await confirmSupplementalCycle(pool, 'x', CURRENT_MONTH, 'y').catch(() => {});
+    process.env.MANAGER_PAYOUT_ENGINE = 'outbound';
+    const after = await pool.query('SELECT COUNT(*) FROM territory_payout_cycles');
+    expect(after.rows[0].count).toBe(before.rows[0].count);
   });
 });

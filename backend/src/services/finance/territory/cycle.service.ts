@@ -152,6 +152,7 @@ export async function confirmRegularCycle(
   referenceMonth: string,
   managerId: string | null,
 ): Promise<TerritoryPayoutCycle> {
+  assertOutboundEngine();
   if (!isValidReferenceMonth(referenceMonth)) {
     throw Object.assign(new Error('Invalid reference_month'), { code: 'TERRITORY_CYCLE_INVALID_MONTH' });
   }
@@ -263,6 +264,7 @@ export async function confirmSupplementalCycle(
   managerId: string | null,
 ): Promise<TerritoryPayoutCycle | null> {
   if (!managerId) return null;
+  assertOutboundEngine();
   if (!isValidReferenceMonth(referenceMonth)) {
     throw Object.assign(new Error('Invalid reference_month'), { code: 'TERRITORY_CYCLE_INVALID_MONTH' });
   }
@@ -432,67 +434,66 @@ async function getUnallocatedEntriesInClient(client: PoolClient, territoryId: st
 
 async function checkReconciliation(db: Pool | PoolClient, territoryId: string, managerId: string | null, referenceMonth: string): Promise<Array<{ rideId: string; reason: string }>> {
   const { rows } = await db.query(
-    `WITH ledger_rides AS (
-       -- Start from the candidate ledger entries (exactly those eligible for the cycle)
-       SELECT DISTINCT tl.reference_id AS ride_id
-       FROM territory_ledger tl
-       WHERE tl.territory_id=$1 AND tl.manager_id IS NOT DISTINCT FROM $2 AND tl.reference_month=$3
-         AND tl.entry_type IN ('platform_fee','fee_share') AND tl.reference_type='ride'
-         AND NOT EXISTS (SELECT 1 FROM territory_cycle_allocations tca WHERE tca.ledger_entry_id=tl.id)
-     ), ledger_agg AS (
-       -- Aggregate ledger amounts and metadata per ride
+    `WITH ledger_agg AS (
+       -- Cumulative ledger entries for this territory/manager/month (all, not just unallocated)
        SELECT tl.reference_id AS ride_id,
          COALESCE(SUM(tl.amount_cents) FILTER (WHERE tl.entry_type='platform_fee'),0) AS pf_sum,
          COALESCE(SUM(tl.amount_cents) FILTER (WHERE tl.entry_type='fee_share'),0) AS fs_sum,
-         -- Compare metadata against the split (LEFT JOIN means rfs may be NULL)
-         COUNT(*) FILTER (WHERE rfs.ride_id IS NOT NULL AND tl.territory_id IS DISTINCT FROM rfs.territory_id) AS territory_mismatch,
-         COUNT(*) FILTER (WHERE rfs.ride_id IS NOT NULL AND tl.manager_id IS DISTINCT FROM rfs.manager_id) AS manager_mismatch,
-         COUNT(*) FILTER (WHERE rfs.ride_id IS NOT NULL AND tl.manager_assignment_id IS DISTINCT FROM rfs.manager_assignment_id) AS assignment_mismatch,
-         COUNT(*) FILTER (WHERE rfs.ride_id IS NOT NULL AND tl.reference_month IS DISTINCT FROM rfs.reference_month) AS month_mismatch,
-         COUNT(*) FILTER (WHERE tl.reference_type IS DISTINCT FROM 'ride') AS reftype_mismatch,
-         -- Split metadata for economic checks (take from any matching row)
-         MAX(rfs.fee_collected_cents) AS fee_collected_cents,
-         MAX(rfs.fee_pending_cents) AS fee_pending_cents,
-         MAX(rfs.fee_amount_cents) AS fee_amount_cents,
-         MAX(rfs.collection_status) AS collection_status,
-         MAX(rfs.manager_commission_rate_bps) AS manager_commission_rate_bps,
-         COUNT(DISTINCT rfs.ride_id) AS split_count
+         COUNT(*) FILTER (WHERE tl.entry_type='platform_fee') AS pf_count,
+         COUNT(*) FILTER (WHERE tl.entry_type='fee_share') AS fs_count,
+         -- Metadata from ledger (use first row for comparison)
+         MIN(tl.territory_id) AS tl_territory_id,
+         MIN(tl.manager_id) AS tl_manager_id,
+         MIN(tl.manager_assignment_id) AS tl_assignment_id,
+         MIN(tl.reference_month) AS tl_reference_month
        FROM territory_ledger tl
-       JOIN ledger_rides lr ON lr.ride_id = tl.reference_id
-       LEFT JOIN ride_fee_splits rfs ON rfs.ride_id = tl.reference_id
        WHERE tl.territory_id=$1 AND tl.manager_id IS NOT DISTINCT FROM $2 AND tl.reference_month=$3
          AND tl.entry_type IN ('platform_fee','fee_share') AND tl.reference_type='ride'
        GROUP BY tl.reference_id
+     ), split_src AS (
+       -- All splits for this territory/manager/month with collected fees
+       SELECT ride_id, fee_collected_cents, fee_pending_cents, fee_amount_cents,
+              collection_status, manager_commission_rate_bps,
+              territory_id AS rfs_territory_id, manager_id AS rfs_manager_id,
+              manager_assignment_id AS rfs_assignment_id, reference_month AS rfs_reference_month
+       FROM ride_fee_splits
+       WHERE territory_id=$1 AND manager_id IS NOT DISTINCT FROM $2 AND reference_month=$3
+         AND fee_collected_cents > 0
      )
-     SELECT ride_id,
+     SELECT COALESCE(la.ride_id, ss.ride_id) AS ride_id,
        CASE
-         WHEN split_count = 0 THEN 'ledger_without_split'
-         WHEN territory_mismatch > 0 THEN 'territory_mismatch'
-         WHEN manager_mismatch > 0 THEN 'manager_mismatch'
-         WHEN assignment_mismatch > 0 THEN 'assignment_mismatch'
-         WHEN month_mismatch > 0 THEN 'month_mismatch'
-         WHEN reftype_mismatch > 0 THEN 'reference_type_mismatch'
-         WHEN pf_sum <> fee_collected_cents THEN 'platform_fee_mismatch'
-         WHEN fs_sum <> (fee_collected_cents * manager_commission_rate_bps + 5000) / 10000 THEN 'fee_share_mismatch'
-         WHEN fee_collected_cents < 0 THEN 'negative_collected'
-         WHEN fee_pending_cents < 0 THEN 'negative_pending'
-         WHEN fee_collected_cents + fee_pending_cents <> fee_amount_cents THEN 'split_invariant_violated'
-         WHEN collection_status = 'collected' AND fee_pending_cents <> 0 THEN 'status_collected_but_pending'
-         WHEN collection_status = 'pending' AND fee_collected_cents <> 0 THEN 'status_pending_but_collected'
-         WHEN collection_status = 'partial' AND (fee_collected_cents <= 0 OR fee_pending_cents <= 0) THEN 'status_partial_invalid'
+         WHEN ss.ride_id IS NULL THEN 'ledger_without_split'
+         WHEN la.ride_id IS NULL THEN 'split_without_ledger'
+         WHEN la.pf_count = 0 THEN 'platform_fee_entry_missing'
+         WHEN la.fs_count = 0 THEN 'fee_share_entry_missing'
+         WHEN la.tl_territory_id IS DISTINCT FROM ss.rfs_territory_id THEN 'territory_mismatch'
+         WHEN la.tl_manager_id IS DISTINCT FROM ss.rfs_manager_id THEN 'manager_mismatch'
+         WHEN la.tl_assignment_id IS DISTINCT FROM ss.rfs_assignment_id THEN 'assignment_mismatch'
+         WHEN la.tl_reference_month IS DISTINCT FROM ss.rfs_reference_month THEN 'month_mismatch'
+         WHEN la.pf_sum <> ss.fee_collected_cents THEN 'platform_fee_mismatch'
+         WHEN la.fs_sum <> (ss.fee_collected_cents * ss.manager_commission_rate_bps + 5000) / 10000 THEN 'fee_share_mismatch'
+         WHEN ss.fee_collected_cents < 0 THEN 'negative_collected'
+         WHEN ss.fee_pending_cents < 0 THEN 'negative_pending'
+         WHEN ss.fee_collected_cents + ss.fee_pending_cents <> ss.fee_amount_cents THEN 'split_invariant_violated'
+         WHEN ss.collection_status = 'collected' AND ss.fee_pending_cents <> 0 THEN 'status_collected_but_pending'
+         WHEN ss.collection_status = 'pending' AND ss.fee_collected_cents <> 0 THEN 'status_pending_but_collected'
+         WHEN ss.collection_status = 'partial' AND (ss.fee_collected_cents <= 0 OR ss.fee_pending_cents <= 0) THEN 'status_partial_invalid'
          ELSE NULL
        END AS reason
-     FROM ledger_agg
-     WHERE split_count = 0
-       OR territory_mismatch > 0 OR manager_mismatch > 0 OR assignment_mismatch > 0
-       OR month_mismatch > 0 OR reftype_mismatch > 0
-       OR pf_sum <> fee_collected_cents
-       OR fs_sum <> (fee_collected_cents * manager_commission_rate_bps + 5000) / 10000
-       OR fee_collected_cents < 0 OR fee_pending_cents < 0
-       OR fee_collected_cents + fee_pending_cents <> fee_amount_cents
-       OR (collection_status = 'collected' AND fee_pending_cents <> 0)
-       OR (collection_status = 'pending' AND fee_collected_cents <> 0)
-       OR (collection_status = 'partial' AND (fee_collected_cents <= 0 OR fee_pending_cents <= 0))`,
+     FROM ledger_agg la FULL OUTER JOIN split_src ss ON ss.ride_id = la.ride_id
+     WHERE ss.ride_id IS NULL OR la.ride_id IS NULL
+       OR la.pf_count = 0 OR la.fs_count = 0
+       OR la.tl_territory_id IS DISTINCT FROM ss.rfs_territory_id
+       OR la.tl_manager_id IS DISTINCT FROM ss.rfs_manager_id
+       OR la.tl_assignment_id IS DISTINCT FROM ss.rfs_assignment_id
+       OR la.tl_reference_month IS DISTINCT FROM ss.rfs_reference_month
+       OR la.pf_sum <> ss.fee_collected_cents
+       OR la.fs_sum <> (ss.fee_collected_cents * ss.manager_commission_rate_bps + 5000) / 10000
+       OR ss.fee_collected_cents < 0 OR ss.fee_pending_cents < 0
+       OR ss.fee_collected_cents + ss.fee_pending_cents <> ss.fee_amount_cents
+       OR (ss.collection_status = 'collected' AND ss.fee_pending_cents <> 0)
+       OR (ss.collection_status = 'pending' AND ss.fee_collected_cents <> 0)
+       OR (ss.collection_status = 'partial' AND (ss.fee_collected_cents <= 0 OR ss.fee_pending_cents <= 0))`,
     [territoryId, managerId, referenceMonth]);
   return rows.filter((r: any) => r.reason).map((r: any) => ({ rideId: r.ride_id, reason: r.reason }));
 }
@@ -527,8 +528,9 @@ async function resolveFiscalProfile(db: Pool | PoolClient, managerId: string, te
     throw Object.assign(new Error('Fiscal profile missing or ambiguous'), { code: 'TERRITORY_CYCLE_FISCAL_PROFILE_MISSING' });
   }
   const rt = rows[0].recipient_type;
+  if (rt === 'individual') return { required: false, status: 'NOT_REQUIRED' };
   if (rt === 'company' || rt === 'association') return { required: true, status: 'PENDING' };
-  return { required: false, status: 'NOT_REQUIRED' };
+  throw Object.assign(new Error(`Unknown recipient_type: ${rt}`), { code: 'TERRITORY_CYCLE_FISCAL_PROFILE_MISSING' });
 }
 
 async function getNextSequenceNumber(client: PoolClient, parentCycleId: string): Promise<number> {

@@ -94,14 +94,12 @@ router.post('/preview', async (req: Request, res: Response) => {
 // POST /manager-cycles/confirm
 router.post('/confirm', async (req: Request, res: Response) => {
   try {
-    if (getManagerPayoutEngine() === 'disabled') {
-      return res.status(409).json({ success: false, error: 'MANAGER_PAYOUT_ENGINE_DISABLED' });
-    }
     const { territoryId, referenceMonth, managerId } = req.body;
     if (!territoryId || !referenceMonth) return res.status(400).json({ success: false, error: 'territoryId and referenceMonth required' });
     const cycle = await confirmRegularCycle(pool, territoryId, referenceMonth, managerId ?? null);
     res.status(201).json({ success: true, data: serializeCycle(cycle) });
   } catch (err: any) {
+    if (err.code === 'MANAGER_PAYOUT_ENGINE_NOT_OUTBOUND') return res.status(409).json({ success: false, error: err.code });
     if (err.code?.startsWith('TERRITORY_CYCLE_')) return res.status(409).json({ success: false, error: err.code, message: err.message });
     res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
   }
@@ -110,15 +108,13 @@ router.post('/confirm', async (req: Request, res: Response) => {
 // POST /manager-cycles/confirm-supplemental
 router.post('/confirm-supplemental', async (req: Request, res: Response) => {
   try {
-    if (getManagerPayoutEngine() === 'disabled') {
-      return res.status(409).json({ success: false, error: 'MANAGER_PAYOUT_ENGINE_DISABLED' });
-    }
     const { territoryId, referenceMonth, managerId } = req.body;
     if (!territoryId || !referenceMonth || !managerId) return res.status(400).json({ success: false, error: 'territoryId, referenceMonth and managerId required' });
     const cycle = await confirmSupplementalCycle(pool, territoryId, referenceMonth, managerId);
     if (!cycle) return res.json({ success: true, data: null, message: 'No unallocated entries' });
     res.status(201).json({ success: true, data: serializeCycle(cycle) });
   } catch (err: any) {
+    if (err.code === 'MANAGER_PAYOUT_ENGINE_NOT_OUTBOUND') return res.status(409).json({ success: false, error: err.code });
     if (err.code?.startsWith('TERRITORY_CYCLE_')) return res.status(409).json({ success: false, error: err.code, message: err.message });
     res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
   }
