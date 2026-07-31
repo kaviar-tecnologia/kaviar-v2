@@ -21,6 +21,9 @@ import { FeeSplitService } from '../services/wallet-v2/fee-split.service';
 import { TerritoryLedgerService } from '../services/wallet-v2/territory-ledger.service';
 import { PendingDebitService } from '../services/wallet-v2/pending-debit.service';
 import { WalletSettlementService } from '../services/wallet-v2/wallet-settlement.service';
+import { isSettlementPaused } from '../services/wallet-v2/settlement-gate';
+import { AnnualIncentiveLedgerService } from '../services/finance/annual-incentive-ledger.service';
+import { AnnualIncentiveShadowService } from '../services/finance/annual-incentive-shadow.service';
 import { pool } from '../db';
 import { sendPushToDriver, sendPushToPassenger } from '../services/push.service';
 import { estimateFeeCentsFromPrice, calculateFeeCents } from '../services/wallet-v2/fee-helper';
@@ -989,31 +992,33 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
       if (walletV2Active) {
         // Wallet V2: debitar taxa real via settlement service
         try {
+          if (isSettlementPaused()) {
+            console.warn(`[SETTLEMENT_PAUSED] ride=${ride_id} — skipping settlement during maintenance`);
+            return res.status(503).json({ error: 'SETTLEMENT_PAUSED', message: 'Settlement is temporarily paused for maintenance' });
+          }
+
           const finalPriceCents = Math.round(settlement.final_price * 100);
           const reservedCents = estimateFeeCentsFromPrice(Number(ride.quoted_price || ride.locked_price || 0));
 
           // Resolve territory for split
           const originNeighborhood = ride.origin_neighborhood_id;
           let territoryId: string | null = null;
-          let managerId: string | null = null;
           if (originNeighborhood) {
             const nRes = await pool.query('SELECT territory_id FROM neighborhoods WHERE id=$1', [originNeighborhood]);
             territoryId = nRes.rows[0]?.territory_id || null;
-            if (territoryId) {
-              const mRes = await pool.query("SELECT admin_id FROM territory_manager_assignments WHERE territory_id=$1 AND status='active' LIMIT 1", [territoryId]);
-              managerId = mRes.rows[0]?.admin_id || null;
-            }
           }
 
           const walletSvc = new WalletService(pool);
           const feeSplitSvc = new FeeSplitService(pool);
           const ledgerSvc = new TerritoryLedgerService(pool);
           const pendingSvc = new PendingDebitService(pool);
-          const settlementSvc = new WalletSettlementService(walletSvc, feeSplitSvc, ledgerSvc, pendingSvc);
+          const incentiveLedgerSvc = new AnnualIncentiveLedgerService(pool);
+          const shadowSvc = new AnnualIncentiveShadowService(pool, walletSvc, incentiveLedgerSvc);
+          const settlementSvc = new WalletSettlementService(pool, walletSvc, feeSplitSvc, ledgerSvc, pendingSvc, shadowSvc);
 
           const result = await settlementSvc.settleRide({
             rideId: ride_id, driverId, finalPriceCents: BigInt(finalPriceCents),
-            reservedCents: BigInt(reservedCents), territoryId: territoryId || undefined, managerId: managerId || undefined
+            reservedCents: BigInt(reservedCents), territoryId: territoryId || undefined,
           });
 
           const feeCents = calculateFeeCents(finalPriceCents);

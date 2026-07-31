@@ -475,6 +475,10 @@ model drivers {
   wallet_v2_recharges          wallet_recharges[]
   wallet_v2_pending_debits     pending_debits[]
   referral_reward              driver_referral_rewards?
+  annual_incentive_ledger      annual_incentive_ledger[]
+  payout_destinations          driver_payout_destinations[]
+  annual_incentive_requests    annual_incentive_requests[]
+  annual_incentive_payouts     annual_incentive_payouts[]
 }
 
 model elderly_contracts {
@@ -3454,24 +3458,29 @@ model pending_debits {
 }
 
 model ride_fee_splits {
-  id                    BigInt   @id @default(autoincrement())
-  ride_id               String   @unique
-  driver_id             String
-  final_price_cents     BigInt
-  fee_percent           Decimal  @default(18.00) @db.Decimal(5, 2)
-  fee_amount_cents      BigInt
-  fee_collected_cents   BigInt   @default(0)
-  fee_pending_cents     BigInt   @default(0)
-  matrix_share_percent  Decimal  @default(60.00) @db.Decimal(5, 2)
-  matrix_share_cents    BigInt
-  manager_share_percent Decimal  @default(40.00) @db.Decimal(5, 2)
-  manager_share_cents   BigInt
-  territory_id          String?
-  manager_id            String?
-  reference_month       String
-  collection_status     String   @default("collected")
-  idempotency_key       String?  @unique
-  created_at            DateTime @default(now())
+  id                         BigInt    @id @default(autoincrement())
+  ride_id                    String    @unique
+  driver_id                  String
+  final_price_cents          BigInt
+  fee_percent                Decimal   @default(18.00) @db.Decimal(5, 2)
+  fee_amount_cents           BigInt
+  fee_collected_cents        BigInt    @default(0)
+  fee_pending_cents          BigInt    @default(0)
+  matrix_share_percent       Decimal   @default(60.00) @db.Decimal(5, 2)
+  matrix_share_cents         BigInt
+  manager_share_percent      Decimal   @default(40.00) @db.Decimal(5, 2)
+  manager_share_cents        BigInt
+  territory_id               String?
+  manager_id                 String?
+  manager_assignment_id      String?
+  reference_month            String
+  collection_status          String    @default("collected")
+  recognized_at              DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz
+  recognized_at_source       String    @default("DB_SETTLEMENT_CLOCK")
+  platform_fee_rate_bps      Int       @default(1800)
+  manager_commission_rate_bps Int      @default(4000)
+  idempotency_key            String?   @unique
+  created_at                 DateTime  @default(now())
 
   @@index([territory_id, reference_month])
 }
@@ -3517,6 +3526,7 @@ model territory_ledger {
   id              BigInt   @id @default(autoincrement())
   territory_id    String
   manager_id      String?
+  manager_assignment_id String?
   reference_month String
   entry_type      String
   amount_cents    BigInt
@@ -3525,6 +3535,8 @@ model territory_ledger {
   reference_id    String?
   idempotency_key String?  @unique
   created_at      DateTime @default(now())
+
+  allocations     territory_cycle_allocations[]
 
   @@index([territory_id, reference_month])
   @@index([entry_type, reference_month])
@@ -3827,4 +3839,491 @@ model app_notifications {
   @@index([recipient_type, recipient_id, read_at])
   @@index([route_id])
   @@index([reservation_id])
+}
+
+
+// ─── Gratificação Anual de Incentivo KAVIAR ────────────────────────────────
+model annual_incentive_ledger {
+  id                String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  driver_id         String
+  program_year      Int
+  event_type        String
+  amount_cents      BigInt
+  base_amount_cents BigInt?
+  rate_basis_points Int?
+  policy_version    String
+  source_type       String
+  source_id         String?
+  source_event_id   String?
+  request_id        String?
+  correlation_id    String?
+  reversal_of_id    String?
+  idempotency_key   String   @unique
+  metadata          Json     @default("{}") @db.JsonB
+  occurred_at       DateTime @db.Timestamptz
+  created_at        DateTime @default(now()) @db.Timestamptz
+
+  driver            drivers  @relation(fields: [driver_id], references: [id], onDelete: Restrict)
+  reversal_of       annual_incentive_ledger?  @relation("ledger_reversal", fields: [reversal_of_id], references: [id], onDelete: Restrict)
+  reversals         annual_incentive_ledger[] @relation("ledger_reversal")
+
+  @@index([driver_id, program_year])
+  @@index([driver_id, occurred_at(sort: Desc)])
+  @@index([event_type])
+  @@index([source_type, source_id])
+  @@index([request_id])
+  @@index([correlation_id])
+  @@index([reversal_of_id])
+  @@index([created_at(sort: Desc)])
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Annual Incentive Payout System (Marco 3)
+// ═══════════════════════════════════════════════════════════════════
+
+model driver_payout_destinations {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  driver_id            String
+  provider             String    @default("pix")
+  method               String    @default("CPF")
+  pix_key_type         String
+  pix_key_encrypted    String
+  pix_key_hash         String
+  pix_key_masked       String
+  owner_document_hash  String
+  encryption_key_version String @default("1")
+  status               String    @default("active")
+  verified_at          DateTime? @db.Timestamptz
+  created_at           DateTime  @default(now()) @db.Timestamptz
+  updated_at           DateTime  @default(now()) @db.Timestamptz
+  superseded_at        DateTime? @db.Timestamptz
+
+  driver               drivers   @relation(fields: [driver_id], references: [id], onDelete: Restrict)
+
+  @@index([driver_id])
+}
+
+model annual_incentive_requests {
+  id                             String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  driver_id                      String
+  requested_amount_cents         BigInt
+  status                         String    @default("RESERVED")
+  destination_snapshot_encrypted String
+  destination_hash               String
+  destination_masked             String
+  requested_at                   DateTime  @db.Timestamptz
+  reserved_at                    DateTime? @db.Timestamptz
+  eligibility_checked_at         DateTime? @db.Timestamptz
+  queued_at                      DateTime? @db.Timestamptz
+  paid_at                        DateTime? @db.Timestamptz
+  failed_at                      DateTime? @db.Timestamptz
+  released_at                    DateTime? @db.Timestamptz
+  deadline_at                    DateTime  @db.Timestamptz
+  idempotency_key                String    @unique
+  correlation_id                 String    @default(dbgenerated("gen_random_uuid()::text"))
+  failure_code                   String?
+  failure_message_safe           String?
+  created_at                     DateTime  @default(now()) @db.Timestamptz
+  updated_at                     DateTime  @default(now()) @db.Timestamptz
+
+  driver                         drivers   @relation(fields: [driver_id], references: [id], onDelete: Restrict)
+  allocations                    annual_incentive_request_allocations[]
+  payouts                        annual_incentive_payouts[]
+  outbox                         annual_incentive_payout_outbox[]
+
+  @@index([driver_id])
+  @@index([status])
+  @@index([deadline_at])
+}
+
+model annual_incentive_request_allocations {
+  id           String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  request_id   String
+  program_year Int
+  amount_cents BigInt
+  created_at   DateTime @default(now()) @db.Timestamptz
+
+  request      annual_incentive_requests @relation(fields: [request_id], references: [id], onDelete: Restrict)
+
+  @@unique([request_id, program_year])
+  @@index([request_id])
+}
+
+model annual_incentive_payouts {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  request_id             String
+  driver_id              String
+  amount_cents           BigInt
+  provider_name          String
+  provider_payout_id     String?
+  external_reference     String    @unique
+  status                 String    @default("PENDING")
+  provider_status        String?
+  provider_response_safe Json?     @db.JsonB
+  submitted_at           DateTime? @db.Timestamptz
+  confirmed_at           DateTime? @db.Timestamptz
+  failed_at              DateTime? @db.Timestamptz
+  created_at             DateTime  @default(now()) @db.Timestamptz
+  updated_at             DateTime  @default(now()) @db.Timestamptz
+
+  request                annual_incentive_requests @relation(fields: [request_id], references: [id], onDelete: Restrict)
+  driver                 drivers                   @relation(fields: [driver_id], references: [id], onDelete: Restrict)
+  attempts               annual_incentive_payout_attempts[]
+
+  @@index([request_id])
+  @@index([status])
+}
+
+model annual_incentive_payout_attempts {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  payout_id              String
+  attempt_number         Int
+  status                 String
+  error_code             String?
+  error_safe             String?
+  provider_response_safe Json?     @db.JsonB
+  started_at             DateTime  @default(now()) @db.Timestamptz
+  finished_at            DateTime? @db.Timestamptz
+  next_retry_at          DateTime? @db.Timestamptz
+  created_at             DateTime  @default(now()) @db.Timestamptz
+
+  payout                 annual_incentive_payouts @relation(fields: [payout_id], references: [id], onDelete: Restrict)
+
+  @@index([payout_id])
+}
+
+model annual_incentive_payout_outbox {
+  id          String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  request_id  String    @unique
+  driver_id   String
+  status      String    @default("PENDING")
+  priority    Int       @default(0)
+  locked_at   DateTime? @db.Timestamptz
+  locked_by   String?
+  attempts    Int       @default(0)
+  next_at     DateTime  @default(now()) @db.Timestamptz
+  created_at  DateTime  @default(now()) @db.Timestamptz
+  updated_at  DateTime  @default(now()) @db.Timestamptz
+
+  request     annual_incentive_requests @relation(fields: [request_id], references: [id], onDelete: Restrict)
+
+  @@index([status, next_at])
+}
+
+model annual_incentive_webhook_events {
+  id                String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  provider_name     String
+  provider_event_id String
+  event_type        String
+  payout_id         String?
+  payload_safe      Json     @default("{}") @db.JsonB
+  processed         Boolean  @default(false)
+  processed_at      DateTime? @db.Timestamptz
+  created_at        DateTime @default(now()) @db.Timestamptz
+
+  @@unique([provider_name, provider_event_id])
+  @@index([payout_id])
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Outbound Payment Infrastructure (Marco 3.1)
+// ═══════════════════════════════════════════════════════════════════
+
+model financial_payees {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  payee_type             String
+  reference_id           String?
+  legal_name_encrypted   String
+  cpf_cnpj_encrypted     String
+  cpf_cnpj_hmac          String
+  cpf_cnpj_masked        String
+  document_type          String
+  status                 String    @default("PENDING_VERIFICATION")
+  verification_status    String    @default("PENDING")
+  risk_status            String    @default("NORMAL")
+  encryption_key_version String    @default("1")
+  created_at             DateTime  @default(now()) @db.Timestamptz
+  updated_at             DateTime  @default(now()) @db.Timestamptz
+  disabled_at            DateTime? @db.Timestamptz
+
+  destinations           financial_payee_destinations[]
+  obligations            financial_obligations[]
+  payouts                financial_payouts[]
+  recurring              financial_recurring_obligations[]
+
+  @@index([payee_type])
+  @@index([status])
+  @@index([cpf_cnpj_hmac])
+  @@index([reference_id])
+}
+
+model financial_payee_destinations {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  payee_id               String
+  method                 String
+  key_type               String?
+  key_encrypted          String
+  key_hmac               String
+  key_masked             String
+  encryption_key_version String    @default("1")
+  status                 String    @default("active")
+  verified_at            DateTime? @db.Timestamptz
+  cooldown_until         DateTime? @db.Timestamptz
+  created_at             DateTime  @default(now()) @db.Timestamptz
+  updated_at             DateTime  @default(now()) @db.Timestamptz
+  superseded_at          DateTime? @db.Timestamptz
+
+  payee                  financial_payees @relation(fields: [payee_id], references: [id], onDelete: Restrict)
+
+  @@index([payee_id])
+}
+
+model financial_obligations {
+  id                             String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  payee_id                       String
+  purpose                        String
+  source_type                    String
+  source_id                      String?
+  description_safe               String
+  gross_amount_cents             BigInt
+  discount_amount_cents          BigInt    @default(0)
+  net_amount_cents               BigInt
+  due_date                       DateTime? @db.Date
+  competence_date                DateTime? @db.Date
+  status                         String    @default("DRAFT")
+  recurring_schedule_id          String?
+  document_reference             String?
+  destination_snapshot_encrypted String?
+  destination_hmac               String?
+  destination_masked             String?
+  idempotency_key                String    @unique
+  correlation_id                 String    @default(dbgenerated("gen_random_uuid()::text"))
+  created_by_system              Boolean   @default(false)
+  created_by_admin_id            String?
+  approved_by_admin_id           String?
+  approved_at                    DateTime? @db.Timestamptz
+  failure_code                   String?
+  failure_message_safe           String?
+  deadline_at                    DateTime? @db.Timestamptz
+  created_at                     DateTime  @default(now()) @db.Timestamptz
+  updated_at                     DateTime  @default(now()) @db.Timestamptz
+
+  payee                          financial_payees @relation(fields: [payee_id], references: [id], onDelete: Restrict)
+  allocations                    financial_obligation_allocations[]
+  payouts                        financial_payouts[]
+  outbox                         financial_payout_outbox[]
+
+  @@index([payee_id])
+  @@index([purpose])
+  @@index([status])
+  @@index([due_date])
+  @@index([source_type, source_id])
+}
+
+model financial_obligation_allocations {
+  id             String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  obligation_id  String
+  source_type    String
+  source_id      String
+  amount_cents   BigInt
+  metadata       Json     @default("{}") @db.JsonB
+  created_at     DateTime @default(now()) @db.Timestamptz
+
+  obligation     financial_obligations @relation(fields: [obligation_id], references: [id], onDelete: Restrict)
+
+  @@index([obligation_id])
+}
+
+model financial_payouts {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  obligation_id          String
+  payee_id               String
+  amount_cents           BigInt
+  instrument             String
+  provider_name          String
+  provider_payout_id     String?
+  external_reference     String    @unique
+  status                 String    @default("PENDING")
+  provider_status        String?
+  provider_response_safe Json?     @db.JsonB
+  fee_cents              BigInt?
+  submitted_at           DateTime? @db.Timestamptz
+  confirmed_at           DateTime? @db.Timestamptz
+  failed_at              DateTime? @db.Timestamptz
+  created_at             DateTime  @default(now()) @db.Timestamptz
+  updated_at             DateTime  @default(now()) @db.Timestamptz
+
+  obligation             financial_obligations @relation(fields: [obligation_id], references: [id], onDelete: Restrict)
+  payee                  financial_payees @relation(fields: [payee_id], references: [id], onDelete: Restrict)
+  attempts               financial_payout_attempts[]
+
+  @@index([obligation_id])
+  @@index([status])
+}
+
+model financial_payout_attempts {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  payout_id              String
+  attempt_number         Int
+  status                 String
+  error_code             String?
+  error_safe             String?
+  provider_response_safe Json?     @db.JsonB
+  started_at             DateTime  @default(now()) @db.Timestamptz
+  finished_at            DateTime? @db.Timestamptz
+  next_retry_at          DateTime? @db.Timestamptz
+  created_at             DateTime  @default(now()) @db.Timestamptz
+
+  payout                 financial_payouts @relation(fields: [payout_id], references: [id], onDelete: Restrict)
+
+  @@index([payout_id])
+}
+
+model financial_payout_outbox {
+  id             String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  obligation_id  String    @unique
+  payee_id       String
+  purpose        String
+  status         String    @default("PENDING")
+  priority       Int       @default(0)
+  locked_at      DateTime? @db.Timestamptz
+  locked_by      String?
+  attempts       Int       @default(0)
+  next_at        DateTime  @default(now()) @db.Timestamptz
+  created_at     DateTime  @default(now()) @db.Timestamptz
+  updated_at     DateTime  @default(now()) @db.Timestamptz
+
+  obligation     financial_obligations @relation(fields: [obligation_id], references: [id], onDelete: Restrict)
+
+  @@index([status, next_at])
+}
+
+model financial_provider_events {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  provider_name       String
+  provider_event_id   String
+  event_category      String
+  event_type          String
+  payout_id           String?
+  payload_safe        Json      @default("{}") @db.JsonB
+  processed           Boolean   @default(false)
+  processed_at        DateTime? @db.Timestamptz
+  processing_status   String    @default("PENDING")
+  processing_attempts Int       @default(0)
+  next_processing_at  DateTime  @default(now()) @db.Timestamptz
+  processing_error_safe String?
+  created_at          DateTime  @default(now()) @db.Timestamptz
+
+  @@unique([provider_name, provider_event_id])
+  @@index([payout_id])
+  @@index([processing_status, next_processing_at])
+}
+
+model financial_recurring_obligations {
+  id                         String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  payee_id                   String
+  purpose                    String
+  description_safe           String
+  frequency                  String
+  expected_amount_cents      BigInt
+  amount_tolerance_cents     BigInt    @default(0)
+  due_day                    Int?
+  start_date                 DateTime  @db.Date
+  end_date                   DateTime? @db.Date
+  active                     Boolean   @default(true)
+  requires_document          Boolean   @default(true)
+  automatic_approval_allowed Boolean   @default(false)
+  last_generated_competence  DateTime? @db.Date
+  created_at                 DateTime  @default(now()) @db.Timestamptz
+  updated_at                 DateTime  @default(now()) @db.Timestamptz
+
+  payee                      financial_payees @relation(fields: [payee_id], references: [id], onDelete: Restrict)
+
+  @@index([payee_id])
+  @@index([active])
+}
+
+model financial_payment_audit {
+  id           String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  entity_type  String
+  entity_id    String
+  action       String
+  admin_id     String?
+  system_actor String?
+  details_safe Json     @default("{}") @db.JsonB
+  ip_address   String?
+  created_at   DateTime @default(now()) @db.Timestamptz
+
+  @@index([entity_type, entity_id])
+  @@index([admin_id])
+  @@index([created_at(sort: Desc)])
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Territory Payout Cycles (Marco 3.2A)
+// ═══════════════════════════════════════════════════════════════════
+
+// territory_payout_cycles — see below (Marco 3.2A expanded version)
+
+// ─── Territory Payout Cycles (Marco 3.2A) ─────────────────────────────────────
+
+model territory_payout_cycles {
+  id                              String    @id @default(dbgenerated("gen_random_uuid()"))
+  territory_id                    String
+  manager_id                      String?
+  reference_month                 String
+  policy_version                  String
+  commission_rate_basis_points    Int       @default(4000)
+  platform_fee_rate_basis_points  Int       @default(1800)
+  competence_timezone             String    @default("America/Sao_Paulo")
+  cycle_type                      String    @default("REGULAR")
+  parent_cycle_id                 String?
+  sequence_number                 Int       @default(1)
+  gross_platform_fee_cents        BigInt    @default(0)
+  gross_manager_commission_cents  BigInt    @default(0)
+  approved_adjustments_cents      BigInt    @default(0)
+  approved_amount_cents           BigInt    @default(0)
+  status                          String    @default("OPEN")
+  fiscal_document_required        Boolean   @default(false)
+  fiscal_document_type            String?
+  fiscal_document_status          String?   @default("NOT_REQUIRED")
+  fiscal_document_reference       String?
+  fiscal_document_url             String?
+  calculated_at                   DateTime? @db.Timestamptz
+  recognized_at                   DateTime? @db.Timestamptz
+  submitted_for_review_at         DateTime? @db.Timestamptz
+  approved_at                     DateTime? @db.Timestamptz
+  approved_by                     String?
+  cancelled_at                    DateTime? @db.Timestamptz
+  cancelled_by                    String?
+  cancel_reason                   String?
+  created_at                      DateTime  @default(now()) @db.Timestamptz
+  updated_at                      DateTime  @default(now()) @db.Timestamptz
+  idempotency_key                 String    @unique
+
+  parent                          territory_payout_cycles?  @relation("cycle_parent", fields: [parent_cycle_id], references: [id], onDelete: Restrict)
+  children                        territory_payout_cycles[] @relation("cycle_parent")
+  allocations                     territory_cycle_allocations[]
+
+  @@index([territory_id])
+  @@index([manager_id])
+  @@index([status])
+  @@index([reference_month])
+}
+
+model territory_cycle_allocations {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()"))
+  cycle_id              String
+  ledger_entry_id       BigInt
+  ride_id               String
+  entry_type            String
+  amount_cents          BigInt
+  manager_assignment_id String?
+  created_at            DateTime @default(now()) @db.Timestamptz
+
+  cycle                 territory_payout_cycles @relation(fields: [cycle_id], references: [id], onDelete: Restrict)
+  ledger_entry          territory_ledger        @relation(fields: [ledger_entry_id], references: [id], onDelete: Restrict)
+
+  @@unique([ledger_entry_id])
+  @@index([cycle_id])
 }

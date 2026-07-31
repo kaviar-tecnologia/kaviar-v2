@@ -28,7 +28,7 @@ describe('WalletService', () => {
       .mockResolvedValueOnce({ rows: [] }) // idempotency check
       .mockResolvedValueOnce({ rows: [{ balance_cents: '5000', reserved_cents: '0' }] }) // lock
       .mockResolvedValueOnce({}) // update wallet
-      .mockResolvedValueOnce({ rows: [{ id: '1' }] }) // insert ledger
+      .mockResolvedValueOnce({ rows: [{ id: '1', created_at: '2026-07-28T10:00:00.000Z' }] }) // insert ledger
       .mockResolvedValueOnce({}); // COMMIT
     const r = await svc.creditRecharge('d1', BigInt(2000), 'rch-1');
     expect(r.already_processed).toBe(false);
@@ -37,7 +37,7 @@ describe('WalletService', () => {
 
   it('creditRecharge idempotent', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] }) // BEGIN
-      .mockResolvedValueOnce({ rows: [{ id: '1', balance_after_cents: '7000', reserved_after_cents: '0' }] }) // found
+      .mockResolvedValueOnce({ rows: [{ id: '1', balance_after_cents: '7000', reserved_after_cents: '0', created_at: '2026-07-28T10:00:00.000Z' }] }) // found
       .mockResolvedValueOnce({}); // COMMIT
     const r = await svc.creditRecharge('d1', BigInt(2000), 'rch-1');
     expect(r.already_processed).toBe(true);
@@ -48,7 +48,7 @@ describe('WalletService', () => {
       .mockResolvedValueOnce({ rows: [] }) // idempotency
       .mockResolvedValueOnce({ rows: [{ balance_cents: '5000', reserved_cents: '1000' }] }) // lock
       .mockResolvedValueOnce({}) // update
-      .mockResolvedValueOnce({ rows: [{ id: '2' }] }) // ledger
+      .mockResolvedValueOnce({ rows: [{ id: '2', created_at: '2026-07-28T10:00:00.000Z' }] }) // ledger
       .mockResolvedValueOnce({}); // COMMIT
     const r = await svc.reserve('d1', BigInt(3000), 'ride-1');
     expect(r.reserved_after_cents).toBe(BigInt(4000));
@@ -67,7 +67,7 @@ describe('WalletService', () => {
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ balance_cents: '5000', reserved_cents: '2000' }] })
       .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({ rows: [{ id: '3' }] })
+      .mockResolvedValueOnce({ rows: [{ id: '3', created_at: '2026-07-28T10:00:00.000Z' }] })
       .mockResolvedValueOnce({});
     const r = await svc.releaseReserve('d1', BigInt(2000), 'ride-1');
     expect(r.reserved_after_cents).toBe(BigInt(0));
@@ -78,7 +78,7 @@ describe('WalletService', () => {
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ balance_cents: '5000', reserved_cents: '540' }] })
       .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({ rows: [{ id: '4' }] })
+      .mockResolvedValueOnce({ rows: [{ id: '4', created_at: '2026-07-28T10:00:00.000Z' }] })
       .mockResolvedValueOnce({});
     const r = await svc.debitFee('d1', BigInt(540), BigInt(540), 'ride-1');
     expect(r.balance_after_cents).toBe(BigInt(4460));
@@ -87,7 +87,7 @@ describe('WalletService', () => {
 
   it('debitFee idempotent', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ id: '4', balance_after_cents: '4460', reserved_after_cents: '0' }] })
+      .mockResolvedValueOnce({ rows: [{ id: '4', driver_id: 'd1', balance_delta_cents: '-540', reserved_delta_cents: '-540', balance_after_cents: '4460', reserved_after_cents: '0', created_at: '2026-07-28T10:00:00.000Z' }] })
       .mockResolvedValueOnce({});
     const r = await svc.debitFee('d1', BigInt(540), BigInt(540), 'ride-1');
     expect(r.already_processed).toBe(true);
@@ -98,7 +98,7 @@ describe('WalletService', () => {
       .mockResolvedValueOnce({ rows: [] }) // idempotency check
       .mockResolvedValueOnce({ rows: [{ balance_cents: '7000', reserved_cents: '0' }] }) // lock
       .mockResolvedValueOnce({}) // update wallet
-      .mockResolvedValueOnce({ rows: [{ id: '5' }] }) // insert ledger
+      .mockResolvedValueOnce({ rows: [{ id: '5', created_at: '2026-07-28T10:00:00.000Z' }] }) // insert ledger
       .mockResolvedValueOnce({}); // COMMIT
     const r = await svc.creditRechargeBonus('d1', BigInt(200), 'rch-1');
     expect(r.already_processed).toBe(false);
@@ -107,7 +107,7 @@ describe('WalletService', () => {
 
   it('creditRechargeBonus is idempotent', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] }) // BEGIN
-      .mockResolvedValueOnce({ rows: [{ id: '5', balance_after_cents: '7200', reserved_after_cents: '0' }] }) // found
+      .mockResolvedValueOnce({ rows: [{ id: '5', balance_after_cents: '7200', reserved_after_cents: '0', created_at: '2026-07-28T10:00:00.000Z' }] }) // found
       .mockResolvedValueOnce({}); // COMMIT
     const r = await svc.creditRechargeBonus('d1', BigInt(200), 'rch-1');
     expect(r.already_processed).toBe(true);
@@ -118,7 +118,7 @@ describe('WalletService', () => {
       .mockResolvedValueOnce({ rows: [] }) // idempotency
       .mockResolvedValueOnce({ rows: [{ balance_cents: '5000', reserved_cents: '0' }] }) // lock
       .mockResolvedValueOnce({}) // update
-      .mockResolvedValueOnce({ rows: [{ id: '6' }] }) // ledger
+      .mockResolvedValueOnce({ rows: [{ id: '6', created_at: '2026-07-28T10:00:00.000Z' }] }) // ledger
       .mockResolvedValueOnce({}); // COMMIT
     await svc.creditRechargeBonus('d1', BigInt(500), 'rch-2');
     // Verify ledger insert call has correct params

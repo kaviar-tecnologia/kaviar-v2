@@ -1,4 +1,20 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
+import { applyBasisPoints, PLATFORM_FEE_RATE_BPS, MANAGER_COMMISSION_RATE_BPS } from '../finance/territory/monetary';
+
+export const COMPETENCE_TIMEZONE = 'America/Sao_Paulo';
+
+/**
+ * Computes reference month from a Date using America/Sao_Paulo timezone.
+ */
+export function referenceMonthFromDate(date: Date, timezone: string = COMPETENCE_TIMEZONE): string {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+  });
+  const parts = formatter.formatToParts(date);
+  return `${parts.find(p => p.type === 'year')!.value}-${parts.find(p => p.type === 'month')!.value}`;
+}
 
 export interface FeeSplit {
   fee_amount_cents: bigint;
@@ -6,56 +22,203 @@ export interface FeeSplit {
   manager_share_cents: bigint;
 }
 
-export interface FeeSplitRecord extends FeeSplit {
+export interface FeeSplitSnapshot {
   id: bigint;
-  already_processed: boolean;
+  alreadyProcessed: boolean;
+  rideId: string;
+  driverId: string;
+  finalPriceCents: bigint;
+  feeAmountCents: bigint;
+  matrixShareCents: bigint;
+  managerShareCents: bigint;
+  referenceMonth: string;
+  territoryId: string | null;
+  managerId: string | null;
+  managerAssignmentId: string | null;
+  recognizedAt: Date;
+  platformFeeRateBps: number;
+  managerCommissionRateBps: number;
+  feeCollectedCents: bigint;
+  feePendingCents: bigint;
+  collectionStatus: string;
+}
+
+export interface RecordSplitParams {
+  rideId: string;
+  driverId: string;
+  finalPriceCents: bigint;
+  territoryId: string | null;
+  managerId: string | null;
+  managerAssignmentId: string | null;
+  recognizedAt: Date;
+  referenceMonth: string;
+  platformFeeRateBps: number;
+  managerCommissionRateBps: number;
+  feeCollectedCents: bigint;
+  feePendingCents: bigint;
+  collectionStatus: 'collected' | 'pending' | 'partial';
 }
 
 export class FeeSplitService {
   constructor(private pool: Pool) {}
 
-  calculateSplit(finalPriceCents: bigint): FeeSplit {
-    const fee = BigInt(Math.round(Number(finalPriceCents) * 18 / 100));
-    const matrix = BigInt(Math.round(Number(fee) * 60 / 100));
-    const manager = fee - matrix;
+  /**
+   * Calculates split using the provided rates (defaults to global constants).
+   */
+  calculateSplit(finalPriceCents: bigint, platformRateBps: number = PLATFORM_FEE_RATE_BPS, commissionRateBps: number = MANAGER_COMMISSION_RATE_BPS): FeeSplit {
+    const fee = applyBasisPoints(finalPriceCents, platformRateBps);
+    const manager = applyBasisPoints(fee, commissionRateBps);
+    const matrix = fee - manager;
     return { fee_amount_cents: fee, matrix_share_cents: matrix, manager_share_cents: manager };
   }
 
-  async recordSplit(params: {
-    rideId: string; driverId: string; finalPriceCents: bigint;
-    territoryId?: string; managerId?: string; collected: boolean;
-  }): Promise<FeeSplitRecord> {
-    const key = `ride_fee_split:${params.rideId}`;
-    const existing = await this.pool.query('SELECT id FROM ride_fee_splits WHERE idempotency_key = $1', [key]);
-    if (existing.rows[0]) {
-      const split = this.calculateSplit(params.finalPriceCents);
-      return { ...split, id: BigInt(existing.rows[0].id), already_processed: true };
-    }
-
-    const split = this.calculateSplit(params.finalPriceCents);
-    const collectedCents = params.collected ? split.fee_amount_cents : BigInt(0);
-    const pendingCents = params.collected ? BigInt(0) : split.fee_amount_cents;
-    const status = params.collected ? 'collected' : 'pending';
-    const month = this.referenceMonth();
-
-    const r = await this.pool.query(
-      `INSERT INTO ride_fee_splits (ride_id, driver_id, final_price_cents, fee_percent, fee_amount_cents, fee_collected_cents, fee_pending_cents, matrix_share_percent, matrix_share_cents, manager_share_percent, manager_share_cents, territory_id, manager_id, reference_month, collection_status, idempotency_key)
-       VALUES ($1,$2,$3,18.00,$4,$5,$6,60.00,$7,40.00,$8,$9,$10,$11,$12,$13) RETURNING id`,
-      [params.rideId, params.driverId, params.finalPriceCents.toString(), split.fee_amount_cents.toString(), collectedCents.toString(), pendingCents.toString(), split.matrix_share_cents.toString(), split.manager_share_cents.toString(), params.territoryId || null, params.managerId || null, month, status, key]
-    );
-
-    return { ...split, id: BigInt(r.rows[0].id), already_processed: false };
-  }
-
-  async markCollected(rideId: string): Promise<void> {
-    await this.pool.query(
-      `UPDATE ride_fee_splits SET fee_collected_cents = fee_amount_cents, fee_pending_cents = 0, collection_status = 'collected' WHERE ride_id = $1 AND collection_status = 'pending'`,
+  /**
+   * Check existing split. Returns persisted snapshot or null.
+   */
+  async getExistingSnapshot(client: PoolClient, rideId: string): Promise<FeeSplitSnapshot | null> {
+    const { rows } = await client.query(
+      `SELECT id, ride_id, driver_id, final_price_cents,
+              fee_amount_cents, matrix_share_cents, manager_share_cents,
+              reference_month, territory_id, manager_id, manager_assignment_id,
+              recognized_at, platform_fee_rate_bps, manager_commission_rate_bps,
+              fee_collected_cents, fee_pending_cents, collection_status
+       FROM ride_fee_splits WHERE ride_id = $1`,
       [rideId]
     );
+    if (rows.length === 0) return null;
+    return this.mapSnapshot(rows[0], true);
   }
 
-  private referenceMonth(): string {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  /**
+   * Records a fee split inside the caller's transaction.
+   * Uses INSERT ... ON CONFLICT DO NOTHING for race-safety.
+   * Validates invariants and idempotency.
+   */
+  async recordSplitInClient(client: PoolClient, params: RecordSplitParams): Promise<FeeSplitSnapshot> {
+    // Validate invariants using the provided rates (not global constants)
+    const split = this.calculateSplit(params.finalPriceCents, params.platformFeeRateBps, params.managerCommissionRateBps);
+    if (params.feeCollectedCents < 0n) throw new Error('INVARIANT: feeCollectedCents must be >= 0');
+    if (params.feePendingCents < 0n) throw new Error('INVARIANT: feePendingCents must be >= 0');
+    if (params.feeCollectedCents + params.feePendingCents !== split.fee_amount_cents) {
+      throw new Error(`INVARIANT: feeCollected(${params.feeCollectedCents}) + feePending(${params.feePendingCents}) != feeAmount(${split.fee_amount_cents})`);
+    }
+    if (params.platformFeeRateBps < 0 || params.platformFeeRateBps > 10000) throw new Error('INVARIANT: platformFeeRateBps out of range');
+    if (params.managerCommissionRateBps < 0 || params.managerCommissionRateBps > 10000) throw new Error('INVARIANT: managerCommissionRateBps out of range');
+
+    if (params.collectionStatus === 'collected' && (params.feePendingCents !== 0n || params.feeCollectedCents !== split.fee_amount_cents)) {
+      throw new Error('INVARIANT: collected requires pending=0 and collected=total');
+    }
+    if (params.collectionStatus === 'pending' && params.feeCollectedCents !== 0n) {
+      throw new Error('INVARIANT: pending requires collected=0');
+    }
+    if (params.collectionStatus === 'partial' && (params.feeCollectedCents <= 0n || params.feePendingCents <= 0n)) {
+      throw new Error('INVARIANT: partial requires collected>0 and pending>0');
+    }
+
+    const key = `ride_fee_split:${params.rideId}`;
+
+    // INSERT ... ON CONFLICT DO NOTHING (race-safe even without advisory lock)
+    const { rows: inserted } = await client.query(
+      `INSERT INTO ride_fee_splits (
+         ride_id, driver_id, final_price_cents,
+         fee_percent, fee_amount_cents, fee_collected_cents, fee_pending_cents,
+         matrix_share_percent, matrix_share_cents,
+         manager_share_percent, manager_share_cents,
+         territory_id, manager_id, manager_assignment_id,
+         reference_month, collection_status,
+         recognized_at, recognized_at_source,
+         platform_fee_rate_bps, manager_commission_rate_bps,
+         idempotency_key
+       ) VALUES (
+         $1, $2, $3,
+         18.00, $4, $5, $6,
+         60.00, $7,
+         40.00, $8,
+         $9, $10, $11,
+         $12, $13,
+         $14, 'DB_SETTLEMENT_CLOCK',
+         $15, $16,
+         $17
+       ) ON CONFLICT (ride_id) DO NOTHING
+       RETURNING id, ride_id, driver_id, final_price_cents,
+                 fee_amount_cents, matrix_share_cents, manager_share_cents,
+                 reference_month, territory_id, manager_id, manager_assignment_id,
+                 recognized_at, platform_fee_rate_bps, manager_commission_rate_bps,
+                 fee_collected_cents, fee_pending_cents, collection_status`,
+      [
+        params.rideId, params.driverId, params.finalPriceCents.toString(),
+        split.fee_amount_cents.toString(), params.feeCollectedCents.toString(), params.feePendingCents.toString(),
+        split.matrix_share_cents.toString(),
+        split.manager_share_cents.toString(),
+        params.territoryId, params.managerId, params.managerAssignmentId,
+        params.referenceMonth, params.collectionStatus,
+        params.recognizedAt,
+        params.platformFeeRateBps, params.managerCommissionRateBps,
+        key,
+      ]
+    );
+
+    if (inserted.length === 1) {
+      return this.mapSnapshot(inserted[0], false);
+    }
+
+    // Conflict: load existing and validate economic identity
+    const existing = await this.getExistingSnapshot(client, params.rideId);
+    if (!existing) {
+      throw new Error('FEE_SPLIT_IDEMPOTENCY_MISMATCH: conflict but no row found');
+    }
+
+    // Validate caller identity against persisted snapshot
+    if (
+      existing.driverId !== params.driverId ||
+      existing.finalPriceCents !== params.finalPriceCents ||
+      (existing.territoryId ?? null) !== (params.territoryId ?? null)
+    ) {
+      throw Object.assign(
+        new Error('Attempt to settle ride with different economic parameters than persisted'),
+        { code: 'FEE_SPLIT_IDEMPOTENCY_MISMATCH' }
+      );
+    }
+
+    return existing;
+  }
+
+  /**
+   * Marks a split as fully collected. Requires exactly 1 row updated.
+   */
+  async markCollectedInClient(client: PoolClient, rideId: string): Promise<void> {
+    const { rowCount } = await client.query(
+      `UPDATE ride_fee_splits
+       SET fee_collected_cents = fee_amount_cents, fee_pending_cents = 0,
+           collection_status = 'collected'
+       WHERE ride_id = $1 AND collection_status IN ('pending', 'partial')`,
+      [rideId]
+    );
+    if (rowCount !== 1) {
+      throw new Error(`MARK_COLLECTED_UNEXPECTED_ROWCOUNT: expected 1, got ${rowCount} for ride ${rideId}`);
+    }
+  }
+
+  private mapSnapshot(row: any, alreadyProcessed: boolean): FeeSplitSnapshot {
+    return {
+      id: BigInt(row.id),
+      alreadyProcessed,
+      rideId: row.ride_id,
+      driverId: row.driver_id,
+      finalPriceCents: BigInt(row.final_price_cents),
+      feeAmountCents: BigInt(row.fee_amount_cents),
+      matrixShareCents: BigInt(row.matrix_share_cents),
+      managerShareCents: BigInt(row.manager_share_cents),
+      referenceMonth: row.reference_month,
+      territoryId: row.territory_id,
+      managerId: row.manager_id,
+      managerAssignmentId: row.manager_assignment_id,
+      recognizedAt: new Date(row.recognized_at),
+      platformFeeRateBps: row.platform_fee_rate_bps,
+      managerCommissionRateBps: row.manager_commission_rate_bps,
+      feeCollectedCents: BigInt(row.fee_collected_cents),
+      feePendingCents: BigInt(row.fee_pending_cents),
+      collectionStatus: row.collection_status,
+    };
   }
 }
