@@ -1014,7 +1014,6 @@ describe('Supplemental Reconciliation Before No-Op', () => {
       [lateRide, driverId, fee.toString(), (fee - comm).toString(),
        comm.toString(), territoryId, managerId, CURRENT_MONTH, assign.id]);
 
-    // No unallocated entries exist (all allocated to REGULAR), but split_without_ledger exists
     await expect(confirmSupplementalCycle(pool, territoryId, CURRENT_MONTH, managerId))
       .rejects.toMatchObject({ code: 'TERRITORY_CYCLE_LEDGER_DIVERGENCE' });
 
@@ -1026,65 +1025,119 @@ describe('Supplemental Reconciliation Before No-Op', () => {
     // REGULAR unchanged
     const { rows: [reg] } = await pool.query('SELECT status FROM territory_payout_cycles WHERE id=$1', [regular.id]);
     expect(reg.status).toBe('CALCULATED');
+    // Allocations unchanged (only REGULAR's)
+    const { rows: [allocCount] } = await pool.query(
+      `SELECT COUNT(*) FROM territory_cycle_allocations WHERE cycle_id=$1`, [regular.id]);
+    expect(Number(allocCount.count)).toBeGreaterThan(0);
+    // Zero financial side effects
+    const { rows: [obl] } = await pool.query(
+      `SELECT COUNT(*) FROM financial_obligations WHERE source_id=$1`, [regular.id]);
+    expect(obl.count).toBe('0');
+    const { rows: [pay] } = await pool.query(
+      `SELECT COUNT(*) FROM financial_payouts fp JOIN financial_obligations fo ON fo.id=fp.obligation_id WHERE fo.source_id=$1`, [regular.id]);
+    expect(pay.count).toBe('0');
+    const { rows: [outbox] } = await pool.query(
+      `SELECT COUNT(*) FROM financial_payout_outbox fpo JOIN financial_obligations fo ON fo.id=fpo.obligation_id WHERE fo.source_id=$1`, [regular.id]);
+    expect(outbox.count).toBe('0');
   });
 });
 
 describe('Per-Entry Negative Check', () => {
-  it('negative entry blocks supplemental (caught by reconciliation mismatch)', async () => {
+  it('hidden negative in REGULAR blocks cycle even when totals are valid', async () => {
+    // Split: fee_collected=1800, expected fee_share=(1800*4000+5000)/10000=720
+    // Ledger: platform_fee entries: -100 + 1900 = 1800 (total matches)
+    //         fee_share: 720 (total matches)
+    // BUT individual platform_fee entry -100 is negative → rejected
     const { driverId, territoryId, managerId } = await setupFull(50000n);
     const { rows: [assign] } = await pool.query(
       `SELECT id FROM territory_manager_assignments WHERE territory_id=$1 AND admin_id=$2 AND status='active'`,
       [territoryId, managerId]);
-    // Create valid REGULAR
-    await settle(driverId, territoryId, `ride-pne-reg-${RUN}-${randomUUID().slice(0,4)}`);
-    await confirmRegularCycle(pool, territoryId, CURRENT_MONTH, managerId);
-
-    // After REGULAR: insert entries where one has negative amount
-    // The negative value causes fee_share_mismatch in reconciliation (defense-in-depth)
-    const rideNeg = `ride-pne-neg-${RUN}-${randomUUID().slice(0,4)}`;
-    await pool.query(
-      `INSERT INTO ride_fee_splits (ride_id, driver_id, final_price_cents, fee_amount_cents,
-        fee_collected_cents, fee_pending_cents, matrix_share_cents, manager_share_cents,
-        territory_id, manager_id, reference_month, collection_status,
-        manager_assignment_id, platform_fee_rate_bps, manager_commission_rate_bps)
-       VALUES ($1,$2,5000,900,900,0,540,360,$3,$4,$5,'collected',$6,1800,4000)`,
-      [rideNeg, driverId, territoryId, managerId, CURRENT_MONTH, assign.id]);
-    await pool.query(
-      `INSERT INTO territory_ledger (territory_id, manager_id, reference_month, entry_type, amount_cents, reference_type, reference_id, manager_assignment_id)
-       VALUES ($1,$2,$3,'platform_fee',900,'ride',$4,$5), ($1,$2,$3,'fee_share',-100,'ride',$4,$5)`,
-      [territoryId, managerId, CURRENT_MONTH, rideNeg, assign.id]);
-
-    // Caught as LEDGER_DIVERGENCE (fee_share_mismatch: -100 != expected 360)
-    await expect(confirmSupplementalCycle(pool, territoryId, CURRENT_MONTH, managerId))
-      .rejects.toMatchObject({ code: 'TERRITORY_CYCLE_LEDGER_DIVERGENCE' });
-
-    const { rows } = await pool.query(
-      `SELECT COUNT(*) FROM territory_payout_cycles WHERE territory_id=$1 AND reference_month=$2 AND cycle_type='SUPPLEMENTAL'`,
-      [territoryId, CURRENT_MONTH]);
-    expect(rows[0].count).toBe('0');
-  });
-
-  it('per-entry negative in REGULAR is caught before reconciliation', async () => {
-    // In REGULAR, the aggregate negative check runs BEFORE reconciliation
-    const { driverId, territoryId, managerId } = await setupFull(50000n);
-    const { rows: [assign] } = await pool.query(
-      `SELECT id FROM territory_manager_assignments WHERE territory_id=$1 AND admin_id=$2 AND status='active'`,
-      [territoryId, managerId]);
-    const corruptRide = `ride-pne-r-${RUN}-${randomUUID().slice(0,4)}`;
+    const rideId = `ride-hnr-${RUN}-${randomUUID().slice(0,4)}`;
     await pool.query(
       `INSERT INTO ride_fee_splits (ride_id, driver_id, final_price_cents, fee_amount_cents,
         fee_collected_cents, fee_pending_cents, matrix_share_cents, manager_share_cents,
         territory_id, manager_id, reference_month, collection_status,
         manager_assignment_id, platform_fee_rate_bps, manager_commission_rate_bps)
        VALUES ($1,$2,10000,1800,1800,0,1080,720,$3,$4,$5,'collected',$6,1800,4000)`,
-      [corruptRide, driverId, territoryId, managerId, CURRENT_MONTH, assign.id]);
+      [rideId, driverId, territoryId, managerId, CURRENT_MONTH, assign.id]);
+    // platform_fee: -100 + 1900 = 1800 (sum correct, but individual is negative)
     await pool.query(
       `INSERT INTO territory_ledger (territory_id, manager_id, reference_month, entry_type, amount_cents, reference_type, reference_id, manager_assignment_id)
-       VALUES ($1,$2,$3,'platform_fee',1800,'ride',$4,$5), ($1,$2,$3,'fee_share',-5000,'ride',$4,$5)`,
-      [territoryId, managerId, CURRENT_MONTH, corruptRide, assign.id]);
+       VALUES ($1,$2,$3,'platform_fee',-100,'ride',$4,$5)`,
+      [territoryId, managerId, CURRENT_MONTH, rideId, assign.id]);
+    await pool.query(
+      `INSERT INTO territory_ledger (territory_id, manager_id, reference_month, entry_type, amount_cents, reference_type, reference_id, manager_assignment_id)
+       VALUES ($1,$2,$3,'platform_fee',1900,'ride',$4,$5)`,
+      [territoryId, managerId, CURRENT_MONTH, rideId, assign.id]);
+    await pool.query(
+      `INSERT INTO territory_ledger (territory_id, manager_id, reference_month, entry_type, amount_cents, reference_type, reference_id, manager_assignment_id)
+       VALUES ($1,$2,$3,'fee_share',720,'ride',$4,$5)`,
+      [territoryId, managerId, CURRENT_MONTH, rideId, assign.id]);
 
     await expect(confirmRegularCycle(pool, territoryId, CURRENT_MONTH, managerId))
       .rejects.toMatchObject({ code: 'TERRITORY_CYCLE_NEGATIVE_ADJUSTMENT_UNSUPPORTED' });
+    const { rows: cycles } = await pool.query(
+      `SELECT COUNT(*) FROM territory_payout_cycles WHERE territory_id=$1 AND reference_month=$2 AND status<>'CANCELLED'`,
+      [territoryId, CURRENT_MONTH]);
+    expect(cycles[0].count).toBe('0');
+    const { rows: allocs } = await pool.query(
+      `SELECT COUNT(*) FROM territory_cycle_allocations WHERE cycle_id IN (SELECT id FROM territory_payout_cycles WHERE territory_id=$1)`,
+      [territoryId]);
+    expect(allocs[0].count).toBe('0');
+  });
+
+  it('hidden negative in SUPPLEMENTAL blocks cycle even when totals reconcile', async () => {
+    // REGULAR valid first, then SUPPLEMENTAL with hidden negative
+    const { driverId, territoryId, managerId } = await setupFull(50000n);
+    const { rows: [assign] } = await pool.query(
+      `SELECT id FROM territory_manager_assignments WHERE territory_id=$1 AND admin_id=$2 AND status='active'`,
+      [territoryId, managerId]);
+    await settle(driverId, territoryId, `ride-hns-reg-${RUN}-${randomUUID().slice(0,4)}`);
+    const regular = await confirmRegularCycle(pool, territoryId, CURRENT_MONTH, managerId);
+
+    // New ride for SUPPLEMENTAL: split fee_collected=900, expected fee_share=(900*4000+5000)/10000=360
+    const rideS = `ride-hns-s-${RUN}-${randomUUID().slice(0,4)}`;
+    await pool.query(
+      `INSERT INTO ride_fee_splits (ride_id, driver_id, final_price_cents, fee_amount_cents,
+        fee_collected_cents, fee_pending_cents, matrix_share_cents, manager_share_cents,
+        territory_id, manager_id, reference_month, collection_status,
+        manager_assignment_id, platform_fee_rate_bps, manager_commission_rate_bps)
+       VALUES ($1,$2,5000,900,900,0,540,360,$3,$4,$5,'collected',$6,1800,4000)`,
+      [rideS, driverId, territoryId, managerId, CURRENT_MONTH, assign.id]);
+    // platform_fee: 900 (correct)
+    await pool.query(
+      `INSERT INTO territory_ledger (territory_id, manager_id, reference_month, entry_type, amount_cents, reference_type, reference_id, manager_assignment_id)
+       VALUES ($1,$2,$3,'platform_fee',900,'ride',$4,$5)`,
+      [territoryId, managerId, CURRENT_MONTH, rideS, assign.id]);
+    // fee_share: -100 + 460 = 360 (sum correct, but individual is negative)
+    await pool.query(
+      `INSERT INTO territory_ledger (territory_id, manager_id, reference_month, entry_type, amount_cents, reference_type, reference_id, manager_assignment_id)
+       VALUES ($1,$2,$3,'fee_share',-100,'ride',$4,$5)`,
+      [territoryId, managerId, CURRENT_MONTH, rideS, assign.id]);
+    await pool.query(
+      `INSERT INTO territory_ledger (territory_id, manager_id, reference_month, entry_type, amount_cents, reference_type, reference_id, manager_assignment_id)
+       VALUES ($1,$2,$3,'fee_share',460,'ride',$4,$5)`,
+      [territoryId, managerId, CURRENT_MONTH, rideS, assign.id]);
+
+    await expect(confirmSupplementalCycle(pool, territoryId, CURRENT_MONTH, managerId))
+      .rejects.toMatchObject({ code: 'TERRITORY_CYCLE_NEGATIVE_ADJUSTMENT_UNSUPPORTED' });
+    // No SUPPLEMENTAL created
+    const { rows } = await pool.query(
+      `SELECT COUNT(*) FROM territory_payout_cycles WHERE territory_id=$1 AND reference_month=$2 AND cycle_type='SUPPLEMENTAL'`,
+      [territoryId, CURRENT_MONTH]);
+    expect(rows[0].count).toBe('0');
+    // REGULAR intact
+    const { rows: [reg] } = await pool.query('SELECT status FROM territory_payout_cycles WHERE id=$1', [regular.id]);
+    expect(reg.status).toBe('CALCULATED');
+    // Zero financial side effects
+    const { rows: [obl] } = await pool.query('SELECT COUNT(*) FROM financial_obligations WHERE source_id=$1', [regular.id]);
+    expect(obl.count).toBe('0');
+    const { rows: [pay] } = await pool.query(
+      'SELECT COUNT(*) FROM financial_payouts fp JOIN financial_obligations fo ON fo.id=fp.obligation_id WHERE fo.source_id=$1', [regular.id]);
+    expect(pay.count).toBe('0');
+    const { rows: [outbox] } = await pool.query(
+      'SELECT COUNT(*) FROM financial_payout_outbox fpo JOIN financial_obligations fo ON fo.id=fpo.obligation_id WHERE fo.source_id=$1', [regular.id]);
+    expect(outbox.count).toBe('0');
   });
 });
 

@@ -188,6 +188,9 @@ export async function confirmRegularCycle(
       throw Object.assign(new Error('No unallocated entries'), { code: 'TERRITORY_CYCLE_NO_UNALLOCATED_ENTRIES' });
     }
 
+    // Per-entry negative check (before aggregation and reconciliation)
+    assertNoNegativeCycleEntries(entries);
+
     const cycleStatus = managerId ? 'CALCULATED' : 'BLOCKED';
 
     let grossPlatformFee = 0n, grossCommission = 0n;
@@ -196,7 +199,7 @@ export async function confirmRegularCycle(
       if (e.entry_type === 'fee_share') grossCommission += BigInt(e.amount_cents);
     }
 
-    // Negative not supported
+    // Aggregate negative guard (defense-in-depth)
     if (grossCommission < 0n || grossPlatformFee < 0n) {
       await client.query('ROLLBACK');
       throw Object.assign(new Error('Negative values not supported'), { code: 'TERRITORY_CYCLE_NEGATIVE_ADJUSTMENT_UNSUPPORTED' });
@@ -291,15 +294,12 @@ export async function confirmSupplementalCycle(
     }
 
     const entries = await getUnallocatedEntriesInClient(client, territoryId, managerId, referenceMonth);
-    if (entries.length === 0) { await client.query('COMMIT'); return null; }
 
-    // Per-entry negative check (before aggregation)
-    for (const e of entries) {
-      if (BigInt(e.amount_cents) < 0n) {
-        await client.query('ROLLBACK');
-        throw Object.assign(new Error('Negative entry not supported'), { code: 'TERRITORY_CYCLE_NEGATIVE_ADJUSTMENT_UNSUPPORTED' });
-      }
-    }
+    // Per-entry negative check (before reconciliation can mask it)
+    assertNoNegativeCycleEntries(entries);
+
+    // No unallocated entries → no supplemental needed
+    if (entries.length === 0) { await client.query('COMMIT'); return null; }
 
     let grossPlatformFee = 0n, grossCommission = 0n;
     for (const e of entries) {
@@ -436,6 +436,17 @@ async function getUnallocatedEntries(db: Pool | PoolClient, territoryId: string,
 
 async function getUnallocatedEntriesInClient(client: PoolClient, territoryId: string, managerId: string | null, referenceMonth: string): Promise<LedgerEntry[]> {
   return getUnallocatedEntries(client, territoryId, managerId, referenceMonth);
+}
+
+function assertNoNegativeCycleEntries(entries: LedgerEntry[]): void {
+  for (const e of entries) {
+    if (BigInt(e.amount_cents) < 0n) {
+      throw Object.assign(
+        new Error(`Negative entry: ledger_id=${e.id} ride=${e.ride_id} type=${e.entry_type} amount=${e.amount_cents}`),
+        { code: 'TERRITORY_CYCLE_NEGATIVE_ADJUSTMENT_UNSUPPORTED' },
+      );
+    }
+  }
 }
 
 async function checkReconciliation(db: Pool | PoolClient, territoryId: string, managerId: string | null, referenceMonth: string): Promise<Array<{ rideId: string; reason: string }>> {
