@@ -620,16 +620,12 @@ describe('Idempotency Guard', () => {
         'CALCULATED', false, 'NOT_REQUIRED', NOW(), NOW(), $5)`,
       [rogueId, rogueTid, managerId, CURRENT_MONTH, idemKey]);
 
-    try {
       await expect(confirmRegularCycle(pool, territoryId, CURRENT_MONTH, managerId))
         .rejects.toMatchObject({ code: 'TERRITORY_CYCLE_IDEMPOTENCY_MISMATCH' });
       const { rows } = await pool.query(
         `SELECT COUNT(*) FROM territory_payout_cycles WHERE territory_id=$1 AND reference_month=$2 AND cycle_type='REGULAR'`,
         [territoryId, CURRENT_MONTH]);
       expect(rows[0].count).toBe('0');
-    } finally {
-      await pool.query(`DELETE FROM territory_payout_cycles WHERE id=$1`, [rogueId]);
-    }
   });
 });
 
