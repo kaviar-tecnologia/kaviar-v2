@@ -18,7 +18,7 @@ import { pool } from '../db';
 import { resolveTerritory, TerritoryResolution } from './territory-resolver.service';
 import { getFloorForRoute } from './territory-floor.service';
 import { getRouteDistance } from './google-directions.service';
-import { PLATFORM_FEE_RATE_BPS } from './finance/territory/monetary';
+import { PLATFORM_FEE_RATE_BPS, PLATFORM_FEE_PERCENT } from './finance/territory/monetary';
 
 // --- Fee model flat 18% feature flag ---
 
@@ -39,6 +39,11 @@ export async function isFlatFeeEnabled(): Promise<boolean> {
   return enabled;
 }
 
+/**
+ * @deprecated Not called when FEE_MODEL_FLAT_18 is active.
+ * Retained for potential future use if dynamic configuration is re-enabled.
+ * In flat mode, PLATFORM_FEE_PERCENT from monetary.ts is the authoritative source.
+ */
 async function getFlatFeeConfig(): Promise<{ id: string; percent: number } | null> {
   if (cachedFlatFeePercent && Date.now() - cachedFlatFeePercent.fetchedAt < FLAG_CACHE_TTL) return cachedFlatFeePercent;
   const r = await pool.query(
@@ -58,7 +63,7 @@ async function getFlatFeeConfig(): Promise<{ id: string; percent: number } | nul
  * Resolves the effective platform fee percentage for the current ride.
  *
  * When FEE_MODEL_FLAT_18 is active:
- *   - Returns PLATFORM_FEE_RATE_BPS / 100 (currently 18%)
+ *   - Returns PLATFORM_FEE_PERCENT (currently 18%)
  *   - This is the SAME constant used by fee-split and wallet-settlement
  *   - IGNORES pricing profile territorial rates and platform_fee_configs
  *   - Dynamic configuration (platform_fee_configs) is NOT supported in flat mode.
@@ -82,7 +87,7 @@ export async function resolveEffectivePlatformFeePercent(
 ): Promise<{ percent: number; source: 'flat_constant' | 'territorial' }> {
   const flatActive = await isFlatFeeEnabled();
   if (flatActive) {
-    return { percent: PLATFORM_FEE_RATE_BPS / 100, source: 'flat_constant' };
+    return { percent: PLATFORM_FEE_PERCENT, source: 'flat_constant' };
   }
   return { percent: feeForTerritory(profile, territory, homebound), source: 'territorial' };
 }

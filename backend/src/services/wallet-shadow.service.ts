@@ -1,9 +1,14 @@
 import { pool } from '../db';
+import { PLATFORM_FEE_PERCENT } from './finance/territory/monetary';
 
 /**
  * Shadow calculation for the new 18% fee model.
  * Writes to wallet_shadow_results (isolated from real financial tables).
  * Never modifies wallets, rides, credits, or creates financial obligations.
+ *
+ * NOTE: Uses PLATFORM_FEE_PERCENT as the fee source for consistency with
+ * the authoritative settlement path. The platform_fee_configs query is
+ * retained as documentation of the legacy path but is no longer the source.
  *
  * Feature flag: feature_flags row 'WALLET_SHADOW_MODE' or env WALLET_SHADOW_MODE.
  */
@@ -32,6 +37,7 @@ async function isShadowEnabled(): Promise<boolean> {
   return enabled;
 }
 
+/** @deprecated No longer called when flat mode is active. Retained for potential future use if dynamic configuration is re-enabled. */
 async function getFeeConfig(): Promise<{ id: string; percent: number } | null> {
   if (cachedFeeConfig && Date.now() - cachedFeeConfig.fetchedAt < CACHE_TTL_MS) return cachedFeeConfig;
   const r = await pool.query(
@@ -65,14 +71,10 @@ export async function shadowCalculate(input: ShadowInput): Promise<void> {
   const { rideId, driverId, finalPriceCents, waitChargeCents, legacyCreditCost } = input;
 
   try {
-    const feeConfig = await getFeeConfig();
-    if (!feeConfig) {
-      await persistError(rideId, driverId, finalPriceCents, waitChargeCents, legacyCreditCost,
-        'NO_FEE_CONFIG', 'No approved platform_fee_configs row found');
-      return;
-    }
-
-    const feePercent = feeConfig.percent;
+    // Shadow uses the same fee constant as the authoritative settlement path.
+    // Previously read from platform_fee_configs; now derives from PLATFORM_FEE_PERCENT
+    // to guarantee shadow results match real settlement values.
+    const feePercent = PLATFORM_FEE_PERCENT;
     const feeAmountCents = Math.round(finalPriceCents * feePercent / 100);
 
     // Single query: resolve territory, assignment, and finance rules
@@ -151,7 +153,7 @@ export async function shadowCalculate(input: ShadowInput): Promise<void> {
          reference_month = EXCLUDED.reference_month,
          error_code = NULL, error_message = NULL,
          updated_at = NOW()`,
-      [rideId, driverId, finalPriceCents, waitChargeCents, feeConfig.id,
+      [rideId, driverId, finalPriceCents, waitChargeCents, 'FLAT_CONSTANT_BPS_1800',
        feePercent, feeAmountCents, matrixPct, matrixShareCents,
        managerPct, managerShareCents, driverEarningsCents,
        territoryId, assignmentId, assignmentStatus,

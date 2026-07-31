@@ -3,6 +3,7 @@ import { getRouteDistance } from './google-directions.service';
 import { resolveTerritory } from './territory-resolver.service';
 import { getFloorForRoute } from './territory-floor.service';
 import * as pricingEngine from './pricing-engine';
+import { PLATFORM_FEE_PERCENT } from './finance/territory/monetary';
 
 type PricingSource = 'google_route' | 'fallback_haversine';
 type FeeModel = 'FLAT_FEE' | 'TERRITORIAL_CREDITS';
@@ -45,6 +46,10 @@ function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+/**
+ * @deprecated Only used in TERRITORIAL_CREDITS fallback path (flat mode disabled).
+ * In flat mode, PLATFORM_FEE_PERCENT from monetary.ts is the authoritative source.
+ */
 async function getActivePlatformFeePercent(): Promise<number> {
   const result = await pool.query(
     `SELECT platform_fee_percent
@@ -132,7 +137,10 @@ export async function simulateRidePricing(input: SimulateRidePricingInput): Prom
 
   if (flatFeeEnabled) {
     fee_model = 'FLAT_FEE';
-    fee_percent = round2(await getActivePlatformFeePercent());
+    // Use the same constant as pricing-engine, fee-split, and wallet-settlement.
+    // getActivePlatformFeePercent() (platform_fee_configs) is retained only for
+    // the legacy path when flat mode is disabled in the future.
+    fee_percent = PLATFORM_FEE_PERCENT;
     fee_amount = round2((price * fee_percent) / 100);
     driver_earnings = round2(price - fee_amount);
     credit_cost = 0;
