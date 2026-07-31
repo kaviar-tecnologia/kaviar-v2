@@ -18,7 +18,7 @@ import {
   getCycleById,
   TerritoryPayoutCycle,
 } from '../services/finance/territory/cycle.service';
-import { getManagerPayoutEngine } from '../services/finance/territory/engine-selection';
+import { getManagerPayoutEngine, assertOutboundEngine } from '../services/finance/territory/engine-selection';
 
 const router = Router();
 router.use(authenticateAdmin, allowFinanceAccess);
@@ -130,6 +130,7 @@ router.post('/:id/submit-review', async (req: Request, res: Response) => {
     const cycle = await submitForReview(pool, req.params.id);
     res.json({ success: true, data: { id: cycle.id, status: cycle.status } });
   } catch (err: any) {
+    if (err.code === 'MANAGER_PAYOUT_ENGINE_NOT_OUTBOUND') return res.status(409).json({ success: false, error: err.code });
     if (err.code === 'TERRITORY_CYCLE_INVALID_TRANSITION') return res.status(409).json({ success: false, error: err.code });
     res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
   }
@@ -140,9 +141,11 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
   try {
     const adminId = (req as any).admin?.id ?? 'unknown';
     const cycle = await approveCycle(pool, req.params.id, adminId);
-    res.json({ success: true, data: { id: cycle.id, status: cycle.status, calculatedAt: cycle.calculatedAt } });
+    res.json({ success: true, data: { id: cycle.id, status: cycle.status, approvedAt: cycle.approvedAt, approvedBy: cycle.approvedBy } });
   } catch (err: any) {
+    if (err.code === 'MANAGER_PAYOUT_ENGINE_NOT_OUTBOUND') return res.status(409).json({ success: false, error: err.code });
     if (err.code === 'TERRITORY_CYCLE_INVALID_TRANSITION') return res.status(409).json({ success: false, error: err.code });
+    if (err.code === 'TERRITORY_CYCLE_FISCAL_DOCUMENT_NOT_VALIDATED') return res.status(409).json({ success: false, error: err.code });
     res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
   }
 });
@@ -156,6 +159,7 @@ router.post('/:id/cancel', async (req: Request, res: Response) => {
     const cycle = await cancelCycle(pool, req.params.id, adminId, reason);
     res.json({ success: true, data: { id: cycle.id, status: cycle.status } });
   } catch (err: any) {
+    if (err.code === 'MANAGER_PAYOUT_ENGINE_NOT_OUTBOUND') return res.status(409).json({ success: false, error: err.code });
     if (err.code === 'TERRITORY_CYCLE_INVALID_TRANSITION') return res.status(409).json({ success: false, error: err.code });
     res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
   }
@@ -172,7 +176,10 @@ function mapRow(row: any): TerritoryPayoutCycle {
     grossManagerCommissionCents: BigInt(row.gross_manager_commission_cents),
     approvedAdjustmentsCents: BigInt(row.approved_adjustments_cents),
     approvedAmountCents: BigInt(row.approved_amount_cents),
-    status: row.status, calculatedAt: row.calculated_at, createdAt: row.created_at,
+    status: row.status, fiscalDocumentRequired: row.fiscal_document_required,
+    fiscalDocumentStatus: row.fiscal_document_status, approvedAt: row.approved_at,
+    approvedBy: row.approved_by ?? null,
+    calculatedAt: row.calculated_at, createdAt: row.created_at,
   };
 }
 

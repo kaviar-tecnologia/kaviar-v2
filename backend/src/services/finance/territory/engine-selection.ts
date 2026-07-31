@@ -77,3 +77,18 @@ export function isLegacyPayAllowed(referenceMonth: string): boolean {
   }
   return engine === 'legacy';
 }
+
+/**
+ * Asserts that the payout engine is set to 'outbound'.
+ * Throws MANAGER_PAYOUT_ENGINE_NOT_OUTBOUND if not.
+ * Used as a gate before any mutation (confirm, submit-review, approve, cancel).
+ */
+export function assertOutboundEngine(): void {
+  const engine = getManagerPayoutEngine();
+  if (engine !== 'outbound') {
+    throw Object.assign(
+      new Error(`Manager payout engine is '${engine}', mutations require 'outbound'`),
+      { code: 'MANAGER_PAYOUT_ENGINE_NOT_OUTBOUND' },
+    );
+  }
+}
