@@ -150,40 +150,25 @@ jobs:
             exit 1
           fi
 
-          # 4. Extract image URI
-          IMAGE_URI="$(jq -r '.taskDefinition.containerDefinitions[] | select(.name == "kaviar-backend") | .image // empty' <<< "$TASK_DEF_JSON")"
+          # 4. Validate image field directly in raw JSON (before command substitution)
+          if ! jq -e '
+            .taskDefinition.containerDefinitions[]
+            | select(.name == "kaviar-backend")
+            | .image
+            | type == "string"
+              and length > 0
+              and (contains("\n") | not)
+              and (contains("\r") | not)
+              and test(":[0-9a-f]{40}$")
+          ' <<< "$TASK_DEF_JSON" > /dev/null 2>&1; then
+            echo "❌ PRODUCTION_IMAGE_SHA_INVALID"
+            exit 1
+          fi
 
-          if [ -z "$IMAGE_URI" ]; then
-            echo "❌ PRODUCTION_CONTAINER_IMAGE_NOT_FOUND"
-            exit 1
-          fi
-          IMAGE_LINE_COUNT=$(echo "$IMAGE_URI" | wc -l)
-          if [ "$IMAGE_LINE_COUNT" != "1" ]; then
-            echo "❌ PRODUCTION_CONTAINER_IMAGE_NOT_FOUND"
-            echo "   Image URI is not a single line"
-            exit 1
-          fi
+          # 5. Extract image URI (safe after raw validation)
+          IMAGE_URI="$(jq -r '.taskDefinition.containerDefinitions[] | select(.name == "kaviar-backend") | .image' <<< "$TASK_DEF_JSON")"
+          IMAGE_SHA=$(echo "$IMAGE_URI" | grep -oE '[0-9a-f]{40}$')
           echo "Image URI: ${IMAGE_URI}"
-
-          # 5. Extract IMAGE_SHA from the image tag (URI must end in :40-hex-chars)
-          IMAGE_SHA=""
-          if echo "$IMAGE_URI" | grep -qE ':[0-9a-f]{40}$'; then
-            IMAGE_SHA=$(echo "$IMAGE_URI" | grep -oE '[0-9a-f]{40}$')
-          fi
-
-          if [ -z "$IMAGE_SHA" ]; then
-            echo "❌ PRODUCTION_IMAGE_SHA_INVALID"
-            echo "   Image URI does not end with a valid 40-char hex SHA tag"
-            echo "   URI: ${IMAGE_URI}"
-            exit 1
-          fi
-
-          if ! echo "$IMAGE_SHA" | grep -qE '^[0-9a-f]{40}$'; then
-            echo "❌ PRODUCTION_IMAGE_SHA_INVALID"
-            echo "   Extracted SHA is not exactly 40 lowercase hexadecimal characters"
-            echo "   IMAGE_SHA: ${IMAGE_SHA}"
-            exit 1
-          fi
           echo "IMAGE_SHA: ${IMAGE_SHA}"
 
           # 6. Validate exactly one GIT_COMMIT environment variable
@@ -197,27 +182,25 @@ jobs:
             exit 1
           fi
 
-          # 7. Extract ENV_SHA as scalar
-          ENV_SHA="$(jq -r '.taskDefinition.containerDefinitions[] | select(.name == "kaviar-backend") | .environment[] | select(.name == "GIT_COMMIT") | .value // empty' <<< "$TASK_DEF_JSON")"
+          # 7. Validate GIT_COMMIT value directly in raw JSON (before command substitution)
+          if ! jq -e '
+            .taskDefinition.containerDefinitions[]
+            | select(.name == "kaviar-backend")
+            | .environment[]
+            | select(.name == "GIT_COMMIT")
+            | .value
+            | type == "string"
+              and length == 40
+              and (contains("\n") | not)
+              and (contains("\r") | not)
+              and test("^[0-9a-f]{40}$")
+          ' <<< "$TASK_DEF_JSON" > /dev/null 2>&1; then
+            echo "❌ PRODUCTION_GIT_COMMIT_INVALID"
+            exit 1
+          fi
 
-          if [ -z "$ENV_SHA" ]; then
-            echo "❌ PRODUCTION_GIT_COMMIT_INVALID"
-            echo "   GIT_COMMIT exists but its value is empty or null"
-            exit 1
-          fi
-          ENV_LINE_COUNT=$(echo "$ENV_SHA" | wc -l)
-          if [ "$ENV_LINE_COUNT" != "1" ]; then
-            echo "❌ PRODUCTION_GIT_COMMIT_INVALID"
-            echo "   GIT_COMMIT value is not a single line"
-            exit 1
-          fi
-
-          if ! echo "$ENV_SHA" | grep -qE '^[0-9a-f]{40}$'; then
-            echo "❌ PRODUCTION_GIT_COMMIT_INVALID"
-            echo "   GIT_COMMIT is not exactly 40 lowercase hexadecimal characters"
-            echo "   ENV_SHA: ${ENV_SHA}"
-            exit 1
-          fi
+          # 8. Extract ENV_SHA (safe after raw validation)
+          ENV_SHA="$(jq -r '.taskDefinition.containerDefinitions[] | select(.name == "kaviar-backend") | .environment[] | select(.name == "GIT_COMMIT") | .value' <<< "$TASK_DEF_JSON")"
           echo "ENV_SHA: ${ENV_SHA}"
 
           # 5. Both sources must agree
