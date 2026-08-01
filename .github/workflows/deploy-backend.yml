@@ -123,20 +123,49 @@ jobs:
           fi
           echo "Task definition: ${TASK_DEF_ARN}"
 
-          # 2. Get the container image URI
-          IMAGE_URI=$(aws ecs describe-task-definition \
-            --task-definition "$TASK_DEF_ARN" \
-            --region us-east-2 \
-            --query 'taskDefinition.containerDefinitions[?name==`kaviar-backend`].image | [0]' \
-            --output text)
+          # 2. Fetch the full task definition JSON
+          TASK_DEF_JSON="$(
+            aws ecs describe-task-definition \
+              --task-definition "$TASK_DEF_ARN" \
+              --region us-east-2
+          )"
 
-          if [ -z "$IMAGE_URI" ] || [ "$IMAGE_URI" = "None" ] || [ "$IMAGE_URI" = "null" ]; then
+          # Validate the ARN in the response matches what we requested
+          RESPONSE_TASK_DEF_ARN="$(jq -r '.taskDefinition.taskDefinitionArn // empty' <<< "$TASK_DEF_JSON")"
+          if [ "$RESPONSE_TASK_DEF_ARN" != "$TASK_DEF_ARN" ]; then
+            echo "❌ PRODUCTION_TASK_DEFINITION_ARN_RESPONSE_MISMATCH"
+            echo "   Requested: ${TASK_DEF_ARN}"
+            echo "   Received:  ${RESPONSE_TASK_DEF_ARN}"
+            exit 1
+          fi
+
+          # 3. Validate exactly one container named kaviar-backend
+          TARGET_CONTAINER_COUNT="$(jq '[.taskDefinition.containerDefinitions[]? | select(.name == "kaviar-backend")] | length' <<< "$TASK_DEF_JSON")"
+          if [ "$TARGET_CONTAINER_COUNT" -eq 0 ]; then
+            echo "❌ PRODUCTION_TARGET_CONTAINER_NOT_FOUND"
+            exit 1
+          fi
+          if [ "$TARGET_CONTAINER_COUNT" -gt 1 ]; then
+            echo "❌ PRODUCTION_MULTIPLE_TARGET_CONTAINERS_FOUND"
+            exit 1
+          fi
+
+          # 4. Extract image URI
+          IMAGE_URI="$(jq -r '.taskDefinition.containerDefinitions[] | select(.name == "kaviar-backend") | .image // empty' <<< "$TASK_DEF_JSON")"
+
+          if [ -z "$IMAGE_URI" ]; then
             echo "❌ PRODUCTION_CONTAINER_IMAGE_NOT_FOUND"
+            exit 1
+          fi
+          IMAGE_LINE_COUNT=$(echo "$IMAGE_URI" | wc -l)
+          if [ "$IMAGE_LINE_COUNT" != "1" ]; then
+            echo "❌ PRODUCTION_CONTAINER_IMAGE_NOT_FOUND"
+            echo "   Image URI is not a single line"
             exit 1
           fi
           echo "Image URI: ${IMAGE_URI}"
 
-          # 3. Extract IMAGE_SHA from the image tag (URI must end in :40-hex-chars)
+          # 5. Extract IMAGE_SHA from the image tag (URI must end in :40-hex-chars)
           IMAGE_SHA=""
           if echo "$IMAGE_URI" | grep -qE ':[0-9a-f]{40}$'; then
             IMAGE_SHA=$(echo "$IMAGE_URI" | grep -oE '[0-9a-f]{40}$')
@@ -157,15 +186,28 @@ jobs:
           fi
           echo "IMAGE_SHA: ${IMAGE_SHA}"
 
-          # 4. Get ENV_SHA from GIT_COMMIT environment variable
-          ENV_SHA=$(aws ecs describe-task-definition \
-            --task-definition "$TASK_DEF_ARN" \
-            --region us-east-2 \
-            --query 'taskDefinition.containerDefinitions[?name==`kaviar-backend`].environment[?name==`GIT_COMMIT`].value | [0]' \
-            --output text)
-
-          if [ -z "$ENV_SHA" ] || [ "$ENV_SHA" = "None" ] || [ "$ENV_SHA" = "null" ]; then
+          # 6. Validate exactly one GIT_COMMIT environment variable
+          GIT_COMMIT_COUNT="$(jq '[.taskDefinition.containerDefinitions[] | select(.name == "kaviar-backend") | .environment[]? | select(.name == "GIT_COMMIT")] | length' <<< "$TASK_DEF_JSON")"
+          if [ "$GIT_COMMIT_COUNT" -eq 0 ]; then
             echo "❌ PRODUCTION_GIT_COMMIT_NOT_FOUND"
+            exit 1
+          fi
+          if [ "$GIT_COMMIT_COUNT" -gt 1 ]; then
+            echo "❌ PRODUCTION_MULTIPLE_GIT_COMMIT_VALUES_FOUND"
+            exit 1
+          fi
+
+          # 7. Extract ENV_SHA as scalar
+          ENV_SHA="$(jq -r '.taskDefinition.containerDefinitions[] | select(.name == "kaviar-backend") | .environment[] | select(.name == "GIT_COMMIT") | .value // empty' <<< "$TASK_DEF_JSON")"
+
+          if [ -z "$ENV_SHA" ]; then
+            echo "❌ PRODUCTION_GIT_COMMIT_NOT_FOUND"
+            exit 1
+          fi
+          ENV_LINE_COUNT=$(echo "$ENV_SHA" | wc -l)
+          if [ "$ENV_LINE_COUNT" != "1" ]; then
+            echo "❌ PRODUCTION_GIT_COMMIT_INVALID"
+            echo "   GIT_COMMIT value is not a single line"
             exit 1
           fi
 
