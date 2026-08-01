@@ -91,6 +91,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       production_sha: ${{ steps.resolve.outputs.production_sha }}
+      production_task_definition: ${{ steps.resolve.outputs.production_task_definition }}
     steps:
       - name: Resolve production SHA from two sources
         id: resolve
@@ -111,6 +112,13 @@ jobs:
 
           if [ -z "$TASK_DEF_ARN" ] || [ "$TASK_DEF_ARN" = "None" ] || [ "$TASK_DEF_ARN" = "null" ]; then
             echo "❌ PRODUCTION_TASK_DEFINITION_NOT_FOUND"
+            exit 1
+          fi
+
+          # Validate ARN format
+          if ! echo "$TASK_DEF_ARN" | grep -qE '^arn:aws:ecs:us-east-2:847895361928:task-definition/kaviar-backend:[1-9][0-9]*$'; then
+            echo "❌ PRODUCTION_TASK_DEFINITION_ARN_INVALID"
+            echo "   ARN: ${TASK_DEF_ARN}"
             exit 1
           fi
           echo "Task definition: ${TASK_DEF_ARN}"
@@ -180,6 +188,7 @@ jobs:
 
           echo "✓ Production SHA verified from two sources: ${IMAGE_SHA}"
           echo "production_sha=${IMAGE_SHA}" >> "$GITHUB_OUTPUT"
+          echo "production_task_definition=${TASK_DEF_ARN}" >> "$GITHUB_OUTPUT"
 
   resolve-deploy-state:
     needs:
@@ -409,6 +418,7 @@ jobs:
         env:
           DEPLOY_SHA: ${{ needs.validate-target-commit.outputs.target_sha }}
           TARGET_SHA: ${{ needs.validate-target-commit.outputs.target_sha }}
+          PRODUCTION_TASK_DEF_ARN: ${{ needs.resolve-production-state.outputs.production_task_definition }}
         run: |
           set -euo pipefail
 
@@ -424,13 +434,60 @@ jobs:
             echo "✓ Main still at target: ${TARGET_SHA}"
           }
 
-          # Revalidate before registering task definition
+          revalidate_production_task_definition() {
+            CURRENT_SERVICE_TASK_DEF_ARN="$(
+              aws ecs describe-services \
+                --cluster kaviar-cluster \
+                --services kaviar-backend-service \
+                --region us-east-2 \
+                --query 'services[0].taskDefinition' \
+                --output text
+            )"
+
+            if [ "$CURRENT_SERVICE_TASK_DEF_ARN" != "$PRODUCTION_TASK_DEF_ARN" ]; then
+              echo "❌ PRODUCTION_TASK_DEFINITION_CHANGED_DURING_DEPLOY"
+              echo "   Expected deployed task definition: $PRODUCTION_TASK_DEF_ARN"
+              echo "   Current service task definition:  $CURRENT_SERVICE_TASK_DEF_ARN"
+              exit 1
+            fi
+            echo "✓ Service still using expected task definition: ${PRODUCTION_TASK_DEF_ARN}"
+          }
+
+          # Revalidate before fetching task definition
           revalidate_main
+
+          # Validate PRODUCTION_TASK_DEF_ARN
+          if [ -z "$PRODUCTION_TASK_DEF_ARN" ] || [ "$PRODUCTION_TASK_DEF_ARN" = "null" ] || [ "$PRODUCTION_TASK_DEF_ARN" = "None" ]; then
+            echo "❌ PRODUCTION_TASK_DEFINITION_OUTPUT_INVALID"
+            echo "   Value is empty or null"
+            exit 1
+          fi
+          if ! echo "$PRODUCTION_TASK_DEF_ARN" | grep -qE '^arn:aws:ecs:us-east-2:847895361928:task-definition/kaviar-backend:[1-9][0-9]*$'; then
+            echo "❌ PRODUCTION_TASK_DEFINITION_OUTPUT_INVALID"
+            echo "   ARN: ${PRODUCTION_TASK_DEF_ARN}"
+            exit 1
+          fi
+          echo "✓ Production task definition ARN validated: ${PRODUCTION_TASK_DEF_ARN}"
+
+          # Confirm service is still using the expected task definition
+          revalidate_production_task_definition
 
           EXPECTED_IMAGE="847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:${DEPLOY_SHA}"
 
-          # Fetch the current task definition
-          TASK_DEF_JSON=$(aws ecs describe-task-definition --task-definition kaviar-backend --region us-east-2)
+          # Fetch the exact deployed task definition by ARN
+          TASK_DEF_JSON=$(aws ecs describe-task-definition \
+            --task-definition "$PRODUCTION_TASK_DEF_ARN" \
+            --region us-east-2)
+
+          # Verify the response matches the requested ARN
+          RESPONSE_ARN=$(echo "$TASK_DEF_JSON" | jq -r '.taskDefinition.taskDefinitionArn')
+          if [ "$RESPONSE_ARN" != "$PRODUCTION_TASK_DEF_ARN" ]; then
+            echo "❌ TASK_DEFINITION_ARN_RESPONSE_MISMATCH"
+            echo "   Requested: ${PRODUCTION_TASK_DEF_ARN}"
+            echo "   Received:  ${RESPONSE_ARN}"
+            exit 1
+          fi
+          echo "✓ Task definition ARN matches request"
 
           # Verify exactly one container named kaviar-backend exists
           CONTAINER_COUNT=$(echo "$TASK_DEF_JSON" | jq '[.taskDefinition.containerDefinitions[] | select(.name == "kaviar-backend")] | length')
@@ -557,6 +614,9 @@ jobs:
           fi
           echo "✓ No plaintext secrets in environment"
 
+          # Revalidate service before registering
+          revalidate_production_task_definition
+
           # Write and register
           echo "$NEW_TASK_DEF" > task-def.json
           NEW_REV=$(aws ecs register-task-definition --cli-input-json file://task-def.json --region us-east-2 | jq -r '.taskDefinition.revision')
@@ -567,6 +627,7 @@ jobs:
         env:
           TARGET_SHA: ${{ needs.validate-target-commit.outputs.target_sha }}
           NEW_TASK_REVISION: ${{ steps.register_task.outputs.task_revision }}
+          PRODUCTION_TASK_DEF_ARN: ${{ needs.resolve-production-state.outputs.production_task_definition }}
         run: |
           revalidate_main() {
             git fetch --no-tags origin main
@@ -593,8 +654,25 @@ jobs:
           fi
           echo "✓ Task revision validated: kaviar-backend:${NEW_TASK_REVISION}"
 
-          # Final revalidation immediately before ECS update
+          # Revalidate main
           revalidate_main
+
+          # Revalidate that service still uses the expected task definition
+          CURRENT_SERVICE_TASK_DEF_ARN="$(
+            aws ecs describe-services \
+              --cluster kaviar-cluster \
+              --services kaviar-backend-service \
+              --region us-east-2 \
+              --query 'services[0].taskDefinition' \
+              --output text
+          )"
+          if [ "$CURRENT_SERVICE_TASK_DEF_ARN" != "$PRODUCTION_TASK_DEF_ARN" ]; then
+            echo "❌ PRODUCTION_TASK_DEFINITION_CHANGED_BEFORE_ECS_UPDATE"
+            echo "   Expected deployed task definition: $PRODUCTION_TASK_DEF_ARN"
+            echo "   Current service task definition:  $CURRENT_SERVICE_TASK_DEF_ARN"
+            exit 1
+          fi
+          echo "✓ Service still using expected task definition"
 
           aws ecs update-service \
             --cluster kaviar-cluster \
