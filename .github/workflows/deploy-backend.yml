@@ -1,21 +1,45 @@
 name: Deploy Backend
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'backend/**'
-      - '.github/workflows/deploy-backend.yml'
-      - '.github/workflows/deploy-prisma-migrations.yml'
   workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "Full commit SHA from main to deploy"
+        required: true
+        type: string
+      confirmation:
+        description: "Type DEPLOY_PRODUCTION to continue"
+        required: true
+        type: string
 
 concurrency:
-  group: kaviar-prod-backend-db-deploy
+  group: production-backend
   cancel-in-progress: false
-  queue: max
 
 jobs:
+  validate-inputs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate confirmation
+        run: |
+          if [ "${{ inputs.confirmation }}" != "DEPLOY_PRODUCTION" ]; then
+            echo "❌ ABORT: confirmation must be exactly 'DEPLOY_PRODUCTION'"
+            echo "   Received: '${{ inputs.confirmation }}'"
+            exit 1
+          fi
+
+      - name: Validate commit SHA format
+        run: |
+          SHA="${{ inputs.commit_sha }}"
+          if ! echo "$SHA" | grep -qE '^[0-9a-f]{40}$'; then
+            echo "❌ ABORT: commit_sha must be exactly 40 lowercase hexadecimal characters"
+            echo "   Received: '${SHA}'"
+            exit 1
+          fi
+          echo "✓ Inputs validated: SHA=${SHA}"
+
   resolve-deploy-state:
+    needs: validate-inputs
     runs-on: ubuntu-latest
     outputs:
       prisma_changed: ${{ steps.detect.outputs.prisma_changed }}
@@ -27,6 +51,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ inputs.commit_sha }}
 
       - name: Detect Prisma-related changes
         id: detect
@@ -72,20 +97,18 @@ jobs:
             fi
           }
 
-          CURRENT_SHA="${GITHUB_SHA}"
-          BASE_SHA="${{ github.event.before }}"
+          CURRENT_SHA="${{ inputs.commit_sha }}"
+          BASE_SHA=""
           BACKEND_DEPLOY_STALE="false"
           STALE_REASON="none"
           ORIGIN_MAIN_SHA=""
           RELEVANT_LATER_FILES=""
           DETECTION_SELFTEST_FAILED="false"
 
-          if [ "${GITHUB_EVENT_NAME}" != "push" ] || [ -z "${BASE_SHA}" ] || [[ "${BASE_SHA}" =~ ^0+$ ]]; then
-            if git rev-parse "${GITHUB_SHA}^" >/dev/null 2>&1; then
-              BASE_SHA="$(git rev-parse "${GITHUB_SHA}^")"
-            else
-              BASE_SHA="${GITHUB_SHA}"
-            fi
+          if git rev-parse "${CURRENT_SHA}^" >/dev/null 2>&1; then
+            BASE_SHA="$(git rev-parse "${CURRENT_SHA}^")"
+          else
+            BASE_SHA="${CURRENT_SHA}"
           fi
 
           if ! CHANGED_FILES=$(git diff --name-only "${BASE_SHA}" "${CURRENT_SHA}"); then
@@ -96,7 +119,6 @@ jobs:
 
           echo "Current SHA: ${CURRENT_SHA}"
           echo "Base SHA: ${BASE_SHA}"
-          echo "GITHUB_EVENT_NAME: ${GITHUB_EVENT_NAME}"
           echo "Changed files:"
           printf '%s\n' "${CHANGED_FILES}"
 
@@ -178,7 +200,7 @@ jobs:
         run: |
           {
             echo "### Backend deploy state"
-            echo "- GITHUB_SHA: ${{ github.sha }}"
+            echo "- Input SHA: ${{ inputs.commit_sha }}"
             echo "- Base SHA for prisma diff: ${{ steps.detect.outputs.base_sha }}"
             echo "- origin/main SHA: ${{ steps.detect.outputs.origin_main_sha }}"
             echo "- prisma_changed: ${{ steps.detect.outputs.prisma_changed }}"
@@ -187,7 +209,9 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   run-prisma-migrations:
-    needs: resolve-deploy-state
+    needs:
+      - validate-inputs
+      - resolve-deploy-state
     if: needs.resolve-deploy-state.outputs.backend_deploy_stale != 'true'
     uses: ./.github/workflows/deploy-prisma-migrations.yml
     with:
@@ -196,6 +220,7 @@ jobs:
 
   deploy:
     needs:
+      - validate-inputs
       - resolve-deploy-state
       - run-prisma-migrations
     if: |
@@ -205,6 +230,8 @@ jobs:
     
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
       
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
@@ -235,16 +262,16 @@ jobs:
       - name: Build and Push
         run: |
           cd backend
-          docker build --build-arg GIT_COMMIT=${{ github.sha }} -t kaviar-backend:${{ github.sha }} .
-          docker tag kaviar-backend:${{ github.sha }} 847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:latest
-          docker tag kaviar-backend:${{ github.sha }} 847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:${{ github.sha }}
+          docker build --build-arg GIT_COMMIT=${{ inputs.commit_sha }} -t kaviar-backend:${{ inputs.commit_sha }} .
+          docker tag kaviar-backend:${{ inputs.commit_sha }} 847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:latest
+          docker tag kaviar-backend:${{ inputs.commit_sha }} 847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:${{ inputs.commit_sha }}
           docker push 847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:latest
-          docker push 847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:${{ github.sha }}
+          docker push 847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:${{ inputs.commit_sha }}
       
       - name: Update Task Definition
         run: |
           TASK_DEF=$(aws ecs describe-task-definition --task-definition kaviar-backend --region us-east-2)
-          NEW_TASK_DEF=$(echo "$TASK_DEF" | jq --arg IMAGE "847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:${{ github.sha }}" --arg COMMIT "${{ github.sha }}" \
+          NEW_TASK_DEF=$(echo "$TASK_DEF" | jq --arg IMAGE "847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:${{ inputs.commit_sha }}" --arg COMMIT "${{ inputs.commit_sha }}" \
             --arg TWILIO_WHATSAPP_FROM "${{ secrets.TWILIO_WHATSAPP_FROM }}" \
             --arg TWILIO_WHATSAPP_TEMPLATE_DRIVER_SID "${{ secrets.TWILIO_WHATSAPP_TEMPLATE_DRIVER_SID }}" \
             --arg TWILIO_WHATSAPP_TEMPLATE_PASSENGER_SID "${{ secrets.TWILIO_WHATSAPP_TEMPLATE_PASSENGER_SID }}" \
