@@ -586,12 +586,203 @@ describe('Flat Fee Single Source — Shadow-Simulator-Settlement Coherence', () 
     expect(Math.round(simFee * 100)).toBe(splitFee);
   });
 
-  it('P2: shadow fee_config_id identifies constant source (not DB query)', () => {
-    // The shadow uses sentinel value 'FLAT_CONSTANT_BPS_1800' as fee_config_id
-    // to explicitly document it did NOT query platform_fee_configs.
-    // This makes it auditable that shadow results are from the constant, not legacy DB.
-    const EXPECTED_SENTINEL = 'FLAT_CONSTANT_BPS_1800';
-    expect(EXPECTED_SENTINEL).toContain('FLAT_CONSTANT');
-    expect(EXPECTED_SENTINEL).toContain('1800');
+  it('P2: shadow fee_config_id is NULL (constant-derived, no dynamic config)', () => {
+    // The shadow uses fee_config_id = NULL to explicitly document that
+    // it did NOT query platform_fee_configs. The fee was derived from
+    // the PLATFORM_FEE_PERCENT constant, not a DB row.
+    // NULL is correct because the column is UUID nullable with FK to platform_fee_configs.
+    const expectedFeeConfigId = null;
+    expect(expectedFeeConfigId).toBeNull();
+  });
+
+  it('P3: shadow INSERT with fee_config_id=NULL succeeds on real PostgreSQL', async () => {
+    // Integration test: verifies the actual INSERT doesn't violate UUID constraint.
+    // This test requires DATABASE_URL to point to a real PostgreSQL with the schema.
+    const { Pool } = await import('pg');
+    const testPool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const RUN = `p3-${Date.now()}`;
+    const rideId = `shadow-uuid-test-${RUN}`;
+    const driverId = `driver-uuid-test-${RUN}`;
+    const passengerId = `pax-uuid-test-${RUN}`;
+
+    try {
+      // Ensure FK targets exist with all required NOT NULL columns
+      await testPool.query(
+        `INSERT INTO passengers (id, name, phone, email, updated_at) VALUES ($1, 'Test Pax', '+5521888880000', $2, NOW()) ON CONFLICT DO NOTHING`,
+        [passengerId, `pax-${RUN}@test.local`]
+      );
+      await testPool.query(
+        `INSERT INTO drivers (id, name, phone, email, status, updated_at) VALUES ($1, 'Test Driver', '+5521999990000', $2, 'approved', NOW()) ON CONFLICT DO NOTHING`,
+        [driverId, `test-${RUN}@test.local`]
+      );
+      await testPool.query(
+        `INSERT INTO rides_v2 (id, passenger_id, status, origin_lat, origin_lng, dest_lat, dest_lng, updated_at) VALUES ($1, $2, 'completed', -22.9, -43.2, -22.91, -43.21, NOW()) ON CONFLICT DO NOTHING`,
+        [rideId, passengerId]
+      );
+
+      // The actual INSERT that previously failed with 'FLAT_CONSTANT_BPS_1800' (non-UUID string)
+      const result = await testPool.query(
+        `INSERT INTO wallet_shadow_results
+          (ride_id, driver_id, calculation_version, calculation_status,
+           final_price_cents, wait_charge_cents, fee_config_id,
+           fee_percent, fee_amount_cents, driver_earnings_cents, updated_at)
+         VALUES ($1, $2, 1, 'success', 2000, 0, $3, 18, 360, 1640, NOW())
+         ON CONFLICT (ride_id, calculation_version) DO NOTHING
+         RETURNING id`,
+        [rideId, driverId, null]  // ← fee_config_id = NULL (not a fake UUID string)
+      );
+
+      // Should succeed without UUID constraint violation
+      expect(result.rows.length).toBe(1);
+
+      // Verify stored value
+      const stored = await testPool.query(
+        `SELECT fee_config_id, fee_percent, calculation_status FROM wallet_shadow_results WHERE ride_id = $1`,
+        [rideId]
+      );
+      expect(stored.rows[0].fee_config_id).toBeNull();
+      expect(Number(stored.rows[0].fee_percent)).toBe(18);
+      expect(stored.rows[0].calculation_status).toBe('success');
+    } finally {
+      // Cleanup
+      await testPool.query(`DELETE FROM wallet_shadow_results WHERE ride_id = $1`, [rideId]);
+      await testPool.query(`DELETE FROM rides_v2 WHERE id = $1`, [rideId]);
+      await testPool.query(`DELETE FROM drivers WHERE id = $1`, [driverId]);
+      await testPool.query(`DELETE FROM passengers WHERE id = $1`, [passengerId]);
+      await testPool.end();
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Q. Territorial mode — settle uses persisted snapshot
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Flat Fee Single Source — Territorial Settle Snapshot', () => {
+  let poolMock: any;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const { pool } = await import('../src/db');
+    poolMock = pool;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('Q: flat disabled — settle uses persisted fee_percent/fee_amount/earnings (not current profile)', async () => {
+    // Scenario: ride quoted at 15% (fee_adjacent), profile later changed to 12%.
+    // Settlement must preserve the 15% snapshot, not recalculate with 12%.
+    const rideId = 'test-ride-territorial-snapshot';
+    let committed = false;
+    poolMock.query.mockImplementation((sql: string, params?: any[]) => {
+      if (sql.includes('ride_settlements') && sql.includes('SELECT')) {
+        return {
+          rows: [{
+            ride_id: rideId,
+            fee_percent: '15.00',        // ← snapshot at quote time (adjacent=15%)
+            fee_amount: '4.69',          // ← 15% of 31.24
+            driver_earnings: '26.55',    // ← 31.24 - 4.69
+            locked_price: '31.24',
+            final_price: null,
+            settled_at: null,
+            refined_at: new Date().toISOString(),
+            route_territory: 'adjacent',
+            driver_territory: 'adjacent',
+            pricing_profile_id: 'prof-1',
+            credit_cost: null,
+            credit_match_type: null,
+            settlement_territory: null,
+          }],
+        };
+      }
+      if (sql.includes('pricing_profiles') && sql.includes('SELECT')) {
+        return {
+          rows: [{
+            id: 'prof-1', slug: 'rio-furnas',
+            base_fare: '5', per_km: '1.5', per_minute: '0.3', minimum_fare: '12',
+            fee_local: '10', fee_adjacent: '12', fee_external: '20', fee_homebound: '5',
+            // ↑ Profile has CHANGED since quote (adjacent was 15%, now 12%)
+            surcharge_external: '0', credit_cost_local: 1, credit_cost_external: 2,
+            max_dispatch_km: '12', center_lat: null, center_lng: null, radius_km: null,
+          }],
+        };
+      }
+      // Flat mode DISABLED
+      if (sql.includes('feature_flags')) return { rows: [{ enabled: false }] };
+      if (sql === 'BEGIN') return { rows: [] };
+      if (sql === 'COMMIT') { committed = true; return { rows: [] }; }
+      if (sql.includes('UPDATE ride_settlements')) return { rows: [], rowCount: 1 };
+      if (sql.includes('UPDATE rides_v2')) return { rows: [], rowCount: 1 };
+      return { rows: [] };
+    });
+
+    const { settle } = await import('../src/services/pricing-engine');
+    const result = await settle(rideId);
+
+    // Must use PERSISTED snapshot values, NOT recalculated from current profile
+    expect(result).not.toBeNull();
+    expect(result!.fee_percent).toBe(15);       // persisted, not current profile's 12
+    expect(result!.fee_amount).toBe(4.69);      // persisted, not round2(31.24*12/100)=3.75
+    expect(result!.driver_earnings).toBe(26.55); // persisted, not 31.24-3.75=27.49
+    expect(result!.credit_match_type).toBe('LOCAL'); // adjacent territory → LOCAL credit
+    expect(committed).toBe(true);
+  });
+
+  it('Q2: flat disabled — no SETTLE_FEE_SNAPSHOT_MISMATCH validation applied', async () => {
+    // In territorial mode, there is no snapshot validation because the rate
+    // is inherently per-ride (varies by territory). The persisted value IS the truth.
+    const rideId = 'test-ride-territorial-no-mismatch';
+    let committed = false;
+    poolMock.query.mockImplementation((sql: string) => {
+      if (sql.includes('ride_settlements') && sql.includes('SELECT')) {
+        return {
+          rows: [{
+            ride_id: rideId,
+            fee_percent: '7.00',         // unusual rate — but persisted, so valid
+            fee_amount: '2.19',
+            driver_earnings: '29.05',
+            locked_price: '31.24',
+            final_price: null,
+            settled_at: null,
+            refined_at: new Date().toISOString(),
+            route_territory: 'local',
+            driver_territory: 'local',
+            pricing_profile_id: 'prof-1',
+            credit_cost: null,
+            credit_match_type: null,
+            settlement_territory: null,
+          }],
+        };
+      }
+      if (sql.includes('pricing_profiles') && sql.includes('SELECT')) {
+        return {
+          rows: [{
+            id: 'prof-1', slug: 'rio-furnas',
+            base_fare: '5', per_km: '1.5', per_minute: '0.3', minimum_fare: '12',
+            fee_local: '12', fee_adjacent: '15', fee_external: '22', fee_homebound: '5',
+            surcharge_external: '0', credit_cost_local: 1, credit_cost_external: 2,
+            max_dispatch_km: '12', center_lat: null, center_lng: null, radius_km: null,
+          }],
+        };
+      }
+      if (sql.includes('feature_flags')) return { rows: [{ enabled: false }] };
+      if (sql === 'BEGIN') return { rows: [] };
+      if (sql === 'COMMIT') { committed = true; return { rows: [] }; }
+      if (sql.includes('UPDATE ride_settlements')) return { rows: [], rowCount: 1 };
+      if (sql.includes('UPDATE rides_v2')) return { rows: [], rowCount: 1 };
+      return { rows: [] };
+    });
+
+    const { settle } = await import('../src/services/pricing-engine');
+    // Should NOT throw — territorial mode does not validate against a fixed rate
+    const result = await settle(rideId);
+
+    expect(result).not.toBeNull();
+    expect(result!.fee_percent).toBe(7);       // preserved from snapshot
+    expect(result!.fee_amount).toBe(2.19);
+    expect(result!.driver_earnings).toBe(29.05);
+    expect(committed).toBe(true);
   });
 });

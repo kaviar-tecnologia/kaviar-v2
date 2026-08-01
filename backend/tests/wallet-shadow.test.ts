@@ -89,7 +89,7 @@ describe('shadowCalculate', () => {
     const insert = mockQuery.mock.calls.find((c: any) => c[0].includes('INSERT INTO wallet_shadow'));
     expect(insert).toBeDefined();
     const p = insert![1] as any[];
-    expect(p[4]).toBe('FLAT_CONSTANT_BPS_1800'); // sentinel fee_config_id
+    expect(p[4]).toBe(null); // fee_config_id = NULL (constant-derived, no dynamic config)
     expect(p[5]).toBe(18); // fee percent
     expect(p[6]).toBe(360); // fee amount cents
   });

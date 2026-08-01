@@ -529,35 +529,44 @@ export async function settle(rideId: string): Promise<SettlementResult | null> {
   const final_price = Number(s.locked_price); // V1: final = locked
 
   // Fee model: resolve effective rate (single source of truth — PLATFORM_FEE_RATE_BPS)
-  const { percent: fee_percent, source: fee_source } = await resolveEffectivePlatformFeePercent(p, settlement_territory);
+  const { percent: effective_fee_percent, source: fee_source } = await resolveEffectivePlatformFeePercent(p, settlement_territory);
 
-  // ═══ SNAPSHOT VALIDATION ═══
-  // Validate that the persisted fee_percent (set by quote/refine) matches what we're about to use.
-  // If flat mode is active and the snapshot shows a different rate, this indicates a data integrity
-  // issue (e.g., the ride was quoted before flat mode was enabled, or a bug).
-  const persistedFeePercent = Number(s.fee_percent);
-  if (fee_source === 'flat_constant' && persistedFeePercent !== fee_percent && persistedFeePercent > 0) {
-    throw Object.assign(
-      new Error(
-        `SETTLE_FEE_SNAPSHOT_MISMATCH: ride=${rideId} persisted_fee_percent=${persistedFeePercent} ` +
-        `effective_fee_percent=${fee_percent} source=${fee_source}. ` +
-        `The ride was quoted with a different rate than the current flat mode rate. ` +
-        `This settlement is blocked to prevent inconsistent charges.`
-      ),
-      { code: 'SETTLE_FEE_SNAPSHOT_MISMATCH' }
-    );
-  }
-
-  let fee_amount: number, driver_earnings: number;
+  let fee_percent: number, fee_amount: number, driver_earnings: number;
   let credit_cost: number, credit_match_type: string;
 
-  fee_amount = round2(final_price * fee_percent / 100);
-  driver_earnings = round2(final_price - fee_amount);
-
   if (fee_source === 'flat_constant') {
+    // ═══ FLAT MODE: use constant rate and validate snapshot ═══
+    fee_percent = effective_fee_percent;
+
+    // Validate that the persisted fee_percent (set by quote/refine) matches the flat rate.
+    // If the snapshot shows a different rate, this indicates a data integrity issue
+    // (e.g., the ride was quoted before flat mode was enabled, or a bug).
+    const persistedFeePercent = Number(s.fee_percent);
+    if (persistedFeePercent !== fee_percent && persistedFeePercent > 0) {
+      throw Object.assign(
+        new Error(
+          `SETTLE_FEE_SNAPSHOT_MISMATCH: ride=${rideId} persisted_fee_percent=${persistedFeePercent} ` +
+          `effective_fee_percent=${fee_percent} source=${fee_source}. ` +
+          `The ride was quoted with a different rate than the current flat mode rate. ` +
+          `This settlement is blocked to prevent inconsistent charges.`
+        ),
+        { code: 'SETTLE_FEE_SNAPSHOT_MISMATCH' }
+      );
+    }
+
+    fee_amount = round2(final_price * fee_percent / 100);
+    driver_earnings = round2(final_price - fee_amount);
     credit_cost = 0;
     credit_match_type = 'FLAT_FEE';
   } else {
+    // ═══ TERRITORIAL MODE: use persisted snapshot from quote/refine ═══
+    // The fee_percent, fee_amount, and driver_earnings were calculated at quote/refine time
+    // using the pricing profile rates valid at that moment. We preserve those values to avoid
+    // retroactively changing the economics of a ride if the profile is updated later.
+    fee_percent = Number(s.fee_percent);
+    fee_amount = Number(s.fee_amount);
+    driver_earnings = Number(s.driver_earnings);
+
     const cr = creditForTerritory(p, settlement_territory);
     credit_cost = cr.cost;
     credit_match_type = cr.matchType;

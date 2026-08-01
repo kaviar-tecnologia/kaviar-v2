@@ -153,7 +153,7 @@ export async function shadowCalculate(input: ShadowInput): Promise<void> {
          reference_month = EXCLUDED.reference_month,
          error_code = NULL, error_message = NULL,
          updated_at = NOW()`,
-      [rideId, driverId, finalPriceCents, waitChargeCents, 'FLAT_CONSTANT_BPS_1800',
+      [rideId, driverId, finalPriceCents, waitChargeCents, null,
        feePercent, feeAmountCents, matrixPct, matrixShareCents,
        managerPct, managerShareCents, driverEarningsCents,
        territoryId, assignmentId, assignmentStatus,
