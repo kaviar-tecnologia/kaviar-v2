@@ -411,7 +411,7 @@ jobs:
           aws ecr get-login-password --region us-east-2 | \
           docker login --username AWS --password-stdin 847895361928.dkr.ecr.us-east-2.amazonaws.com
 
-      - name: Build and Push (immutable SHA tag only)
+      - name: Build and Push (full commit SHA tag only)
         env:
           DEPLOY_SHA: ${{ needs.validate-target-commit.outputs.target_sha }}
           TARGET_SHA: ${{ needs.validate-target-commit.outputs.target_sha }}
@@ -437,7 +437,7 @@ jobs:
           revalidate_main
 
           docker push "847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:${DEPLOY_SHA}"
-          echo "✓ Pushed immutable image: 847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:${DEPLOY_SHA}"
+          echo "✓ Pushed image with full commit SHA tag: 847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:${DEPLOY_SHA}"
 
       - name: Update Task Definition
         id: register_task
