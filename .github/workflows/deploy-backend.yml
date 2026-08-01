@@ -483,11 +483,42 @@ jobs:
           echo "task_revision=${NEW_REV}" >> "$GITHUB_OUTPUT"
 
       - name: Deploy to ECS
+        env:
+          TARGET_SHA: ${{ needs.validate-target-commit.outputs.target_sha }}
+          NEW_TASK_REVISION: ${{ steps.register_task.outputs.task_revision }}
         run: |
+          revalidate_main() {
+            git fetch --no-tags origin main
+            CURRENT_MAIN="$(git rev-parse origin/main)"
+            if [ "$CURRENT_MAIN" != "$TARGET_SHA" ]; then
+              echo "❌ DEPLOY_TARGET_BECAME_STALE_BEFORE_ECS_UPDATE"
+              echo "   Target:       ${TARGET_SHA}"
+              echo "   Current main: ${CURRENT_MAIN}"
+              exit 1
+            fi
+            echo "✓ Main still at target: ${TARGET_SHA}"
+          }
+
+          # Validate task revision
+          if [ -z "$NEW_TASK_REVISION" ]; then
+            echo "❌ REGISTERED_TASK_REVISION_INVALID"
+            echo "   Revision is empty"
+            exit 1
+          fi
+          if ! echo "$NEW_TASK_REVISION" | grep -qE '^[1-9][0-9]*$'; then
+            echo "❌ REGISTERED_TASK_REVISION_INVALID"
+            echo "   Revision: '${NEW_TASK_REVISION}' (expected positive integer)"
+            exit 1
+          fi
+          echo "✓ Task revision validated: kaviar-backend:${NEW_TASK_REVISION}"
+
+          # Final revalidation immediately before ECS update
+          revalidate_main
+
           aws ecs update-service \
             --cluster kaviar-cluster \
             --service kaviar-backend-service \
-            --task-definition kaviar-backend:${{ steps.register_task.outputs.task_revision }} \
+            --task-definition "kaviar-backend:${NEW_TASK_REVISION}" \
             --force-new-deployment \
             --region us-east-2
 
