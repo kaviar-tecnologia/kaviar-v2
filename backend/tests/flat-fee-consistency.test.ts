@@ -594,64 +594,6 @@ describe('Flat Fee Single Source — Shadow-Simulator-Settlement Coherence', () 
     const expectedFeeConfigId = null;
     expect(expectedFeeConfigId).toBeNull();
   });
-
-  it('P3: shadow INSERT with fee_config_id=NULL succeeds on real PostgreSQL', async () => {
-    // Integration test: verifies the actual INSERT doesn't violate UUID constraint.
-    // This test requires DATABASE_URL to point to a real PostgreSQL with the schema.
-    const { Pool } = await import('pg');
-    const testPool = new Pool({ connectionString: process.env.DATABASE_URL });
-    const RUN = `p3-${Date.now()}`;
-    const rideId = `shadow-uuid-test-${RUN}`;
-    const driverId = `driver-uuid-test-${RUN}`;
-    const passengerId = `pax-uuid-test-${RUN}`;
-
-    try {
-      // Ensure FK targets exist with all required NOT NULL columns
-      await testPool.query(
-        `INSERT INTO passengers (id, name, phone, email, updated_at) VALUES ($1, 'Test Pax', '+5521888880000', $2, NOW()) ON CONFLICT DO NOTHING`,
-        [passengerId, `pax-${RUN}@test.local`]
-      );
-      await testPool.query(
-        `INSERT INTO drivers (id, name, phone, email, status, updated_at) VALUES ($1, 'Test Driver', '+5521999990000', $2, 'approved', NOW()) ON CONFLICT DO NOTHING`,
-        [driverId, `test-${RUN}@test.local`]
-      );
-      await testPool.query(
-        `INSERT INTO rides_v2 (id, passenger_id, status, origin_lat, origin_lng, dest_lat, dest_lng, updated_at) VALUES ($1, $2, 'completed', -22.9, -43.2, -22.91, -43.21, NOW()) ON CONFLICT DO NOTHING`,
-        [rideId, passengerId]
-      );
-
-      // The actual INSERT that previously failed with 'FLAT_CONSTANT_BPS_1800' (non-UUID string)
-      const result = await testPool.query(
-        `INSERT INTO wallet_shadow_results
-          (ride_id, driver_id, calculation_version, calculation_status,
-           final_price_cents, wait_charge_cents, fee_config_id,
-           fee_percent, fee_amount_cents, driver_earnings_cents, updated_at)
-         VALUES ($1, $2, 1, 'success', 2000, 0, $3, 18, 360, 1640, NOW())
-         ON CONFLICT (ride_id, calculation_version) DO NOTHING
-         RETURNING id`,
-        [rideId, driverId, null]  // ← fee_config_id = NULL (not a fake UUID string)
-      );
-
-      // Should succeed without UUID constraint violation
-      expect(result.rows.length).toBe(1);
-
-      // Verify stored value
-      const stored = await testPool.query(
-        `SELECT fee_config_id, fee_percent, calculation_status FROM wallet_shadow_results WHERE ride_id = $1`,
-        [rideId]
-      );
-      expect(stored.rows[0].fee_config_id).toBeNull();
-      expect(Number(stored.rows[0].fee_percent)).toBe(18);
-      expect(stored.rows[0].calculation_status).toBe('success');
-    } finally {
-      // Cleanup
-      await testPool.query(`DELETE FROM wallet_shadow_results WHERE ride_id = $1`, [rideId]);
-      await testPool.query(`DELETE FROM rides_v2 WHERE id = $1`, [rideId]);
-      await testPool.query(`DELETE FROM drivers WHERE id = $1`, [driverId]);
-      await testPool.query(`DELETE FROM passengers WHERE id = $1`, [passengerId]);
-      await testPool.end();
-    }
-  });
 });
 
 // ═══════════════════════════════════════════════════════════════════

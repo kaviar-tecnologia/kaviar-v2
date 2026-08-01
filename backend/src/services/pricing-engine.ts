@@ -18,7 +18,7 @@ import { pool } from '../db';
 import { resolveTerritory, TerritoryResolution } from './territory-resolver.service';
 import { getFloorForRoute } from './territory-floor.service';
 import { getRouteDistance } from './google-directions.service';
-import { PLATFORM_FEE_RATE_BPS, PLATFORM_FEE_PERCENT } from './finance/territory/monetary';
+import { PLATFORM_FEE_PERCENT } from './finance/territory/monetary';
 
 // --- Fee model flat 18% feature flag ---
 
@@ -57,7 +57,7 @@ async function getFlatFeeConfig(): Promise<{ id: string; percent: number } | nul
   return cachedFlatFeePercent;
 }
 
-// --- Effective platform fee resolver (single source of truth) ---
+// --- Effective platform fee resolver ---
 
 /**
  * Resolves the effective platform fee percentage for the current ride.
@@ -67,16 +67,13 @@ async function getFlatFeeConfig(): Promise<{ id: string; percent: number } | nul
  *   - This is the SAME constant used by fee-split and wallet-settlement
  *   - IGNORES pricing profile territorial rates and platform_fee_configs
  *   - Dynamic configuration (platform_fee_configs) is NOT supported in flat mode.
- *     Changing that table does NOT affect the system. Full end-to-end support
- *     for dynamic rates requires a separate implementation across all services.
+ *   - settle() validates the persisted snapshot against this value (fail-closed)
  *
  * When FEE_MODEL_FLAT_18 is inactive:
- *   - Uses the pricing profile territorial rate for the given territory
- *
- * This function is the SINGLE SOURCE for determining the fee shown to the driver
- * in quote, refine, and settle stages. It derives from the same constant
- * (PLATFORM_FEE_RATE_BPS) that wallet-settlement and fee-split use, ensuring
- * zero divergence between displayed and collected values.
+ *   - Returns the pricing profile territorial rate for the given territory
+ *   - Used by quote() and refine() to persist fee_percent in ride_settlements
+ *   - settle() uses the PERSISTED snapshot (not this function) to avoid
+ *     retroactive changes if the pricing profile is updated after quote
  *
  * DYNAMIC_PLATFORM_FEE_CONFIGURATION_NOT_SUPPORTED_IN_FLAT_18_MODE
  */
