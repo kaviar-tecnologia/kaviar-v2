@@ -12,6 +12,9 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: read
+
 concurrency:
   group: production-backend
   cancel-in-progress: false
@@ -38,208 +41,173 @@ jobs:
           fi
           echo "✓ Inputs validated: SHA=${SHA}"
 
-  resolve-deploy-state:
+  validate-target-commit:
     needs: validate-inputs
     runs-on: ubuntu-latest
     outputs:
-      prisma_changed: ${{ steps.detect.outputs.prisma_changed }}
-      base_sha: ${{ steps.detect.outputs.base_sha }}
-      backend_deploy_stale: ${{ steps.detect.outputs.backend_deploy_stale }}
-      origin_main_sha: ${{ steps.detect.outputs.origin_main_sha }}
-      stale_reason: ${{ steps.detect.outputs.stale_reason }}
+      target_sha: ${{ steps.validate.outputs.target_sha }}
+      main_sha: ${{ steps.validate.outputs.main_sha }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ inputs.commit_sha }}
 
-      - name: Detect Prisma-related changes
-        id: detect
+      - name: Validate SHA is current HEAD of main
+        id: validate
         run: |
           set -euo pipefail
 
-          detect_prisma_changed() {
-            local changed_files="$1"
+          TARGET_SHA="${{ inputs.commit_sha }}"
+          git fetch --no-tags origin main
+          MAIN_SHA="$(git rev-parse origin/main)"
 
-            if ! command -v rg >/dev/null 2>&1; then
-              echo "Prisma detection tool error: rg not found" >&2
-              return 2
-            fi
+          echo "Target SHA: ${TARGET_SHA}"
+          echo "Main SHA:   ${MAIN_SHA}"
 
-            if rg -q '^(backend/prisma/schema\.prisma|backend/prisma/migrations/)' <<< "${changed_files}"; then
-              return 0
-            fi
-
-            return 1
-          }
-
-          run_prisma_detection_case() {
-            local label="$1"
-            local expected="$2"
-            local payload="$3"
-            local got=""
-
-            if detect_prisma_changed "${payload}"; then
-              got="true"
-            else
-              local rc=$?
-              if [ "$rc" -eq 1 ]; then
-                got="false"
-              else
-                got="error"
-              fi
-            fi
-
-            echo "prisma_detection_case label=${label} expected=${expected} got=${got}"
-
-            if [ "${got}" != "${expected}" ]; then
-              DETECTION_SELFTEST_FAILED="true"
-            fi
-          }
-
-          CURRENT_SHA="${{ inputs.commit_sha }}"
-          BASE_SHA=""
-          BACKEND_DEPLOY_STALE="false"
-          STALE_REASON="none"
-          ORIGIN_MAIN_SHA=""
-          RELEVANT_LATER_FILES=""
-          DETECTION_SELFTEST_FAILED="false"
-
-          if git rev-parse "${CURRENT_SHA}^" >/dev/null 2>&1; then
-            BASE_SHA="$(git rev-parse "${CURRENT_SHA}^")"
-          else
-            BASE_SHA="${CURRENT_SHA}"
+          # Verify the target SHA exists as a commit
+          if ! git cat-file -t "${TARGET_SHA}" 2>/dev/null | grep -q "commit"; then
+            echo "❌ DEPLOY_TARGET_NOT_CURRENT_MAIN: SHA does not exist as a commit"
+            exit 1
           fi
 
-          if ! CHANGED_FILES=$(git diff --name-only "${BASE_SHA}" "${CURRENT_SHA}"); then
-            echo "Failed to diff ${BASE_SHA}..${CURRENT_SHA}. Falling back to prisma_changed=true for safety." >&2
-            PRISMA_CHANGED="true"
-            CHANGED_FILES=""
+          # Verify the target SHA is EXACTLY the current HEAD of main
+          if [ "${TARGET_SHA}" != "${MAIN_SHA}" ]; then
+            echo "❌ DEPLOY_TARGET_NOT_CURRENT_MAIN: target is not the current HEAD of main"
+            echo "   Target: ${TARGET_SHA}"
+            echo "   Main:   ${MAIN_SHA}"
+            echo "   Deploy only the current HEAD of main. For rollback, use the rollback workflow."
+            exit 1
           fi
 
-          echo "Current SHA: ${CURRENT_SHA}"
-          echo "Base SHA: ${BASE_SHA}"
-          echo "Changed files:"
-          printf '%s\n' "${CHANGED_FILES}"
+          echo "✓ Target SHA is the current HEAD of main"
+          echo "target_sha=${TARGET_SHA}" >> "$GITHUB_OUTPUT"
+          echo "main_sha=${MAIN_SHA}" >> "$GITHUB_OUTPUT"
 
-          if [ -z "${PRISMA_CHANGED:-}" ]; then
-            if detect_prisma_changed "${CHANGED_FILES}"; then
-              PRISMA_CHANGED="true"
-            else
-              DETECTION_RC=$?
-              if [ "${DETECTION_RC}" -eq 1 ]; then
-                PRISMA_CHANGED="false"
-              else
-                echo "Failed to evaluate Prisma changed files (rc=${DETECTION_RC}). Falling back to prisma_changed=true for safety." >&2
-                PRISMA_CHANGED="true"
-              fi
-            fi
-          fi
+  resolve-deploy-state:
+    needs: validate-target-commit
+    runs-on: ubuntu-latest
+    outputs:
+      prisma_changed: ${{ steps.detect.outputs.prisma_changed }}
+      base_sha: ${{ steps.detect.outputs.base_sha }}
+      production_sha: ${{ steps.detect.outputs.production_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.validate-target-commit.outputs.target_sha }}
 
-          run_prisma_detection_case "schema.prisma" "true" $'backend/prisma/schema.prisma'
-          run_prisma_detection_case "migration.sql" "true" $'backend/prisma/migrations/abc/migration.sql'
-          run_prisma_detection_case "backend-source" "false" $'backend/src/routes/foo.ts'
-          run_prisma_detection_case "frontend" "false" $'frontend-app/src/App.jsx'
-          run_prisma_detection_case "docs" "false" $'docs/readme.md'
-          run_prisma_detection_case "mixed-5e-shape" "true" $'backend/prisma/migrations/abc/migration.sql\nbackend/src/routes/foo.ts\nfrontend-app/src/App.jsx\nbackend/tests/foo.test.ts'
-
-          if [ "${DETECTION_SELFTEST_FAILED}" = "true" ]; then
-            echo "Prisma detection self-test failed. Falling back to prisma_changed=true for safety." >&2
-            PRISMA_CHANGED="true"
-          fi
-
-          if ! git fetch --no-tags --prune origin main; then
-            BACKEND_DEPLOY_STALE="true"
-            STALE_REASON="fetch_origin_main_failed"
-          fi
-
-          if [ "${BACKEND_DEPLOY_STALE}" != "true" ]; then
-            ORIGIN_MAIN_SHA="$(git rev-parse origin/main 2>/dev/null || true)"
-            if [ -z "${ORIGIN_MAIN_SHA}" ]; then
-              BACKEND_DEPLOY_STALE="true"
-              STALE_REASON="origin_main_unavailable"
-            fi
-          fi
-
-          if [ "${BACKEND_DEPLOY_STALE}" != "true" ] && [ "${CURRENT_SHA}" != "${ORIGIN_MAIN_SHA}" ]; then
-            if git merge-base --is-ancestor "${CURRENT_SHA}" "${ORIGIN_MAIN_SHA}"; then
-              if LATER_FILES=$(git diff --name-only "${CURRENT_SHA}..${ORIGIN_MAIN_SHA}"); then
-                RELEVANT_LATER_FILES="$(printf '%s\n' "${LATER_FILES}" | rg '^(backend/.*|\.github/workflows/deploy-backend\.yml|\.github/workflows/deploy-prisma-migrations\.yml)$' || true)"
-                if [ -n "${RELEVANT_LATER_FILES}" ]; then
-                  BACKEND_DEPLOY_STALE="true"
-                  STALE_REASON="newer_relevant_backend_changes_on_main"
-                fi
-              else
-                BACKEND_DEPLOY_STALE="true"
-                STALE_REASON="diff_origin_main_failed"
-              fi
-            else
-              BACKEND_DEPLOY_STALE="true"
-              STALE_REASON="current_sha_not_ancestor_of_origin_main"
-            fi
-          fi
-
-          echo "prisma_changed=${PRISMA_CHANGED}"
-          echo "origin/main SHA: ${ORIGIN_MAIN_SHA:-unknown}"
-          echo "Relevant newer backend files on origin/main:"
-          if [ -n "${RELEVANT_LATER_FILES}" ]; then
-            printf '%s\n' "${RELEVANT_LATER_FILES}"
-          else
-            echo "(none)"
-          fi
-          echo "backend_deploy_stale=${BACKEND_DEPLOY_STALE}"
-          echo "stale_reason=${STALE_REASON}"
-
-          echo "base_sha=${BASE_SHA}" >> "$GITHUB_OUTPUT"
-          echo "prisma_changed=${PRISMA_CHANGED}" >> "$GITHUB_OUTPUT"
-          echo "backend_deploy_stale=${BACKEND_DEPLOY_STALE}" >> "$GITHUB_OUTPUT"
-          echo "origin_main_sha=${ORIGIN_MAIN_SHA}" >> "$GITHUB_OUTPUT"
-          echo "stale_reason=${STALE_REASON}" >> "$GITHUB_OUTPUT"
-
-      - name: Publish deploy-state summary
+      - name: Verify checkout SHA
         run: |
-          {
-            echo "### Backend deploy state"
-            echo "- Input SHA: ${{ inputs.commit_sha }}"
-            echo "- Base SHA for prisma diff: ${{ steps.detect.outputs.base_sha }}"
-            echo "- origin/main SHA: ${{ steps.detect.outputs.origin_main_sha }}"
-            echo "- prisma_changed: ${{ steps.detect.outputs.prisma_changed }}"
-            echo "- backend_deploy_stale: ${{ steps.detect.outputs.backend_deploy_stale }}"
-            echo "- stale_reason: ${{ steps.detect.outputs.stale_reason }}"
-          } >> "$GITHUB_STEP_SUMMARY"
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          EXPECTED_SHA="${{ needs.validate-target-commit.outputs.target_sha }}"
+          if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+            echo "❌ CHECKOUT_SHA_MISMATCH: expected=${EXPECTED_SHA} actual=${ACTUAL_SHA}"
+            exit 1
+          fi
+          echo "✓ Checkout verified: ${ACTUAL_SHA}"
 
-  run-prisma-migrations:
+      - name: Detect Prisma-related changes
+        id: detect
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-2
+        run: |
+          set -euo pipefail
+
+          TARGET_SHA="${{ needs.validate-target-commit.outputs.target_sha }}"
+
+          # Obtain the currently deployed SHA from ECS task definition
+          PRODUCTION_SHA=""
+          TASK_DEF_ARN=$(aws ecs describe-services --cluster kaviar-cluster --services kaviar-backend-service --region us-east-2 --query 'services[0].taskDefinition' --output text 2>/dev/null || true)
+          if [ -n "$TASK_DEF_ARN" ] && [ "$TASK_DEF_ARN" != "None" ]; then
+            PRODUCTION_SHA=$(aws ecs describe-task-definition --task-definition "$TASK_DEF_ARN" --region us-east-2 --query 'taskDefinition.containerDefinitions[0].environment[?name==`GIT_COMMIT`].value | [0]' --output text 2>/dev/null || true)
+          fi
+
+          if [ -z "$PRODUCTION_SHA" ] || [ "$PRODUCTION_SHA" = "None" ] || ! echo "$PRODUCTION_SHA" | grep -qE '^[0-9a-f]{40}$'; then
+            echo "⚠️ Could not determine production SHA from ECS. Falling back to prisma_changed=true for safety."
+            echo "base_sha=unknown" >> "$GITHUB_OUTPUT"
+            echo "prisma_changed=true" >> "$GITHUB_OUTPUT"
+            echo "production_sha=unknown" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Production SHA: ${PRODUCTION_SHA}"
+          echo "Target SHA:     ${TARGET_SHA}"
+          echo "Range:          ${PRODUCTION_SHA}..${TARGET_SHA}"
+
+          # If production is already at target, no changes
+          if [ "${PRODUCTION_SHA}" = "${TARGET_SHA}" ]; then
+            echo "Production already at target SHA. No changes."
+            echo "base_sha=${PRODUCTION_SHA}" >> "$GITHUB_OUTPUT"
+            echo "prisma_changed=false" >> "$GITHUB_OUTPUT"
+            echo "production_sha=${PRODUCTION_SHA}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          PRISMA_CHANGED="false"
+          if CHANGED_FILES=$(git diff --name-only "${PRODUCTION_SHA}" "${TARGET_SHA}" 2>/dev/null); then
+            if echo "${CHANGED_FILES}" | grep -qE '^backend/prisma/(schema\.prisma|migrations/)'; then
+              PRISMA_CHANGED="true"
+            fi
+          else
+            echo "Failed to diff ${PRODUCTION_SHA}..${TARGET_SHA}. Falling back to prisma_changed=true for safety." >&2
+            PRISMA_CHANGED="true"
+          fi
+
+          echo "base_sha=${PRODUCTION_SHA}" >> "$GITHUB_OUTPUT"
+          echo "prisma_changed=${PRISMA_CHANGED}" >> "$GITHUB_OUTPUT"
+          echo "production_sha=${PRODUCTION_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Prisma changed: ${PRISMA_CHANGED}"
+
+  block-prisma-changes:
     needs:
-      - validate-inputs
+      - validate-target-commit
       - resolve-deploy-state
-    if: needs.resolve-deploy-state.outputs.backend_deploy_stale != 'true'
-    uses: ./.github/workflows/deploy-prisma-migrations.yml
-    with:
-      orchestrated_by_backend: true
-    secrets: inherit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Block deploy if Prisma changes detected
+        run: |
+          PRISMA_CHANGED="${{ needs.resolve-deploy-state.outputs.prisma_changed }}"
+          if [ "${PRISMA_CHANGED}" != "false" ]; then
+            echo "❌ PRISMA_CHANGES_REQUIRE_SEPARATE_MIGRATION_WORKFLOW"
+            echo "   prisma_changed=${PRISMA_CHANGED} (expected 'false' to proceed)"
+            echo "   If Prisma schema or migrations changed, run the migration workflow first."
+            echo "   If detection failed, investigate before deploying."
+            exit 1
+          fi
+          echo "✓ No Prisma changes detected — deploy may proceed"
 
   deploy:
     needs:
       - validate-inputs
+      - validate-target-commit
       - resolve-deploy-state
-      - run-prisma-migrations
-    if: |
-      needs.resolve-deploy-state.outputs.backend_deploy_stale != 'true' &&
-      needs.run-prisma-migrations.result == 'success'
+      - block-prisma-changes
     runs-on: ubuntu-latest
-    
+
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.commit_sha }}
-      
+          ref: ${{ needs.validate-target-commit.outputs.target_sha }}
+
+      - name: Verify checkout SHA
+        run: |
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          EXPECTED_SHA="${{ needs.validate-target-commit.outputs.target_sha }}"
+          if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+            echo "❌ CHECKOUT_SHA_MISMATCH: expected=${EXPECTED_SHA} actual=${ACTUAL_SHA}"
+            exit 1
+          fi
+          echo "✓ Checkout verified: ${ACTUAL_SHA}"
+
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-2
-      
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -253,25 +221,29 @@ jobs:
           npm ci
           npx prisma generate
           npx tsc --noEmit -p tsconfig.build.json
-      
+
       - name: Login to ECR
         run: |
           aws ecr get-login-password --region us-east-2 | \
           docker login --username AWS --password-stdin 847895361928.dkr.ecr.us-east-2.amazonaws.com
-      
-      - name: Build and Push
+
+      - name: Build and Push (immutable SHA tag only)
+        env:
+          DEPLOY_SHA: ${{ needs.validate-target-commit.outputs.target_sha }}
         run: |
           cd backend
-          docker build --build-arg GIT_COMMIT=${{ inputs.commit_sha }} -t kaviar-backend:${{ inputs.commit_sha }} .
-          docker tag kaviar-backend:${{ inputs.commit_sha }} 847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:latest
-          docker tag kaviar-backend:${{ inputs.commit_sha }} 847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:${{ inputs.commit_sha }}
-          docker push 847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:latest
-          docker push 847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:${{ inputs.commit_sha }}
-      
+          docker build --build-arg GIT_COMMIT="${DEPLOY_SHA}" -t "kaviar-backend:${DEPLOY_SHA}" .
+          docker tag "kaviar-backend:${DEPLOY_SHA}" "847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:${DEPLOY_SHA}"
+          docker push "847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:${DEPLOY_SHA}"
+          echo "✓ Pushed immutable image: 847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:${DEPLOY_SHA}"
+
       - name: Update Task Definition
+        id: register_task
+        env:
+          DEPLOY_SHA: ${{ needs.validate-target-commit.outputs.target_sha }}
         run: |
           TASK_DEF=$(aws ecs describe-task-definition --task-definition kaviar-backend --region us-east-2)
-          NEW_TASK_DEF=$(echo "$TASK_DEF" | jq --arg IMAGE "847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:${{ inputs.commit_sha }}" --arg COMMIT "${{ inputs.commit_sha }}" \
+          NEW_TASK_DEF=$(echo "$TASK_DEF" | jq --arg IMAGE "847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:${DEPLOY_SHA}" --arg COMMIT "${DEPLOY_SHA}" \
             --arg TWILIO_WHATSAPP_FROM "${{ secrets.TWILIO_WHATSAPP_FROM }}" \
             --arg TWILIO_WHATSAPP_TEMPLATE_DRIVER_SID "${{ secrets.TWILIO_WHATSAPP_TEMPLATE_DRIVER_SID }}" \
             --arg TWILIO_WHATSAPP_TEMPLATE_PASSENGER_SID "${{ secrets.TWILIO_WHATSAPP_TEMPLATE_PASSENGER_SID }}" \
@@ -322,24 +294,18 @@ jobs:
             del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)
           ')
           echo "$NEW_TASK_DEF" > task-def.json
-          
-          # Safety check: ensure sensitive values are NOT in environment (they must stay in secrets/SSM)
+
+          # Safety check: ensure sensitive values are NOT in environment
           LEAKED=$(echo "$NEW_TASK_DEF" | jq -r '[.containerDefinitions[0].environment[]?.name] | map(select(. == "DATABASE_URL" or . == "JWT_SECRET" or . == "JWT_RESET_SECRET" or . == "ADMIN_DEFAULT_PASSWORD" or . == "ASAAS_API_KEY" or . == "MERCADOPAGO_ACCESS_TOKEN" or . == "GOOGLE_PLACES_KEY")) | join(",")')
           if [ -n "$LEAKED" ]; then
             echo "❌ ABORT: Sensitive values found in plaintext environment: $LEAKED"
             exit 1
           fi
-          
-          echo "Secrets in SSM (preserved):"
-          echo "$NEW_TASK_DEF" | jq -r '.containerDefinitions[0].secrets[]?.name' | sort
-          echo "TWILIO_WHATSAPP_TEMPLATE_* env vars (preserved):"
-          echo "$NEW_TASK_DEF" | jq -r '.containerDefinitions[0].environment[]? | select(.name | startswith("TWILIO_WHATSAPP_TEMPLATE_")) | .name' | sort
-          
+
           NEW_REV=$(aws ecs register-task-definition --cli-input-json file://task-def.json --region us-east-2 | jq -r '.taskDefinition.revision')
           echo "Registered task definition: kaviar-backend:${NEW_REV}"
-          echo "task_revision=${NEW_REV}" >> $GITHUB_OUTPUT
-        id: register_task
-      
+          echo "task_revision=${NEW_REV}" >> "$GITHUB_OUTPUT"
+
       - name: Deploy to ECS
         run: |
           aws ecs update-service \
@@ -348,10 +314,28 @@ jobs:
             --task-definition kaviar-backend:${{ steps.register_task.outputs.task_revision }} \
             --force-new-deployment \
             --region us-east-2
-      
+
       - name: Wait for deployment
         run: |
           aws ecs wait services-stable \
             --cluster kaviar-cluster \
             --services kaviar-backend-service \
             --region us-east-2
+
+      - name: Publish deploy summary
+        if: always()
+        env:
+          DEPLOY_SHA: ${{ needs.validate-target-commit.outputs.target_sha }}
+          MAIN_SHA: ${{ needs.validate-target-commit.outputs.main_sha }}
+          PRISMA_CHANGED: ${{ needs.resolve-deploy-state.outputs.prisma_changed }}
+        run: |
+          {
+            echo "### Backend Deploy Summary"
+            echo "- Requested SHA: ${{ inputs.commit_sha }}"
+            echo "- Main SHA at validation: ${MAIN_SHA}"
+            echo "- Checkout SHA: ${DEPLOY_SHA}"
+            echo "- Prisma changed: ${PRISMA_CHANGED}"
+            echo "- Migrations: **not part of this workflow**"
+            echo "- Image: \`847895361928.dkr.ecr.us-east-2.amazonaws.com/kaviar-backend:${DEPLOY_SHA}\`"
+            echo "- Task revision: ${{ steps.register_task.outputs.task_revision || 'N/A' }}"
+          } >> "$GITHUB_STEP_SUMMARY"
