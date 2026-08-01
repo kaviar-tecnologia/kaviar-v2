@@ -201,7 +201,8 @@ jobs:
           ENV_SHA="$(jq -r '.taskDefinition.containerDefinitions[] | select(.name == "kaviar-backend") | .environment[] | select(.name == "GIT_COMMIT") | .value // empty' <<< "$TASK_DEF_JSON")"
 
           if [ -z "$ENV_SHA" ]; then
-            echo "❌ PRODUCTION_GIT_COMMIT_NOT_FOUND"
+            echo "❌ PRODUCTION_GIT_COMMIT_INVALID"
+            echo "   GIT_COMMIT exists but its value is empty or null"
             exit 1
           fi
           ENV_LINE_COUNT=$(echo "$ENV_SHA" | wc -l)
