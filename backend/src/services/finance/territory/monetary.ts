@@ -36,6 +36,13 @@ export function applyBasisPoints(amountCents: bigint, rateBps: number): bigint {
 export const PLATFORM_FEE_RATE_BPS = 1800;
 
 /**
+ * Platform fee as a percentage (e.g. 18).
+ * Derived from PLATFORM_FEE_RATE_BPS. Use for persistence columns (fee_percent),
+ * display, and Number-arithmetic paths (pricing-engine quote/refine/settle).
+ */
+export const PLATFORM_FEE_PERCENT = PLATFORM_FEE_RATE_BPS / 100;
+
+/**
  * Manager commission rate: 40% of platform fee = 4000 basis points
  */
 export const MANAGER_COMMISSION_RATE_BPS = 4000;

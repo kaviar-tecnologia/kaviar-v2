@@ -77,11 +77,21 @@ describe('shadowCalculate', () => {
     expect(p[10]).toBe(0);   // manager = 0
   });
 
-  it('no fee config → persists error with code NO_FEE_CONFIG', async () => {
-    setupMocks({ feeConfig: null });
+  it('uses PLATFORM_FEE_RATE_BPS constant (no platform_fee_configs query)', async () => {
+    // After centralization, shadow no longer queries platform_fee_configs.
+    // It uses PLATFORM_FEE_RATE_BPS / 100 = 18 directly.
+    setupMocks();
     await shadowCalculate({ rideId: 'r4', driverId: 'd1', finalPriceCents: 2000, waitChargeCents: 0, legacyCreditCost: 1 });
-    const errInsert = mockQuery.mock.calls.find((c: any) => c[0].includes('INSERT INTO wallet_shadow') && c[1]?.[6] === 'NO_FEE_CONFIG');
-    expect(errInsert).toBeDefined();
+    // Verify no platform_fee_configs query was made
+    const feeQueries = mockQuery.mock.calls.filter((c: any) => c[0].includes('platform_fee_configs'));
+    expect(feeQueries.length).toBe(0);
+    // Verify result still uses 18%: fee = round(2000 * 18 / 100) = 360
+    const insert = mockQuery.mock.calls.find((c: any) => c[0].includes('INSERT INTO wallet_shadow'));
+    expect(insert).toBeDefined();
+    const p = insert![1] as any[];
+    expect(p[4]).toBe(null); // fee_config_id = NULL (constant-derived, no dynamic config)
+    expect(p[5]).toBe(18); // fee percent
+    expect(p[6]).toBe(360); // fee amount cents
   });
 
   it('calculates divergence: new fee minus legacy nominal value', async () => {
@@ -112,20 +122,26 @@ describe('shadowCalculate', () => {
     expect(insert![0]).toContain('DO UPDATE SET');
   });
 
-  it('uses cached fee config on second call (no extra query)', async () => {
+  it('fee amount is deterministic (derived from constant, not external state)', async () => {
+    // With PLATFORM_FEE_RATE_BPS as source, multiple calls produce identical results
+    // regardless of any platform_fee_configs changes
     setupMocks();
-    await shadowCalculate({ rideId: 'r8', driverId: 'd1', finalPriceCents: 2000, waitChargeCents: 0, legacyCreditCost: 1 });
-    _resetCache(); // reset only enabled cache, fee config still cached
-    // Actually need to not reset to test cache — let's just check call count
-    const feeQueries = mockQuery.mock.calls.filter((c: any) => c[0].includes('platform_fee_configs'));
-    expect(feeQueries.length).toBe(1);
+    await shadowCalculate({ rideId: 'r8a', driverId: 'd1', finalPriceCents: 3124, waitChargeCents: 0, legacyCreditCost: 1 });
+    _resetCache();
+    await shadowCalculate({ rideId: 'r8b', driverId: 'd1', finalPriceCents: 3124, waitChargeCents: 0, legacyCreditCost: 1 });
+    const inserts = mockQuery.mock.calls.filter((c: any) => c[0].includes('INSERT INTO wallet_shadow'));
+    const fees = inserts.map((c: any) => c[1][6]);
+    // Both should compute: round(3124 * 18 / 100) = 562
+    expect(fees[0]).toBe(562);
+    expect(fees[1]).toBe(562);
   });
 
   it('handles DB error gracefully — persists error row', async () => {
     let callCount = 0;
     mockQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('feature_flags')) return { rows: [{ enabled: true }] };
-      if (sql.includes('platform_fee_configs')) {
+      // territory/ride query throws
+      if (sql.includes('rides_v2 r')) {
         callCount++;
         if (callCount === 1) throw new Error('DB timeout');
       }
