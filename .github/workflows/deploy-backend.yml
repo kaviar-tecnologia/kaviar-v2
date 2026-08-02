@@ -35,7 +35,8 @@ jobs:
             exit 1
           fi
 
-          if ! printf '%s' "$INPUT_COMMIT_SHA" | grep -qE '^[0-9a-f]{40}$'; then
+          if [ "${#INPUT_COMMIT_SHA}" -ne 40 ] ||
+             [[ ! "$INPUT_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "❌ INVALID_DEPLOY_COMMIT_SHA"
             exit 1
           fi
@@ -713,6 +714,152 @@ jobs:
             --cluster kaviar-cluster \
             --services kaviar-backend-service \
             --region us-east-2
+
+      - name: Verify backend post-deploy
+        id: verify_deploy
+        env:
+          TARGET_SHA: ${{ needs.validate-target-commit.outputs.target_sha }}
+          NEW_TASK_REVISION: ${{ steps.register_task.outputs.task_revision }}
+        run: |
+          set -euo pipefail
+
+          # 1. Service stable check
+          SERVICE_JSON=$(aws ecs describe-services \
+            --cluster kaviar-cluster \
+            --services kaviar-backend-service \
+            --region us-east-2)
+
+          DESIRED=$(echo "$SERVICE_JSON" | jq -r '.services[0].desiredCount')
+          RUNNING=$(echo "$SERVICE_JSON" | jq -r '.services[0].runningCount')
+          PENDING=$(echo "$SERVICE_JSON" | jq -r '.services[0].pendingCount')
+          DEPLOYS=$(echo "$SERVICE_JSON" | jq '.services[0].deployments | length')
+          CURRENT_TD=$(echo "$SERVICE_JSON" | jq -r '.services[0].taskDefinition')
+
+          if [ "$DESIRED" != "$RUNNING" ] || [ "$PENDING" != "0" ] || [ "$DEPLOYS" != "1" ]; then
+            echo "❌ BACKEND_SERVICE_DID_NOT_STABILIZE (desired=$DESIRED running=$RUNNING pending=$PENDING deployments=$DEPLOYS)"
+            exit 1
+          fi
+
+          EXPECTED_TD="arn:aws:ecs:us-east-2:847895361928:task-definition/kaviar-backend:${NEW_TASK_REVISION}"
+          if [ "$CURRENT_TD" != "$EXPECTED_TD" ]; then
+            echo "❌ BACKEND_TASK_DEFINITION_MISMATCH (expected=$EXPECTED_TD got=$CURRENT_TD)"
+            exit 1
+          fi
+          echo "✓ Service stable with correct task definition"
+
+          # 2. Verify running tasks use new revision
+          TASK_ARNS=$(aws ecs list-tasks \
+            --cluster kaviar-cluster \
+            --service-name kaviar-backend-service \
+            --desired-status RUNNING \
+            --region us-east-2 \
+            --query 'taskArns' --output json)
+
+          TASK_COUNT=$(echo "$TASK_ARNS" | jq 'length')
+          if [ "$TASK_COUNT" -eq 0 ]; then
+            echo "❌ BACKEND_RUNNING_REVISION_MISMATCH (no running tasks)"
+            exit 1
+          fi
+
+          for ARN in $(echo "$TASK_ARNS" | jq -r '.[]'); do
+            TASK_TD=$(aws ecs describe-tasks \
+              --cluster kaviar-cluster \
+              --tasks "$ARN" \
+              --region us-east-2 \
+              --query 'tasks[0].taskDefinitionArn' --output text)
+            if [ "$TASK_TD" != "$EXPECTED_TD" ]; then
+              echo "❌ BACKEND_RUNNING_REVISION_MISMATCH (task=$ARN uses=$TASK_TD expected=$EXPECTED_TD)"
+              exit 1
+            fi
+          done
+          echo "✓ All running tasks use the new revision"
+
+          # 3. Health check
+          HTTP_CODE=$(curl -s -o /tmp/health_response.json -w "%{http_code}" \
+            --max-time 15 --retry 3 --retry-delay 5 \
+            "https://api.kaviar.com.br/api/health" || echo "000")
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ BACKEND_HEALTH_CHECK_FAILED (HTTP $HTTP_CODE)"
+            cat /tmp/health_response.json 2>/dev/null || true
+            exit 1
+          fi
+
+          # Validate JSON and version
+          if ! jq -e . /tmp/health_response.json > /dev/null 2>&1; then
+            echo "❌ BACKEND_HEALTH_CHECK_FAILED (invalid JSON)"
+            exit 1
+          fi
+
+          REPORTED_VERSION=$(jq -r '.version // .gitCommit // .git_commit // empty' /tmp/health_response.json)
+          if [ -n "$REPORTED_VERSION" ] && [ "$REPORTED_VERSION" != "$TARGET_SHA" ]; then
+            echo "❌ BACKEND_VERSION_MISMATCH (reported=$REPORTED_VERSION expected=$TARGET_SHA)"
+            exit 1
+          fi
+          echo "✓ Health check passed (HTTP 200, valid JSON)"
+
+          # 4. Accountant endpoint reachable (expect 401 without token)
+          ACC_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 10 \
+            "https://api.kaviar.com.br/api/admin/finance/accountant-report" || echo "000")
+
+          if [ "$ACC_CODE" = "401" ] || [ "$ACC_CODE" = "403" ]; then
+            echo "✓ Accountant endpoint available (HTTP $ACC_CODE — auth required as expected)"
+          else
+            echo "❌ ACCOUNTANT_ENDPOINT_NOT_AVAILABLE (HTTP $ACC_CODE)"
+            exit 1
+          fi
+
+          echo "deploy_verified=true" >> "$GITHUB_OUTPUT"
+
+      - name: Rollback backend on failure
+        if: failure() && steps.register_task.outputs.task_revision != ''
+        env:
+          PRODUCTION_TASK_DEF_ARN: ${{ needs.resolve-production-state.outputs.production_task_definition }}
+          PRODUCTION_SHA: ${{ needs.resolve-production-state.outputs.production_sha }}
+        run: |
+          set -euo pipefail
+          echo "❗ BACKEND_ROLLBACK_STARTED"
+          echo "   Rolling back to: $PRODUCTION_TASK_DEF_ARN"
+
+          aws ecs update-service \
+            --cluster kaviar-cluster \
+            --service kaviar-backend-service \
+            --task-definition "$PRODUCTION_TASK_DEF_ARN" \
+            --region us-east-2
+
+          echo "Waiting for rollback to stabilize..."
+          aws ecs wait services-stable \
+            --cluster kaviar-cluster \
+            --services kaviar-backend-service \
+            --region us-east-2
+
+          # Verify rollback
+          CURRENT_TD=$(aws ecs describe-services \
+            --cluster kaviar-cluster \
+            --services kaviar-backend-service \
+            --region us-east-2 \
+            --query 'services[0].taskDefinition' --output text)
+
+          if [ "$CURRENT_TD" = "$PRODUCTION_TASK_DEF_ARN" ]; then
+            echo "✓ BACKEND_ROLLBACK_COMPLETED — service restored to $PRODUCTION_TASK_DEF_ARN"
+          else
+            echo "❌ BACKEND_ROLLBACK_FAILED — current=$CURRENT_TD expected=$PRODUCTION_TASK_DEF_ARN"
+            echo "   MANUAL INTERVENTION REQUIRED: run 'aws ecs update-service --cluster kaviar-cluster --service kaviar-backend-service --task-definition $PRODUCTION_TASK_DEF_ARN --region us-east-2'"
+            exit 1
+          fi
+
+          # Verify health after rollback
+          sleep 10
+          HEALTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 15 --retry 2 --retry-delay 5 \
+            "https://api.kaviar.com.br/api/health" || echo "000")
+
+          if [ "$HEALTH_CODE" = "200" ]; then
+            echo "✓ Health check passed after rollback"
+          else
+            echo "⚠️  Health check returned $HEALTH_CODE after rollback — manual verification needed"
+          fi
 
       - name: Publish deploy summary
         if: always()
