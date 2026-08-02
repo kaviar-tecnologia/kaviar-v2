@@ -3,6 +3,8 @@
  *
  * Exibe resumo financeiro de corridas, listagem detalhada com filtros
  * e exportação CSV. Nenhuma ação de escrita, pagamento ou estorno.
+ *
+ * Formatação monetária: string-only, sem parseFloat/Number para cálculos.
  */
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -51,6 +53,38 @@ function thirtyDaysAgoStr() {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * Format a decimal string "1234.50" to "R$ 1.234,50" without parseFloat.
+ * Only string manipulation — no floating point conversion.
+ */
+function formatCurrencyFromDecimal(value) {
+  if (value == null || value === '') return '—';
+  const str = String(value).trim();
+  // Validate: optional sign, digits, dot, 2 digits
+  if (!/^-?\d+\.\d{2}$/.test(str)) return '—';
+
+  const isNegative = str.startsWith('-');
+  const abs = isNegative ? str.slice(1) : str;
+  const [intPart, fracPart] = abs.split('.');
+
+  // Add thousands separator
+  const withSep = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const formatted = `R$ ${withSep},${fracPart}`;
+  return isNegative ? `- ${formatted}` : formatted;
+}
+
+function formatDate(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '—';
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const yyyy = d.getUTCFullYear();
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const min = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
+}
+
 const STATUS_OPTIONS = [
   { value: '', label: 'Todos' },
   { value: 'completed', label: 'Concluída' },
@@ -82,16 +116,17 @@ const STATUS_COLORS = {
   no_driver: '#6b7280',
 };
 
-function formatCurrency(value) {
-  if (value == null || value === '') return '—';
-  return `R$ ${parseFloat(value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+const FINANCIAL_STATUS_LABELS = {
+  SETTLED: 'Liquidado',
+  UNSETTLED: 'Não liquidado',
+  UNAVAILABLE: 'Indisponível',
+};
 
-function formatDate(value) {
-  if (!value) return '—';
-  const d = new Date(value);
-  return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-}
+const FINANCIAL_STATUS_COLORS = {
+  SETTLED: '#16a34a',
+  UNSETTLED: '#d97706',
+  UNAVAILABLE: '#6b7280',
+};
 
 // ── Component ───────────────────────────────────────────────────────────────────
 
@@ -159,7 +194,7 @@ export default function AccountantReportPage() {
     fetchReport(0, rowsPerPage);
   };
 
-  const handleExportCSV = () => {
+  const handleExportCSV = async () => {
     const token = getToken();
     const params = new URLSearchParams();
     if (startDate) params.set('start_date', startDate);
@@ -168,27 +203,34 @@ export default function AccountantReportPage() {
     if (territory) params.set('territory', territory);
     if (search) params.set('search', search);
 
-    // Open CSV download in new tab with auth header via hidden fetch
-    fetch(`${API_BASE_URL}/api/admin/finance/accountant-report/csv?${params}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error('Erro ao gerar CSV');
-        return res.blob();
-      })
-      .then((blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `kaviar-relatorio-contador-${startDate}-a-${endDate}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      })
-      .catch(() => {
-        setError('Erro ao exportar CSV');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/finance/accountant-report/csv?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
+
+      if (!res.ok) {
+        // Try to parse error JSON
+        try {
+          const errJson = await res.json();
+          setError(errJson.error || `Erro ${res.status} ao exportar CSV`);
+        } catch {
+          setError(`Erro ${res.status} ao exportar CSV`);
+        }
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `kaviar-relatorio-contador-${startDate}-a-${endDate}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      setError('Erro de rede ao exportar CSV');
+    }
   };
 
   const summary = data?.summary;
@@ -333,14 +375,14 @@ export default function AccountantReportPage() {
             { label: 'Total de Corridas', value: summary.total_rides, color: '#1A1A1A' },
             { label: 'Concluídas', value: summary.completed_rides, color: '#16A34A' },
             { label: 'Canceladas', value: summary.canceled_rides, color: '#DC2626' },
-            { label: 'Valor Bruto', value: formatCurrency(summary.gross_total), color: '#7C3AED' },
-            { label: 'Taxa KAVIAR', value: formatCurrency(summary.platform_fee_total), color: '#B8942E' },
-            { label: 'Valor Motoristas', value: formatCurrency(summary.driver_earnings_total), color: '#2563EB' },
+            { label: 'Valor Bruto', value: formatCurrencyFromDecimal(summary.gross_total), color: '#7C3AED' },
+            { label: 'Taxa KAVIAR', value: formatCurrencyFromDecimal(summary.platform_fee_total), color: '#B8942E' },
+            { label: 'Valor Motoristas', value: formatCurrencyFromDecimal(summary.driver_earnings_total), color: '#2563EB' },
           ].map((item) => (
             <Grid item xs={6} sm={4} md={2} key={item.label}>
               <Card sx={{ border: '1px solid #E5E7EB', borderTop: `3px solid ${item.color}` }}>
                 <CardContent sx={{ textAlign: 'center', py: 2, px: 1 }}>
-                  <Typography sx={{ color: item.color, fontSize: 22, fontWeight: 800, lineHeight: 1.2 }}>
+                  <Typography sx={{ color: item.color, fontSize: 20, fontWeight: 800, lineHeight: 1.2 }}>
                     {item.value}
                   </Typography>
                   <Typography sx={{ color: '#6B7280', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', mt: 0.5 }}>
@@ -369,7 +411,7 @@ export default function AccountantReportPage() {
                   <TableCell sx={{ fontWeight: 700, fontSize: 11 }} align="right">Taxa</TableCell>
                   <TableCell sx={{ fontWeight: 700, fontSize: 11 }} align="right">Motorista</TableCell>
                   <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>Status</TableCell>
-                  <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>Liquidação</TableCell>
+                  <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>Financeiro</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -390,9 +432,9 @@ export default function AccountantReportPage() {
                       <TableCell sx={{ fontSize: 11 }}>{ride.driver_name || '—'}</TableCell>
                       <TableCell sx={{ fontSize: 11 }}>{ride.passenger_first_name || '—'}</TableCell>
                       <TableCell sx={{ fontSize: 11 }}>{ride.settlement_territory || '—'}</TableCell>
-                      <TableCell sx={{ fontSize: 11 }} align="right">{formatCurrency(ride.final_price)}</TableCell>
-                      <TableCell sx={{ fontSize: 11 }} align="right">{formatCurrency(ride.fee_amount)}</TableCell>
-                      <TableCell sx={{ fontSize: 11 }} align="right">{formatCurrency(ride.driver_earnings)}</TableCell>
+                      <TableCell sx={{ fontSize: 11 }} align="right">{formatCurrencyFromDecimal(ride.final_price)}</TableCell>
+                      <TableCell sx={{ fontSize: 11 }} align="right">{formatCurrencyFromDecimal(ride.fee_amount)}</TableCell>
+                      <TableCell sx={{ fontSize: 11 }} align="right">{formatCurrencyFromDecimal(ride.driver_earnings)}</TableCell>
                       <TableCell>
                         <Chip
                           label={STATUS_LABELS[ride.status] || ride.status}
@@ -406,8 +448,18 @@ export default function AccountantReportPage() {
                           }}
                         />
                       </TableCell>
-                      <TableCell sx={{ fontSize: 11 }}>
-                        {ride.settled_at ? formatDate(ride.settled_at) : '—'}
+                      <TableCell>
+                        <Chip
+                          label={FINANCIAL_STATUS_LABELS[ride.financial_status] || ride.financial_status}
+                          size="small"
+                          sx={{
+                            fontSize: 10,
+                            height: 20,
+                            fontWeight: 600,
+                            bgcolor: `${FINANCIAL_STATUS_COLORS[ride.financial_status] || '#6B7280'}15`,
+                            color: FINANCIAL_STATUS_COLORS[ride.financial_status] || '#6B7280',
+                          }}
+                        />
                       </TableCell>
                     </TableRow>
                   ))

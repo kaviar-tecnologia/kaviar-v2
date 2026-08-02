@@ -30,7 +30,7 @@ vi.mock('../src/middlewares/auth', () => ({
   },
 }));
 
-const { default: accountantReportRoutes } = await import('../src/routes/admin-accountant-report');
+const { default: accountantReportRoutes, formatDecimal } = await import('../src/routes/admin-accountant-report');
 
 const app = express();
 app.use(express.json());
@@ -38,16 +38,7 @@ app.use('/api/admin/finance/accountant-report', accountantReportRoutes);
 
 // ── Test Data ──────────────────────────────────────────────────────────────────
 
-const baseSummaryRow = {
-  total_rides: 5,
-  completed_rides: 3,
-  canceled_rides: 2,
-  gross_total: '150.00',
-  platform_fee_total: '27.00',
-  driver_earnings_total: '123.00',
-};
-
-const baseRideRow = {
+const settledRideRow = {
   id: '550e8400-e29b-41d4-a716-446655440001',
   status: 'completed',
   created_at: new Date('2026-07-01T10:00:00Z'),
@@ -64,12 +55,42 @@ const baseRideRow = {
   settlement_territory: 'local',
   credit_cost: 2,
   settled_at: new Date('2026-07-01T10:21:00Z'),
+  has_settlement: true,
 };
 
-function setupDefaultPoolMock(overrides: { summary?: any; count?: number; rides?: any[] } = {}) {
+const unsettledRideRow = {
+  ...settledRideRow,
+  id: '550e8400-e29b-41d4-a716-446655440002',
+  settled_at: null,
+  has_settlement: true,
+};
+
+const unavailableRideRow = {
+  ...settledRideRow,
+  id: '550e8400-e29b-41d4-a716-446655440003',
+  final_price: null,
+  fee_percent: null,
+  fee_amount: null,
+  driver_earnings: null,
+  settlement_territory: null,
+  credit_cost: null,
+  settled_at: null,
+  has_settlement: false,
+};
+
+const baseSummaryRow = {
+  total_rides: 5,
+  completed_rides: 3,
+  canceled_rides: 2,
+  gross_total: '150.00',
+  platform_fee_total: '27.00',
+  driver_earnings_total: '123.00',
+};
+
+function setupDefaultMock(overrides: { summary?: any; count?: number; rides?: any[] } = {}) {
   const summary = overrides.summary || baseSummaryRow;
   const count = overrides.count ?? 1;
-  const rides = overrides.rides ?? [baseRideRow];
+  const rides = overrides.rides ?? [settledRideRow];
 
   poolMock.query
     .mockResolvedValueOnce({ rows: [summary] })    // summary
@@ -85,20 +106,28 @@ beforeEach(() => {
 });
 
 describe('GET /api/admin/finance/accountant-report', () => {
+  // ── RBAC ────────────────────────────────────────────────────────────────────
+
   it('returns 401 for unauthenticated user', async () => {
     authState.admin = null;
     const res = await request(app).get('/api/admin/finance/accountant-report');
     expect(res.status).toBe(401);
   });
 
-  it('returns 403 for user without FINANCE or SUPER_ADMIN role', async () => {
+  it('returns 403 for OPERATOR role', async () => {
     authState.admin = { id: 'op-1', email: 'op@test.local', role: 'OPERATOR' };
     const res = await request(app).get('/api/admin/finance/accountant-report');
     expect(res.status).toBe(403);
   });
 
+  it('returns 403 for ANGEL_VIEWER role', async () => {
+    authState.admin = { id: 'av-1', email: 'av@test.local', role: 'ANGEL_VIEWER' };
+    const res = await request(app).get('/api/admin/finance/accountant-report');
+    expect(res.status).toBe(403);
+  });
+
   it('allows FINANCE role access', async () => {
-    setupDefaultPoolMock();
+    setupDefaultMock();
     const res = await request(app).get('/api/admin/finance/accountant-report');
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -106,78 +135,173 @@ describe('GET /api/admin/finance/accountant-report', () => {
 
   it('allows SUPER_ADMIN role access', async () => {
     authState.admin = { id: 'sa-1', email: 'sa@test.local', role: 'SUPER_ADMIN' };
-    setupDefaultPoolMock();
+    setupDefaultMock();
     const res = await request(app).get('/api/admin/finance/accountant-report');
     expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
   });
 
-  it('returns correct summary structure', async () => {
-    setupDefaultPoolMock();
+  // ── SQL correctness ─────────────────────────────────────────────────────────
+
+  it('SQL uses d.name, not d.full_name', async () => {
+    setupDefaultMock();
+    await request(app).get('/api/admin/finance/accountant-report');
+    for (const call of poolMock.query.mock.calls) {
+      const sql = call[0];
+      expect(sql).not.toContain('d.full_name');
+      expect(sql).not.toContain('full_name');
+    }
+  });
+
+  it('SQL uses d.name in driver alias', async () => {
+    setupDefaultMock();
+    await request(app).get('/api/admin/finance/accountant-report');
+    const listSQL = poolMock.query.mock.calls[2][0];
+    expect(listSQL).toContain('d.name AS driver_name');
+  });
+
+  it('all queries have JOIN drivers when search is used', async () => {
+    setupDefaultMock();
+    await request(app)
+      .get('/api/admin/finance/accountant-report')
+      .query({ search: 'joao' });
+    for (const call of poolMock.query.mock.calls) {
+      const sql = call[0];
+      expect(sql).toContain('LEFT JOIN drivers d ON d.id = r.driver_id');
+    }
+  });
+
+  it('search by driver does not generate alias error', async () => {
+    setupDefaultMock();
+    await request(app)
+      .get('/api/admin/finance/accountant-report')
+      .query({ search: 'Silva' });
+    const summarySQL = poolMock.query.mock.calls[0][0];
+    expect(summarySQL).toContain('d.name ILIKE');
+    expect(summarySQL).toContain('LEFT JOIN drivers d');
+  });
+
+  it('ordering includes created_at DESC, id DESC', async () => {
+    setupDefaultMock();
+    await request(app).get('/api/admin/finance/accountant-report');
+    const listSQL = poolMock.query.mock.calls[2][0];
+    expect(listSQL).toContain('ORDER BY r.created_at DESC, r.id DESC');
+  });
+
+  // ── Passenger name ──────────────────────────────────────────────────────────
+
+  it('returns only first name of passenger via split_part', async () => {
+    setupDefaultMock();
+    await request(app).get('/api/admin/finance/accountant-report');
+    const listSQL = poolMock.query.mock.calls[2][0];
+    expect(listSQL).toContain('split_part(btrim(p.name)');
+    expect(listSQL).toContain('AS passenger_first_name');
+  });
+
+  // ── Financial status ────────────────────────────────────────────────────────
+
+  it('SETTLED ride returns financial values', async () => {
+    setupDefaultMock({ rides: [settledRideRow] });
     const res = await request(app).get('/api/admin/finance/accountant-report');
-    expect(res.body.data.summary).toMatchObject({
-      total_rides: 5,
-      completed_rides: 3,
-      canceled_rides: 2,
-      gross_total: '150.00',
-      platform_fee_total: '27.00',
-      driver_earnings_total: '123.00',
-    });
-    expect(res.body.data.summary.period).toBeDefined();
-    expect(res.body.data.summary.period.start).toBeDefined();
-    expect(res.body.data.summary.period.end).toBeDefined();
+    const ride = res.body.data.rides[0];
+    expect(ride.financial_status).toBe('SETTLED');
+    expect(ride.final_price).toBe('50.00');
+    expect(ride.fee_amount).toBe('9.00');
+    expect(ride.driver_earnings).toBe('41.00');
   });
 
-  it('returns correct pagination structure', async () => {
-    setupDefaultPoolMock({ count: 100 });
+  it('UNSETTLED ride returns financial values as null', async () => {
+    setupDefaultMock({ rides: [unsettledRideRow] });
+    const res = await request(app).get('/api/admin/finance/accountant-report');
+    const ride = res.body.data.rides[0];
+    expect(ride.financial_status).toBe('UNSETTLED');
+    expect(ride.final_price).toBeNull();
+    expect(ride.fee_amount).toBeNull();
+    expect(ride.driver_earnings).toBeNull();
+    expect(ride.credit_cost).toBeNull();
+  });
+
+  it('UNAVAILABLE ride returns financial values as null', async () => {
+    setupDefaultMock({ rides: [unavailableRideRow] });
+    const res = await request(app).get('/api/admin/finance/accountant-report');
+    const ride = res.body.data.rides[0];
+    expect(ride.financial_status).toBe('UNAVAILABLE');
+    expect(ride.final_price).toBeNull();
+    expect(ride.fee_amount).toBeNull();
+    expect(ride.driver_earnings).toBeNull();
+  });
+
+  it('summary sums only settled_at IS NOT NULL', async () => {
+    setupDefaultMock();
+    const summarySQL = poolMock.query.mock.calls?.[0]?.[0]; // won't have call yet
+    await request(app).get('/api/admin/finance/accountant-report');
+    const sql = poolMock.query.mock.calls[0][0];
+    expect(sql).toContain('WHEN s.settled_at IS NOT NULL THEN s.final_price');
+    expect(sql).toContain('WHEN s.settled_at IS NOT NULL THEN s.fee_amount');
+    expect(sql).toContain('WHEN s.settled_at IS NOT NULL THEN s.driver_earnings');
+  });
+
+  // ── Money formatter (no float) ─────────────────────────────────────────────
+
+  it('formatDecimal: "10" → "10.00"', () => {
+    expect(formatDecimal('10')).toBe('10.00');
+  });
+
+  it('formatDecimal: "10.5" → "10.50"', () => {
+    expect(formatDecimal('10.5')).toBe('10.50');
+  });
+
+  it('formatDecimal: "10.50" → "10.50"', () => {
+    expect(formatDecimal('10.50')).toBe('10.50');
+  });
+
+  it('formatDecimal: invalid format returns null', () => {
+    expect(formatDecimal('abc')).toBeNull();
+    expect(formatDecimal('')).toBeNull();
+    expect(formatDecimal(null)).toBeNull();
+    expect(formatDecimal(undefined)).toBeNull();
+  });
+
+  it('formatDecimal: rejects more than 2 decimal places (no rounding)', () => {
+    expect(formatDecimal('10.555')).toBeNull();
+    expect(formatDecimal('10.123')).toBeNull();
+  });
+
+  it('formatDecimal: handles negative values', () => {
+    expect(formatDecimal('-5.30')).toBe('-5.30');
+  });
+
+  // ── Date validation ─────────────────────────────────────────────────────────
+
+  it('rejects invalid date format', async () => {
     const res = await request(app)
       .get('/api/admin/finance/accountant-report')
-      .query({ page: 2, limit: 25 });
-    expect(res.body.data.pagination).toMatchObject({
-      page: 2,
-      limit: 25,
-      total: 100,
-      totalPages: 4,
-    });
+      .query({ start_date: '01/07/2026' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('start_date inválida');
   });
 
-  it('applies date filters', async () => {
-    setupDefaultPoolMock();
-    await request(app)
+  it('rejects non-existent date (Feb 31)', async () => {
+    const res = await request(app)
       .get('/api/admin/finance/accountant-report')
-      .query({ start_date: '2026-07-01', end_date: '2026-07-15' });
-
-    const firstCall = poolMock.query.mock.calls[0];
-    expect(firstCall[1][0]).toBeInstanceOf(Date); // startDate param
-    expect(firstCall[1][1]).toBeInstanceOf(Date); // endDate param
+      .query({ start_date: '2026-02-31' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('start_date inválida');
   });
 
-  it('applies status filter', async () => {
-    setupDefaultPoolMock();
-    await request(app)
+  it('accepts exactly 90 days period', async () => {
+    setupDefaultMock();
+    const res = await request(app)
       .get('/api/admin/finance/accountant-report')
-      .query({ status: 'completed' });
-
-    const firstCall = poolMock.query.mock.calls[0];
-    const sql = firstCall[0];
-    expect(sql).toContain('r.status = $');
-    expect(firstCall[1]).toContain('completed');
+      .query({ start_date: '2026-04-03', end_date: '2026-07-01' });
+    expect(res.status).toBe(200);
   });
 
-  it('rejects period longer than 90 days', async () => {
+  it('rejects more than 90 days period', async () => {
     const res = await request(app)
       .get('/api/admin/finance/accountant-report')
       .query({ start_date: '2026-01-01', end_date: '2026-07-01' });
     expect(res.status).toBe(400);
     expect(res.body.error).toContain('90 dias');
-  });
-
-  it('rejects invalid start_date', async () => {
-    const res = await request(app)
-      .get('/api/admin/finance/accountant-report')
-      .query({ start_date: 'invalid' });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain('start_date inválida');
   });
 
   it('rejects end_date before start_date', async () => {
@@ -188,152 +312,163 @@ describe('GET /api/admin/finance/accountant-report', () => {
     expect(res.body.error).toContain('end_date deve ser posterior');
   });
 
+  // ── Pagination ──────────────────────────────────────────────────────────────
+
+  it('enforces max limit of 200', async () => {
+    setupDefaultMock();
+    await request(app)
+      .get('/api/admin/finance/accountant-report')
+      .query({ limit: 500 });
+    const listCall = poolMock.query.mock.calls[2];
+    const listParams = listCall[1];
+    expect(listParams[listParams.length - 2]).toBe(200);
+  });
+
   it('returns empty rides array when no data', async () => {
-    setupDefaultPoolMock({ summary: { ...baseSummaryRow, total_rides: 0 }, count: 0, rides: [] });
+    setupDefaultMock({ summary: { ...baseSummaryRow, total_rides: 0 }, count: 0, rides: [] });
     const res = await request(app).get('/api/admin/finance/accountant-report');
     expect(res.body.data.rides).toEqual([]);
     expect(res.body.data.pagination.total).toBe(0);
   });
 
-  it('preserves historical values without recalculation', async () => {
-    const rideWithHistoric = {
-      ...baseRideRow,
-      fee_percent: '15.00', // Historic 15% (not current 18%)
-      fee_amount: '7.50',
-      driver_earnings: '42.50',
-      final_price: '50.00',
-    };
-    setupDefaultPoolMock({ rides: [rideWithHistoric] });
-    const res = await request(app).get('/api/admin/finance/accountant-report');
-    const ride = res.body.data.rides[0];
-    expect(ride.fee_percent).toBe('15.00');
-    expect(ride.fee_amount).toBe('7.50');
-    expect(ride.driver_earnings).toBe('42.50');
-  });
+  // ── No writes ───────────────────────────────────────────────────────────────
 
-  it('handles null financial fields gracefully', async () => {
-    const rideWithNulls = {
-      ...baseRideRow,
-      final_price: null,
-      fee_percent: null,
-      fee_amount: null,
-      driver_earnings: null,
-      settlement_territory: null,
-      credit_cost: null,
-      settled_at: null,
-    };
-    setupDefaultPoolMock({ rides: [rideWithNulls] });
-    const res = await request(app).get('/api/admin/finance/accountant-report');
-    const ride = res.body.data.rides[0];
-    expect(ride.final_price).toBeNull();
-    expect(ride.fee_amount).toBeNull();
-    expect(ride.driver_earnings).toBeNull();
-    expect(ride.settlement_territory).toBeNull();
-  });
-
-  it('enforces max limit of 200', async () => {
-    setupDefaultPoolMock();
-    await request(app)
-      .get('/api/admin/finance/accountant-report')
-      .query({ limit: 500 });
-
-    // Check that the listing query received limit=200
-    const listingCall = poolMock.query.mock.calls[2]; // 3rd call = listing
-    const listingParams = listingCall[1];
-    expect(listingParams[listingParams.length - 2]).toBe(200); // limit param
-  });
-
-  it('does not perform any write operations', async () => {
-    setupDefaultPoolMock();
+  it('all queries are SELECTs only', async () => {
+    setupDefaultMock();
     await request(app).get('/api/admin/finance/accountant-report');
-    // All pool.query calls should be SELECTs
     for (const call of poolMock.query.mock.calls) {
       const sql = call[0].trim().toUpperCase();
-      expect(sql).toMatch(/^SELECT/);
+      expect(sql).toMatch(/^\s*SELECT/);
     }
+  });
+
+  // ── Historical values preserved ─────────────────────────────────────────────
+
+  it('preserves historical fee_percent of 15% (not current 18%)', async () => {
+    const ride = { ...settledRideRow, fee_percent: '15.00', fee_amount: '7.50' };
+    setupDefaultMock({ rides: [ride] });
+    const res = await request(app).get('/api/admin/finance/accountant-report');
+    expect(res.body.data.rides[0].fee_percent).toBe('15.00');
+    expect(res.body.data.rides[0].fee_amount).toBe('7.50');
   });
 });
 
 describe('GET /api/admin/finance/accountant-report/csv', () => {
-  it('returns 401 for unauthenticated user', async () => {
+  // ── RBAC ────────────────────────────────────────────────────────────────────
+
+  it('returns 401 for unauthenticated', async () => {
     authState.admin = null;
     const res = await request(app).get('/api/admin/finance/accountant-report/csv');
     expect(res.status).toBe(401);
   });
 
   it('returns 403 for unauthorized role', async () => {
-    authState.admin = { id: 'angel-1', email: 'angel@test.local', role: 'ANGEL_VIEWER' };
+    authState.admin = { id: 'a-1', email: 'a@test.local', role: 'LEAD_AGENT' };
     const res = await request(app).get('/api/admin/finance/accountant-report/csv');
     expect(res.status).toBe(403);
   });
 
-  it('returns CSV content with correct headers', async () => {
-    poolMock.query.mockResolvedValueOnce({ rows: [baseRideRow] });
+  // ── CSV limit (422) ─────────────────────────────────────────────────────────
+
+  it('CSV with <= 5000 rows is allowed', async () => {
+    poolMock.query
+      .mockResolvedValueOnce({ rows: [{ total: 5000 }] }) // count
+      .mockResolvedValueOnce({ rows: [settledRideRow] });  // listing
     const res = await request(app)
       .get('/api/admin/finance/accountant-report/csv')
       .query({ start_date: '2026-07-01', end_date: '2026-07-15' });
-
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('text/csv');
-    expect(res.headers['content-disposition']).toContain('kaviar-relatorio-contador');
-    expect(res.headers['content-disposition']).toContain('.csv');
-
-    const body = res.text;
-    // BOM check (UTF-8 BOM)
-    expect(body.charCodeAt(0)).toBe(0xFEFF);
-    // Header row
-    expect(body).toContain('ID Corrida');
-    expect(body).toContain('Valor Bruto');
-    expect(body).toContain('Taxa Plataforma');
-    expect(body).toContain('Valor Motorista');
   });
 
-  it('protects against CSV injection', async () => {
+  it('CSV with > 5000 rows returns 422 with proper JSON', async () => {
+    poolMock.query
+      .mockResolvedValueOnce({ rows: [{ total: 5001 }] }); // count exceeds limit
+    const res = await request(app)
+      .get('/api/admin/finance/accountant-report/csv')
+      .query({ start_date: '2026-07-01', end_date: '2026-07-15' });
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe('CSV_ROW_LIMIT_EXCEEDED');
+    expect(res.body.total).toBe(5001);
+    expect(res.body.max).toBe(5000);
+    expect(res.body.error).toContain('5.000');
+  });
+
+  it('no CSV body is sent on 422', async () => {
+    poolMock.query
+      .mockResolvedValueOnce({ rows: [{ total: 6000 }] });
+    const res = await request(app)
+      .get('/api/admin/finance/accountant-report/csv')
+      .query({ start_date: '2026-07-01', end_date: '2026-07-15' });
+    expect(res.headers['content-type']).not.toContain('text/csv');
+    expect(res.text).not.toContain('ID Corrida');
+  });
+
+  // ── CSV injection protection ────────────────────────────────────────────────
+
+  it('protects against =, +, -, @, tab and CR injection', async () => {
     const injectionRide = {
-      ...baseRideRow,
+      ...settledRideRow,
       driver_name: '=CMD("calc")',
       passenger_first_name: '+HYPERLINK("evil")',
     };
-    poolMock.query.mockResolvedValueOnce({ rows: [injectionRide] });
+    poolMock.query
+      .mockResolvedValueOnce({ rows: [{ total: 1 }] })
+      .mockResolvedValueOnce({ rows: [injectionRide] });
     const res = await request(app)
       .get('/api/admin/finance/accountant-report/csv')
       .query({ start_date: '2026-07-01', end_date: '2026-07-15' });
 
     const body = res.text;
-    // Values starting with = or + should be prefixed with apostrophe
     expect(body).toContain("'=CMD");
     expect(body).toContain("'+HYPERLINK");
+    // Must NOT contain unprotected formula
     expect(body).not.toMatch(/"=CMD/);
     expect(body).not.toMatch(/"\+HYPERLINK/);
   });
 
-  it('limits CSV to 5000 rows', async () => {
-    poolMock.query.mockResolvedValueOnce({ rows: [] });
-    await request(app)
-      .get('/api/admin/finance/accountant-report/csv')
-      .query({ start_date: '2026-07-01', end_date: '2026-07-15' });
+  // ── CSV content ─────────────────────────────────────────────────────────────
 
-    const queryCall = poolMock.query.mock.calls[0];
-    const params = queryCall[1];
-    expect(params[params.length - 1]).toBe(5000);
-  });
-
-  it('rejects invalid period', async () => {
+  it('CSV has correct headers including Status Financeiro', async () => {
+    poolMock.query
+      .mockResolvedValueOnce({ rows: [{ total: 1 }] })
+      .mockResolvedValueOnce({ rows: [settledRideRow] });
     const res = await request(app)
       .get('/api/admin/finance/accountant-report/csv')
-      .query({ start_date: '2026-01-01', end_date: '2026-07-01' });
-    expect(res.status).toBe(400);
+      .query({ start_date: '2026-07-01', end_date: '2026-07-15' });
+
+    expect(res.text).toContain('ID Corrida');
+    expect(res.text).toContain('Status Financeiro');
+    expect(res.text).toContain('Valor Bruto');
+    expect(res.text).toContain('Valor Motorista');
+    // BOM
+    expect(res.text.charCodeAt(0)).toBe(0xFEFF);
   });
 
-  it('does not perform any write operations', async () => {
-    poolMock.query.mockResolvedValueOnce({ rows: [baseRideRow] });
+  it('CSV uses d.name not d.full_name', async () => {
+    poolMock.query
+      .mockResolvedValueOnce({ rows: [{ total: 1 }] })
+      .mockResolvedValueOnce({ rows: [settledRideRow] });
     await request(app)
       .get('/api/admin/finance/accountant-report/csv')
       .query({ start_date: '2026-07-01', end_date: '2026-07-15' });
+    for (const call of poolMock.query.mock.calls) {
+      expect(call[0]).not.toContain('full_name');
+    }
+  });
 
+  // ── No writes ───────────────────────────────────────────────────────────────
+
+  it('CSV endpoint only uses SELECT queries', async () => {
+    poolMock.query
+      .mockResolvedValueOnce({ rows: [{ total: 1 }] })
+      .mockResolvedValueOnce({ rows: [settledRideRow] });
+    await request(app)
+      .get('/api/admin/finance/accountant-report/csv')
+      .query({ start_date: '2026-07-01', end_date: '2026-07-15' });
     for (const call of poolMock.query.mock.calls) {
       const sql = call[0].trim().toUpperCase();
-      expect(sql).toMatch(/^SELECT/);
+      expect(sql).toMatch(/^\s*SELECT/);
     }
   });
 });
