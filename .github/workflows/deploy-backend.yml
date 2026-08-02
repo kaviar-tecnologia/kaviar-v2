@@ -35,7 +35,8 @@ jobs:
             exit 1
           fi
 
-          if ! printf '%s' "$INPUT_COMMIT_SHA" | grep -qE '^[0-9a-f]{40}$'; then
+          if [ "${#INPUT_COMMIT_SHA}" -ne 40 ] ||
+             [[ ! "$INPUT_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "❌ INVALID_DEPLOY_COMMIT_SHA"
             exit 1
           fi
@@ -92,7 +93,57 @@ jobs:
     outputs:
       production_sha: ${{ steps.resolve.outputs.production_sha }}
       production_task_definition: ${{ steps.resolve.outputs.production_task_definition }}
+      previous_image: ${{ steps.resolve.outputs.previous_image }}
+      previous_desired_count: ${{ steps.preflight.outputs.desired_count }}
+      previous_minimum_healthy_percent: ${{ steps.preflight.outputs.min_healthy }}
+      previous_maximum_percent: ${{ steps.preflight.outputs.max_percent }}
     steps:
+      - name: ECS preflight safety check
+        id: preflight
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-2
+        run: |
+          set -euo pipefail
+
+          SERVICE_JSON=$(aws ecs describe-services \
+            --cluster kaviar-cluster \
+            --services kaviar-backend-service \
+            --region us-east-2)
+
+          DESIRED=$(echo "$SERVICE_JSON" | jq -r '.services[0].desiredCount')
+          RUNNING=$(echo "$SERVICE_JSON" | jq -r '.services[0].runningCount')
+          PENDING=$(echo "$SERVICE_JSON" | jq -r '.services[0].pendingCount')
+          DEPLOYS=$(echo "$SERVICE_JSON" | jq '.services[0].deployments | length')
+          MIN_HEALTHY=$(echo "$SERVICE_JSON" | jq -r '.services[0].deploymentConfiguration.minimumHealthyPercent')
+          MAX_PCT=$(echo "$SERVICE_JSON" | jq -r '.services[0].deploymentConfiguration.maximumPercent')
+          CB_ENABLE=$(echo "$SERVICE_JSON" | jq -r '.services[0].deploymentConfiguration.deploymentCircuitBreaker.enable')
+          CB_ROLLBACK=$(echo "$SERVICE_JSON" | jq -r '.services[0].deploymentConfiguration.deploymentCircuitBreaker.rollback')
+
+          echo "ECS Preflight: desired=$DESIRED running=$RUNNING pending=$PENDING deployments=$DEPLOYS"
+          echo "  minHealthy=$MIN_HEALTHY maxPercent=$MAX_PCT circuitBreaker.enable=$CB_ENABLE circuitBreaker.rollback=$CB_ROLLBACK"
+
+          SAFE=true
+          if [ "$DESIRED" -lt 1 ]; then echo "❌ desiredCount < 1"; SAFE=false; fi
+          if [ "$RUNNING" != "$DESIRED" ]; then echo "❌ runningCount != desiredCount"; SAFE=false; fi
+          if [ "$PENDING" != "0" ]; then echo "❌ pendingCount != 0"; SAFE=false; fi
+          if [ "$DEPLOYS" != "1" ]; then echo "❌ deployments != 1"; SAFE=false; fi
+          if [ "$MIN_HEALTHY" -lt 100 ]; then echo "❌ minimumHealthyPercent < 100"; SAFE=false; fi
+          if [ "$MAX_PCT" -lt 200 ]; then echo "❌ maximumPercent < 200"; SAFE=false; fi
+          if [ "$CB_ENABLE" != "true" ]; then echo "❌ circuitBreaker.enable != true"; SAFE=false; fi
+          if [ "$CB_ROLLBACK" != "true" ]; then echo "❌ circuitBreaker.rollback != true"; SAFE=false; fi
+
+          if [ "$SAFE" = "false" ]; then
+            echo "❌ PRODUCTION_SERVICE_NOT_SAFE_FOR_ROLLING_DEPLOY"
+            exit 1
+          fi
+
+          echo "✓ ECS preflight passed — safe for rolling deploy"
+          echo "desired_count=$DESIRED" >> "$GITHUB_OUTPUT"
+          echo "min_healthy=$MIN_HEALTHY" >> "$GITHUB_OUTPUT"
+          echo "max_percent=$MAX_PCT" >> "$GITHUB_OUTPUT"
+
       - name: Resolve production SHA from two sources
         id: resolve
         env:
@@ -215,6 +266,7 @@ jobs:
           echo "✓ Production SHA verified from two sources: ${IMAGE_SHA}"
           echo "production_sha=${IMAGE_SHA}" >> "$GITHUB_OUTPUT"
           echo "production_task_definition=${TASK_DEF_ARN}" >> "$GITHUB_OUTPUT"
+          echo "previous_image=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
 
   resolve-deploy-state:
     needs:
@@ -650,6 +702,7 @@ jobs:
           echo "task_revision=${NEW_REV}" >> "$GITHUB_OUTPUT"
 
       - name: Deploy to ECS
+        id: ecs_deploy
         env:
           TARGET_SHA: ${{ needs.validate-target-commit.outputs.target_sha }}
           NEW_TASK_REVISION: ${{ steps.register_task.outputs.task_revision }}
@@ -700,6 +753,9 @@ jobs:
           fi
           echo "✓ Service still using expected task definition"
 
+          echo "update_attempted=true" >> "$GITHUB_OUTPUT"
+          echo "deploy_started_at_ms=$(date +%s000)" >> "$GITHUB_OUTPUT"
+
           aws ecs update-service \
             --cluster kaviar-cluster \
             --service kaviar-backend-service \
@@ -713,6 +769,313 @@ jobs:
             --cluster kaviar-cluster \
             --services kaviar-backend-service \
             --region us-east-2
+
+      - name: Verify backend post-deploy
+        id: verify_deploy
+        env:
+          TARGET_SHA: ${{ needs.validate-target-commit.outputs.target_sha }}
+          NEW_TASK_REVISION: ${{ steps.register_task.outputs.task_revision }}
+        run: |
+          set -euo pipefail
+
+          # 1. Service stable check
+          SERVICE_JSON=$(aws ecs describe-services \
+            --cluster kaviar-cluster \
+            --services kaviar-backend-service \
+            --region us-east-2)
+
+          DESIRED=$(echo "$SERVICE_JSON" | jq -r '.services[0].desiredCount')
+          RUNNING=$(echo "$SERVICE_JSON" | jq -r '.services[0].runningCount')
+          PENDING=$(echo "$SERVICE_JSON" | jq -r '.services[0].pendingCount')
+          DEPLOYS=$(echo "$SERVICE_JSON" | jq '.services[0].deployments | length')
+          CURRENT_TD=$(echo "$SERVICE_JSON" | jq -r '.services[0].taskDefinition')
+
+          if [ "$DESIRED" != "$RUNNING" ] || [ "$PENDING" != "0" ] || [ "$DEPLOYS" != "1" ]; then
+            echo "❌ BACKEND_SERVICE_DID_NOT_STABILIZE (desired=$DESIRED running=$RUNNING pending=$PENDING deployments=$DEPLOYS)"
+            exit 1
+          fi
+
+          EXPECTED_TD="arn:aws:ecs:us-east-2:847895361928:task-definition/kaviar-backend:${NEW_TASK_REVISION}"
+          if [ "$CURRENT_TD" != "$EXPECTED_TD" ]; then
+            echo "❌ BACKEND_TASK_DEFINITION_MISMATCH (expected=$EXPECTED_TD got=$CURRENT_TD)"
+            exit 1
+          fi
+          echo "✓ Service stable with correct task definition"
+
+          # 2. Verify running tasks use new revision and count = desired
+          TASK_ARNS=$(aws ecs list-tasks \
+            --cluster kaviar-cluster \
+            --service-name kaviar-backend-service \
+            --desired-status RUNNING \
+            --region us-east-2 \
+            --query 'taskArns' --output json)
+
+          TASK_COUNT=$(echo "$TASK_ARNS" | jq 'length')
+          if [ "$TASK_COUNT" -ne "$DESIRED" ]; then
+            echo "❌ BACKEND_RUNNING_REVISION_MISMATCH (TASK_COUNT=$TASK_COUNT DESIRED=$DESIRED)"
+            exit 1
+          fi
+
+          for ARN in $(echo "$TASK_ARNS" | jq -r '.[]'); do
+            TASK_TD=$(aws ecs describe-tasks \
+              --cluster kaviar-cluster \
+              --tasks "$ARN" \
+              --region us-east-2 \
+              --query 'tasks[0].taskDefinitionArn' --output text)
+            if [ "$TASK_TD" != "$EXPECTED_TD" ]; then
+              echo "❌ BACKEND_RUNNING_REVISION_MISMATCH (task=$ARN uses=$TASK_TD expected=$EXPECTED_TD)"
+              exit 1
+            fi
+          done
+          echo "✓ All $TASK_COUNT running tasks use the new revision"
+
+          # 3. Health check (no body printing)
+          HTTP_CODE=$(curl -s -o /tmp/health_response.json -w "%{http_code}" \
+            --max-time 15 --retry 3 --retry-delay 5 \
+            "https://api.kaviar.com.br/api/health" || echo "000")
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ BACKEND_HEALTH_CHECK_FAILED (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+
+          if ! jq -e . /tmp/health_response.json > /dev/null 2>&1; then
+            echo "❌ BACKEND_HEALTH_CHECK_FAILED (invalid JSON)"
+            exit 1
+          fi
+
+          REPORTED_VERSION=$(jq -r '.version // .gitCommit // .git_commit // empty' /tmp/health_response.json)
+          if [ -z "$REPORTED_VERSION" ]; then
+            echo "❌ BACKEND_VERSION_MISSING (no version/gitCommit/git_commit in health response)"
+            exit 1
+          fi
+          if [ "$REPORTED_VERSION" != "$TARGET_SHA" ]; then
+            echo "❌ BACKEND_VERSION_MISMATCH (reported=$REPORTED_VERSION expected=$TARGET_SHA)"
+            exit 1
+          fi
+          echo "✓ Health check passed (HTTP 200, version=$TARGET_SHA)"
+
+          # 4. Accountant endpoint reachable (expect 401 without token)
+          ACC_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 10 \
+            "https://api.kaviar.com.br/api/admin/finance/accountant-report" || echo "000")
+
+          if [ "$ACC_CODE" = "401" ] || [ "$ACC_CODE" = "403" ]; then
+            echo "✓ Accountant endpoint available (HTTP $ACC_CODE)"
+          else
+            echo "❌ ACCOUNTANT_ENDPOINT_NOT_AVAILABLE (HTTP $ACC_CODE)"
+            exit 1
+          fi
+
+          echo "deploy_verified=true" >> "$GITHUB_OUTPUT"
+
+      - name: Check backend logs for critical errors
+        if: steps.verify_deploy.outputs.deploy_verified == 'true'
+        env:
+          NEW_TASK_REVISION: ${{ steps.register_task.outputs.task_revision }}
+          DEPLOY_STARTED_MS: ${{ steps.ecs_deploy.outputs.deploy_started_at_ms }}
+        run: |
+          set -euo pipefail
+
+          # Validate inputs
+          if [ -z "$DEPLOY_STARTED_MS" ] || ! [[ "$DEPLOY_STARTED_MS" =~ ^[0-9]+$ ]]; then
+            echo "❌ BACKEND_LOG_QUERY_FAILED (invalid DEPLOY_STARTED_MS=$DEPLOY_STARTED_MS)"
+            exit 1
+          fi
+
+          # Get log configuration from new task definition
+          TD_JSON=$(aws ecs describe-task-definition \
+            --task-definition "kaviar-backend:${NEW_TASK_REVISION}" \
+            --region us-east-2)
+
+          LOG_DRIVER=$(echo "$TD_JSON" | jq -r '.taskDefinition.containerDefinitions[] | select(.name == "kaviar-backend") | .logConfiguration.logDriver // empty')
+          if [ "$LOG_DRIVER" != "awslogs" ]; then
+            echo "❌ BACKEND_LOG_CONFIGURATION_INVALID (driver=$LOG_DRIVER, expected awslogs)"
+            exit 1
+          fi
+
+          LOG_GROUP=$(echo "$TD_JSON" | jq -r '.taskDefinition.containerDefinitions[] | select(.name == "kaviar-backend") | .logConfiguration.options["awslogs-group"] // empty')
+          LOG_REGION=$(echo "$TD_JSON" | jq -r '.taskDefinition.containerDefinitions[] | select(.name == "kaviar-backend") | .logConfiguration.options["awslogs-region"] // empty')
+          STREAM_PREFIX=$(echo "$TD_JSON" | jq -r '.taskDefinition.containerDefinitions[] | select(.name == "kaviar-backend") | .logConfiguration.options["awslogs-stream-prefix"] // empty')
+
+          if [ -z "$LOG_GROUP" ] || [ -z "$LOG_REGION" ] || [ -z "$STREAM_PREFIX" ]; then
+            echo "❌ BACKEND_LOG_CONFIGURATION_INVALID (group=$LOG_GROUP region=$LOG_REGION prefix=$STREAM_PREFIX)"
+            exit 1
+          fi
+
+          # Get task IDs of new tasks
+          TASK_ARNS=$(aws ecs list-tasks \
+            --cluster kaviar-cluster \
+            --service-name kaviar-backend-service \
+            --desired-status RUNNING \
+            --region us-east-2 \
+            --query 'taskArns' --output json)
+
+          if [ -z "$TASK_ARNS" ] || [ "$(echo "$TASK_ARNS" | jq 'length')" -eq 0 ]; then
+            echo "❌ BACKEND_LOG_QUERY_FAILED (no running tasks found)"
+            exit 1
+          fi
+
+          # Build log stream names from prefix/container/taskId
+          STREAM_NAMES=""
+          for ARN in $(echo "$TASK_ARNS" | jq -r '.[]'); do
+            TASK_ID=$(echo "$ARN" | grep -oE '[0-9a-f]{32}$')
+            if [ -n "$TASK_ID" ]; then
+              STREAM_NAMES="${STREAM_NAMES:+$STREAM_NAMES }${STREAM_PREFIX}/kaviar-backend/${TASK_ID}"
+            fi
+          done
+
+          if [ -z "$STREAM_NAMES" ]; then
+            echo "❌ BACKEND_LOG_QUERY_FAILED (could not resolve stream names)"
+            exit 1
+          fi
+
+          # Query logs — fail-closed with explicit error handling
+          if ! EVENTS=$(aws logs filter-log-events \
+            --log-group-name "$LOG_GROUP" \
+            --log-stream-names $STREAM_NAMES \
+            --start-time "$DEPLOY_STARTED_MS" \
+            --filter-pattern "?FATAL ?UnhandledPromiseRejection ?uncaughtException ?PrismaClientInitializationError ?\"Cannot find module\" ?\"Migration failed\" ?ECONNREFUSED ?\"password authentication failed\" ?\"crash loop\" ?\"repeatedly stopped\"" \
+            --limit 20 \
+            --region "$LOG_REGION" \
+            --query 'events[].{timestamp:timestamp,logStreamName:logStreamName}' \
+            --output json); then
+            echo "❌ BACKEND_LOG_QUERY_FAILED"
+            exit 1
+          fi
+
+          if ! echo "$EVENTS" | jq -e . > /dev/null 2>&1; then
+            echo "❌ BACKEND_LOG_QUERY_FAILED (invalid JSON response from CloudWatch)"
+            exit 1
+          fi
+
+          CRITICAL_COUNT=$(echo "$EVENTS" | jq 'length')
+
+          if [ "$CRITICAL_COUNT" -gt 0 ]; then
+            echo "❌ CRITICAL_BACKEND_ERROR_AFTER_DEPLOY ($CRITICAL_COUNT critical log entries)"
+            echo "   Log group: $LOG_GROUP"
+            echo "   Streams: $STREAM_NAMES"
+            echo "$EVENTS" | jq -r '.[] | "   stream=\(.logStreamName) timestamp=\(.timestamp)"' | head -10
+            exit 1
+          fi
+
+          echo "✓ No critical errors in logs (group=$LOG_GROUP streams=$STREAM_NAMES since=$DEPLOY_STARTED_MS)"
+
+      - name: Rollback backend on failure
+        if: failure() && steps.ecs_deploy.outputs.update_attempted == 'true'
+        env:
+          PRODUCTION_TASK_DEF_ARN: ${{ needs.resolve-production-state.outputs.production_task_definition }}
+          PRODUCTION_SHA: ${{ needs.resolve-production-state.outputs.production_sha }}
+          NEW_TASK_REVISION: ${{ steps.register_task.outputs.task_revision }}
+        run: |
+          set -euo pipefail
+          echo "❗ BACKEND_ROLLBACK_STARTED"
+          echo "   Target previous ARN: $PRODUCTION_TASK_DEF_ARN"
+
+          NEW_TD_ARN="arn:aws:ecs:us-east-2:847895361928:task-definition/kaviar-backend:${NEW_TASK_REVISION}"
+
+          # Check current service state before acting
+          CURRENT_TD=$(aws ecs describe-services \
+            --cluster kaviar-cluster \
+            --services kaviar-backend-service \
+            --region us-east-2 \
+            --query 'services[0].taskDefinition' --output text)
+
+          if [ "$CURRENT_TD" = "$PRODUCTION_TASK_DEF_ARN" ]; then
+            echo "✓ BACKEND_ROLLBACK_NOT_REQUIRED — service already on previous task definition"
+          elif [ "$CURRENT_TD" = "$NEW_TD_ARN" ]; then
+            echo "Service on new TD, rolling back..."
+            aws ecs update-service \
+              --cluster kaviar-cluster \
+              --service kaviar-backend-service \
+              --task-definition "$PRODUCTION_TASK_DEF_ARN" \
+              --region us-east-2
+            echo "Waiting for rollback to stabilize..."
+            aws ecs wait services-stable \
+              --cluster kaviar-cluster \
+              --services kaviar-backend-service \
+              --region us-east-2
+          else
+            echo "❌ BACKEND_ROLLBACK_STATE_CONFLICT"
+            echo "   Expected previous=$PRODUCTION_TASK_DEF_ARN or new=$NEW_TD_ARN"
+            echo "   Found: $CURRENT_TD"
+            echo "   MANUAL INTERVENTION REQUIRED"
+            exit 1
+          fi
+
+          # Validate after rollback/no-op — full service state
+          aws ecs wait services-stable \
+            --cluster kaviar-cluster \
+            --services kaviar-backend-service \
+            --region us-east-2
+
+          SVC_JSON=$(aws ecs describe-services \
+            --cluster kaviar-cluster \
+            --services kaviar-backend-service \
+            --region us-east-2)
+
+          FINAL_TD=$(echo "$SVC_JSON" | jq -r '.services[0].taskDefinition')
+          R_DESIRED=$(echo "$SVC_JSON" | jq -r '.services[0].desiredCount')
+          R_RUNNING=$(echo "$SVC_JSON" | jq -r '.services[0].runningCount')
+          R_PENDING=$(echo "$SVC_JSON" | jq -r '.services[0].pendingCount')
+          R_DEPLOYS=$(echo "$SVC_JSON" | jq '.services[0].deployments | length')
+
+          if [ "$FINAL_TD" != "$PRODUCTION_TASK_DEF_ARN" ]; then
+            echo "❌ BACKEND_ROLLBACK_FAILED — taskDefinition=$FINAL_TD expected=$PRODUCTION_TASK_DEF_ARN"
+            exit 1
+          fi
+          if [ "$R_DESIRED" -lt 1 ] || [ "$R_RUNNING" != "$R_DESIRED" ] || [ "$R_PENDING" != "0" ] || [ "$R_DEPLOYS" != "1" ]; then
+            echo "❌ BACKEND_ROLLBACK_FAILED — service unstable (desired=$R_DESIRED running=$R_RUNNING pending=$R_PENDING deployments=$R_DEPLOYS)"
+            exit 1
+          fi
+
+          # Verify all tasks use previous TD
+          R_TASK_ARNS=$(aws ecs list-tasks \
+            --cluster kaviar-cluster \
+            --service-name kaviar-backend-service \
+            --desired-status RUNNING \
+            --region us-east-2 \
+            --query 'taskArns' --output json)
+          R_TASK_COUNT=$(echo "$R_TASK_ARNS" | jq 'length')
+          if [ "$R_TASK_COUNT" != "$R_DESIRED" ]; then
+            echo "❌ BACKEND_ROLLBACK_FAILED — task count=$R_TASK_COUNT expected=$R_DESIRED"
+            exit 1
+          fi
+          for ARN in $(echo "$R_TASK_ARNS" | jq -r '.[]'); do
+            T_TD=$(aws ecs describe-tasks --cluster kaviar-cluster --tasks "$ARN" --region us-east-2 --query 'tasks[0].taskDefinitionArn' --output text)
+            if [ "$T_TD" != "$PRODUCTION_TASK_DEF_ARN" ]; then
+              echo "❌ BACKEND_ROLLBACK_FAILED — task $ARN uses $T_TD, expected $PRODUCTION_TASK_DEF_ARN"
+              exit 1
+            fi
+          done
+
+          # Verify health and version after rollback
+          sleep 10
+          HEALTH_CODE=$(curl -s -o /tmp/rollback_health.json -w "%{http_code}" \
+            --max-time 15 --retry 3 --retry-delay 5 \
+            "https://api.kaviar.com.br/api/health" || echo "000")
+
+          if [ "$HEALTH_CODE" != "200" ]; then
+            echo "❌ BACKEND_ROLLBACK_FAILED — health returned HTTP $HEALTH_CODE"
+            exit 1
+          fi
+
+          if ! jq -e . /tmp/rollback_health.json > /dev/null 2>&1; then
+            echo "❌ BACKEND_ROLLBACK_FAILED — health response is not valid JSON"
+            exit 1
+          fi
+
+          ROLLBACK_VERSION=$(jq -r '.version // .gitCommit // .git_commit // empty' /tmp/rollback_health.json)
+          if [ -z "$ROLLBACK_VERSION" ]; then
+            echo "❌ BACKEND_ROLLBACK_FAILED — version not found in health response after rollback"
+            exit 1
+          fi
+          if [ "$ROLLBACK_VERSION" != "$PRODUCTION_SHA" ]; then
+            echo "❌ BACKEND_ROLLBACK_FAILED — version=$ROLLBACK_VERSION expected=$PRODUCTION_SHA"
+            exit 1
+          fi
+
+          echo "✓ BACKEND_ROLLBACK_COMPLETED — service restored, health OK, version=$PRODUCTION_SHA"
 
       - name: Publish deploy summary
         if: always()
