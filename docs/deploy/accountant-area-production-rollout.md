@@ -42,11 +42,16 @@ dentro do job `resolve-production-state`, executado antes de build/push/register
 
 - `aws ecs wait services-stable` OK
 - desired=running, pending=0, 1 deployment
+- TASK_COUNT = DESIRED
 - Todas as tasks RUNNING usam a nova task definition
 - `GET /api/health` → HTTP 200, JSON válido
 - version **obrigatória** (ausência = `BACKEND_VERSION_MISSING`)
 - version = TARGET_SHA (mismatch = `BACKEND_VERSION_MISMATCH`)
 - `GET /api/admin/finance/accountant-report` → HTTP 401 ou 403
+- **Logs**: CloudWatch consultado desde `deploy_started_at_ms`, padrões críticos detectados
+  - FATAL, UnhandledPromiseRejection, PrismaClientInitializationError, ECONNREFUSED, etc.
+  - Marker: `CRITICAL_BACKEND_ERROR_AFTER_DEPLOY`
+  - Nenhuma mensagem completa ou dado sensível impresso
 
 ## Backup e Rollback — Backend
 
@@ -95,6 +100,19 @@ dentro do job `resolve-production-state`, executado antes de build/push/register
 - Pelo menos um JS asset obrigatório
 - Rota `financeiro/contador` encontrada no bundle (falha, não warning)
 - Marker: `ACCOUNTANT_FRONTEND_BUNDLE_NOT_FOUND`
+- **Build manifest**: SHA-256 do index + lista de todos assets referenciados
+- Todos os assets locais verificados antes do deploy
+
+**S3 verification (após escrita, antes de invalidação):**
+- index.html baixado do S3 e SHA-256 comparado com build
+- ContentLength validado como inteiro positivo
+- Todos os assets do manifesto verificados via head-object
+- Markers: `FRONTEND_S3_INDEX_MISMATCH`, `FRONTEND_S3_ASSET_MISSING`, `FRONTEND_INDEX_METADATA_INVALID`
+
+**CloudFront verification (após invalidação completada):**
+- Homepage HTTP 200, HTML válido
+- Todos os assets do build manifest acessíveis via CDN (HTTP 200)
+- Markers: `FRONTEND_HTTP_SMOKE_TEST_FAILED`, `FRONTEND_ASSET_VALIDATION_FAILED`, `FRONTEND_EXPECTED_ASSET_NOT_PUBLISHED`
 
 ## Condições de parada
 
@@ -112,8 +130,6 @@ dentro do job `resolve-production-state`, executado antes de build/push/register
 - Workflow não autorizado para execução real nesta tarefa
 - Não há pipeline automática backend→frontend (intencional)
 - Rollback do backend limitado à task definition anterior imediata
-- Verificação de logs (CloudWatch) não implementada nesta fase
-- Comparação SHA-256 exata do index publicado não implementada nesta fase
 - Merge do PR não autoriza execução do workflow
 
 ## Débitos técnicos (não implementados)
@@ -123,5 +139,3 @@ dentro do job `resolve-production-state`, executado antes de build/push/register
 - GitHub Environment com aprovador obrigatório
 - Observabilidade avançada (CloudWatch alarms + Slack)
 - Rollback entre commits arbitrários
-- Verificação de logs pós-deploy
-- Comparação SHA-256 do index.html publicado vs construído
