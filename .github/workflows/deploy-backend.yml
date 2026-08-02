@@ -930,8 +930,8 @@ jobs:
             exit 1
           fi
 
-          # Query logs — fail-closed (no || echo "[]")
-          EVENTS=$(aws logs filter-log-events \
+          # Query logs — fail-closed with explicit error handling
+          if ! EVENTS=$(aws logs filter-log-events \
             --log-group-name "$LOG_GROUP" \
             --log-stream-names $STREAM_NAMES \
             --start-time "$DEPLOY_STARTED_MS" \
@@ -939,7 +939,10 @@ jobs:
             --limit 20 \
             --region "$LOG_REGION" \
             --query 'events[].{timestamp:timestamp,logStreamName:logStreamName}' \
-            --output json)
+            --output json); then
+            echo "❌ BACKEND_LOG_QUERY_FAILED"
+            exit 1
+          fi
 
           if ! echo "$EVENTS" | jq -e . > /dev/null 2>&1; then
             echo "❌ BACKEND_LOG_QUERY_FAILED (invalid JSON response from CloudWatch)"
