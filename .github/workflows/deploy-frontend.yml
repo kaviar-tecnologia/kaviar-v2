@@ -149,9 +149,9 @@ jobs:
 
           aws s3 sync s3://kaviar-frontend-847895361928/ "$BACKUP_DIR/" --region us-east-2
 
-          # Validate backup
+          # Validate index.html
           if [ ! -f "$BACKUP_DIR/index.html" ]; then
-            echo "::error::FRONTEND_BACKUP_INVALID — index.html not found in backup"
+            echo "::error::FRONTEND_BACKUP_INVALID — index.html not found"
             exit 1
           fi
           INDEX_SIZE=$(stat -c%s "$BACKUP_DIR/index.html" 2>/dev/null || stat -f%z "$BACKUP_DIR/index.html" 2>/dev/null || echo "0")
@@ -160,30 +160,68 @@ jobs:
             exit 1
           fi
 
-          JS_BACKUP_COUNT=$(find "$BACKUP_DIR/assets" -name "*.js" 2>/dev/null | wc -l)
-          if [ "$JS_BACKUP_COUNT" -eq 0 ]; then
-            echo "::error::FRONTEND_BACKUP_INVALID — no JS assets in backup"
-            exit 1
-          fi
-
           # Calculate backup index SHA
           BACKUP_INDEX_SHA256=$(sha256sum "$BACKUP_DIR/index.html" | cut -d' ' -f1)
 
-          # Capture index.html metadata
+          # Extract assets referenced by backup index
+          BACKUP_ASSETS=$(grep -oP '/assets/[a-zA-Z0-9_.-]+\.(js|css)' "$BACKUP_DIR/index.html" | sort -u)
+          JS_COUNT=$(echo "$BACKUP_ASSETS" | grep -c '\.js$' || true)
+          if [ "$JS_COUNT" -eq 0 ]; then
+            echo "::error::FRONTEND_BACKUP_INVALID — no JS assets referenced"
+            exit 1
+          fi
+
+          # Verify all referenced assets exist in backup
+          BACKUP_ASSET_MANIFEST="$BACKUP_DIR/.backup-asset-manifest.txt"
+          echo -n "" > "$BACKUP_ASSET_MANIFEST"
+          for ASSET in $BACKUP_ASSETS; do
+            if [ ! -f "$BACKUP_DIR$ASSET" ]; then
+              echo "::error::FRONTEND_BACKUP_INVALID — missing asset: $ASSET"
+              exit 1
+            fi
+            echo "$ASSET" >> "$BACKUP_ASSET_MANIFEST"
+          done
+
+          # Generate metadata manifest for critical files
+          BACKUP_METADATA_MANIFEST="$BACKUP_DIR/.backup-metadata-manifest.jsonl"
+          echo -n "" > "$BACKUP_METADATA_MANIFEST"
+
+          # Index metadata
           INDEX_META=$(aws s3api head-object \
-            --bucket kaviar-frontend-847895361928 \
-            --key index.html \
-            --region us-east-2 \
-            --query '{ETag:ETag,LastModified:LastModified,ContentLength:ContentLength,ContentType:ContentType}' \
+            --bucket kaviar-frontend-847895361928 --key index.html --region us-east-2 \
+            --query '{key:"index.html",ContentLength:ContentLength,ETag:ETag,ContentType:ContentType,CacheControl:CacheControl,ContentEncoding:ContentEncoding}' \
             --output json)
-          echo "$INDEX_META" > "$BACKUP_DIR/.index-meta.json"
+          echo "$INDEX_META" >> "$BACKUP_METADATA_MANIFEST"
 
-          FILE_COUNT=$(find "$BACKUP_DIR" -type f -not -name ".index-meta.json" | wc -l)
+          # Asset metadata (up to 50 to avoid excessive API calls)
+          ASSET_COUNT=0
+          for ASSET in $BACKUP_ASSETS; do
+            KEY="${ASSET#/}"
+            META=$(aws s3api head-object \
+              --bucket kaviar-frontend-847895361928 --key "$KEY" --region us-east-2 \
+              --query "{key:\"$KEY\",ContentLength:ContentLength,ETag:ETag,ContentType:ContentType,CacheControl:CacheControl,ContentEncoding:ContentEncoding}" \
+              --output json 2>/dev/null || echo '{}')
+            echo "$META" >> "$BACKUP_METADATA_MANIFEST"
+            ASSET_COUNT=$((ASSET_COUNT+1))
+            [ "$ASSET_COUNT" -ge 50 ] && break
+          done
 
-          echo "✓ FRONTEND_BACKUP_READY ($FILE_COUNT files, index SHA256=$BACKUP_INDEX_SHA256)"
+          # Validate manifests are valid JSONL
+          while IFS= read -r line; do
+            if ! echo "$line" | jq -e . > /dev/null 2>&1; then
+              echo "::error::FRONTEND_BACKUP_INVALID — invalid metadata manifest line"
+              exit 1
+            fi
+          done < "$BACKUP_METADATA_MANIFEST"
+
+          FILE_COUNT=$(find "$BACKUP_DIR" -type f -not -name ".*" | wc -l)
+
+          echo "✓ FRONTEND_BACKUP_READY ($FILE_COUNT files, $JS_COUNT JS, SHA=$BACKUP_INDEX_SHA256)"
           echo "backup_dir=$BACKUP_DIR" >> "$GITHUB_OUTPUT"
           echo "backup_valid=true" >> "$GITHUB_OUTPUT"
           echo "backup_index_sha256=$BACKUP_INDEX_SHA256" >> "$GITHUB_OUTPUT"
+          echo "backup_asset_manifest=$BACKUP_ASSET_MANIFEST" >> "$GITHUB_OUTPUT"
+          echo "backup_metadata_manifest=$BACKUP_METADATA_MANIFEST" >> "$GITHUB_OUTPUT"
           echo "backup_file_count=$FILE_COUNT" >> "$GITHUB_OUTPUT"
 
       # ── 10. Revalidate main HEAD before deploy ─────────────────────────────
@@ -280,6 +318,7 @@ jobs:
       - name: Verify frontend via CloudFront
         env:
           BUILD_ASSET_MANIFEST: ${{ steps.build_manifest.outputs.build_asset_manifest }}
+          BUILD_INDEX_SHA256: ${{ steps.build_manifest.outputs.build_index_sha256 }}
         run: |
           set -euo pipefail
 
@@ -288,6 +327,7 @@ jobs:
 
           HTTP_CODE=$(curl -s -o /tmp/cf_response.html -w "%{http_code}" \
             --max-time 20 --retry 3 --retry-delay 5 \
+            -H "Cache-Control: no-cache" -H "Pragma: no-cache" \
             "https://kaviar.com.br/" || echo "000")
 
           if [ "$HTTP_CODE" != "200" ]; then
@@ -299,6 +339,14 @@ jobs:
             echo "::error::FRONTEND_HTTP_SMOKE_TEST_FAILED — response is not HTML"
             exit 1
           fi
+
+          # Compare SHA-256 of served page with build
+          CF_INDEX_SHA256=$(sha256sum /tmp/cf_response.html | cut -d' ' -f1)
+          if [ "$CF_INDEX_SHA256" != "$BUILD_INDEX_SHA256" ]; then
+            echo "::error::FRONTEND_CLOUDFRONT_INDEX_MISMATCH (build=$BUILD_INDEX_SHA256 cf=$CF_INDEX_SHA256)"
+            exit 1
+          fi
+          echo "✓ CloudFront serves exact build index (SHA=$BUILD_INDEX_SHA256)"
 
           # Verify all assets from build manifest are accessible via CloudFront
           ASSET_FAIL=0
@@ -318,7 +366,7 @@ jobs:
             exit 1
           fi
 
-          echo "✓ Frontend CloudFront verification passed"
+          echo "✓ Frontend CloudFront verification passed (all assets HTTP 200)"
 
       # ── 15. Rollback frontend on failure ───────────────────────────────────
       - name: Rollback frontend on failure
@@ -326,6 +374,8 @@ jobs:
         env:
           BACKUP_DIR: ${{ steps.backup.outputs.backup_dir }}
           BACKUP_INDEX_SHA256: ${{ steps.backup.outputs.backup_index_sha256 }}
+          BACKUP_ASSET_MANIFEST: ${{ steps.backup.outputs.backup_asset_manifest }}
+          BACKUP_METADATA_MANIFEST: ${{ steps.backup.outputs.backup_metadata_manifest }}
         run: |
           set -euo pipefail
           echo "❗ FRONTEND_ROLLBACK_STARTED"
@@ -335,27 +385,61 @@ jobs:
             exit 1
           fi
 
-          # Restore assets first (exclude index and metadata)
+          # Restore assets with metadata from manifest
+          if [ -f "$BACKUP_METADATA_MANIFEST" ]; then
+            while IFS= read -r META_LINE; do
+              KEY=$(echo "$META_LINE" | jq -r '.key // empty')
+              [ -z "$KEY" ] && continue
+              [ "$KEY" = "index.html" ] && continue  # index restored last
+              LOCAL_FILE="$BACKUP_DIR/$KEY"
+              [ ! -f "$LOCAL_FILE" ] && continue
+              CT=$(echo "$META_LINE" | jq -r '.ContentType // "application/octet-stream"')
+              CC=$(echo "$META_LINE" | jq -r '.CacheControl // "public, max-age=31536000"')
+              CE=$(echo "$META_LINE" | jq -r '.ContentEncoding // empty')
+              CE_FLAG=""
+              if [ -n "$CE" ] && [ "$CE" != "null" ]; then
+                CE_FLAG="--content-encoding $CE"
+              fi
+              aws s3 cp "$LOCAL_FILE" "s3://kaviar-frontend-847895361928/$KEY" \
+                --content-type "$CT" --cache-control "$CC" $CE_FLAG --region us-east-2 2>/dev/null || true
+            done < "$BACKUP_METADATA_MANIFEST"
+          fi
+
+          # Sync remaining files (assets not in manifest)
           aws s3 sync "$BACKUP_DIR/" s3://kaviar-frontend-847895361928/ \
-            --cache-control "public, max-age=31536000" \
             --exclude "index.html" \
+            --exclude ".backup-asset-manifest.txt" \
+            --exclude ".backup-metadata-manifest.jsonl" \
             --exclude ".index-meta.json" \
             --delete \
             --region us-east-2
 
-          # Restore index.html last
+          # Restore index.html last with no-cache
           aws s3 cp "$BACKUP_DIR/index.html" s3://kaviar-frontend-847895361928/index.html \
-            --cache-control "no-cache" \
+            --cache-control "no-cache" --content-type "text/html" \
             --region us-east-2
 
           # Verify restored index SHA
           aws s3 cp s3://kaviar-frontend-847895361928/index.html /tmp/restored_index.html --region us-east-2
           RESTORED_SHA=$(sha256sum /tmp/restored_index.html | cut -d' ' -f1)
           if [ "$RESTORED_SHA" != "$BACKUP_INDEX_SHA256" ]; then
-            echo "::error::FRONTEND_ROLLBACK_FAILED — restored index SHA mismatch (expected=$BACKUP_INDEX_SHA256 got=$RESTORED_SHA)"
+            echo "::error::FRONTEND_ROLLBACK_FAILED — index SHA mismatch (expected=$BACKUP_INDEX_SHA256 got=$RESTORED_SHA)"
             exit 1
           fi
           echo "✓ Restored index.html SHA-256 matches backup"
+
+          # Verify all backup assets exist in S3
+          if [ -f "$BACKUP_ASSET_MANIFEST" ]; then
+            while IFS= read -r ASSET; do
+              [ -z "$ASSET" ] && continue
+              KEY="${ASSET#/}"
+              ASSET_CL=$(aws s3api head-object --bucket kaviar-frontend-847895361928 --key "$KEY" --region us-east-2 --query 'ContentLength' --output text 2>/dev/null || echo "0")
+              if [ "$ASSET_CL" -le 0 ] 2>/dev/null; then
+                echo "::error::FRONTEND_ROLLBACK_FAILED — asset missing after restore: $KEY"
+                exit 1
+              fi
+            done < "$BACKUP_ASSET_MANIFEST"
+          fi
 
           # Invalidate CloudFront and wait
           RESULT=$(aws cloudfront create-invalidation \
@@ -363,21 +447,25 @@ jobs:
             --paths "/*" --output json)
           ROLLBACK_INV_ID=$(echo "$RESULT" | jq -r '.Invalidation.Id')
 
-          if [ -n "$ROLLBACK_INV_ID" ] && [ "$ROLLBACK_INV_ID" != "null" ]; then
-            aws cloudfront wait invalidation-completed \
-              --distribution-id E30XJMSBHGZAGN \
-              --id "$ROLLBACK_INV_ID"
+          if [ -z "$ROLLBACK_INV_ID" ] || [ "$ROLLBACK_INV_ID" = "null" ]; then
+            echo "::error::CLOUDFRONT_ROLLBACK_INVALIDATION_FAILED — no ID returned"
+            exit 1
           fi
+
+          aws cloudfront wait invalidation-completed \
+            --distribution-id E30XJMSBHGZAGN \
+            --id "$ROLLBACK_INV_ID"
 
           sleep 5
 
-          # Verify restored homepage
+          # Verify restored homepage SHA matches backup
           ROLLBACK_CODE=$(curl -s -o /tmp/rollback_page.html -w "%{http_code}" \
             --max-time 20 --retry 2 --retry-delay 5 \
+            -H "Cache-Control: no-cache" \
             "https://kaviar.com.br/" || echo "000")
 
           if [ "$ROLLBACK_CODE" != "200" ]; then
-            echo "::error::FRONTEND_ROLLBACK_FAILED — homepage HTTP $ROLLBACK_CODE after restore"
+            echo "::error::FRONTEND_ROLLBACK_FAILED — homepage HTTP $ROLLBACK_CODE"
             exit 1
           fi
 
@@ -386,14 +474,22 @@ jobs:
             exit 1
           fi
 
-          # Verify backup assets accessible
-          BACKUP_ASSETS=$(grep -oP '/assets/[a-zA-Z0-9_.-]+\.(js|css)' /tmp/rollback_page.html | sort -u | head -5)
-          for ASSET in $BACKUP_ASSETS; do
-            ACODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://kaviar.com.br${ASSET}" || echo "000")
-            if [ "$ACODE" != "200" ]; then
-              echo "::error::FRONTEND_ROLLBACK_FAILED — restored asset $ASSET returns HTTP $ACODE"
-              exit 1
-            fi
-          done
+          ROLLBACK_PAGE_SHA=$(sha256sum /tmp/rollback_page.html | cut -d' ' -f1)
+          if [ "$ROLLBACK_PAGE_SHA" != "$BACKUP_INDEX_SHA256" ]; then
+            echo "::error::FRONTEND_ROLLBACK_FAILED — served page SHA mismatch (expected=$BACKUP_INDEX_SHA256 got=$ROLLBACK_PAGE_SHA)"
+            exit 1
+          fi
 
-          echo "✓ FRONTEND_ROLLBACK_COMPLETED — index verified, homepage OK, assets accessible"
+          # Verify all backup assets accessible via CDN
+          if [ -f "$BACKUP_ASSET_MANIFEST" ]; then
+            while IFS= read -r ASSET; do
+              [ -z "$ASSET" ] && continue
+              ACODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://kaviar.com.br${ASSET}" || echo "000")
+              if [ "$ACODE" != "200" ]; then
+                echo "::error::FRONTEND_ROLLBACK_FAILED — restored asset $ASSET returns HTTP $ACODE"
+                exit 1
+              fi
+            done < "$BACKUP_ASSET_MANIFEST"
+          fi
+
+          echo "✓ FRONTEND_ROLLBACK_COMPLETED — index verified, homepage OK, all assets accessible"
