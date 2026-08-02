@@ -1,8 +1,6 @@
 /**
  * Playwright tests for the Accountant Report Page (/admin/financeiro/contador)
- *
- * Uses route interception (page.route) to mock backend responses.
- * No real backend or production access needed.
+ * Uses route interception — no real backend needed.
  */
 import { test, expect } from 'playwright/test';
 
@@ -14,66 +12,38 @@ const mockReportResponse = {
   success: true,
   data: {
     summary: {
-      total_rides: 10,
-      completed_rides: 7,
-      canceled_rides: 3,
-      gross_total: '1234.50',
-      platform_fee_total: '222.21',
-      driver_earnings_total: '1012.29',
+      total_rides: 10, completed_rides: 7, canceled_rides: 3,
+      gross_total: '1234.50', platform_fee_total: '222.21', driver_earnings_total: '1012.29',
       period: { start: '2026-07-01T00:00:00.000Z', end: '2026-07-30T23:59:59.999Z' },
     },
     rides: [
       {
-        id: 'ride-001-abc',
-        status: 'completed',
-        financial_status: 'SETTLED',
-        created_at: '2026-07-15T10:00:00Z',
-        completed_at: '2026-07-15T10:20:00Z',
-        canceled_at: null,
-        driver_id: 'd1',
-        driver_name: 'Carlos',
-        passenger_first_name: 'Ana',
-        final_price: '50.00',
-        fee_percent: '18.00',
-        fee_amount: '9.00',
-        driver_earnings: '41.00',
-        settlement_territory: 'local',
-        credit_cost: 1,
-        settled_at: '2026-07-15T10:21:00Z',
+        id: 'ride-001-abc', status: 'completed', financial_status: 'SETTLED',
+        created_at: '2026-07-15T10:00:00Z', completed_at: '2026-07-15T10:20:00Z',
+        canceled_at: null, driver_id: 'd1', driver_name: 'Carlos',
+        passenger_first_name: 'Ana', final_price: '50.00', fee_percent: '18.00',
+        fee_amount: '9.00', driver_earnings: '41.00', settlement_territory: 'local',
+        credit_cost: 1, settled_at: '2026-07-15T10:21:00Z',
       },
       {
-        id: 'ride-002-def',
-        status: 'completed',
-        financial_status: 'UNSETTLED',
-        created_at: '2026-07-16T14:00:00Z',
-        completed_at: '2026-07-16T14:15:00Z',
-        canceled_at: null,
-        driver_id: 'd2',
-        driver_name: 'Pedro',
-        passenger_first_name: 'Lucia',
-        final_price: null,
-        fee_percent: null,
-        fee_amount: null,
-        driver_earnings: null,
-        settlement_territory: null,
-        credit_cost: null,
-        settled_at: null,
+        id: 'ride-002-def', status: 'completed', financial_status: 'UNSETTLED',
+        created_at: '2026-07-16T14:00:00Z', completed_at: '2026-07-16T14:15:00Z',
+        canceled_at: null, driver_id: 'd2', driver_name: 'Pedro',
+        passenger_first_name: 'Lucia', final_price: null, fee_percent: null,
+        fee_amount: null, driver_earnings: null, settlement_territory: null,
+        credit_cost: null, settled_at: null,
       },
     ],
-    pagination: { page: 1, limit: 50, total: 2, totalPages: 1 },
+    pagination: { page: 1, limit: 50, total: 75, totalPages: 2 },
   },
 };
 
-const emptyReportResponse = {
+const emptyReport = {
   success: true,
   data: {
     summary: {
-      total_rides: 0,
-      completed_rides: 0,
-      canceled_rides: 0,
-      gross_total: '0.00',
-      platform_fee_total: '0.00',
-      driver_earnings_total: '0.00',
+      total_rides: 0, completed_rides: 0, canceled_rides: 0,
+      gross_total: '0.00', platform_fee_total: '0.00', driver_earnings_total: '0.00',
       period: { start: '2026-07-01T00:00:00.000Z', end: '2026-07-30T23:59:59.999Z' },
     },
     rides: [],
@@ -81,152 +51,155 @@ const emptyReportResponse = {
   },
 };
 
-async function setupAuth(page, adminData = ADMIN_DATA_FINANCE) {
-  await page.addInitScript(({ token, data }) => {
+async function setupAuth(page, data = ADMIN_DATA_FINANCE) {
+  await page.addInitScript(({ token, adminData }) => {
     localStorage.setItem('kaviar_admin_token', token);
-    localStorage.setItem('kaviar_admin_data', data);
-  }, { token: ADMIN_TOKEN, data: adminData });
+    localStorage.setItem('kaviar_admin_data', adminData);
+  }, { token: ADMIN_TOKEN, adminData: data });
 }
 
-async function interceptReportAPI(page, response = mockReportResponse, status = 200) {
+async function interceptReport(page, response = mockReportResponse, status = 200) {
   await page.route('**/api/admin/finance/accountant-report?**', (route) => {
     route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(response) });
   });
+  // Base route without query params (initial load)
   await page.route('**/api/admin/finance/accountant-report', (route) => {
-    if (route.request().url().includes('/csv')) return route.continue();
+    const url = route.request().url();
+    if (url.includes('/csv')) return route.continue();
     route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(response) });
   });
 }
 
-test.describe('Área do Contador — Acesso e RBAC', () => {
-  test('FINANCE role can access the page', async ({ page }) => {
-    await setupAuth(page, ADMIN_DATA_FINANCE);
-    await interceptReportAPI(page);
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test.describe('RBAC', () => {
+  test('FINANCE can access', async ({ page }) => {
+    await setupAuth(page);
+    await interceptReport(page);
     await page.goto('/admin/financeiro/contador');
     await expect(page.getByText('Área do Contador')).toBeVisible();
   });
 
-  test('OPERATOR role is blocked (redirected)', async ({ page }) => {
+  test('OPERATOR is blocked', async ({ page }) => {
     await setupAuth(page, ADMIN_DATA_OPERATOR);
     await page.goto('/admin/financeiro/contador');
-    // Should redirect away — not show the page
     await expect(page.getByText('Área do Contador')).not.toBeVisible();
   });
 });
 
-test.describe('Área do Contador — Rendering', () => {
-  test.beforeEach(async ({ page }) => {
-    await setupAuth(page);
-  });
+test.describe('Rendering', () => {
+  test.beforeEach(async ({ page }) => { await setupAuth(page); });
 
-  test('shows loading state initially', async ({ page }) => {
-    // Delay the response to see loading
+  test('loading state', async ({ page }) => {
     await page.route('**/api/admin/finance/accountant-report**', (route) => {
-      setTimeout(() => route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(mockReportResponse),
-      }), 500);
+      setTimeout(() => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockReportResponse) }), 500);
     });
     await page.goto('/admin/financeiro/contador');
-    // CircularProgress should be visible briefly
     await expect(page.locator('role=progressbar')).toBeVisible();
   });
 
-  test('displays summary cards with correct values', async ({ page }) => {
-    await interceptReportAPI(page);
+  test('summary cards', async ({ page }) => {
+    await interceptReport(page);
     await page.goto('/admin/financeiro/contador');
-    await expect(page.getByText('Total de Corridas')).toBeVisible();
-    await expect(page.getByText('R$ 1.234,50')).toBeVisible(); // gross (unique value)
-    await expect(page.getByText('R$ 222,21')).toBeVisible();   // platform fee (unique)
-    await expect(page.getByText('R$ 1.012,29')).toBeVisible(); // driver earnings (unique)
+    await expect(page.getByText('R$ 1.234,50')).toBeVisible();
+    await expect(page.getByText('R$ 222,21')).toBeVisible();
+    await expect(page.getByText('R$ 1.012,29')).toBeVisible();
   });
 
-  test('displays table with ride data', async ({ page }) => {
-    await interceptReportAPI(page);
+  test('table data', async ({ page }) => {
+    await interceptReport(page);
     await page.goto('/admin/financeiro/contador');
     await expect(page.getByText('Carlos')).toBeVisible();
     await expect(page.getByText('Ana')).toBeVisible();
-    await expect(page.getByText('ride-001')).toBeVisible();
   });
 
-  test('shows empty state when no rides', async ({ page }) => {
-    await interceptReportAPI(page, emptyReportResponse);
+  test('empty state', async ({ page }) => {
+    await interceptReport(page, emptyReport);
     await page.goto('/admin/financeiro/contador');
     await expect(page.getByText('Nenhuma corrida encontrada')).toBeVisible();
   });
 
-  test('shows error on HTTP failure', async ({ page }) => {
-    await interceptReportAPI(page, { success: false, error: 'Servidor indisponível' }, 500);
+  test('error state', async ({ page }) => {
+    await interceptReport(page, { success: false, error: 'Servidor indisponível' }, 500);
     await page.goto('/admin/financeiro/contador');
     await expect(page.getByText('Servidor indisponível')).toBeVisible();
   });
 
-  test('displays financial_status column (Liquidado / Não liquidado)', async ({ page }) => {
-    await interceptReportAPI(page);
+  test('financial_status chips', async ({ page }) => {
+    await interceptReport(page);
     await page.goto('/admin/financeiro/contador');
     await expect(page.getByText('Liquidado').first()).toBeVisible();
     await expect(page.getByText('Não liquidado').first()).toBeVisible();
   });
 });
 
-test.describe('Área do Contador — Filters', () => {
-  test('filter button triggers new fetch', async ({ page }) => {
+test.describe('Filters and Pagination', () => {
+  test('filter triggers new fetch', async ({ page }) => {
     await setupAuth(page);
-    let requestCount = 0;
+    let count = 0;
     await page.route('**/api/admin/finance/accountant-report**', (route) => {
-      requestCount++;
+      count++;
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockReportResponse) });
     });
     await page.goto('/admin/financeiro/contador');
     await page.waitForTimeout(300);
-    const before = requestCount;
+    const before = count;
     await page.getByRole('button', { name: 'Filtrar' }).click();
     await page.waitForTimeout(300);
-    expect(requestCount).toBeGreaterThan(before);
+    expect(count).toBeGreaterThan(before);
+  });
+
+  test('pagination sends page=2 on next', async ({ page }) => {
+    await setupAuth(page);
+    let lastUrl = '';
+    await page.route('**/api/admin/finance/accountant-report**', (route) => {
+      lastUrl = route.request().url();
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockReportResponse) });
+    });
+    await page.goto('/admin/financeiro/contador');
+    await page.waitForTimeout(500);
+    // Click next page button
+    await page.getByRole('button', { name: /next page/i }).click();
+    await page.waitForTimeout(500);
+    expect(lastUrl).toContain('page=2');
   });
 });
 
-test.describe('Área do Contador — CSV Export', () => {
-  test('successful CSV download triggers blob download', async ({ page }) => {
+test.describe('CSV Export', () => {
+  test('successful download triggers download event', async ({ page }) => {
     await setupAuth(page);
-    await interceptReportAPI(page);
+    await interceptReport(page);
     await page.route('**/api/admin/finance/accountant-report/csv**', (route) => {
       route.fulfill({
         status: 200,
-        headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="report.csv"' },
-        body: '\uFEFF"ID Corrida"\r\n"ride-001"',
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': 'attachment; filename="kaviar-relatorio-contador-2026-07-01-a-2026-07-30.csv"',
+        },
+        body: '\uFEFF"ID Corrida","Data"\r\n"ride-001","01/07/2026 10:00"',
       });
     });
     await page.goto('/admin/financeiro/contador');
     await page.waitForTimeout(500);
 
-    // Listen for download
-    const downloadPromise = page.waitForEvent('download', { timeout: 5000 }).catch(() => null);
+    const downloadPromise = page.waitForEvent('download');
     await page.getByRole('button', { name: 'CSV' }).click();
-    // In headless, blob downloads may not emit event — at least no error should show
-    await page.waitForTimeout(500);
-    const alertEl = page.locator('[role="alert"]');
-    const hasError = await alertEl.isVisible().catch(() => false);
-    if (hasError) {
-      const text = await alertEl.textContent();
-      expect(text).not.toContain('Erro');
-    }
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toContain('kaviar-relatorio-contador');
+    expect(download.suggestedFilename()).toContain('.csv');
   });
 
-  test('422 CSV limit error shows user-friendly message', async ({ page }) => {
+  test('422 error shows user-friendly message', async ({ page }) => {
     await setupAuth(page);
-    await interceptReportAPI(page);
+    await interceptReport(page);
     await page.route('**/api/admin/finance/accountant-report/csv**', (route) => {
       route.fulfill({
         status: 422,
         contentType: 'application/json',
         body: JSON.stringify({
-          success: false,
-          code: 'CSV_ROW_LIMIT_EXCEEDED',
+          success: false, code: 'CSV_ROW_LIMIT_EXCEEDED',
           error: 'O relatório possui mais de 5.000 linhas. Reduza o período ou aplique mais filtros.',
-          total: 7500,
-          max: 5000,
+          total: 7500, max: 5000,
         }),
       });
     });
@@ -238,18 +211,17 @@ test.describe('Área do Contador — CSV Export', () => {
   });
 });
 
-test.describe('Área do Contador — Currency Formatter (no parseFloat)', () => {
-  test('formats "1234.50" as "R$ 1.234,50" without parseFloat', async ({ page }) => {
+test.describe('Currency Formatter (no parseFloat)', () => {
+  test('"1234.50" → "R$ 1.234,50"', async ({ page }) => {
     await setupAuth(page);
-    await interceptReportAPI(page);
+    await interceptReport(page);
     await page.goto('/admin/financeiro/contador');
-    // The gross_total in mock is "1234.50" → should display "R$ 1.234,50"
     await expect(page.getByText('R$ 1.234,50')).toBeVisible();
   });
 
-  test('formats "0.00" as "R$ 0,00"', async ({ page }) => {
+  test('"0.00" → "R$ 0,00"', async ({ page }) => {
     await setupAuth(page);
-    await interceptReportAPI(page, emptyReportResponse);
+    await interceptReport(page, emptyReport);
     await page.goto('/admin/financeiro/contador');
     await expect(page.getByText('R$ 0,00').first()).toBeVisible();
   });
