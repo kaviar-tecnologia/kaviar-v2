@@ -1,7 +1,7 @@
 import { Routes, Route, Link, Navigate } from "react-router-dom";
 import { API_BASE_URL } from '../../config/api';
 import { Container, Typography, Box, Card, CardContent, Button, Grid, Chip, Alert, CircularProgress, ToggleButton, ToggleButtonGroup, Table, TableBody, TableCell, TableHead, TableRow, Tabs, Tab, TextField } from "@mui/material";
-import { AdminPanelSettings, Dashboard, Group, Analytics, DirectionsCar, Security, PersonAdd, Tour, People, LocationCity, Elderly, PendingActions, CheckCircle, Map, Shield, CreditCard, ChatBubble, Apartment, GridOn, DriveEta, Person, Explore, Lock, Flight, Star, Storefront, BarChart, Handshake, CardGiftcard, Paid, SupportAgent, Public, Pets, Science, Description, MarkEmailRead } from "@mui/icons-material";
+import { AdminPanelSettings, Dashboard, Group, Analytics, DirectionsCar, Security, PersonAdd, Tour, People, LocationCity, Elderly, PendingActions, CheckCircle, Map, Shield, CreditCard, ChatBubble, Apartment, GridOn, DriveEta, Person, Explore, Lock, Flight, Star, Storefront, BarChart, Handshake, CardGiftcard, Paid, SupportAgent, Public, Pets, Science, Description, MarkEmailRead, Assessment } from "@mui/icons-material";
 import { ProtectedAdminRoute } from "./ProtectedAdminRoute";
 import AdminLogin from "./AdminLogin";
 import AdminErrorBoundary from "./AdminErrorBoundary";
@@ -61,6 +61,7 @@ import ReferralManagement from "../../pages/admin/ReferralManagement";
 import FinancePayments from "../../pages/admin/FinancePayments";
 import FinanceiroPage from "../../pages/admin/FinanceiroPage";
 import FinanceRecognitionPoliciesPage from "../../pages/admin/FinanceRecognitionPoliciesPage";
+import AccountantReportPage from "../../pages/admin/AccountantReportPage";
 import TerritoriesPage from "../../pages/admin/TerritoriesPage";
 import TerritoryDetailPage from "../../pages/admin/TerritoryDetailPage";
 import RegionalAdminsPage from "../../pages/admin/RegionalAdminsPage";
@@ -490,6 +491,7 @@ function AdminHome() {
               ...(canAccessFinance ? [
                 { Icon: Paid, title: 'Painel Financeiro Administrativo', desc: 'Contas, categorias e centros de custo em leitura', to: '/admin/financeiro' },
                 { Icon: Description, title: 'Políticas financeiras', desc: 'Classificação, escopo, vigência e estado das regras de reconhecimento.', to: '/admin/financeiro/politicas' },
+                { Icon: Assessment, title: 'Área do Contador', desc: 'Relatório de corridas, receita e exportação CSV — somente leitura.', to: '/admin/financeiro/contador' },
               ] : []),
               ...(isSuperAdmin ? [
                 { Icon: Paid, title: 'Preços e Taxas', desc: 'Ajuste preços, taxas e adicionais', to: '/admin/pricing' },
@@ -733,6 +735,11 @@ export default function AdminApp() {
           <Route path="/financeiro/politicas" element={
             <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
               <FinanceRecognitionPoliciesPage />
+            </ProtectedAdminRoute>
+          } />
+          <Route path="/financeiro/contador" element={
+            <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
+              <AccountantReportPage />
             </ProtectedAdminRoute>
           } />
           <Route path="/credit-purchases" element={
