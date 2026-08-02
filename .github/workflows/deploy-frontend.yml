@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ── Validate inputs before any AWS interaction ──────────────────────────
+      # ── 1. Validate confirmation ───────────────────────────────────────────
       - name: Validate confirmation
         env:
           DEPLOY_CONFIRMATION: ${{ inputs.confirmation }}
@@ -31,30 +31,40 @@ jobs:
             exit 1
           fi
 
+      # ── 2. Validate commit SHA format (no echo/grep, raw variable) ─────────
       - name: Validate commit SHA format
         env:
           DEPLOY_SHA: ${{ inputs.commit_sha }}
         run: |
-          if ! echo "$DEPLOY_SHA" | grep -qxE '[0-9a-f]{40}'; then
+          if [ "${#DEPLOY_SHA}" -ne 40 ] ||
+             [[ ! "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::INVALID_TARGET_COMMIT_SHA"
             exit 1
           fi
 
+      # ── 3. Checkout exact SHA ──────────────────────────────────────────────
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+
+      # ── 4. Validate commit is current main HEAD (after checkout) ───────────
       - name: Validate commit is current main HEAD
         env:
           DEPLOY_SHA: ${{ inputs.commit_sha }}
         run: |
-          MAIN_HEAD=$(git ls-remote origin refs/heads/main | cut -f1)
+          MAIN_HEAD=$(git ls-remote --exit-code origin refs/heads/main | cut -f1)
+          # Validate remote result
+          if [ "${#MAIN_HEAD}" -ne 40 ] ||
+             [[ ! "$MAIN_HEAD" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::CURRENT_MAIN_HEAD_INVALID"
+            exit 1
+          fi
           if [ "$DEPLOY_SHA" != "$MAIN_HEAD" ]; then
             echo "::error::TARGET_COMMIT_IS_NOT_CURRENT_MAIN (expected=$MAIN_HEAD, got=$DEPLOY_SHA)"
             exit 1
           fi
 
-      # ── Checkout exact SHA ──────────────────────────────────────────────────
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.commit_sha }}
-
+      # ── 5. Setup Node ──────────────────────────────────────────────────────
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -62,6 +72,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend-app/package-lock.json
 
+      # ── 6. Build ───────────────────────────────────────────────────────────
       - name: Build
         run: |
           cd frontend-app
@@ -71,6 +82,7 @@ jobs:
           VITE_API_BASE_URL: https://api.kaviar.com.br
           VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
 
+      # ── 7. Configure AWS ───────────────────────────────────────────────────
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -78,17 +90,24 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-2
 
-      # ── Revalidate main HEAD before writing to production ───────────────────
+      # ── 8. Revalidate main HEAD before deploy ──────────────────────────────
       - name: Revalidate main HEAD before deploy
         env:
           DEPLOY_SHA: ${{ inputs.commit_sha }}
         run: |
-          MAIN_HEAD=$(git ls-remote origin refs/heads/main | cut -f1)
+          MAIN_HEAD=$(git ls-remote --exit-code origin refs/heads/main | cut -f1)
+          # Validate remote result
+          if [ "${#MAIN_HEAD}" -ne 40 ] ||
+             [[ ! "$MAIN_HEAD" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::CURRENT_MAIN_HEAD_INVALID"
+            exit 1
+          fi
           if [ "$DEPLOY_SHA" != "$MAIN_HEAD" ]; then
             echo "::error::TARGET_COMMIT_CHANGED_BEFORE_DEPLOY (expected=$DEPLOY_SHA, current_main=$MAIN_HEAD)"
             exit 1
           fi
 
+      # ── 9. Deploy to S3 (assets first, index last) ─────────────────────────
       - name: Deploy to S3 (assets first, index last)
         run: |
           aws s3 sync frontend-app/dist/ s3://kaviar-frontend-847895361928/ \
@@ -99,6 +118,7 @@ jobs:
           aws s3 cp frontend-app/dist/index.html s3://kaviar-frontend-847895361928/index.html \
             --cache-control "no-cache"
 
+      # ── 10. Invalidate CloudFront ──────────────────────────────────────────
       - name: Invalidate CloudFront
         run: |
           aws cloudfront create-invalidation \
