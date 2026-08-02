@@ -93,7 +93,57 @@ jobs:
     outputs:
       production_sha: ${{ steps.resolve.outputs.production_sha }}
       production_task_definition: ${{ steps.resolve.outputs.production_task_definition }}
+      previous_image: ${{ steps.resolve.outputs.previous_image }}
+      previous_desired_count: ${{ steps.preflight.outputs.desired_count }}
+      previous_minimum_healthy_percent: ${{ steps.preflight.outputs.min_healthy }}
+      previous_maximum_percent: ${{ steps.preflight.outputs.max_percent }}
     steps:
+      - name: ECS preflight safety check
+        id: preflight
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-2
+        run: |
+          set -euo pipefail
+
+          SERVICE_JSON=$(aws ecs describe-services \
+            --cluster kaviar-cluster \
+            --services kaviar-backend-service \
+            --region us-east-2)
+
+          DESIRED=$(echo "$SERVICE_JSON" | jq -r '.services[0].desiredCount')
+          RUNNING=$(echo "$SERVICE_JSON" | jq -r '.services[0].runningCount')
+          PENDING=$(echo "$SERVICE_JSON" | jq -r '.services[0].pendingCount')
+          DEPLOYS=$(echo "$SERVICE_JSON" | jq '.services[0].deployments | length')
+          MIN_HEALTHY=$(echo "$SERVICE_JSON" | jq -r '.services[0].deploymentConfiguration.minimumHealthyPercent')
+          MAX_PCT=$(echo "$SERVICE_JSON" | jq -r '.services[0].deploymentConfiguration.maximumPercent')
+          CB_ENABLE=$(echo "$SERVICE_JSON" | jq -r '.services[0].deploymentConfiguration.deploymentCircuitBreaker.enable')
+          CB_ROLLBACK=$(echo "$SERVICE_JSON" | jq -r '.services[0].deploymentConfiguration.deploymentCircuitBreaker.rollback')
+
+          echo "ECS Preflight: desired=$DESIRED running=$RUNNING pending=$PENDING deployments=$DEPLOYS"
+          echo "  minHealthy=$MIN_HEALTHY maxPercent=$MAX_PCT circuitBreaker.enable=$CB_ENABLE circuitBreaker.rollback=$CB_ROLLBACK"
+
+          SAFE=true
+          if [ "$DESIRED" -lt 1 ]; then echo "❌ desiredCount < 1"; SAFE=false; fi
+          if [ "$RUNNING" != "$DESIRED" ]; then echo "❌ runningCount != desiredCount"; SAFE=false; fi
+          if [ "$PENDING" != "0" ]; then echo "❌ pendingCount != 0"; SAFE=false; fi
+          if [ "$DEPLOYS" != "1" ]; then echo "❌ deployments != 1"; SAFE=false; fi
+          if [ "$MIN_HEALTHY" -lt 100 ]; then echo "❌ minimumHealthyPercent < 100"; SAFE=false; fi
+          if [ "$MAX_PCT" -lt 200 ]; then echo "❌ maximumPercent < 200"; SAFE=false; fi
+          if [ "$CB_ENABLE" != "true" ]; then echo "❌ circuitBreaker.enable != true"; SAFE=false; fi
+          if [ "$CB_ROLLBACK" != "true" ]; then echo "❌ circuitBreaker.rollback != true"; SAFE=false; fi
+
+          if [ "$SAFE" = "false" ]; then
+            echo "❌ PRODUCTION_SERVICE_NOT_SAFE_FOR_ROLLING_DEPLOY"
+            exit 1
+          fi
+
+          echo "✓ ECS preflight passed — safe for rolling deploy"
+          echo "desired_count=$DESIRED" >> "$GITHUB_OUTPUT"
+          echo "min_healthy=$MIN_HEALTHY" >> "$GITHUB_OUTPUT"
+          echo "max_percent=$MAX_PCT" >> "$GITHUB_OUTPUT"
+
       - name: Resolve production SHA from two sources
         id: resolve
         env:
@@ -216,6 +266,7 @@ jobs:
           echo "✓ Production SHA verified from two sources: ${IMAGE_SHA}"
           echo "production_sha=${IMAGE_SHA}" >> "$GITHUB_OUTPUT"
           echo "production_task_definition=${TASK_DEF_ARN}" >> "$GITHUB_OUTPUT"
+          echo "previous_image=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
 
   resolve-deploy-state:
     needs:
@@ -651,6 +702,7 @@ jobs:
           echo "task_revision=${NEW_REV}" >> "$GITHUB_OUTPUT"
 
       - name: Deploy to ECS
+        id: ecs_deploy
         env:
           TARGET_SHA: ${{ needs.validate-target-commit.outputs.target_sha }}
           NEW_TASK_REVISION: ${{ steps.register_task.outputs.task_revision }}
@@ -700,6 +752,9 @@ jobs:
             exit 1
           fi
           echo "✓ Service still using expected task definition"
+
+          echo "update_attempted=true" >> "$GITHUB_OUTPUT"
+          echo "deploy_started_at_ms=$(date +%s000)" >> "$GITHUB_OUTPUT"
 
           aws ecs update-service \
             --cluster kaviar-cluster \
@@ -792,11 +847,15 @@ jobs:
           fi
 
           REPORTED_VERSION=$(jq -r '.version // .gitCommit // .git_commit // empty' /tmp/health_response.json)
-          if [ -n "$REPORTED_VERSION" ] && [ "$REPORTED_VERSION" != "$TARGET_SHA" ]; then
+          if [ -z "$REPORTED_VERSION" ]; then
+            echo "❌ BACKEND_VERSION_MISSING (no version/gitCommit/git_commit in health response)"
+            exit 1
+          fi
+          if [ "$REPORTED_VERSION" != "$TARGET_SHA" ]; then
             echo "❌ BACKEND_VERSION_MISMATCH (reported=$REPORTED_VERSION expected=$TARGET_SHA)"
             exit 1
           fi
-          echo "✓ Health check passed (HTTP 200, valid JSON)"
+          echo "✓ Health check passed (HTTP 200, version=$TARGET_SHA)"
 
           # 4. Accountant endpoint reachable (expect 401 without token)
           ACC_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -813,28 +872,19 @@ jobs:
           echo "deploy_verified=true" >> "$GITHUB_OUTPUT"
 
       - name: Rollback backend on failure
-        if: failure() && steps.register_task.outputs.task_revision != ''
+        if: failure() && steps.ecs_deploy.outputs.update_attempted == 'true'
         env:
           PRODUCTION_TASK_DEF_ARN: ${{ needs.resolve-production-state.outputs.production_task_definition }}
           PRODUCTION_SHA: ${{ needs.resolve-production-state.outputs.production_sha }}
+          NEW_TASK_REVISION: ${{ steps.register_task.outputs.task_revision }}
         run: |
           set -euo pipefail
           echo "❗ BACKEND_ROLLBACK_STARTED"
-          echo "   Rolling back to: $PRODUCTION_TASK_DEF_ARN"
+          echo "   Target previous ARN: $PRODUCTION_TASK_DEF_ARN"
 
-          aws ecs update-service \
-            --cluster kaviar-cluster \
-            --service kaviar-backend-service \
-            --task-definition "$PRODUCTION_TASK_DEF_ARN" \
-            --region us-east-2
+          NEW_TD_ARN="arn:aws:ecs:us-east-2:847895361928:task-definition/kaviar-backend:${NEW_TASK_REVISION}"
 
-          echo "Waiting for rollback to stabilize..."
-          aws ecs wait services-stable \
-            --cluster kaviar-cluster \
-            --services kaviar-backend-service \
-            --region us-east-2
-
-          # Verify rollback
+          # Check current service state before acting
           CURRENT_TD=$(aws ecs describe-services \
             --cluster kaviar-cluster \
             --services kaviar-backend-service \
@@ -842,24 +892,67 @@ jobs:
             --query 'services[0].taskDefinition' --output text)
 
           if [ "$CURRENT_TD" = "$PRODUCTION_TASK_DEF_ARN" ]; then
-            echo "✓ BACKEND_ROLLBACK_COMPLETED — service restored to $PRODUCTION_TASK_DEF_ARN"
+            echo "✓ BACKEND_ROLLBACK_NOT_REQUIRED — service already on previous task definition"
+          elif [ "$CURRENT_TD" = "$NEW_TD_ARN" ]; then
+            echo "Service on new TD, rolling back..."
+            aws ecs update-service \
+              --cluster kaviar-cluster \
+              --service kaviar-backend-service \
+              --task-definition "$PRODUCTION_TASK_DEF_ARN" \
+              --region us-east-2
+            echo "Waiting for rollback to stabilize..."
+            aws ecs wait services-stable \
+              --cluster kaviar-cluster \
+              --services kaviar-backend-service \
+              --region us-east-2
           else
-            echo "❌ BACKEND_ROLLBACK_FAILED — current=$CURRENT_TD expected=$PRODUCTION_TASK_DEF_ARN"
+            echo "❌ BACKEND_ROLLBACK_STATE_CONFLICT"
+            echo "   Expected previous=$PRODUCTION_TASK_DEF_ARN or new=$NEW_TD_ARN"
+            echo "   Found: $CURRENT_TD"
+            echo "   MANUAL INTERVENTION REQUIRED"
+            exit 1
+          fi
+
+          # Validate after rollback/no-op
+          FINAL_TD=$(aws ecs describe-services \
+            --cluster kaviar-cluster \
+            --services kaviar-backend-service \
+            --region us-east-2 \
+            --query 'services[0].taskDefinition' --output text)
+
+          if [ "$FINAL_TD" != "$PRODUCTION_TASK_DEF_ARN" ]; then
+            echo "❌ BACKEND_ROLLBACK_FAILED — current=$FINAL_TD expected=$PRODUCTION_TASK_DEF_ARN"
             echo "   MANUAL INTERVENTION REQUIRED: run 'aws ecs update-service --cluster kaviar-cluster --service kaviar-backend-service --task-definition $PRODUCTION_TASK_DEF_ARN --region us-east-2'"
             exit 1
           fi
 
-          # Verify health after rollback
+          # Verify health and version after rollback
           sleep 10
-          HEALTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            --max-time 15 --retry 2 --retry-delay 5 \
+          HEALTH_CODE=$(curl -s -o /tmp/rollback_health.json -w "%{http_code}" \
+            --max-time 15 --retry 3 --retry-delay 5 \
             "https://api.kaviar.com.br/api/health" || echo "000")
 
-          if [ "$HEALTH_CODE" = "200" ]; then
-            echo "✓ Health check passed after rollback"
-          else
-            echo "⚠️  Health check returned $HEALTH_CODE after rollback — manual verification needed"
+          if [ "$HEALTH_CODE" != "200" ]; then
+            echo "❌ BACKEND_ROLLBACK_FAILED — health returned HTTP $HEALTH_CODE"
+            exit 1
           fi
+
+          if ! jq -e . /tmp/rollback_health.json > /dev/null 2>&1; then
+            echo "❌ BACKEND_ROLLBACK_FAILED — health response is not valid JSON"
+            exit 1
+          fi
+
+          ROLLBACK_VERSION=$(jq -r '.version // .gitCommit // .git_commit // empty' /tmp/rollback_health.json)
+          if [ -z "$ROLLBACK_VERSION" ]; then
+            echo "❌ BACKEND_ROLLBACK_FAILED — version not found in health response after rollback"
+            exit 1
+          fi
+          if [ "$ROLLBACK_VERSION" != "$PRODUCTION_SHA" ]; then
+            echo "❌ BACKEND_ROLLBACK_FAILED — version=$ROLLBACK_VERSION expected=$PRODUCTION_SHA"
+            exit 1
+          fi
+
+          echo "✓ BACKEND_ROLLBACK_COMPLETED — service restored, health OK, version=$PRODUCTION_SHA"
 
       - name: Publish deploy summary
         if: always()

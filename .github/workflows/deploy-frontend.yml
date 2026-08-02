@@ -86,13 +86,19 @@ jobs:
         run: |
           set -euo pipefail
           if [ ! -f frontend-app/dist/index.html ]; then
-            echo "::error::FRONTEND_BUILD_INVALID — index.html missing"
+            echo "::error::ACCOUNTANT_FRONTEND_BUNDLE_NOT_FOUND — index.html missing"
             exit 1
           fi
-          if ! grep -q "financeiro/contador" frontend-app/dist/index.html frontend-app/dist/assets/*.js 2>/dev/null; then
-            echo "⚠️  Accountant route not found in bundle (may be code-split)"
+          JS_COUNT=$(find frontend-app/dist/assets -name "*.js" 2>/dev/null | wc -l)
+          if [ "$JS_COUNT" -eq 0 ]; then
+            echo "::error::ACCOUNTANT_FRONTEND_BUNDLE_NOT_FOUND — no JS assets in dist"
+            exit 1
           fi
-          echo "✓ Build output validated"
+          if ! grep -rq "financeiro/contador" frontend-app/dist/; then
+            echo "::error::ACCOUNTANT_FRONTEND_BUNDLE_NOT_FOUND — route not found in bundle"
+            exit 1
+          fi
+          echo "✓ Build output validated (index.html + $JS_COUNT JS assets + accountant route)"
 
       # ── 8. Configure AWS ───────────────────────────────────────────────────
       - name: Configure AWS
@@ -137,6 +143,7 @@ jobs:
           echo "✓ FRONTEND_BACKUP_READY ($FILE_COUNT files)"
           echo "backup_dir=$BACKUP_DIR" >> "$GITHUB_OUTPUT"
           echo "backup_file_count=$FILE_COUNT" >> "$GITHUB_OUTPUT"
+          echo "backup_valid=true" >> "$GITHUB_OUTPUT"
 
       # ── 10. Revalidate main HEAD before deploy ─────────────────────────────
       - name: Revalidate main HEAD before deploy
@@ -158,6 +165,8 @@ jobs:
       - name: Deploy to S3 (assets first, index last)
         id: s3_deploy
         run: |
+          echo "write_attempted=true" >> "$GITHUB_OUTPUT"
+
           aws s3 sync frontend-app/dist/ s3://kaviar-frontend-847895361928/ \
             --cache-control "public, max-age=31536000" \
             --exclude "index.html" \
@@ -166,14 +175,26 @@ jobs:
           aws s3 cp frontend-app/dist/index.html s3://kaviar-frontend-847895361928/index.html \
             --cache-control "no-cache"
 
-          echo "deployed=true" >> "$GITHUB_OUTPUT"
-
       # ── 12. Invalidate CloudFront ──────────────────────────────────────────
       - name: Invalidate CloudFront
+        id: invalidate
         run: |
-          aws cloudfront create-invalidation \
+          RESULT=$(aws cloudfront create-invalidation \
             --distribution-id E30XJMSBHGZAGN \
-            --paths "/*"
+            --paths "/*" --output json)
+
+          INVALIDATION_ID=$(echo "$RESULT" | jq -r '.Invalidation.Id')
+          if [ -z "$INVALIDATION_ID" ] || [ "$INVALIDATION_ID" = "null" ]; then
+            echo "::error::CLOUDFRONT_INVALIDATION_FAILED — no ID returned"
+            exit 1
+          fi
+          echo "Invalidation ID: $INVALIDATION_ID"
+          echo "invalidation_id=$INVALIDATION_ID" >> "$GITHUB_OUTPUT"
+
+          aws cloudfront wait invalidation-completed \
+            --distribution-id E30XJMSBHGZAGN \
+            --id "$INVALIDATION_ID"
+          echo "✓ CloudFront invalidation completed"
 
       # ── 13. Verify frontend post-deploy ────────────────────────────────────
       - name: Verify frontend post-deploy
@@ -229,7 +250,7 @@ jobs:
 
       # ── 14. Rollback frontend on failure ───────────────────────────────────
       - name: Rollback frontend on failure
-        if: failure() && steps.s3_deploy.outputs.deployed == 'true' && steps.backup.outputs.backup_dir != ''
+        if: failure() && steps.s3_deploy.outputs.write_attempted == 'true' && steps.backup.outputs.backup_valid == 'true'
         env:
           BACKUP_DIR: ${{ steps.backup.outputs.backup_dir }}
         run: |

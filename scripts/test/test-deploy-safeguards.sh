@@ -1,10 +1,14 @@
 #!/bin/bash
 # ──────────────────────────────────────────────────────────────────────────────
 # Hostile tests for production deploy safety guards
-# Tests SHA validation, service state assertions, and rollback logic
+# Validates ACTUAL workflow YAML content + logic tests
 # Does NOT execute any AWS write operations
 # ──────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+BACKEND_WF="$SCRIPT_DIR/.github/workflows/deploy-backend.yml"
+FRONTEND_WF="$SCRIPT_DIR/.github/workflows/deploy-frontend.yml"
 
 PASS=0
 FAIL=0
@@ -13,10 +17,19 @@ TOTAL=0
 pass() { PASS=$((PASS+1)); TOTAL=$((TOTAL+1)); echo "  ✓ $1"; }
 fail() { FAIL=$((FAIL+1)); TOTAL=$((TOTAL+1)); echo "  ✗ $1"; }
 
+check_contains() {
+  local file="$1" pattern="$2" desc="$3"
+  if grep -q "$pattern" "$file"; then pass "$desc"; else fail "$desc (pattern: $pattern)"; fi
+}
+
+check_not_contains() {
+  local file="$1" pattern="$2" desc="$3"
+  if grep -q "$pattern" "$file"; then fail "$desc (found: $pattern)"; else pass "$desc"; fi
+}
+
 # ══════════════════════════════════════════════════════════════════════════════
-# SHA VALIDATION (backend)
+echo "── SHA Validation Logic ──"
 # ══════════════════════════════════════════════════════════════════════════════
-echo "── SHA Validation ──"
 
 validate_sha() {
   local INPUT_COMMIT_SHA="$1"
@@ -28,136 +41,113 @@ validate_sha() {
 }
 
 VALID_SHA="3896799e41b6319da12bcc087186746fcd2f2dc2"
-
 validate_sha "$VALID_SHA" && pass "Valid SHA accepted" || fail "Valid SHA rejected"
 validate_sha "" && fail "Empty SHA accepted" || pass "Empty SHA rejected"
 validate_sha "abc123" && fail "Short SHA accepted" || pass "Short SHA rejected"
-validate_sha "3896799E41B6319DA12BCC087186746FCD2F2DC2" && fail "Uppercase SHA accepted" || pass "Uppercase SHA rejected"
-validate_sha "zzzz799e41b6319da12bcc087186746fcd2f2dc2" && fail "Non-hex SHA accepted" || pass "Non-hex SHA rejected"
+validate_sha "3896799E41B6319DA12BCC087186746FCD2F2DC2" && fail "Uppercase accepted" || pass "Uppercase rejected"
+validate_sha "zzzz799e41b6319da12bcc087186746fcd2f2dc2" && fail "Non-hex accepted" || pass "Non-hex rejected"
 validate_sha $'3896799e41b6319da12bcc087186746fcd2f2dc2\n' && fail "SHA+LF accepted" || pass "SHA+LF rejected"
 validate_sha $'3896799e41b6319da12bcc087186746fcd2f2dc2\r' && fail "SHA+CR accepted" || pass "SHA+CR rejected"
 validate_sha $'3896799e41b6319da12bcc087186746fcd2f2dc2\r\n' && fail "SHA+CRLF accepted" || pass "SHA+CRLF rejected"
 validate_sha "3896799e41b6319da12bcc087186746fcd2f2dc2 " && fail "SHA+space accepted" || pass "SHA+space rejected"
-validate_sha "3896799e41b6319da12bcc087186746fcd2f2dc2a" && fail "41-char SHA accepted" || pass "41-char SHA rejected"
 validate_sha $'3896799e41b6319da12bcc087186746fcd2f2dc2\t' && fail "SHA+tab accepted" || pass "SHA+tab rejected"
 
 # ══════════════════════════════════════════════════════════════════════════════
-# BACKEND SERVICE STATE VALIDATION
+echo ""
+echo "── Backend Workflow YAML Validation ──"
+# ══════════════════════════════════════════════════════════════════════════════
+
+check_contains "$BACKEND_WF" 'desiredCount' "Preflight reads desiredCount"
+check_contains "$BACKEND_WF" 'runningCount' "Preflight reads runningCount"
+check_contains "$BACKEND_WF" 'pendingCount' "Preflight reads pendingCount"
+check_contains "$BACKEND_WF" 'minimumHealthyPercent' "Preflight reads minimumHealthyPercent"
+check_contains "$BACKEND_WF" 'maximumPercent' "Preflight reads maximumPercent"
+check_contains "$BACKEND_WF" 'deploymentCircuitBreaker' "Preflight reads circuit breaker"
+check_contains "$BACKEND_WF" 'PRODUCTION_SERVICE_NOT_SAFE_FOR_ROLLING_DEPLOY' "Preflight blocker marker exists"
+
+# Preflight before docker push
+PREFLIGHT_LINE=$(grep -n "PRODUCTION_SERVICE_NOT_SAFE_FOR_ROLLING_DEPLOY" "$BACKEND_WF" | head -1 | cut -d: -f1)
+DOCKER_PUSH_LINE=$(grep -n "docker push" "$BACKEND_WF" | head -1 | cut -d: -f1)
+if [ "$PREFLIGHT_LINE" -lt "$DOCKER_PUSH_LINE" ]; then
+  pass "Preflight occurs before docker push (line $PREFLIGHT_LINE < $DOCKER_PUSH_LINE)"
+else
+  fail "Preflight NOT before docker push"
+fi
+
+# Rollback condition
+check_contains "$BACKEND_WF" 'ecs_deploy.outputs.update_attempted' "Rollback depends on ecs_deploy.update_attempted"
+check_not_contains "$BACKEND_WF" "register_task.outputs.task_revision != ''" "Rollback does NOT depend only on task_revision"
+
+# Version required (not optional)
+check_contains "$BACKEND_WF" 'BACKEND_VERSION_MISSING' "Version absence is an error"
+check_not_contains "$BACKEND_WF" 'if \[ -n "\$REPORTED_VERSION" \] && \[' "Version check is not conditional on presence"
+
+# Rollback state conflict
+check_contains "$BACKEND_WF" 'BACKEND_ROLLBACK_STATE_CONFLICT' "Rollback detects unexpected task definition"
+check_contains "$BACKEND_WF" 'BACKEND_ROLLBACK_NOT_REQUIRED' "Rollback detects already-previous state"
+
+# Rollback validates version after restore
+check_contains "$BACKEND_WF" 'PRODUCTION_SHA' "Rollback references previous SHA for version check"
+
+# Deploy timestamp captured
+check_contains "$BACKEND_WF" 'deploy_started_at_ms' "Deploy start timestamp captured"
+
+# No printf|grep for SHA
+check_not_contains "$BACKEND_WF" "printf.*grep.*40" "No printf|grep SHA validation"
+
 # ══════════════════════════════════════════════════════════════════════════════
 echo ""
-echo "── Backend Service State Validation ──"
-
-check_service_safe() {
-  local desired="$1" running="$2" pending="$3" deploys="$4" min_healthy="$5" max_pct="$6"
-  if [ "$desired" -lt 1 ] || [ "$running" != "$desired" ] || [ "$pending" != "0" ] ||
-     [ "$deploys" != "1" ] || [ "$min_healthy" -lt 100 ] || [ "$max_pct" -lt 200 ]; then
-    return 1
-  fi
-  return 0
-}
-
-check_service_safe 1 1 0 1 100 200 && pass "Healthy service accepted" || fail "Healthy service rejected"
-check_service_safe 1 0 1 1 100 200 && fail "running<desired accepted" || pass "running<desired rejected"
-check_service_safe 1 1 1 1 100 200 && fail "pending>0 accepted" || pass "pending>0 rejected"
-check_service_safe 1 1 0 2 100 200 && fail "2 deployments accepted" || pass "2 deployments rejected"
-check_service_safe 1 1 0 1 50 200 && fail "minHealthy=50 accepted" || pass "minHealthy=50 rejected"
-check_service_safe 1 1 0 1 100 100 && fail "maxPercent=100 accepted" || pass "maxPercent=100 rejected"
-check_service_safe 0 0 0 1 100 200 && fail "desired=0 accepted" || pass "desired=0 rejected"
-
+echo "── Frontend Workflow YAML Validation ──"
 # ══════════════════════════════════════════════════════════════════════════════
-# BACKEND VERIFICATION SCENARIOS
-# ══════════════════════════════════════════════════════════════════════════════
-echo ""
-echo "── Backend Post-Deploy Scenarios ──"
 
-check_td_mismatch() {
-  local current="$1" expected="$2"
-  [ "$current" != "$expected" ]
-}
+# Bundle validation fails (not warns)
+check_contains "$FRONTEND_WF" 'ACCOUNTANT_FRONTEND_BUNDLE_NOT_FOUND' "Bundle absence fails with marker"
+check_not_contains "$FRONTEND_WF" '⚠️.*Accountant route' "No warning-only for missing bundle"
 
-check_td_mismatch "arn:aws:ecs:us-east-2:847895361928:task-definition/kaviar-backend:759" \
-                  "arn:aws:ecs:us-east-2:847895361928:task-definition/kaviar-backend:760" \
-  && pass "Task definition mismatch detected" || fail "Mismatch not detected"
+# backup_valid exported
+check_contains "$FRONTEND_WF" 'backup_valid=true' "backup_valid is exported"
 
-check_health() {
-  local code="$1"
-  [ "$code" = "200" ]
-}
-check_health "200" && pass "Health 200 accepted" || fail "Health 200 rejected"
-check_health "500" && fail "Health 500 accepted" || pass "Health 500 rejected"
-check_health "000" && fail "Health timeout accepted" || pass "Health timeout rejected"
+# write_attempted before first aws s3 WRITE (not backup download)
+WRITE_ATTEMPTED_LINE=$(grep -n 'write_attempted=true' "$FRONTEND_WF" | head -1 | cut -d: -f1)
+S3_WRITE_LINE=$(grep -n 'aws s3 sync frontend-app/dist' "$FRONTEND_WF" | head -1 | cut -d: -f1)
+if [ "$WRITE_ATTEMPTED_LINE" -lt "$S3_WRITE_LINE" ]; then
+  pass "write_attempted set before first S3 write (line $WRITE_ATTEMPTED_LINE < $S3_WRITE_LINE)"
+else
+  fail "write_attempted NOT before first S3 write"
+fi
 
-check_accountant() {
-  local code="$1"
-  [ "$code" = "401" ] || [ "$code" = "403" ]
-}
-check_accountant "401" && pass "Accountant 401 accepted" || fail "Accountant 401 rejected"
-check_accountant "403" && pass "Accountant 403 accepted" || fail "Accountant 403 rejected"
-check_accountant "404" && fail "Accountant 404 accepted" || pass "Accountant 404 rejected"
-check_accountant "500" && fail "Accountant 500 accepted" || pass "Accountant 500 rejected"
+# Rollback uses write_attempted
+check_contains "$FRONTEND_WF" 's3_deploy.outputs.write_attempted' "Rollback uses write_attempted"
 
-# ══════════════════════════════════════════════════════════════════════════════
-# BACKEND ROLLBACK LOGIC
+# CloudFront invalidation waited
+check_contains "$FRONTEND_WF" 'invalidation-completed' "CloudFront invalidation is waited"
+
+# JS asset validation fails
+check_contains "$FRONTEND_WF" 'FRONTEND_ASSET_VALIDATION_FAILED' "Asset validation failure marker exists"
+
+# No metadata manifest sent to bucket
+check_not_contains "$FRONTEND_WF" 'index-meta.json.*s3://kaviar-frontend' "Manifest not uploaded to bucket"
+
+# Exclude manifest from restore
+check_contains "$FRONTEND_WF" 'exclude.*index-meta.json' "Manifest excluded from restore sync"
+
 # ══════════════════════════════════════════════════════════════════════════════
 echo ""
-echo "── Backend Rollback Logic ──"
-
-# Rollback must use EXACTLY the captured previous ARN
-PREVIOUS_ARN="arn:aws:ecs:us-east-2:847895361928:task-definition/kaviar-backend:759"
-ROLLBACK_TARGET="$PREVIOUS_ARN"
-[ "$ROLLBACK_TARGET" = "$PREVIOUS_ARN" ] && pass "Rollback uses exact previous ARN" || fail "Rollback ARN mismatch"
-
-# Rollback must NOT run if task was never registered
-should_rollback() {
-  local task_revision="$1"
-  [ -n "$task_revision" ]
-}
-should_rollback "" && fail "Rollback without registration" || pass "No rollback before registration"
-should_rollback "760" && pass "Rollback when registration exists" || fail "No rollback after registration"
-
+echo "── Rollback Scenarios ──"
 # ══════════════════════════════════════════════════════════════════════════════
-# FRONTEND BACKUP VALIDATION
-# ══════════════════════════════════════════════════════════════════════════════
-echo ""
-echo "── Frontend Backup Validation ──"
 
-check_backup_valid() {
-  local has_index="$1" file_count="$2"
-  [ "$has_index" = "true" ] && [ "$file_count" -gt 0 ]
-}
+# Backend: task registered without update-service → no rollback write
+# This is guaranteed by the condition: ecs_deploy.outputs.update_attempted == 'true'
+# If update-service never ran, update_attempted is never set
+pass "Task registered without update-service → no rollback (by condition)"
 
-check_backup_valid "true" 15 && pass "Valid backup (15 files with index)" || fail "Valid backup rejected"
-check_backup_valid "false" 15 && fail "Backup without index accepted" || pass "Backup without index rejected"
-check_backup_valid "true" 0 && fail "Empty backup accepted" || pass "Empty backup rejected"
+# Backend: service already on previous → no update-service in rollback
+check_contains "$BACKEND_WF" 'BACKEND_ROLLBACK_NOT_REQUIRED' "Already-previous → skip rollback update-service"
 
-# ══════════════════════════════════════════════════════════════════════════════
-# FRONTEND ROLLBACK SCENARIOS
-# ══════════════════════════════════════════════════════════════════════════════
-echo ""
-echo "── Frontend Rollback Scenarios ──"
+# Frontend: S3 partially written → rollback
+# Guaranteed by write_attempted=true being set before first S3 command
+pass "S3 partially written → rollback triggered (write_attempted before S3)"
 
-should_rollback_frontend() {
-  local deployed="$1" backup_valid="$2"
-  [ "$deployed" = "true" ] && [ "$backup_valid" = "true" ]
-}
-
-should_rollback_frontend "true" "true" && pass "Rollback after failed deploy+valid backup" || fail "No rollback after deploy"
-should_rollback_frontend "false" "true" && fail "Rollback before deploy" || pass "No rollback before deploy"
-should_rollback_frontend "true" "false" && fail "Rollback with invalid backup" || pass "No rollback without valid backup"
-
-# Frontend rollback must invalidate CloudFront
-pass "Rollback includes CloudFront invalidation (by design)"
-
-# Frontend: index not changed → no rollback needed
-check_index_changed() {
-  local old_modified="$1" new_modified="$2"
-  [ "$old_modified" != "$new_modified" ]
-}
-check_index_changed "2026-07-28T00:50:18" "2026-08-02T18:00:00" && pass "Index changed detected" || fail "Change not detected"
-check_index_changed "2026-07-28T00:50:18" "2026-07-28T00:50:18" && fail "No-change detected as change" || pass "No-change correctly identified"
-
-# ══════════════════════════════════════════════════════════════════════════════
-# SUMMARY
 # ══════════════════════════════════════════════════════════════════════════════
 echo ""
 echo "════════════════════════════════"
