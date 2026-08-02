@@ -31,7 +31,7 @@ jobs:
             exit 1
           fi
 
-      # ── 2. Validate commit SHA format (no echo/grep, raw variable) ─────────
+      # ── 2. Validate commit SHA format ──────────────────────────────────────
       - name: Validate commit SHA format
         env:
           DEPLOY_SHA: ${{ inputs.commit_sha }}
@@ -47,13 +47,12 @@ jobs:
         with:
           ref: ${{ inputs.commit_sha }}
 
-      # ── 4. Validate commit is current main HEAD (after checkout) ───────────
+      # ── 4. Validate commit is current main HEAD ────────────────────────────
       - name: Validate commit is current main HEAD
         env:
           DEPLOY_SHA: ${{ inputs.commit_sha }}
         run: |
           MAIN_HEAD=$(git ls-remote --exit-code origin refs/heads/main | cut -f1)
-          # Validate remote result
           if [ "${#MAIN_HEAD}" -ne 40 ] ||
              [[ ! "$MAIN_HEAD" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::CURRENT_MAIN_HEAD_INVALID"
@@ -82,7 +81,20 @@ jobs:
           VITE_API_BASE_URL: https://api.kaviar.com.br
           VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
 
-      # ── 7. Configure AWS ───────────────────────────────────────────────────
+      # ── 7. Validate build output ───────────────────────────────────────────
+      - name: Validate build output
+        run: |
+          set -euo pipefail
+          if [ ! -f frontend-app/dist/index.html ]; then
+            echo "::error::FRONTEND_BUILD_INVALID — index.html missing"
+            exit 1
+          fi
+          if ! grep -q "financeiro/contador" frontend-app/dist/index.html frontend-app/dist/assets/*.js 2>/dev/null; then
+            echo "⚠️  Accountant route not found in bundle (may be code-split)"
+          fi
+          echo "✓ Build output validated"
+
+      # ── 8. Configure AWS ───────────────────────────────────────────────────
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -90,13 +102,48 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-2
 
-      # ── 8. Revalidate main HEAD before deploy ──────────────────────────────
+      # ── 9. Backup current production frontend ──────────────────────────────
+      - name: Backup current production frontend
+        id: backup
+        run: |
+          set -euo pipefail
+          BACKUP_DIR="/tmp/frontend-backup-$(date +%s)"
+          mkdir -p "$BACKUP_DIR"
+
+          echo "Downloading current production frontend to $BACKUP_DIR..."
+          aws s3 sync s3://kaviar-frontend-847895361928/ "$BACKUP_DIR/" --region us-east-2
+
+          # Validate backup
+          if [ ! -f "$BACKUP_DIR/index.html" ]; then
+            echo "::error::FRONTEND_BACKUP_INVALID — index.html not found in backup"
+            exit 1
+          fi
+
+          FILE_COUNT=$(find "$BACKUP_DIR" -type f | wc -l)
+          if [ "$FILE_COUNT" -eq 0 ]; then
+            echo "::error::FRONTEND_BACKUP_FAILED — backup directory is empty"
+            exit 1
+          fi
+
+          # Capture index.html metadata
+          INDEX_META=$(aws s3api head-object \
+            --bucket kaviar-frontend-847895361928 \
+            --key index.html \
+            --region us-east-2 \
+            --query '{ETag:ETag,LastModified:LastModified,ContentLength:ContentLength}' \
+            --output json)
+          echo "$INDEX_META" > "$BACKUP_DIR/.index-meta.json"
+
+          echo "✓ FRONTEND_BACKUP_READY ($FILE_COUNT files)"
+          echo "backup_dir=$BACKUP_DIR" >> "$GITHUB_OUTPUT"
+          echo "backup_file_count=$FILE_COUNT" >> "$GITHUB_OUTPUT"
+
+      # ── 10. Revalidate main HEAD before deploy ─────────────────────────────
       - name: Revalidate main HEAD before deploy
         env:
           DEPLOY_SHA: ${{ inputs.commit_sha }}
         run: |
           MAIN_HEAD=$(git ls-remote --exit-code origin refs/heads/main | cut -f1)
-          # Validate remote result
           if [ "${#MAIN_HEAD}" -ne 40 ] ||
              [[ ! "$MAIN_HEAD" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::CURRENT_MAIN_HEAD_INVALID"
@@ -107,8 +154,9 @@ jobs:
             exit 1
           fi
 
-      # ── 9. Deploy to S3 (assets first, index last) ─────────────────────────
+      # ── 11. Deploy to S3 (assets first, index last) ────────────────────────
       - name: Deploy to S3 (assets first, index last)
+        id: s3_deploy
         run: |
           aws s3 sync frontend-app/dist/ s3://kaviar-frontend-847895361928/ \
             --cache-control "public, max-age=31536000" \
@@ -118,9 +166,111 @@ jobs:
           aws s3 cp frontend-app/dist/index.html s3://kaviar-frontend-847895361928/index.html \
             --cache-control "no-cache"
 
-      # ── 10. Invalidate CloudFront ──────────────────────────────────────────
+          echo "deployed=true" >> "$GITHUB_OUTPUT"
+
+      # ── 12. Invalidate CloudFront ──────────────────────────────────────────
       - name: Invalidate CloudFront
         run: |
           aws cloudfront create-invalidation \
             --distribution-id E30XJMSBHGZAGN \
             --paths "/*"
+
+      # ── 13. Verify frontend post-deploy ────────────────────────────────────
+      - name: Verify frontend post-deploy
+        run: |
+          set -euo pipefail
+
+          # Wait for CloudFront propagation
+          sleep 15
+
+          # Verify index.html in S3 was updated
+          NEW_META=$(aws s3api head-object \
+            --bucket kaviar-frontend-847895361928 \
+            --key index.html \
+            --region us-east-2 \
+            --query '{ContentLength:ContentLength}' \
+            --output json)
+          CONTENT_LENGTH=$(echo "$NEW_META" | jq -r '.ContentLength')
+          if [ "$CONTENT_LENGTH" -eq 0 ] 2>/dev/null; then
+            echo "::error::FRONTEND_INDEX_VALIDATION_FAILED — ContentLength is 0"
+            exit 1
+          fi
+
+          # HTTP smoke test
+          HTTP_CODE=$(curl -s -o /tmp/frontend_response.html -w "%{http_code}" \
+            --max-time 20 --retry 3 --retry-delay 10 \
+            "https://kaviar.com.br/" || echo "000")
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::FRONTEND_HTTP_SMOKE_TEST_FAILED (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+
+          # Validate HTML
+          if ! grep -qi "<html" /tmp/frontend_response.html; then
+            echo "::error::FRONTEND_HTTP_SMOKE_TEST_FAILED — response is not HTML"
+            exit 1
+          fi
+
+          # Validate at least one JS asset referenced
+          JS_ASSET=$(grep -oP 'src="(/assets/[^"]+\.js)"' /tmp/frontend_response.html | head -1 | grep -oP '/assets/[^"]+\.js' || true)
+          if [ -n "$JS_ASSET" ]; then
+            ASSET_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              --max-time 10 \
+              "https://kaviar.com.br${JS_ASSET}" || echo "000")
+            if [ "$ASSET_CODE" != "200" ]; then
+              echo "::error::FRONTEND_ASSET_VALIDATION_FAILED (asset=$JS_ASSET HTTP $ASSET_CODE)"
+              exit 1
+            fi
+            echo "✓ JS asset validation passed ($JS_ASSET → HTTP 200)"
+          fi
+
+          echo "✓ Frontend post-deploy verification passed"
+
+      # ── 14. Rollback frontend on failure ───────────────────────────────────
+      - name: Rollback frontend on failure
+        if: failure() && steps.s3_deploy.outputs.deployed == 'true' && steps.backup.outputs.backup_dir != ''
+        env:
+          BACKUP_DIR: ${{ steps.backup.outputs.backup_dir }}
+        run: |
+          set -euo pipefail
+          echo "❗ FRONTEND_ROLLBACK_STARTED"
+
+          if [ ! -f "$BACKUP_DIR/index.html" ]; then
+            echo "::error::FRONTEND_ROLLBACK_FAILED — backup invalid, cannot restore"
+            echo "   MANUAL INTERVENTION REQUIRED"
+            exit 1
+          fi
+
+          # Restore from backup (assets first, then index)
+          aws s3 sync "$BACKUP_DIR/" s3://kaviar-frontend-847895361928/ \
+            --cache-control "public, max-age=31536000" \
+            --exclude "index.html" \
+            --exclude ".index-meta.json" \
+            --delete \
+            --region us-east-2
+
+          aws s3 cp "$BACKUP_DIR/index.html" s3://kaviar-frontend-847895361928/index.html \
+            --cache-control "no-cache" \
+            --region us-east-2
+
+          # Invalidate CloudFront again
+          aws cloudfront create-invalidation \
+            --distribution-id E30XJMSBHGZAGN \
+            --paths "/*"
+
+          echo "Waiting for propagation..."
+          sleep 15
+
+          # Verify rollback
+          ROLLBACK_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 20 --retry 2 --retry-delay 5 \
+            "https://kaviar.com.br/" || echo "000")
+
+          if [ "$ROLLBACK_CODE" = "200" ]; then
+            echo "✓ FRONTEND_ROLLBACK_COMPLETED — homepage returns HTTP 200"
+          else
+            echo "::error::FRONTEND_ROLLBACK_FAILED — homepage returns HTTP $ROLLBACK_CODE after restore"
+            echo "   MANUAL INTERVENTION REQUIRED"
+            exit 1
+          fi
