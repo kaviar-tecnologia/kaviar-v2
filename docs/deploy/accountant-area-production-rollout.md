@@ -81,6 +81,11 @@ dentro do job `resolve-production-state`, executado antes de build/push/register
 - Armazenado em diretório temporário exclusivo do runner
 - Validado: index.html presente, file count > 0
 - `backup_valid=true` exportado como output
+- **JSONL manifest** (`jq -c -e`): um objeto compacto por linha
+- Validação do conjunto com `jq -s -e` (tipo, campos obrigatórios)
+- Exatamente 1 entrada `index.html`, sem duplicatas
+- Keys do manifesto conferidas contra `backup_asset_manifest`
+- `null` preservado (sem defaults para CacheControl/ContentEncoding)
 
 **Condição de execução do rollback:**
 - `failure() && steps.s3_deploy.outputs.write_attempted == 'true' && steps.backup.outputs.backup_valid == 'true'`
@@ -89,11 +94,15 @@ dentro do job `resolve-production-state`, executado antes de build/push/register
 - Se backup inválido → sem rollback (falha manual)
 
 **Rollback:**
-- Restore completo do backup via s3 sync --delete
-- index.html restaurado por último com no-cache
-- Manifesto (.index-meta.json) excluído da restauração
-- CloudFront invalidation criada e aguardada (`wait invalidation-completed`)
-- Verifica homepage HTTP 200 após restauração
+- Restore completo do backup via s3 sync --delete (bulk, excl. manifests)
+- Cada asset restaurado individualmente com metadados do manifesto
+- `null` em CacheControl/ContentEncoding = argumento omitido (não default)
+- index.html restaurado por último com metadados do manifesto (não hard-coded)
+- index SHA verificado, metadata verificado (ContentType, CacheControl, ContentEncoding, ContentLength)
+- Todos os assets: metadata comparado com manifesto (`FRONTEND_ROLLBACK_METADATA_MISMATCH`)
+- CloudFront invalidation criada e **aguardada** (`wait invalidation-completed`)
+- Página servida: SHA comparado com `backup_index_sha256`
+- Todos os assets verificados via CDN (HTTP 200)
 
 **Build validation:**
 - index.html obrigatório
