@@ -1,23 +1,59 @@
 name: Deploy Frontend
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'frontend-app/**'
-      - '.github/workflows/deploy-frontend.yml'
   workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: 'SHA completo (40 hex) da main a ser implantado'
+        required: true
+        type: string
+      confirmation:
+        description: 'Digite DEPLOY_FRONTEND_PRODUCTION'
+        required: true
+        type: string
 
 concurrency:
-  group: kaviar-frontend-main
-  cancel-in-progress: true
+  group: production-frontend
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
+      # ── Validate inputs before any AWS interaction ──────────────────────────
+      - name: Validate confirmation
+        env:
+          DEPLOY_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          if [ "$DEPLOY_CONFIRMATION" != "DEPLOY_FRONTEND_PRODUCTION" ]; then
+            echo "::error::INVALID_PRODUCTION_CONFIRMATION"
+            exit 1
+          fi
+
+      - name: Validate commit SHA format
+        env:
+          DEPLOY_SHA: ${{ inputs.commit_sha }}
+        run: |
+          if ! echo "$DEPLOY_SHA" | grep -qxE '[0-9a-f]{40}'; then
+            echo "::error::INVALID_TARGET_COMMIT_SHA"
+            exit 1
+          fi
+
+      - name: Validate commit is current main HEAD
+        env:
+          DEPLOY_SHA: ${{ inputs.commit_sha }}
+        run: |
+          MAIN_HEAD=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [ "$DEPLOY_SHA" != "$MAIN_HEAD" ]; then
+            echo "::error::TARGET_COMMIT_IS_NOT_CURRENT_MAIN (expected=$MAIN_HEAD, got=$DEPLOY_SHA)"
+            exit 1
+          fi
+
+      # ── Checkout exact SHA ──────────────────────────────────────────────────
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -41,6 +77,17 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-2
+
+      # ── Revalidate main HEAD before writing to production ───────────────────
+      - name: Revalidate main HEAD before deploy
+        env:
+          DEPLOY_SHA: ${{ inputs.commit_sha }}
+        run: |
+          MAIN_HEAD=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [ "$DEPLOY_SHA" != "$MAIN_HEAD" ]; then
+            echo "::error::TARGET_COMMIT_CHANGED_BEFORE_DEPLOY (expected=$DEPLOY_SHA, current_main=$MAIN_HEAD)"
+            exit 1
+          fi
 
       - name: Deploy to S3 (assets first, index last)
         run: |
