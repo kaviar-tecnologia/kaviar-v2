@@ -10,9 +10,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ inputs.orchestrated_by_backend && format('kaviar-prisma-orchestrated-{0}', github.run_id) || 'kaviar-prod-backend-db-deploy' }}
+  group: kaviar-prod-backend-db-deploy
   cancel-in-progress: false
-  queue: max
 
 env:
   AWS_REGION: us-east-2
