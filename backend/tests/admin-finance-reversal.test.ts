@@ -28,7 +28,7 @@ app.use('/api/admin/finance', routes);
 
 const postedTxn = {
   id: 'txn-posted', source_type: 'MANUAL', status: 'POSTED', direction: 'OUT',
-  transaction_type: 'EXPENSE', account_id: 'acc-1', counterparty_account_id: null,
+  transaction_type: 'EXPENSE', reversal_of_id: null, account_id: 'acc-1', counterparty_account_id: null,
   category_id: 'cat-1', cost_center_id: null, payment_method: 'PIX',
   gross_amount_cents: BigInt(15000), fee_amount_cents: BigInt(0),
   discount_amount_cents: BigInt(0), retention_amount_cents: BigInt(0), net_amount_cents: BigInt(15000),
@@ -44,11 +44,13 @@ const validBody = { expected_updated_at: '2026-08-05T10:00:00.000Z', reversal_da
 beforeEach(() => {
   vi.clearAllMocks();
   authState.admin = { id: 'sa-1', email: 'sa@t.l', role: 'SUPER_ADMIN' };
-  const { txMock } = vi.hoisted(() => ({ txMock: null as any })); // access via prismaMock.$transaction
   prismaMock.$transaction.mockImplementation(async (fn: any) => {
+    const findUniqueMock = vi.fn()
+      .mockResolvedValueOnce(postedTxn) // first call: load for validation
+      .mockResolvedValue(postedTxn); // subsequent calls: reload
     const tx = {
       financial_transactions: {
-        findUnique: vi.fn().mockResolvedValue(postedTxn),
+        findUnique: findUniqueMock,
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         create: vi.fn().mockResolvedValue({ id: 'txn-reversal' }),
       },

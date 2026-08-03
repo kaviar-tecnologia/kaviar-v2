@@ -216,8 +216,9 @@ export default function FinanceTransactionsPage() {
                           <Button size="small" color="error" sx={{ fontSize: 9, minWidth: 'auto', px: 1 }} onClick={() => setCancelDialog(txn)}>Cancelar</Button>
                         </Box>
                       )}
-                      {txn.status === 'POSTED' && <Button size="small" color="warning" sx={{ fontSize: 9, minWidth: 'auto', px: 1 }} onClick={() => setReverseDialog(txn)}>Estornar</Button>}
+                      {txn.status === 'POSTED' && txn.transaction_type !== 'REVERSAL' && !txn.reversal_of_id && <Button size="small" color="warning" sx={{ fontSize: 9, minWidth: 'auto', px: 1 }} onClick={() => setReverseDialog(txn)}>Estornar</Button>}
                       {txn.status === 'REVERSED' && <Chip label="Estornado" size="small" sx={{ fontSize: 9, height: 18, color: '#7c3aed', bgcolor: '#7c3aed15' }} />}
+                      {txn.transaction_type === 'REVERSAL' && <Chip label="Estorno" size="small" sx={{ fontSize: 9, height: 18, color: '#6b7280', bgcolor: '#6b728015' }} />}
                     </TableCell>}
                   </TableRow>
                 ))}
