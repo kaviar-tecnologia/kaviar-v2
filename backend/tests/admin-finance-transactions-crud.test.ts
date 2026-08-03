@@ -2,15 +2,23 @@ import express from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { prismaMock, authState } = vi.hoisted(() => {
+const { prismaMock, authState, txMock } = vi.hoisted(() => {
+  const financial_accounts = { findUnique: vi.fn() };
+  const financial_categories = { findUnique: vi.fn() };
+  const financial_cost_centers = { findUnique: vi.fn() };
+  const financial_transactions = { create: vi.fn(), findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn(), findMany: vi.fn(), count: vi.fn() };
+  const executeRawMock = vi.fn().mockResolvedValue(1);
+  const txMock: any = { financial_accounts, financial_categories, financial_cost_centers, financial_transactions, $executeRaw: executeRawMock };
   const prismaMock: any = {
     admins: { findUnique: vi.fn() },
-    financial_accounts: { findUnique: vi.fn() },
-    financial_categories: { findUnique: vi.fn() },
-    financial_cost_centers: { findUnique: vi.fn() },
-    financial_transactions: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn(), findMany: vi.fn(), count: vi.fn() },
+    financial_accounts,
+    financial_categories,
+    financial_cost_centers,
+    financial_transactions,
+    $transaction: vi.fn((fn: any) => fn(txMock)),
+    $executeRaw: executeRawMock,
   };
-  return { prismaMock, authState: { admin: { id: 'admin-1', email: 'sa@test.local', role: 'SUPER_ADMIN' } as any } };
+  return { prismaMock, txMock, authState: { admin: { id: 'admin-1', email: 'sa@test.local', role: 'SUPER_ADMIN' } as any } };
 });
 
 vi.mock('../src/lib/prisma', () => ({ prisma: prismaMock }));
@@ -69,7 +77,9 @@ beforeEach(() => {
   prismaMock.financial_cost_centers.findUnique.mockResolvedValue({ id: 'cc-1', is_active: true });
   prismaMock.financial_transactions.create.mockResolvedValue({ id: 'txn-1' });
   prismaMock.financial_transactions.findUnique.mockResolvedValue(mockTransaction);
-  prismaMock.financial_transactions.update.mockResolvedValue(mockTransaction);
+  prismaMock.financial_transactions.updateMany.mockResolvedValue({ count: 1 });
+  prismaMock.$transaction.mockImplementation((fn: any) => fn(txMock));
+  txMock.$executeRaw.mockResolvedValue(1);
 });
 
 describe('POST /api/admin/finance/transactions', () => {

@@ -1,6 +1,6 @@
 /**
  * Finance Transaction Reversal Service
- * Atomic: prisma.$transaction ensures original→REVERSED + create REVERSAL or rollback.
+ * Atomic: prisma.$transaction ensures original→REVERSED + create REVERSAL + audit or rollback.
  * Prevents: reversal of reversal, double reversal, non-POSTED, non-MANUAL.
  */
 import { prisma } from '../../lib/prisma';
@@ -8,11 +8,13 @@ import { Prisma } from '@prisma/client';
 import type { FinanceTransactionReverseBody } from './finance-transaction-reversal-validation';
 import { TransactionWriteError } from './finance-transaction-crud.service';
 import { FINANCE_TRANSACTION_DETAIL_SELECT } from './finance-transaction-selects';
+import { writeFinanceTransactionAuditTx, FinanceTransactionAuditContext } from './finance-transaction-audit';
 
 export async function reverseFinanceTransaction(
   id: string,
   body: FinanceTransactionReverseBody,
   admin: { id: string; email: string; role: string },
+  auditContext: FinanceTransactionAuditContext,
 ) {
   try {
     const result = await prisma.$transaction(async (tx) => {
@@ -118,35 +120,47 @@ export async function reverseFinanceTransaction(
       const updatedOriginal = await tx.financial_transactions.findUnique({ where: { id: original.id }, select: FINANCE_TRANSACTION_DETAIL_SELECT });
       const createdReversal = await tx.financial_transactions.findUnique({ where: { id: reversal.id }, select: FINANCE_TRANSACTION_DETAIL_SELECT });
 
-      return { original: updatedOriginal, reversal: createdReversal, originalBefore: original };
+      if (!updatedOriginal) {
+        throw new Error('Lançamento financeiro não pôde ser recarregado após estorno');
+      }
+      if (!createdReversal) {
+        throw new Error('Lançamento de estorno não pôde ser recarregado após criação');
+      }
+
+      // 10. Atomic audit
+      await writeFinanceTransactionAuditTx(tx, auditContext, {
+        action: 'FINANCE_TRANSACTION_REVERSE',
+        entityType: 'financial_transactions',
+        entityId: id,
+        oldValue: {
+          original_transaction_id: id,
+          original_status_before: 'POSTED',
+          expected_updated_at: body.expected_updated_at,
+        },
+        newValue: {
+          original_transaction_id: id,
+          original_status_after: 'REVERSED',
+          reversal_transaction_id: createdReversal?.id,
+          reversal_of_id: id,
+          reversal_direction: createdReversal?.direction,
+          reversal_transaction_type: 'REVERSAL',
+          gross_amount_cents: createdReversal?.gross_amount_cents?.toString(),
+          net_amount_cents: createdReversal?.net_amount_cents?.toString(),
+          fee_amount_cents: createdReversal?.fee_amount_cents?.toString(),
+          discount_amount_cents: createdReversal?.discount_amount_cents?.toString(),
+          retention_amount_cents: createdReversal?.retention_amount_cents?.toString(),
+          account_id: createdReversal?.account_id,
+          category_id: createdReversal?.category_id,
+          reversal_date: body.reversal_date.toISOString(),
+          admin_id: admin.id,
+        },
+        reason: body.reason,
+      });
+
+      return { original: updatedOriginal, reversal: createdReversal };
     });
 
-    return {
-      original: result.original,
-      reversal: result.reversal,
-      auditBefore: {
-        original_transaction_id: id,
-        original_status_before: 'POSTED',
-      },
-      auditAfter: {
-        original_transaction_id: id,
-        original_status_after: 'REVERSED',
-        reversal_transaction_id: result.reversal?.id,
-        reversal_of_id: id,
-        reversal_direction: result.reversal?.direction,
-        reversal_transaction_type: 'REVERSAL',
-        gross_amount_cents: result.reversal?.gross_amount_cents?.toString(),
-        net_amount_cents: result.reversal?.net_amount_cents?.toString(),
-        fee_amount_cents: result.reversal?.fee_amount_cents?.toString(),
-        discount_amount_cents: result.reversal?.discount_amount_cents?.toString(),
-        retention_amount_cents: result.reversal?.retention_amount_cents?.toString(),
-        account_id: result.reversal?.account_id,
-        category_id: result.reversal?.category_id,
-        reason: body.reason,
-        reversal_date: body.reversal_date.toISOString(),
-        admin_id: admin.id,
-      },
-    };
+    return { original: result.original, reversal: result.reversal };
   } catch (error) {
     // Handle P2002 unique constraint ONLY for idempotency_key
     if (isIdempotencyKeyConflict(error)) {
