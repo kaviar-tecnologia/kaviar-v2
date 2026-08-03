@@ -128,6 +128,38 @@ const FINANCIAL_STATUS_COLORS = {
   UNAVAILABLE: '#6b7280',
 };
 
+/**
+ * Translate territory codes to human-readable labels.
+ * Preserves unknown codes as-is.
+ */
+const TERRITORY_LABELS = {
+  local: 'Local',
+  adjacent: 'Adjacente',
+  external: 'Externo',
+  homebound: 'Retorno',
+};
+
+function formatTerritory(value) {
+  if (value == null || value === '') return '—';
+  return TERRITORY_LABELS[value] || value;
+}
+
+/**
+ * Derive a display-friendly financial status considering data completeness.
+ * A completed ride without settlement and without driver indicates a test or
+ * incomplete flow — shown as "Dados incompletos" to avoid misinterpretation.
+ */
+function getFinancialStatusDisplay(ride) {
+  const status = ride.financial_status;
+  if (ride.status === 'completed' && status !== 'SETTLED' && !ride.driver_name) {
+    return { label: 'Dados incompletos', color: '#dc2626' };
+  }
+  return {
+    label: FINANCIAL_STATUS_LABELS[status] || status,
+    color: FINANCIAL_STATUS_COLORS[status] || '#6b7280',
+  };
+}
+
 // ── Component ───────────────────────────────────────────────────────────────────
 
 export default function AccountantReportPage() {
@@ -431,7 +463,7 @@ export default function AccountantReportPage() {
                       </TableCell>
                       <TableCell sx={{ fontSize: 11 }}>{ride.driver_name || '—'}</TableCell>
                       <TableCell sx={{ fontSize: 11 }}>{ride.passenger_first_name || '—'}</TableCell>
-                      <TableCell sx={{ fontSize: 11 }}>{ride.settlement_territory || '—'}</TableCell>
+                      <TableCell sx={{ fontSize: 11 }}>{formatTerritory(ride.settlement_territory)}</TableCell>
                       <TableCell sx={{ fontSize: 11 }} align="right">{formatCurrencyFromDecimal(ride.final_price)}</TableCell>
                       <TableCell sx={{ fontSize: 11 }} align="right">{formatCurrencyFromDecimal(ride.fee_amount)}</TableCell>
                       <TableCell sx={{ fontSize: 11 }} align="right">{formatCurrencyFromDecimal(ride.driver_earnings)}</TableCell>
@@ -449,17 +481,22 @@ export default function AccountantReportPage() {
                         />
                       </TableCell>
                       <TableCell>
-                        <Chip
-                          label={FINANCIAL_STATUS_LABELS[ride.financial_status] || ride.financial_status}
-                          size="small"
-                          sx={{
-                            fontSize: 10,
-                            height: 20,
-                            fontWeight: 600,
-                            bgcolor: `${FINANCIAL_STATUS_COLORS[ride.financial_status] || '#6B7280'}15`,
-                            color: FINANCIAL_STATUS_COLORS[ride.financial_status] || '#6B7280',
-                          }}
-                        />
+                        {(() => {
+                          const fs = getFinancialStatusDisplay(ride);
+                          return (
+                            <Chip
+                              label={fs.label}
+                              size="small"
+                              sx={{
+                                fontSize: 10,
+                                height: 20,
+                                fontWeight: 600,
+                                bgcolor: `${fs.color}15`,
+                                color: fs.color,
+                              }}
+                            />
+                          );
+                        })()}
                       </TableCell>
                     </TableRow>
                   ))
