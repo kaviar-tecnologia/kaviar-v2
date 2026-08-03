@@ -62,6 +62,7 @@ import FinancePayments from "../../pages/admin/FinancePayments";
 import FinanceiroPage from "../../pages/admin/FinanceiroPage";
 import FinanceRecognitionPoliciesPage from "../../pages/admin/FinanceRecognitionPoliciesPage";
 import AccountantReportPage from "../../pages/admin/AccountantReportPage";
+import FinanceTransactionsPage from "../../pages/admin/FinanceTransactionsPage";
 import TerritoriesPage from "../../pages/admin/TerritoriesPage";
 import TerritoryDetailPage from "../../pages/admin/TerritoryDetailPage";
 import RegionalAdminsPage from "../../pages/admin/RegionalAdminsPage";
@@ -492,6 +493,7 @@ function AdminHome() {
                 { Icon: Paid, title: 'Painel Financeiro Administrativo', desc: 'Contas, categorias e centros de custo em leitura', to: '/admin/financeiro' },
                 { Icon: Description, title: 'Políticas financeiras', desc: 'Classificação, escopo, vigência e estado das regras de reconhecimento.', to: '/admin/financeiro/politicas' },
                 { Icon: Assessment, title: 'Área do Contador', desc: 'Relatório de corridas, receita e exportação CSV — somente leitura.', to: '/admin/financeiro/contador' },
+                { Icon: Paid, title: 'Lançamentos Manuais', desc: 'Despesas, receitas e obrigações cadastradas manualmente.', to: '/admin/financeiro/lancamentos' },
               ] : []),
               ...(isSuperAdmin ? [
                 { Icon: Paid, title: 'Preços e Taxas', desc: 'Ajuste preços, taxas e adicionais', to: '/admin/pricing' },
@@ -740,6 +742,11 @@ export default function AdminApp() {
           <Route path="/financeiro/contador" element={
             <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
               <AccountantReportPage />
+            </ProtectedAdminRoute>
+          } />
+          <Route path="/financeiro/lancamentos" element={
+            <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
+              <FinanceTransactionsPage />
             </ProtectedAdminRoute>
           } />
           <Route path="/credit-purchases" element={
