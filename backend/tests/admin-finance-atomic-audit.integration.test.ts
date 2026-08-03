@@ -86,10 +86,7 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
   afterAll(async () => {
     if (!prisma) return;
     // Clean up all test data
-    await prisma.$executeRawUnsafe(
-      `DELETE FROM admin_audit_logs WHERE admin_id = $1`,
-      adminId,
-    );
+    await prisma.$executeRaw`DELETE FROM admin_audit_logs WHERE admin_id = ${adminId}`;
     await prisma.financial_transactions.deleteMany({ where: { created_by_admin_id: adminId } });
     await prisma.financial_categories.deleteMany({ where: { created_by_admin_id: adminId } });
     await prisma.financial_accounts.deleteMany({ where: { created_by_admin_id: adminId } });
@@ -100,10 +97,7 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
   beforeEach(async () => {
     // Clean transactions and audit logs between tests
     await prisma.financial_transactions.deleteMany({ where: { created_by_admin_id: adminId } });
-    await prisma.$executeRawUnsafe(
-      `DELETE FROM admin_audit_logs WHERE admin_id = $1`,
-      adminId,
-    );
+    await prisma.$executeRaw`DELETE FROM admin_audit_logs WHERE admin_id = ${adminId}`;
   });
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -118,11 +112,7 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
   }
 
   async function queryAuditLogs(entityId?: string) {
-    const where = entityId
-      ? `WHERE admin_id = $1 AND entity_id = $2`
-      : `WHERE admin_id = $1`;
-    const params = entityId ? [adminId, entityId] : [adminId];
-    const rows = await prisma.$queryRawUnsafe<Array<{
+    type AuditRow = {
       id: number;
       admin_id: string;
       admin_email: string | null;
@@ -134,8 +124,16 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
       reason: string | null;
       ip_address: string | null;
       user_agent: string | null;
-    }>>(`SELECT * FROM admin_audit_logs ${where} ORDER BY id`, ...params);
-    return rows;
+    };
+
+    if (entityId) {
+      return prisma.$queryRaw<AuditRow[]>`
+        SELECT * FROM admin_audit_logs WHERE admin_id = ${adminId} AND entity_id = ${entityId} ORDER BY id
+      `;
+    }
+    return prisma.$queryRaw<AuditRow[]>`
+      SELECT * FROM admin_audit_logs WHERE admin_id = ${adminId} ORDER BY id
+    `;
   }
 
   async function createDraftTransaction() {

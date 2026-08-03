@@ -416,9 +416,9 @@ describe('Route audit removal verification', () => {
       // Mock for createFinanceAccount — it uses prisma.financial_accounts.create (not $transaction for create)
       prismaMock.financial_accounts = {
         ...txMock.financial_accounts,
-        create: vi.fn().mockResolvedValue({ id: 'acc-new', code: 'NEW-01', name: 'New Account', type: 'BANK', is_active: true }),
+        create: vi.fn().mockResolvedValue({ id: 'new-acc', code: 'NEW-01', name: 'New Account', type: 'BANK', is_active: true }),
         findUnique: vi.fn().mockResolvedValue({
-          id: 'acc-new', code: 'NEW-01', name: 'New Account', type: 'BANK',
+          id: 'new-acc', code: 'NEW-01', name: 'New Account', type: 'BANK',
           institution_name: null, bank_code: null, currency: 'BRL',
           opening_balance_cents: BigInt(0), opening_balance_date: null,
           allows_negative_balance: false, is_cash_equivalent: false, is_active: true,
@@ -433,14 +433,266 @@ describe('Route audit removal verification', () => {
         code: 'NEW-01', name: 'New Account', type: 'BANK',
       });
 
-      // If account creation succeeds, audit SHOULD be called (registerFinanceAudit uses global audit())
-      if (res.status === 201) {
-        expect(auditMock).toHaveBeenCalled();
-      } else {
-        // If it fails for unrelated reasons (mock incomplete), at least verify
-        // it's not a 403/401 (auth issue) — the test intent is still valid
-        expect(res.status).not.toBe(403);
-      }
+      expect(res.status).toBe(201);
+      expect(auditMock).toHaveBeenCalledTimes(1);
+      expect(auditMock).toHaveBeenCalledWith(expect.objectContaining({ action: 'FINANCE_ACCOUNT_CREATE' }));
+      expect(executeRawMock).not.toHaveBeenCalled();
     });
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 4. HTTP 500 when audit INSERT fails
+// ══════════════════════════════════════════════════════════════════════════════
+
+describe('HTTP 500 when audit INSERT fails', () => {
+  beforeEach(() => {
+    // Normal success mocks so the financial operation would succeed
+    txMock.financial_accounts.findUnique.mockResolvedValue({ id: 'acc-1', is_active: true });
+    txMock.financial_categories.findUnique.mockResolvedValue({ id: 'cat-1', is_active: true });
+    txMock.financial_cost_centers.findUnique.mockResolvedValue({ id: 'cc-1', is_active: true });
+    txMock.financial_transactions.create.mockResolvedValue({ id: 'txn-new' });
+    txMock.financial_transactions.findUnique.mockResolvedValue(fullMockRecord);
+    txMock.financial_transactions.updateMany.mockResolvedValue({ count: 1 });
+    // Then make audit INSERT fail
+    executeRawMock.mockRejectedValueOnce(new Error('forced audit insert failure'));
+  });
+
+  it('POST /api/admin/finance/transactions → 500 on audit failure', async () => {
+    const res = await request(app).post('/api/admin/finance/transactions').send(validCreateBody);
+    expect(res.status).toBe(500);
+    expect(res.body.success).not.toBe(true);
+    expect(JSON.stringify(res.body)).not.toContain('forced audit');
+    expect(res.status).not.toBe(409);
+    expect(auditMock).not.toHaveBeenCalled();
+    expect(executeRawMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('PATCH /api/admin/finance/transactions/txn-1 → 500 on audit failure', async () => {
+    txMock.financial_transactions.findUnique.mockResolvedValue({ ...fullMockRecord, status: 'DRAFT', source_type: 'MANUAL' });
+    executeRawMock.mockReset();
+    executeRawMock.mockRejectedValueOnce(new Error('forced audit insert failure'));
+
+    const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({
+      expected_updated_at: '2026-08-01T00:00:00.000Z', description: 'Updated desc',
+    });
+    expect(res.status).toBe(500);
+    expect(res.body.success).not.toBe(true);
+    expect(JSON.stringify(res.body)).not.toContain('forced audit');
+    expect(res.status).not.toBe(409);
+    expect(auditMock).not.toHaveBeenCalled();
+    expect(executeRawMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('POST /api/admin/finance/transactions/txn-1/post → 500 on audit failure', async () => {
+    txMock.financial_transactions.findUnique.mockResolvedValue({ ...fullMockRecord, status: 'DRAFT', source_type: 'MANUAL' });
+    executeRawMock.mockReset();
+    executeRawMock.mockRejectedValueOnce(new Error('forced audit insert failure'));
+
+    const res = await request(app).post('/api/admin/finance/transactions/txn-1/post').send({
+      expected_updated_at: '2026-08-01T00:00:00.000Z',
+    });
+    expect(res.status).toBe(500);
+    expect(res.body.success).not.toBe(true);
+    expect(JSON.stringify(res.body)).not.toContain('forced audit');
+    expect(res.status).not.toBe(409);
+    expect(auditMock).not.toHaveBeenCalled();
+    expect(executeRawMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('POST /api/admin/finance/transactions/txn-1/cancel → 500 on audit failure', async () => {
+    txMock.financial_transactions.findUnique.mockResolvedValue({ ...fullMockRecord, status: 'DRAFT', source_type: 'MANUAL' });
+    executeRawMock.mockReset();
+    executeRawMock.mockRejectedValueOnce(new Error('forced audit insert failure'));
+
+    const res = await request(app).post('/api/admin/finance/transactions/txn-1/cancel').send({
+      expected_updated_at: '2026-08-01T00:00:00.000Z', canceled_reason: 'Duplicado detectado',
+    });
+    expect(res.status).toBe(500);
+    expect(res.body.success).not.toBe(true);
+    expect(JSON.stringify(res.body)).not.toContain('forced audit');
+    expect(res.status).not.toBe(409);
+    expect(auditMock).not.toHaveBeenCalled();
+    expect(executeRawMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('POST /api/admin/finance/transactions/txn-1/reverse → 500 on audit failure', async () => {
+    const postedTxn = {
+      ...fullMockRecord, id: 'txn-1', status: 'POSTED', source_type: 'MANUAL',
+      settlement_date: new Date('2026-08-05'), updated_at: new Date('2026-08-05T10:00:00Z'), reversals: [],
+    };
+    txMock.financial_transactions.findUnique.mockResolvedValue(postedTxn);
+    txMock.financial_transactions.updateMany.mockResolvedValue({ count: 1 });
+    txMock.financial_transactions.create.mockResolvedValue({ id: 'txn-reversal' });
+    executeRawMock.mockReset();
+    executeRawMock.mockRejectedValueOnce(new Error('forced audit insert failure'));
+
+    const res = await request(app).post('/api/admin/finance/transactions/txn-1/reverse').send({
+      expected_updated_at: '2026-08-05T10:00:00.000Z', reversal_date: '2026-08-10', reason: 'Pagamento duplicado',
+    });
+    expect(res.status).toBe(500);
+    expect(res.body.success).not.toBe(true);
+    expect(JSON.stringify(res.body)).not.toContain('forced audit');
+    expect(res.status).not.toBe(409);
+    expect(auditMock).not.toHaveBeenCalled();
+    expect(executeRawMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 5. Exact INSERT arguments test — writeFinanceTransactionAuditTx
+// ══════════════════════════════════════════════════════════════════════════════
+
+describe('writeFinanceTransactionAuditTx — exact INSERT arguments', () => {
+  it('CREATE: tagged template receives all 10 columns with correct values', async () => {
+    txMock.financial_accounts.findUnique.mockResolvedValue({ id: 'acc-1', is_active: true });
+    txMock.financial_categories.findUnique.mockResolvedValue({ id: 'cat-1', is_active: true });
+    txMock.financial_cost_centers.findUnique.mockResolvedValue({ id: 'cc-1', is_active: true });
+    txMock.financial_transactions.create.mockResolvedValue({ id: 'txn-new' });
+    txMock.financial_transactions.findUnique.mockResolvedValue({ ...fullMockRecord, id: 'txn-new' });
+    executeRawMock.mockResolvedValue(1);
+
+    const res = await request(app).post('/api/admin/finance/transactions').send(validCreateBody);
+    expect(res.status).toBe(201);
+    expect(executeRawMock).toHaveBeenCalledTimes(1);
+
+    const call = executeRawMock.mock.calls[0];
+    const templateParts = call[0]; // TemplateStringsArray
+    const values = call.slice(1); // interpolated values
+
+    // Verify template contains INSERT INTO admin_audit_logs
+    const templateJoined = Array.from(templateParts).join('');
+    expect(templateJoined).toContain('INSERT INTO admin_audit_logs');
+
+    // Verify all 10 column names
+    expect(templateJoined).toContain('admin_id');
+    expect(templateJoined).toContain('admin_email');
+    expect(templateJoined).toContain('action');
+    expect(templateJoined).toContain('entity_type');
+    expect(templateJoined).toContain('entity_id');
+    expect(templateJoined).toContain('old_value');
+    expect(templateJoined).toContain('new_value');
+    expect(templateJoined).toContain('reason');
+    expect(templateJoined).toContain('ip_address');
+    expect(templateJoined).toContain('user_agent');
+
+    // Verify interpolated values
+    expect(values[0]).toBe('sa-1'); // adminId
+    expect(values[1]).toBe('sa@t.l'); // adminEmail
+    expect(values[2]).toBe('FINANCE_TRANSACTION_CREATE'); // action
+    expect(values[3]).toBe('financial_transactions'); // entityType
+    expect(values[4]).toBe('txn-new'); // entityId
+    expect(values[5]).toBeNull(); // oldJson (null for create)
+    expect(values[6]).not.toBeNull(); // newJson
+    expect(typeof values[6]).toBe('string'); // newJson is a JSON string
+    expect(JSON.parse(values[6])).toHaveProperty('id', 'txn-new');
+    expect(values[7]).toBeNull(); // reason
+    expect(values[8]).toBe('127.0.0.1'); // ipAddress
+    expect(values[9]).toBe('test'); // userAgent
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 6. Null reload tests — fail-closed behavior
+// ══════════════════════════════════════════════════════════════════════════════
+
+describe('Null reload → service throws, $executeRaw NOT called, route returns 500', () => {
+  it('CREATE: findUnique returns null after create → 500', async () => {
+    txMock.financial_accounts.findUnique.mockResolvedValue({ id: 'acc-1', is_active: true });
+    txMock.financial_categories.findUnique.mockResolvedValue({ id: 'cat-1', is_active: true });
+    txMock.financial_cost_centers.findUnique.mockResolvedValue({ id: 'cc-1', is_active: true });
+    txMock.financial_transactions.create.mockResolvedValue({ id: 'txn-new' });
+    // findUnique returns null (reload fails)
+    txMock.financial_transactions.findUnique.mockResolvedValue(null);
+    executeRawMock.mockResolvedValue(1);
+
+    const res = await request(app).post('/api/admin/finance/transactions').send(validCreateBody);
+    expect(res.status).toBe(500);
+    expect(executeRawMock).not.toHaveBeenCalled();
+  });
+
+  it('UPDATE: findUnique returns record first (before), null on reload (after) → 500', async () => {
+    let findUniqueCallCount = 0;
+    txMock.financial_transactions.findUnique.mockImplementation(async () => {
+      findUniqueCallCount++;
+      if (findUniqueCallCount === 1) {
+        // before state
+        return { ...fullMockRecord, status: 'DRAFT', source_type: 'MANUAL' };
+      }
+      // reload after update returns null
+      return null;
+    });
+    txMock.financial_transactions.updateMany.mockResolvedValue({ count: 1 });
+    executeRawMock.mockResolvedValue(1);
+
+    const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({
+      expected_updated_at: '2026-08-01T00:00:00.000Z', description: 'Updated',
+    });
+    expect(res.status).toBe(500);
+    expect(executeRawMock).not.toHaveBeenCalled();
+  });
+
+  it('POST (liquidate): findUnique returns record first (before), null on reload (after) → 500', async () => {
+    let findUniqueCallCount = 0;
+    txMock.financial_transactions.findUnique.mockImplementation(async () => {
+      findUniqueCallCount++;
+      if (findUniqueCallCount === 1) {
+        return { ...fullMockRecord, status: 'DRAFT', source_type: 'MANUAL' };
+      }
+      return null;
+    });
+    txMock.financial_transactions.updateMany.mockResolvedValue({ count: 1 });
+    executeRawMock.mockResolvedValue(1);
+
+    const res = await request(app).post('/api/admin/finance/transactions/txn-1/post').send({
+      expected_updated_at: '2026-08-01T00:00:00.000Z',
+    });
+    expect(res.status).toBe(500);
+    expect(executeRawMock).not.toHaveBeenCalled();
+  });
+
+  it('CANCEL: findUnique returns record first (before), null on reload (after) → 500', async () => {
+    let findUniqueCallCount = 0;
+    txMock.financial_transactions.findUnique.mockImplementation(async () => {
+      findUniqueCallCount++;
+      if (findUniqueCallCount === 1) {
+        return { ...fullMockRecord, status: 'DRAFT', source_type: 'MANUAL' };
+      }
+      return null;
+    });
+    txMock.financial_transactions.updateMany.mockResolvedValue({ count: 1 });
+    executeRawMock.mockResolvedValue(1);
+
+    const res = await request(app).post('/api/admin/finance/transactions/txn-1/cancel').send({
+      expected_updated_at: '2026-08-01T00:00:00.000Z', canceled_reason: 'Duplicado detectado',
+    });
+    expect(res.status).toBe(500);
+    expect(executeRawMock).not.toHaveBeenCalled();
+  });
+
+  it('REVERSE: findUnique returns valid data for validation, null for reloads → 500', async () => {
+    const postedTxn = {
+      ...fullMockRecord, id: 'txn-1', status: 'POSTED', source_type: 'MANUAL',
+      settlement_date: new Date('2026-08-05'), updated_at: new Date('2026-08-05T10:00:00Z'), reversals: [],
+    };
+    let findUniqueCallCount = 0;
+    txMock.financial_transactions.findUnique.mockImplementation(async () => {
+      findUniqueCallCount++;
+      if (findUniqueCallCount === 1) {
+        // Validation call
+        return postedTxn;
+      }
+      // Reload calls return null
+      return null;
+    });
+    txMock.financial_transactions.updateMany.mockResolvedValue({ count: 1 });
+    txMock.financial_transactions.create.mockResolvedValue({ id: 'txn-reversal' });
+    executeRawMock.mockResolvedValue(1);
+
+    const res = await request(app).post('/api/admin/finance/transactions/txn-1/reverse').send({
+      expected_updated_at: '2026-08-05T10:00:00.000Z', reversal_date: '2026-08-10', reason: 'Pagamento duplicado',
+    });
+    expect(res.status).toBe(500);
+    expect(executeRawMock).not.toHaveBeenCalled();
   });
 });

@@ -120,6 +120,13 @@ export async function reverseFinanceTransaction(
       const updatedOriginal = await tx.financial_transactions.findUnique({ where: { id: original.id }, select: FINANCE_TRANSACTION_DETAIL_SELECT });
       const createdReversal = await tx.financial_transactions.findUnique({ where: { id: reversal.id }, select: FINANCE_TRANSACTION_DETAIL_SELECT });
 
+      if (!updatedOriginal) {
+        throw new Error('Lançamento financeiro não pôde ser recarregado após estorno');
+      }
+      if (!createdReversal) {
+        throw new Error('Lançamento de estorno não pôde ser recarregado após criação');
+      }
+
       // 10. Atomic audit
       await writeFinanceTransactionAuditTx(tx, auditContext, {
         action: 'FINANCE_TRANSACTION_REVERSE',

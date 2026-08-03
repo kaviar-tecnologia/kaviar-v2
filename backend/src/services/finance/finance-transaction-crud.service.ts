@@ -26,6 +26,13 @@ export class TransactionWriteError extends Error {
   }
 }
 
+function requireReloadedTransaction<T>(record: T | null, operation: string): T {
+  if (!record) {
+    throw new Error(`Lançamento financeiro não pôde ser recarregado após ${operation}`);
+  }
+  return record;
+}
+
 const EDITABLE_STATUSES = ['DRAFT', 'PENDING'] as any[];
 const POSTABLE_STATUSES = ['DRAFT', 'PENDING'] as any[];
 const CANCELABLE_STATUSES = ['DRAFT', 'PENDING'] as any[];
@@ -103,15 +110,17 @@ export async function createFinanceTransaction(
       select: FINANCE_TRANSACTION_DETAIL_SELECT,
     });
 
+    const reloaded = requireReloadedTransaction(record, 'criação');
+
     await writeFinanceTransactionAuditTx(tx, auditContext, {
       action: 'FINANCE_TRANSACTION_CREATE',
       entityType: 'financial_transactions',
       entityId: created.id,
       oldValue: null,
-      newValue: safeSerializeForAudit(record),
+      newValue: safeSerializeForAudit(reloaded),
     });
 
-    return { record };
+    return { record: reloaded };
   });
 }
 
@@ -195,15 +204,17 @@ export async function updateFinanceTransaction(
 
     const after = await tx.financial_transactions.findUnique({ where: { id }, select: FINANCE_TRANSACTION_DETAIL_SELECT });
 
+    const reloaded = requireReloadedTransaction(after, 'atualização');
+
     await writeFinanceTransactionAuditTx(tx, auditContext, {
       action: 'FINANCE_TRANSACTION_UPDATE',
       entityType: 'financial_transactions',
       entityId: id,
       oldValue: safeSerializeForAudit(before),
-      newValue: safeSerializeForAudit(after),
+      newValue: safeSerializeForAudit(reloaded),
     });
 
-    return { record: after };
+    return { record: reloaded };
   });
 }
 
@@ -248,15 +259,17 @@ export async function postFinanceTransaction(
 
     const after = await tx.financial_transactions.findUnique({ where: { id }, select: FINANCE_TRANSACTION_DETAIL_SELECT });
 
+    const reloaded = requireReloadedTransaction(after, 'liquidação');
+
     await writeFinanceTransactionAuditTx(tx, auditContext, {
       action: 'FINANCE_TRANSACTION_POST',
       entityType: 'financial_transactions',
       entityId: id,
       oldValue: safeSerializeForAudit(before),
-      newValue: safeSerializeForAudit(after),
+      newValue: safeSerializeForAudit(reloaded),
     });
 
-    return { record: after };
+    return { record: reloaded };
   });
 }
 
@@ -296,15 +309,17 @@ export async function cancelFinanceTransaction(
 
     const after = await tx.financial_transactions.findUnique({ where: { id }, select: FINANCE_TRANSACTION_DETAIL_SELECT });
 
+    const reloaded = requireReloadedTransaction(after, 'cancelamento');
+
     await writeFinanceTransactionAuditTx(tx, auditContext, {
       action: 'FINANCE_TRANSACTION_CANCEL',
       entityType: 'financial_transactions',
       entityId: id,
       oldValue: safeSerializeForAudit(before),
-      newValue: safeSerializeForAudit(after),
+      newValue: safeSerializeForAudit(reloaded),
       reason: body.canceled_reason,
     });
 
-    return { record: after };
+    return { record: reloaded };
   });
 }
