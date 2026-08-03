@@ -365,26 +365,35 @@ jobs:
           echo "Prisma changed: ${PRISMA_CHANGED}"
           echo "Prisma confirmation: ${PRISMA_CONFIRMATION}"
 
-          if [ "${PRISMA_CHANGED}" = "false" ]; then
-            if [ "${PRISMA_CONFIRMATION}" != "NO_PRISMA_CHANGES" ]; then
-              echo "❌ PRISMA_CONFIRMATION_MISMATCH"
-              echo "   No Prisma changes detected, but confirmation was not NO_PRISMA_CHANGES"
-              echo "   Got: ${PRISMA_CONFIRMATION}"
+          case "${PRISMA_CHANGED}" in
+            false)
+              if [ "${PRISMA_CONFIRMATION}" != "NO_PRISMA_CHANGES" ]; then
+                echo "❌ PRISMA_CONFIRMATION_MISMATCH"
+                echo "   No Prisma changes detected, but confirmation was not NO_PRISMA_CHANGES"
+                echo "   Got: ${PRISMA_CONFIRMATION}"
+                exit 1
+              fi
+              echo "✓ No Prisma changes and confirmation matches"
+              echo "requires_migration=false" >> "$GITHUB_OUTPUT"
+              ;;
+            true)
+              if [ "${PRISMA_CONFIRMATION}" != "APPLY_PRISMA_MIGRATIONS" ]; then
+                echo "❌ PRISMA_CONFIRMATION_MISMATCH"
+                echo "   Prisma changes detected (prisma_changed=${PRISMA_CHANGED})"
+                echo "   Expected confirmation: APPLY_PRISMA_MIGRATIONS"
+                echo "   Got: ${PRISMA_CONFIRMATION}"
+                exit 1
+              fi
+              echo "✓ Prisma changes detected and confirmation matches — will run migrations"
+              echo "requires_migration=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "❌ INVALID_PRISMA_CHANGED_STATE"
+              echo "   Expected exactly 'true' or 'false'"
+              echo "   Got: '${PRISMA_CHANGED}'"
               exit 1
-            fi
-            echo "✓ No Prisma changes and confirmation matches"
-            echo "requires_migration=false" >> "$GITHUB_OUTPUT"
-          else
-            if [ "${PRISMA_CONFIRMATION}" != "APPLY_PRISMA_MIGRATIONS" ]; then
-              echo "❌ PRISMA_CONFIRMATION_MISMATCH"
-              echo "   Prisma changes detected (prisma_changed=${PRISMA_CHANGED})"
-              echo "   Expected confirmation: APPLY_PRISMA_MIGRATIONS"
-              echo "   Got: ${PRISMA_CONFIRMATION}"
-              exit 1
-            fi
-            echo "✓ Prisma changes detected and confirmation matches — will run migrations"
-            echo "requires_migration=true" >> "$GITHUB_OUTPUT"
-          fi
+              ;;
+          esac
 
   run-prisma-migrations:
     needs:
@@ -399,6 +408,7 @@ jobs:
   post-migration-revalidation:
     needs:
       - validate-target-commit
+      - resolve-production-state
       - prisma-deploy-gate
       - run-prisma-migrations
     if: always() && needs.prisma-deploy-gate.outputs.requires_migration == 'true'
@@ -420,31 +430,89 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Revalidate main after migration
+      - name: Revalidate production state after migration
         env:
           TARGET_SHA: ${{ needs.validate-target-commit.outputs.target_sha }}
+          EXPECTED_TASK_DEF: ${{ needs.resolve-production-state.outputs.production_task_definition }}
+          EXPECTED_PRODUCTION_SHA: ${{ needs.resolve-production-state.outputs.production_sha }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-2
         run: |
           set -euo pipefail
 
+          # 1. Revalidate main has not advanced
           git fetch --no-tags origin main
           CURRENT_MAIN="$(git rev-parse origin/main)"
           if [ "$CURRENT_MAIN" != "$TARGET_SHA" ]; then
             echo "❌ MAIN_ADVANCED_DURING_MIGRATION"
+            echo "   Target: ${TARGET_SHA}"
+            echo "   Current: ${CURRENT_MAIN}"
             exit 1
           fi
-          echo "✓ Main unchanged after migration"
+          echo "✓ Main unchanged after migration: ${TARGET_SHA}"
 
-          # Verify ECS service still on expected task definition
-          CURRENT_TD=$(aws ecs describe-services \
+          # 2. Verify service state
+          SERVICE_JSON=$(aws ecs describe-services \
             --cluster kaviar-cluster \
             --services kaviar-backend-service \
-            --region us-east-2 \
-            --query 'services[0].taskDefinition' --output text)
-          echo "ECS task definition: ${CURRENT_TD}"
-          echo "✓ ECS service state verified"
+            --region us-east-2)
+
+          CURRENT_TD=$(echo "$SERVICE_JSON" | jq -r '.services[0].taskDefinition')
+          DESIRED=$(echo "$SERVICE_JSON" | jq -r '.services[0].desiredCount')
+          RUNNING=$(echo "$SERVICE_JSON" | jq -r '.services[0].runningCount')
+          PENDING=$(echo "$SERVICE_JSON" | jq -r '.services[0].pendingCount')
+          DEPLOYS=$(echo "$SERVICE_JSON" | jq '.services[0].deployments | length')
+          ROLLOUT=$(echo "$SERVICE_JSON" | jq -r '.services[0].deployments[0].rolloutState')
+          CB_ENABLE=$(echo "$SERVICE_JSON" | jq -r '.services[0].deploymentConfiguration.deploymentCircuitBreaker.enable')
+          CB_ROLLBACK=$(echo "$SERVICE_JSON" | jq -r '.services[0].deploymentConfiguration.deploymentCircuitBreaker.rollback')
+
+          # 3. Task definition unchanged
+          if [ "$CURRENT_TD" != "$EXPECTED_TASK_DEF" ]; then
+            echo "❌ PRODUCTION_TASK_DEFINITION_CHANGED_DURING_MIGRATION"
+            echo "   Expected: $EXPECTED_TASK_DEF"
+            echo "   Current:  $CURRENT_TD"
+            exit 1
+          fi
+          echo "✓ Task definition unchanged: ${CURRENT_TD}"
+
+          # 4. Service stability
+          SAFE=true
+          if [ "$DESIRED" -lt 1 ]; then echo "❌ desiredCount < 1"; SAFE=false; fi
+          if [ "$RUNNING" != "$DESIRED" ]; then echo "❌ runningCount ($RUNNING) != desiredCount ($DESIRED)"; SAFE=false; fi
+          if [ "$PENDING" != "0" ]; then echo "❌ pendingCount = $PENDING"; SAFE=false; fi
+          if [ "$DEPLOYS" != "1" ]; then echo "❌ deployments = $DEPLOYS (expected 1)"; SAFE=false; fi
+          if [ "$ROLLOUT" != "COMPLETED" ]; then echo "❌ rolloutState = $ROLLOUT"; SAFE=false; fi
+          if [ "$CB_ENABLE" != "true" ]; then echo "❌ circuitBreaker.enable = $CB_ENABLE"; SAFE=false; fi
+          if [ "$CB_ROLLBACK" != "true" ]; then echo "❌ circuitBreaker.rollback = $CB_ROLLBACK"; SAFE=false; fi
+
+          if [ "$SAFE" = "false" ]; then
+            echo "❌ PRODUCTION_SERVICE_UNSTABLE_AFTER_MIGRATION"
+            exit 1
+          fi
+          echo "✓ ECS service stable after migration"
+
+          # 5. Verify production SHA still matches
+          TASK_DEF_JSON=$(aws ecs describe-task-definition \
+            --task-definition "$EXPECTED_TASK_DEF" \
+            --region us-east-2)
+
+          IMAGE_SHA=$(echo "$TASK_DEF_JSON" | jq -r '.taskDefinition.containerDefinitions[] | select(.name == "kaviar-backend") | .image' | grep -oE '[0-9a-f]{40}$')
+          ENV_SHA=$(echo "$TASK_DEF_JSON" | jq -r '.taskDefinition.containerDefinitions[] | select(.name == "kaviar-backend") | .environment[] | select(.name == "GIT_COMMIT") | .value')
+
+          if [ "$IMAGE_SHA" != "$EXPECTED_PRODUCTION_SHA" ]; then
+            echo "❌ PRODUCTION_IMAGE_SHA_CHANGED"
+            echo "   Expected: $EXPECTED_PRODUCTION_SHA"
+            echo "   Image:    $IMAGE_SHA"
+            exit 1
+          fi
+          if [ "$ENV_SHA" != "$EXPECTED_PRODUCTION_SHA" ]; then
+            echo "❌ PRODUCTION_GIT_COMMIT_CHANGED"
+            echo "   Expected: $EXPECTED_PRODUCTION_SHA"
+            echo "   Env:      $ENV_SHA"
+            exit 1
+          fi
+          echo "✓ Production SHA verified: ${EXPECTED_PRODUCTION_SHA}"
 
   revalidate-target-commit:
     needs:
