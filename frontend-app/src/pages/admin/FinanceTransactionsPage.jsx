@@ -43,6 +43,7 @@ export default function FinanceTransactionsPage() {
   const [filters, setFilters] = useState({ direction: '', status: '', transaction_type: '', search: '' });
   // Dialogs
   const [createOpen, setCreateOpen] = useState(false);
+  const [editDialog, setEditDialog] = useState(null); // txn to edit
   const [postDialog, setPostDialog] = useState(null); // txn to liquidate
   const [cancelDialog, setCancelDialog] = useState(null); // txn to cancel
   const [conflictMsg, setConflictMsg] = useState('');
@@ -177,6 +178,7 @@ export default function FinanceTransactionsPage() {
                     {canWrite && <TableCell sx={{ fontSize: 10 }}>
                       {(txn.status === 'DRAFT' || txn.status === 'PENDING') && (
                         <Box sx={{ display: 'flex', gap: 0.5 }}>
+                          <Button size="small" sx={{ fontSize: 9, minWidth: 'auto', px: 1 }} onClick={() => setEditDialog(txn)}>Editar</Button>
                           <Button size="small" sx={{ fontSize: 9, minWidth: 'auto', px: 1 }} onClick={() => setPostDialog(txn)}>Liquidar</Button>
                           <Button size="small" color="error" sx={{ fontSize: 9, minWidth: 'auto', px: 1 }} onClick={() => setCancelDialog(txn)}>Cancelar</Button>
                         </Box>
@@ -194,6 +196,9 @@ export default function FinanceTransactionsPage() {
 
       {/* Create Dialog */}
       <CreateDialog open={createOpen} onClose={() => setCreateOpen(false)} onCreated={() => { setCreateOpen(false); fetchData(); }} accounts={accounts} categories={categories} costCenters={costCenters} />
+
+      {/* Edit Dialog */}
+      {editDialog && <EditDialog txn={editDialog} onClose={() => setEditDialog(null)} onSaved={() => { setEditDialog(null); fetchData(); }} onConflict={() => { setEditDialog(null); setConflictMsg('O lançamento foi alterado por outro administrador. Recarregue os dados.'); }} accounts={accounts} categories={categories} costCenters={costCenters} />}
 
       {/* Post (Liquidate) Dialog */}
       {postDialog && <PostDialog txn={postDialog} onClose={() => setPostDialog(null)} onConfirm={handlePost} />}
@@ -221,21 +226,25 @@ function CreateDialog({ open, onClose, onCreated, accounts, categories, costCent
     if (!form.category_id) { setError('Selecione uma categoria.'); return; }
     if (!form.description.trim()) { setError('Descrição obrigatória.'); return; }
     setSubmitting(true); setError('');
-    const body = {
-      account_id: form.account_id, category_id: form.category_id,
-      cost_center_id: form.cost_center_id || undefined,
-      direction: form.direction, transaction_type: form.transaction_type,
-      payment_method: form.payment_method || undefined,
-      competence_date: form.competence_date, transaction_date: form.transaction_date,
-      due_date: form.due_date || undefined,
-      gross_amount_cents: cents, net_amount_cents: cents,
-      description: form.description.trim(), memo: form.memo || undefined,
-      metadata: Object.keys(form.metadata).length > 0 ? form.metadata : undefined,
-    };
-    const result = await createFinanceTransaction(body);
-    setSubmitting(false);
-    if (result?.success === false) { setError(result.error || 'Erro ao criar'); return; }
-    onCreated();
+    try {
+      const body = {
+        account_id: form.account_id, category_id: form.category_id,
+        cost_center_id: form.cost_center_id || undefined,
+        direction: form.direction, transaction_type: form.transaction_type,
+        payment_method: form.payment_method || undefined,
+        competence_date: form.competence_date, transaction_date: form.transaction_date,
+        due_date: form.due_date || undefined,
+        gross_amount_cents: cents, net_amount_cents: cents,
+        description: form.description.trim(), memo: form.memo || undefined,
+        metadata: Object.keys(form.metadata).length > 0 ? form.metadata : undefined,
+      };
+      await createFinanceTransaction(body);
+      onCreated();
+    } catch (err) {
+      setError(err?.message || 'Erro ao criar lançamento');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -311,6 +320,102 @@ function CancelDialog({ txn, onClose, onConfirm }) {
       <DialogActions>
         <Button onClick={onClose} disabled={submitting}>Voltar</Button>
         <Button variant="contained" color="error" onClick={handle} disabled={submitting || !reason.trim()}>{submitting ? 'Cancelando...' : 'Confirmar Cancelamento'}</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+// ── Edit Dialog ────────────────────────────────────────────────────────────
+function EditDialog({ txn, onClose, onSaved, onConflict, accounts, categories, costCenters }) {
+  const centsToDisplay = (v) => {
+    if (!v) return '';
+    const s = String(v);
+    if (s.length <= 2) return `0,${s.padStart(2, '0')}`;
+    return s.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + s.slice(-2);
+  };
+
+  const [form, setForm] = useState({
+    description: txn.description || '',
+    account_id: txn.account_id || txn.account?.id || '',
+    category_id: txn.category_id || txn.category?.id || '',
+    cost_center_id: txn.cost_center_id || txn.cost_center?.id || '',
+    direction: txn.direction || 'OUT',
+    transaction_type: txn.transaction_type || 'EXPENSE',
+    payment_method: txn.payment_method || 'PIX',
+    competence_date: txn.competence_date?.slice?.(0, 10) || '',
+    transaction_date: txn.transaction_date?.slice?.(0, 10) || '',
+    due_date: txn.due_date?.slice?.(0, 10) || '',
+    valor: centsToDisplay(txn.net_amount_cents || txn.gross_amount_cents),
+    memo: txn.memo || '',
+    metadata: txn.metadata || {},
+  });
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+  const setMeta = (k) => (e) => setForm(f => ({ ...f, metadata: { ...f.metadata, [k]: e.target.value || null } }));
+  const typeOptions = form.direction === 'IN' ? TYPE_OPTIONS_IN : TYPE_OPTIONS_OUT;
+
+  const handleSave = async () => {
+    const cents = parseBRLToCentsString(form.valor);
+    if (!cents) { setError('Valor inválido.'); return; }
+    if (!form.description.trim()) { setError('Descrição obrigatória.'); return; }
+    setSubmitting(true); setError('');
+    try {
+      const body = {
+        expected_updated_at: txn.updated_at,
+        description: form.description.trim(),
+        account_id: form.account_id || undefined,
+        category_id: form.category_id || undefined,
+        cost_center_id: form.cost_center_id || undefined,
+        direction: form.direction,
+        transaction_type: form.transaction_type,
+        payment_method: form.payment_method || undefined,
+        competence_date: form.competence_date || undefined,
+        transaction_date: form.transaction_date || undefined,
+        due_date: form.due_date || null,
+        gross_amount_cents: cents,
+        net_amount_cents: cents,
+        memo: form.memo || undefined,
+        metadata: Object.keys(form.metadata).length > 0 ? form.metadata : undefined,
+      };
+      await updateFinanceTransaction(txn.id, body);
+      onSaved();
+    } catch (err) {
+      const msg = err?.message || 'Erro ao editar';
+      if (msg.includes('409') || msg.includes('Conflito') || msg.includes('alterado')) {
+        onConflict();
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle sx={{ fontWeight: 700 }}>Editar Lançamento</DialogTitle>
+      <DialogContent>
+        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+        <Grid container spacing={2} sx={{ mt: 1 }}>
+          <Grid item xs={12}><TextField label="Descrição *" fullWidth size="small" value={form.description} onChange={set('description')} /></Grid>
+          <Grid item xs={6}><TextField label="Conta *" select fullWidth size="small" value={form.account_id} onChange={set('account_id')}>{accounts.map(a => <MenuItem key={a.id} value={a.id}>{a.name}</MenuItem>)}</TextField></Grid>
+          <Grid item xs={6}><TextField label="Categoria *" select fullWidth size="small" value={form.category_id} onChange={set('category_id')}>{categories.map(c => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}</TextField></Grid>
+          <Grid item xs={4}><TextField label="Direção" select fullWidth size="small" value={form.direction} onChange={(e) => { setForm(f => ({ ...f, direction: e.target.value, transaction_type: e.target.value === 'IN' ? 'INCOME' : 'EXPENSE' })); }}><MenuItem value="OUT">Saída</MenuItem><MenuItem value="IN">Entrada</MenuItem></TextField></Grid>
+          <Grid item xs={4}><TextField label="Tipo" select fullWidth size="small" value={form.transaction_type} onChange={set('transaction_type')}>{typeOptions.map(o => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}</TextField></Grid>
+          <Grid item xs={4}><TextField label="Valor (R$) *" fullWidth size="small" value={form.valor} onChange={set('valor')} placeholder="150,00" /></Grid>
+          <Grid item xs={4}><TextField label="Competência" type="date" fullWidth size="small" value={form.competence_date} onChange={set('competence_date')} InputLabelProps={{ shrink: true }} /></Grid>
+          <Grid item xs={4}><TextField label="Data Transação" type="date" fullWidth size="small" value={form.transaction_date} onChange={set('transaction_date')} InputLabelProps={{ shrink: true }} /></Grid>
+          <Grid item xs={4}><TextField label="Vencimento" type="date" fullWidth size="small" value={form.due_date} onChange={set('due_date')} InputLabelProps={{ shrink: true }} helperText="Limpe para remover" /></Grid>
+          <Grid item xs={4}><TextField label="Pagamento" select fullWidth size="small" value={form.payment_method} onChange={set('payment_method')}>{PAYMENT_OPTIONS.map(o => <MenuItem key={o.v} value={o.v}>{o.l}</MenuItem>)}</TextField></Grid>
+          <Grid item xs={4}><TextField label="Centro de Custo" select fullWidth size="small" value={form.cost_center_id} onChange={set('cost_center_id')}><MenuItem value="">—</MenuItem>{costCenters.map(c => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}</TextField></Grid>
+          <Grid item xs={4}><TextField label="Contraparte" fullWidth size="small" value={form.metadata.counterparty_name || ''} onChange={setMeta('counterparty_name')} /></Grid>
+          <Grid item xs={12}><TextField label="Observações" fullWidth size="small" multiline rows={2} value={form.memo} onChange={set('memo')} /></Grid>
+        </Grid>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} disabled={submitting}>Cancelar</Button>
+        <Button variant="contained" onClick={handleSave} disabled={submitting} sx={{ bgcolor: '#2563EB', '&:hover': { bgcolor: '#1D4ED8' } }}>{submitting ? 'Salvando...' : 'Salvar Alterações'}</Button>
       </DialogActions>
     </Dialog>
   );

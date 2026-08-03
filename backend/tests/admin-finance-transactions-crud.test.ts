@@ -346,3 +346,15 @@ describe('POST /post: settlement_date validation', () => {
     expect(res.status).toBe(200);
   });
 });
+
+
+describe('PATCH: metadata null clears metadata', () => {
+  it('PATCH metadata: null sends null to Prisma', async () => {
+    prismaMock.financial_transactions.findUnique.mockResolvedValue({ ...mockTransaction, status: 'DRAFT', source_type: 'MANUAL', gross_amount_cents: BigInt(15000), net_amount_cents: BigInt(15000) });
+    prismaMock.financial_transactions.updateMany.mockResolvedValue({ count: 1 });
+    const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({ expected_updated_at: '2026-08-01T00:00:00.000Z', description: 'updated', metadata: null });
+    expect(res.status).toBe(200);
+    const callData = prismaMock.financial_transactions.updateMany.mock.calls[0][0].data;
+    expect(callData.metadata).toBeNull();
+  });
+});

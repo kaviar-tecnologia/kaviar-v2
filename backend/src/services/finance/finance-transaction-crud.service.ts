@@ -197,7 +197,14 @@ export async function updateFinanceTransaction(
       status: { in: EDITABLE_STATUSES },
       updated_at: expected_updated_at,
     },
-    data: { ...fields, metadata: fields.metadata ? JSON.parse(JSON.stringify(fields.metadata)) : undefined },
+    data: {
+      ...fields,
+      metadata: fields.metadata === null
+        ? null  // explicitly clear
+        : fields.metadata !== undefined
+          ? JSON.parse(JSON.stringify(fields.metadata))
+          : undefined,  // preserve existing
+    },
   });
 
   if (result.count === 0) {

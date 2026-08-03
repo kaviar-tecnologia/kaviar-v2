@@ -95,5 +95,63 @@ test.describe('Finance Transactions — FINANCE (read-only)', () => {
     await expect(page.getByRole('button', { name: 'Novo Lançamento' })).not.toBeVisible();
     await expect(page.getByRole('button', { name: 'Liquidar' })).not.toBeVisible();
     await expect(page.getByRole('button', { name: 'Cancelar' })).not.toBeVisible();
+    await expect(page.getByRole('button', { name: 'Editar' })).not.toBeVisible();
+  });
+});
+
+test.describe('Finance Transactions — Edit Flow', () => {
+  test.beforeEach(async ({ page }) => { await setupAuth(page); await interceptAPIs(page); });
+
+  test('Edit button appears for SUPER_ADMIN on DRAFT', async ({ page }) => {
+    await page.goto('/admin/financeiro/lancamentos');
+    await expect(page.getByRole('button', { name: 'Editar' }).first()).toBeVisible();
+  });
+
+  test('POSTED does not show Edit button', async ({ page }) => {
+    await page.goto('/admin/financeiro/lancamentos');
+    // mockPosted is POSTED — its row should not have Editar
+    const rows = page.locator('tr');
+    const postedRow = rows.filter({ hasText: 'Twilio Jul' });
+    await expect(postedRow.getByRole('button', { name: 'Editar' })).not.toBeVisible();
+  });
+
+  test('Edit dialog opens with existing values', async ({ page }) => {
+    await page.route('**/api/admin/finance/transactions/txn-1', (route) => {
+      if (route.request().method() === 'PATCH') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: mockTxn }) });
+      }
+      return route.continue();
+    });
+    await page.goto('/admin/financeiro/lancamentos');
+    await page.getByRole('button', { name: 'Editar' }).first().click();
+    await expect(page.getByText('Editar Lançamento')).toBeVisible();
+  });
+
+  test('409 on edit shows conflict warning', async ({ page }) => {
+    await page.route('**/api/admin/finance/transactions/txn-1', (route) => {
+      if (route.request().method() === 'PATCH') {
+        return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ success: false, error: 'Conflito de atualização' }) });
+      }
+      return route.continue();
+    });
+    await page.goto('/admin/financeiro/lancamentos');
+    await page.getByRole('button', { name: 'Editar' }).first().click();
+    await page.getByRole('button', { name: 'Salvar Alterações' }).click();
+    await expect(page.getByText(/alterado por outro administrador/)).toBeVisible();
+  });
+
+  test('Create error restores button', async ({ page }) => {
+    await page.route('**/api/admin/finance/transactions', (route) => {
+      if (route.request().method() === 'POST') {
+        return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ success: false, error: 'Categoria inativa' }) });
+      }
+      return route.continue();
+    });
+    await page.goto('/admin/financeiro/lancamentos');
+    await page.getByRole('button', { name: 'Novo Lançamento' }).click();
+    await page.getByRole('button', { name: 'Criar Lançamento' }).click();
+    // Should show error and button should be clickable again (not stuck on "Criando...")
+    await expect(page.getByText('Valor inválido')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Criar Lançamento' })).toBeEnabled();
   });
 });
