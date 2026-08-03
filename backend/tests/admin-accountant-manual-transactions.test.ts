@@ -574,6 +574,87 @@ describe('Manual Transactions - Search limit and filter validation', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// SEARCH BY ACCOUNT / CATEGORY / COST_CENTER NAMES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('Manual Transactions - Search includes account/category/cost_center names', () => {
+  it('SQL contains EXISTS subquery for financial_accounts name', async () => {
+    setupFullSuccess();
+    await request(app)
+      .get('/api/admin/finance/accountant-report/manual-transactions')
+      .query({ search: 'Conta XYZ' });
+    // The list SQL is the 7th call (BEGIN, preval1, preval2, preval3, summary, count, list)
+    const listCall = client.query.mock.calls[6];
+    const sql = listCall[0];
+    expect(sql).toContain('EXISTS (SELECT 1 FROM financial_accounts sa WHERE sa.id = t.account_id AND sa.name ILIKE');
+  });
+
+  it('SQL contains EXISTS subquery for financial_categories name', async () => {
+    setupFullSuccess();
+    await request(app)
+      .get('/api/admin/finance/accountant-report/manual-transactions')
+      .query({ search: 'Receitas' });
+    const listCall = client.query.mock.calls[6];
+    const sql = listCall[0];
+    expect(sql).toContain('EXISTS (SELECT 1 FROM financial_categories sc WHERE sc.id = t.category_id AND sc.name ILIKE');
+  });
+
+  it('SQL contains EXISTS subquery for financial_cost_centers name', async () => {
+    setupFullSuccess();
+    await request(app)
+      .get('/api/admin/finance/accountant-report/manual-transactions')
+      .query({ search: 'Operações' });
+    const listCall = client.query.mock.calls[6];
+    const sql = listCall[0];
+    expect(sql).toContain('EXISTS (SELECT 1 FROM financial_cost_centers scc WHERE scc.id = t.cost_center_id AND scc.name ILIKE');
+  });
+
+  it('summary SQL also contains EXISTS subqueries when searching', async () => {
+    setupFullSuccess();
+    await request(app)
+      .get('/api/admin/finance/accountant-report/manual-transactions')
+      .query({ search: 'Test' });
+    // Summary is the 5th call (BEGIN, preval1, preval2, preval3, summary)
+    const summaryCall = client.query.mock.calls[4];
+    const sql = summaryCall[0];
+    expect(sql).toContain('EXISTS (SELECT 1 FROM financial_accounts sa WHERE sa.id = t.account_id AND sa.name ILIKE');
+    expect(sql).toContain('EXISTS (SELECT 1 FROM financial_categories sc WHERE sc.id = t.category_id AND sc.name ILIKE');
+    expect(sql).toContain('EXISTS (SELECT 1 FROM financial_cost_centers scc WHERE scc.id = t.cost_center_id AND scc.name ILIKE');
+  });
+
+  it('count SQL also contains EXISTS subqueries when searching', async () => {
+    setupFullSuccess();
+    await request(app)
+      .get('/api/admin/finance/accountant-report/manual-transactions')
+      .query({ search: 'Test' });
+    // Count is the 6th call (BEGIN, preval1, preval2, preval3, summary, count)
+    const countCall = client.query.mock.calls[5];
+    const sql = countCall[0];
+    expect(sql).toContain('EXISTS (SELECT 1 FROM financial_accounts sa WHERE sa.id = t.account_id AND sa.name ILIKE');
+    expect(sql).toContain('EXISTS (SELECT 1 FROM financial_categories sc WHERE sc.id = t.category_id AND sc.name ILIKE');
+    expect(sql).toContain('EXISTS (SELECT 1 FROM financial_cost_centers scc WHERE scc.id = t.cost_center_id AND scc.name ILIKE');
+  });
+
+  it('CSV SQL also contains EXISTS subqueries when searching', async () => {
+    // Setup for CSV: BEGIN + 3 prevals + CSV query + COMMIT
+    client.query.mockResolvedValueOnce({});
+    setupPreValidationsPass();
+    client.query.mockResolvedValueOnce({ rows: [validTransaction] });
+    client.query.mockResolvedValueOnce({});
+
+    await request(app)
+      .get('/api/admin/finance/accountant-report/manual-transactions/csv')
+      .query({ start_date: '2026-07-01', end_date: '2026-07-30', search: 'Test' });
+    // CSV query is the 5th call (BEGIN, preval1, preval2, preval3, csvQuery)
+    const csvCall = client.query.mock.calls[4];
+    const sql = csvCall[0];
+    expect(sql).toContain('EXISTS (SELECT 1 FROM financial_accounts sa WHERE sa.id = t.account_id AND sa.name ILIKE');
+    expect(sql).toContain('EXISTS (SELECT 1 FROM financial_categories sc WHERE sc.id = t.category_id AND sc.name ILIKE');
+    expect(sql).toContain('EXISTS (SELECT 1 FROM financial_cost_centers scc WHERE scc.id = t.cost_center_id AND scc.name ILIKE');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // FIX 8: pool.connect() PROTECTION TESTS
 // ═══════════════════════════════════════════════════════════════════════════════
 

@@ -747,7 +747,7 @@ function buildManualWhereClause(filters: ManualTransactionFilters): { where: str
   }
 
   if (filters.search) {
-    conditions.push(`(t.id ILIKE $${paramIdx} OR t.description ILIKE $${paramIdx} OR t.external_reference ILIKE $${paramIdx})`);
+    conditions.push(`(t.id ILIKE $${paramIdx} OR t.description ILIKE $${paramIdx} OR t.external_reference ILIKE $${paramIdx} OR EXISTS (SELECT 1 FROM financial_accounts sa WHERE sa.id = t.account_id AND sa.name ILIKE $${paramIdx}) OR EXISTS (SELECT 1 FROM financial_categories sc WHERE sc.id = t.category_id AND sc.name ILIKE $${paramIdx}) OR EXISTS (SELECT 1 FROM financial_cost_centers scc WHERE scc.id = t.cost_center_id AND scc.name ILIKE $${paramIdx}))`);
     params.push(`%${filters.search}%`);
     paramIdx++;
   }
