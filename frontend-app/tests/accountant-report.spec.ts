@@ -259,10 +259,19 @@ test.describe('Territory Labels', () => {
 });
 
 test.describe('Incomplete Data Handling', () => {
-  test('completed ride without driver shows "Dados incompletos"', async ({ page }) => {
+  test('completed ride with driver_id=null shows "Dados incompletos"', async ({ page }) => {
     await setupAuth(page);
     await interceptReport(page);
     await page.goto('/admin/financeiro/contador');
+    // ride-003 has driver_id: null → "Dados incompletos"
     await expect(page.getByText('Dados incompletos').first()).toBeVisible();
+  });
+
+  test('completed ride with driver_id present but driver_name null shows "Não liquidado"', async ({ page }) => {
+    await setupAuth(page);
+    // ride-002 has driver_id: 'd2', driver_name: 'Pedro', UNSETTLED → "Não liquidado"
+    await interceptReport(page);
+    await page.goto('/admin/financeiro/contador');
+    await expect(page.getByText('Não liquidado').first()).toBeVisible();
   });
 });

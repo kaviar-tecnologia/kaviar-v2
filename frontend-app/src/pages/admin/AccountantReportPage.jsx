@@ -151,7 +151,7 @@ function formatTerritory(value) {
  */
 function getFinancialStatusDisplay(ride) {
   const status = ride.financial_status;
-  if (ride.status === 'completed' && status !== 'SETTLED' && !ride.driver_name) {
+  if (ride.status === 'completed' && status !== 'SETTLED' && !ride.driver_id) {
     return { label: 'Dados incompletos', color: '#dc2626' };
   }
   return {
@@ -274,10 +274,10 @@ export default function AccountantReportPage() {
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
-          <Typography variant="h5" sx={{ fontWeight: 700, color: '#1A1A1A' }}>
+          <Typography variant="h5" sx={{ fontWeight: 700, color: '#F8FAFC' }}>
             📊 Área do Contador
           </Typography>
-          <Typography variant="body2" sx={{ color: '#6B7280', mt: 0.5 }}>
+          <Typography variant="body2" sx={{ color: '#CBD5E1', mt: 0.5 }}>
             Relatório financeiro de corridas — somente leitura
           </Typography>
         </Box>
