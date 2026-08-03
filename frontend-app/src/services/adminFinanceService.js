@@ -285,3 +285,29 @@ export const listTerritories = async () => {
     'Não foi possível carregar territórios.'
   );
 };
+
+// ── Financial Transactions CRUD ──────────────────────────────────────────────
+
+export const listFinanceTransactions = async (params = {}) => {
+  return performGet('/api/admin/finance/transactions', params, 'Erro ao listar lançamentos.');
+};
+
+export const getFinanceTransactionById = async (id) => {
+  return performGet(`/api/admin/finance/transactions/${id}`, {}, 'Erro ao carregar lançamento.');
+};
+
+export const createFinanceTransaction = async (body) => {
+  return performPost('/api/admin/finance/transactions', body, 'Erro ao criar lançamento.');
+};
+
+export const updateFinanceTransaction = async (id, body) => {
+  return performPatch(`/api/admin/finance/transactions/${id}`, body, 'Erro ao atualizar lançamento.');
+};
+
+export const postFinanceTransaction = async (id, body) => {
+  return performPost(`/api/admin/finance/transactions/${id}/post`, body, 'Erro ao liquidar lançamento.');
+};
+
+export const cancelFinanceTransaction = async (id, body) => {
+  return performPost(`/api/admin/finance/transactions/${id}/cancel`, body, 'Erro ao cancelar lançamento.');
+};

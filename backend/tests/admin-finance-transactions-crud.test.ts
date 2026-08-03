@@ -113,22 +113,21 @@ describe('PATCH /api/admin/finance/transactions/:id', () => {
   });
 
   it('CAS conflict → 409', async () => {
+    prismaMock.financial_transactions.findUnique.mockResolvedValue({ ...mockTransaction, status: 'DRAFT', source_type: 'MANUAL' });
     prismaMock.financial_transactions.updateMany.mockResolvedValue({ count: 0 });
-    prismaMock.financial_transactions.findUnique.mockResolvedValue({ id: 'txn-1', status: 'DRAFT', source_type: 'MANUAL', updated_at: new Date() });
     const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({ expected_updated_at: '2026-08-01T00:00:00.000Z', description: 'x' });
     expect(res.status).toBe(409);
   });
 
   it('non-MANUAL source via CAS → finds and returns 403', async () => {
-    prismaMock.financial_transactions.updateMany.mockResolvedValue({ count: 0 });
-    prismaMock.financial_transactions.findUnique.mockResolvedValue({ id: 'txn-1', status: 'DRAFT', source_type: 'RIDE', updated_at: new Date() });
+    prismaMock.financial_transactions.findUnique.mockResolvedValue({ ...mockTransaction, status: 'DRAFT', source_type: 'RIDE' });
     const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({ expected_updated_at: '2026-08-01T00:00:00.000Z', description: 'x' });
     expect(res.status).toBe(403);
   });
 
   it('DRAFT + matching updated_at → editable', async () => {
+    prismaMock.financial_transactions.findUnique.mockResolvedValue({ ...mockTransaction, status: 'DRAFT', source_type: 'MANUAL' });
     prismaMock.financial_transactions.updateMany.mockResolvedValue({ count: 1 });
-    prismaMock.financial_transactions.findUnique.mockResolvedValue(mockTransaction);
     const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({ expected_updated_at: '2026-08-01T00:00:00.000Z', description: 'updated' });
     expect(res.status).toBe(200);
   });

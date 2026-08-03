@@ -12,6 +12,7 @@ import type {
   FinanceTransactionPostBody,
   FinanceTransactionCancelBody,
 } from './finance-transaction-validation';
+import { validateDirectionTypeCompatibility } from './finance-transaction-validation';
 
 export class TransactionWriteError extends Error {
   status: number;
@@ -45,6 +46,27 @@ const DETAIL_SELECT = {
   approved_by_admin: { select: { id: true, name: true } },
   responsible_admin: { select: { id: true, name: true } },
 };
+
+function snapshotForAudit(record: any) {
+  if (!record) return null;
+  return {
+    id: record.id,
+    status: record.status,
+    direction: record.direction,
+    transaction_type: record.transaction_type,
+    account_id: record.account_id,
+    category_id: record.category_id,
+    cost_center_id: record.cost_center_id,
+    gross_amount_cents: record.gross_amount_cents?.toString(),
+    net_amount_cents: record.net_amount_cents?.toString(),
+    description: record.description,
+    competence_date: record.competence_date,
+    transaction_date: record.transaction_date,
+    due_date: record.due_date,
+    settlement_date: record.settlement_date,
+    updated_at: record.updated_at,
+  };
+}
 
 async function validateAccountActive(id: string): Promise<void> {
   const acc = await prisma.financial_accounts.findUnique({ where: { id }, select: { id: true, is_active: true } });
@@ -133,6 +155,26 @@ export async function updateFinanceTransaction(
     await validateAccountActive(fields.counterparty_account_id);
   }
 
+  // Capture before state for audit
+  const before = await prisma.financial_transactions.findUnique({ where: { id }, select: DETAIL_SELECT });
+  if (!before) throw new TransactionWriteError('Lançamento não encontrado', 404);
+  if (before.source_type !== 'MANUAL') throw new TransactionWriteError('Somente lançamentos manuais podem ser editados', 403);
+
+  // Validate direction/type compatibility considering existing + new values
+  const effectiveDirection = fields.direction || before.direction;
+  const effectiveType = fields.transaction_type || before.transaction_type;
+  const compatErr = validateDirectionTypeCompatibility(effectiveDirection, effectiveType);
+  if (compatErr) throw new TransactionWriteError(compatErr);
+
+  // Validate counterparty != account
+  const effectiveAccount = fields.account_id || before.account_id;
+  const effectiveCounterparty = fields.counterparty_account_id !== undefined
+    ? fields.counterparty_account_id
+    : before.counterparty_account_id;
+  if (effectiveCounterparty && effectiveCounterparty === effectiveAccount) {
+    throw new TransactionWriteError('Conta de contraparte não pode ser igual à conta principal');
+  }
+
   // CAS: atomic update only if conditions match
   const result = await prisma.financial_transactions.updateMany({
     where: {
@@ -145,16 +187,14 @@ export async function updateFinanceTransaction(
   });
 
   if (result.count === 0) {
-    // Determine cause
-    const existing = await prisma.financial_transactions.findUnique({ where: { id }, select: { id: true, status: true, source_type: true, updated_at: true } });
-    if (!existing) throw new TransactionWriteError('Lançamento não encontrado', 404);
-    if (existing.source_type !== 'MANUAL') throw new TransactionWriteError('Somente lançamentos manuais podem ser editados', 403);
-    if (!EDITABLE_STATUSES.includes(existing.status)) throw new TransactionWriteError(`Lançamento com status ${existing.status} não pode ser editado`);
+    if (!EDITABLE_STATUSES.includes(before.status as any)) {
+      throw new TransactionWriteError(`Lançamento com status ${before.status} não pode ser editado`);
+    }
     throw new TransactionWriteError('Conflito de atualização: o registro foi alterado por outra sessão', 409);
   }
 
-  const updated = await prisma.financial_transactions.findUnique({ where: { id }, select: DETAIL_SELECT });
-  return { record: updated, auditBefore: { status: updated?.status }, auditAfter: fields };
+  const after = await prisma.financial_transactions.findUnique({ where: { id }, select: DETAIL_SELECT });
+  return { record: after, auditBefore: snapshotForAudit(before), auditAfter: snapshotForAudit(after) };
 }
 
 // ── POST (liquidate, CAS) ─────────────────────────────────────────────────
@@ -164,6 +204,10 @@ export async function postFinanceTransaction(
   body: FinanceTransactionPostBody,
   admin: { id: string; email: string; role: string },
 ) {
+  const before = await prisma.financial_transactions.findUnique({ where: { id }, select: DETAIL_SELECT });
+  if (!before) throw new TransactionWriteError('Lançamento não encontrado', 404);
+  if (before.source_type !== 'MANUAL') throw new TransactionWriteError('Somente lançamentos manuais podem ser liquidados', 403);
+
   const result = await prisma.financial_transactions.updateMany({
     where: {
       id,
@@ -179,16 +223,13 @@ export async function postFinanceTransaction(
   });
 
   if (result.count === 0) {
-    const existing = await prisma.financial_transactions.findUnique({ where: { id }, select: { id: true, status: true, source_type: true } });
-    if (!existing) throw new TransactionWriteError('Lançamento não encontrado', 404);
-    if (existing.source_type !== 'MANUAL') throw new TransactionWriteError('Somente lançamentos manuais podem ser liquidados', 403);
-    if (existing.status === 'POSTED') throw new TransactionWriteError('Lançamento já está liquidado');
-    if (!POSTABLE_STATUSES.includes(existing.status)) throw new TransactionWriteError(`Lançamento com status ${existing.status} não pode ser liquidado. POSTED exige estorno para alteração.`);
+    if (before.status === 'POSTED') throw new TransactionWriteError('Lançamento já está liquidado');
+    if (!POSTABLE_STATUSES.includes(before.status as any)) throw new TransactionWriteError(`Lançamento com status ${before.status} não pode ser liquidado. POSTED exige estorno para alteração.`);
     throw new TransactionWriteError('Conflito de atualização: o registro foi alterado por outra sessão', 409);
   }
 
-  const posted = await prisma.financial_transactions.findUnique({ where: { id }, select: DETAIL_SELECT });
-  return { record: posted, auditBefore: { status: 'previous' }, auditAfter: { status: 'POSTED', approved_by: admin.id } };
+  const after = await prisma.financial_transactions.findUnique({ where: { id }, select: DETAIL_SELECT });
+  return { record: after, auditBefore: snapshotForAudit(before), auditAfter: snapshotForAudit(after) };
 }
 
 // ── CANCEL (CAS) ──────────────────────────────────────────────────────────
@@ -198,6 +239,10 @@ export async function cancelFinanceTransaction(
   body: FinanceTransactionCancelBody,
   admin: { id: string; email: string; role: string },
 ) {
+  const before = await prisma.financial_transactions.findUnique({ where: { id }, select: DETAIL_SELECT });
+  if (!before) throw new TransactionWriteError('Lançamento não encontrado', 404);
+  if (before.source_type !== 'MANUAL') throw new TransactionWriteError('Somente lançamentos manuais podem ser cancelados', 403);
+
   const result = await prisma.financial_transactions.updateMany({
     where: {
       id,
@@ -213,15 +258,12 @@ export async function cancelFinanceTransaction(
   });
 
   if (result.count === 0) {
-    const existing = await prisma.financial_transactions.findUnique({ where: { id }, select: { id: true, status: true, source_type: true } });
-    if (!existing) throw new TransactionWriteError('Lançamento não encontrado', 404);
-    if (existing.source_type !== 'MANUAL') throw new TransactionWriteError('Somente lançamentos manuais podem ser cancelados', 403);
-    if (existing.status === 'CANCELED') throw new TransactionWriteError('Lançamento já está cancelado');
-    if (existing.status === 'POSTED') throw new TransactionWriteError('Lançamento liquidado não pode ser cancelado diretamente. Utilize estorno.');
-    if (existing.status === 'CLOSED') throw new TransactionWriteError('Lançamento fechado não pode ser cancelado');
+    if (before.status === 'CANCELED') throw new TransactionWriteError('Lançamento já está cancelado');
+    if (before.status === 'POSTED') throw new TransactionWriteError('Lançamento liquidado não pode ser cancelado diretamente. Utilize estorno.');
+    if (before.status === 'CLOSED') throw new TransactionWriteError('Lançamento fechado não pode ser cancelado');
     throw new TransactionWriteError('Conflito de atualização: o registro foi alterado por outra sessão', 409);
   }
 
-  const canceled = await prisma.financial_transactions.findUnique({ where: { id }, select: DETAIL_SELECT });
-  return { record: canceled, auditBefore: { status: 'previous' }, auditAfter: { status: 'CANCELED', canceled_reason: body.canceled_reason } };
+  const after = await prisma.financial_transactions.findUnique({ where: { id }, select: DETAIL_SELECT });
+  return { record: after, auditBefore: snapshotForAudit(before), auditAfter: snapshotForAudit(after) };
 }
