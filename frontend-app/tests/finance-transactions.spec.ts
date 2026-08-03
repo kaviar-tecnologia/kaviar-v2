@@ -13,7 +13,7 @@ const mockListResponse = { success: true, data: [mockTxn, mockPosted], paginatio
 const mockListAfterReversal = { success: true, data: [mockTxn, mockPostedReversed, mockReversal], pagination: { page: 1, limit: 25, total: 3, totalPages: 1 } };
 const mockAccounts = { success: true, data: [{ id: 'a1', name: 'Banco', code: 'B1' }], pagination: { total: 1 } };
 const mockCategories = { success: true, data: [{ id: 'c1', name: 'Tecnologia', code: 'TECH' }], pagination: { total: 1 } };
-const mockCostCenters = { success: true, data: [], pagination: { total: 0 } };
+const mockCostCenters = { success: true, data: [{ id: 'cc1', name: 'Administrativo', code: 'ADMIN' }], pagination: { total: 1 } };
 
 async function setupAuth(page, data = SA_DATA) {
   await page.addInitScript(({ token, adminData }) => {
@@ -409,5 +409,170 @@ test.describe('Finance Transactions — Reversal Flow', () => {
 
     // Only one reversal request
     expect(reversalRequests).toBe(1);
+  });
+});
+
+test.describe('Finance Transactions — Reference Selectors', () => {
+  test('all ref API calls use limit=100 and is_active=true, never limit>100', async ({ page }) => {
+    await setupAuth(page);
+    const refUrls: string[] = [];
+    await page.route('**/api/admin/finance/transactions?**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) }));
+    await page.route('**/api/admin/finance/transactions', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) }));
+    await page.route('**/api/admin/finance/accounts**', (route) => { refUrls.push(route.request().url()); route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockAccounts) }); });
+    await page.route('**/api/admin/finance/categories**', (route) => { refUrls.push(route.request().url()); route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCategories) }); });
+    await page.route('**/api/admin/finance/cost-centers**', (route) => { refUrls.push(route.request().url()); route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCostCenters) }); });
+
+    await page.goto('/admin/financeiro/lancamentos');
+    await expect(page.getByText('Lançamentos Financeiros')).toBeVisible();
+
+    // At least 3 ref calls must have been made
+    expect(refUrls.length).toBeGreaterThanOrEqual(3);
+    // Every call must have limit=100 and is_active=true, never limit>100
+    for (const url of refUrls) {
+      expect(url).toContain('limit=100');
+      expect(url).toContain('is_active=true');
+      expect(url).not.toMatch(/limit=(1[0-9][1-9]|[2-9]\d\d|\d{4,})/);
+    }
+  });
+
+  test('account, category, and cost center options appear and can be selected', async ({ page }) => {
+    await setupAuth(page);
+    await interceptAPIs(page);
+    await page.goto('/admin/financeiro/lancamentos');
+    await page.getByRole('button', { name: 'Novo Lançamento' }).click();
+    await expect(page.getByText('Novo Lançamento Manual')).toBeVisible();
+
+    const dialog = page.locator('[role="dialog"]');
+
+    // Open Conta select and pick 'Banco'
+    await dialog.getByLabel('Conta *').click();
+    await page.getByRole('option', { name: 'Banco' }).click();
+    // Verify selection: the combobox now displays 'Banco'
+    await expect(dialog.getByRole('combobox', { name: /Conta/ })).toHaveText('Banco');
+
+    // Open Categoria select and pick 'Tecnologia'
+    await dialog.getByLabel('Categoria *').click();
+    await page.getByRole('option', { name: 'Tecnologia' }).click();
+    await expect(dialog.getByRole('combobox', { name: /Categoria/ })).toHaveText('Tecnologia');
+
+    // Open Centro de Custo select and pick 'Administrativo'
+    await dialog.getByLabel('Centro de Custo').click();
+    await page.getByRole('option', { name: 'Administrativo' }).click();
+    await expect(dialog.getByRole('combobox', { name: /Centro de Custo/ })).toHaveText('Administrativo');
+  });
+
+  test('empty categories shows message and blocks modal', async ({ page }) => {
+    await setupAuth(page);
+    await page.route('**/api/admin/finance/transactions?**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) }));
+    await page.route('**/api/admin/finance/transactions', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) }));
+    await page.route('**/api/admin/finance/accounts**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockAccounts) }));
+    await page.route('**/api/admin/finance/categories**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [], pagination: { total: 0 } }) }));
+    await page.route('**/api/admin/finance/cost-centers**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCostCenters) }));
+
+    await page.goto('/admin/financeiro/lancamentos');
+    await expect(page.getByText('Lançamentos Financeiros')).toBeVisible();
+    await expect(page.getByText(/Nenhuma categoria financeira ativa/)).toBeVisible();
+    // Click should not open modal
+    await page.getByRole('button', { name: 'Novo Lançamento' }).click();
+    await expect(page.getByText('Novo Lançamento Manual')).not.toBeVisible();
+  });
+
+  test('refs API failure shows error message and blocks modal', async ({ page }) => {
+    await setupAuth(page);
+    await page.route('**/api/admin/finance/transactions?**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) }));
+    await page.route('**/api/admin/finance/transactions', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) }));
+    await page.route('**/api/admin/finance/accounts**', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ success: false }) }));
+    await page.route('**/api/admin/finance/categories**', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ success: false }) }));
+    await page.route('**/api/admin/finance/cost-centers**', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ success: false }) }));
+
+    await page.goto('/admin/financeiro/lancamentos');
+    await expect(page.getByText('Lançamentos Financeiros')).toBeVisible();
+    await expect(page.getByText(/Não foi possível carregar contas/)).toBeVisible();
+    await page.getByRole('button', { name: 'Novo Lançamento' }).click();
+    await expect(page.getByText('Novo Lançamento Manual')).not.toBeVisible();
+  });
+
+  test('empty accounts shows informational message and blocks modal', async ({ page }) => {
+    await setupAuth(page);
+    await page.route('**/api/admin/finance/transactions?**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) }));
+    await page.route('**/api/admin/finance/transactions', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) }));
+    await page.route('**/api/admin/finance/accounts**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [], pagination: { total: 0 } }) }));
+    await page.route('**/api/admin/finance/categories**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCategories) }));
+    await page.route('**/api/admin/finance/cost-centers**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCostCenters) }));
+
+    await page.goto('/admin/financeiro/lancamentos');
+    await expect(page.getByText('Lançamentos Financeiros')).toBeVisible();
+    await expect(page.getByText(/Nenhuma conta financeira ativa/)).toBeVisible();
+    // Click should not open modal
+    await page.getByRole('button', { name: 'Novo Lançamento' }).click();
+    await expect(page.getByText('Novo Lançamento Manual')).not.toBeVisible();
+  });
+
+  test('recovery after error: Recarregar fixes refs and allows modal', async ({ page }) => {
+    await setupAuth(page);
+    let shouldFail = true;
+    await page.route('**/api/admin/finance/transactions?**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) }));
+    await page.route('**/api/admin/finance/transactions', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) }));
+    await page.route('**/api/admin/finance/accounts**', (route) => {
+      if (shouldFail) return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ success: false }) });
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockAccounts) });
+    });
+    await page.route('**/api/admin/finance/categories**', (route) => {
+      if (shouldFail) return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ success: false }) });
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCategories) });
+    });
+    await page.route('**/api/admin/finance/cost-centers**', (route) => {
+      if (shouldFail) return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ success: false }) });
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCostCenters) });
+    });
+
+    await page.goto('/admin/financeiro/lancamentos');
+    await expect(page.getByText('Lançamentos Financeiros')).toBeVisible();
+    // Error is shown
+    await expect(page.getByText(/Não foi possível carregar contas/)).toBeVisible();
+
+    // Switch to success
+    shouldFail = false;
+    // Click Recarregar
+    await page.getByRole('button', { name: 'Recarregar' }).first().click();
+    // Error disappears
+    await expect(page.getByText(/Não foi possível carregar contas/)).not.toBeVisible();
+
+    // Now Novo Lançamento should work
+    await page.getByRole('button', { name: 'Novo Lançamento' }).click();
+    await expect(page.getByText('Novo Lançamento Manual')).toBeVisible();
+  });
+
+  test('Novo Lançamento reloads refs on each click', async ({ page }) => {
+    await setupAuth(page);
+    let accountCalls = 0;
+    await page.route('**/api/admin/finance/transactions?**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) }));
+    await page.route('**/api/admin/finance/transactions', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) }));
+    await page.route('**/api/admin/finance/accounts**', (route) => { accountCalls++; route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockAccounts) }); });
+    await page.route('**/api/admin/finance/categories**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCategories) }));
+    await page.route('**/api/admin/finance/cost-centers**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCostCenters) }));
+
+    await page.goto('/admin/financeiro/lancamentos');
+    await expect(page.getByText('Lançamentos Financeiros')).toBeVisible();
+    const initialCalls = accountCalls;
+    await page.getByRole('button', { name: 'Novo Lançamento' }).click();
+    await expect(page.getByText('Novo Lançamento Manual')).toBeVisible();
+    expect(accountCalls).toBeGreaterThan(initialCalls);
+  });
+
+  test('FINANCE role cannot create transactions', async ({ page }) => {
+    await setupAuth(page, FIN_DATA);
+    await interceptAPIs(page);
+    await page.goto('/admin/financeiro/lancamentos');
+    await expect(page.getByText('Lançamentos Financeiros')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Novo Lançamento' })).not.toBeVisible();
+  });
+
+  test('SUPER_ADMIN can open modal when refs available', async ({ page }) => {
+    await setupAuth(page);
+    await interceptAPIs(page);
+    await page.goto('/admin/financeiro/lancamentos');
+    await page.getByRole('button', { name: 'Novo Lançamento' }).click();
+    await expect(page.getByText('Novo Lançamento Manual')).toBeVisible();
   });
 });

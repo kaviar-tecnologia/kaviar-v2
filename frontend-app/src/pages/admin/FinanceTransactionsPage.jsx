@@ -72,16 +72,31 @@ export default function FinanceTransactionsPage() {
   const [accounts, setAccounts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [costCenters, setCostCenters] = useState([]);
+  const [refsLoading, setRefsLoading] = useState(false);
+  const [refsError, setRefsError] = useState('');
 
   const fetchRefs = useCallback(async () => {
-    const [a, c, cc] = await Promise.all([
-      listFinanceAccounts({ limit: 100 }),
-      listFinanceCategories({ limit: 200 }),
-      listFinanceCostCenters({ limit: 100 }),
-    ]);
-    if (a?.data) setAccounts(a.data);
-    if (c?.data) setCategories(c.data);
-    if (cc?.data) setCostCenters(cc.data);
+    setRefsLoading(true);
+    setRefsError('');
+    try {
+      const [a, c, cc] = await Promise.all([
+        listFinanceAccounts({ limit: 100, is_active: true }),
+        listFinanceCategories({ limit: 100, is_active: true }),
+        listFinanceCostCenters({ limit: 100, is_active: true }),
+      ]);
+      const accs = a?.data || [];
+      const cats = c?.data || [];
+      const ccs = cc?.data || [];
+      setAccounts(accs);
+      setCategories(cats);
+      setCostCenters(ccs);
+      return { accounts: accs, categories: cats, costCenters: ccs };
+    } catch (err) {
+      setRefsError('Não foi possível carregar contas, categorias e centros de custo. Atualize os dados antes de criar um lançamento.');
+      return null;
+    } finally {
+      setRefsLoading(false);
+    }
   }, []);
 
   const fetchData = useCallback(async (p = page, l = limit) => {
@@ -153,14 +168,22 @@ export default function FinanceTransactionsPage() {
           <Typography variant="body2" sx={{ color: '#CBD5E1', mt: 0.5 }}>Gestão de despesas e receitas manuais</Typography>
         </Box>
         {canWrite && (
-          <Button variant="contained" startIcon={<Add />} onClick={() => setCreateOpen(true)}
+          <Button variant="contained" startIcon={refsLoading ? <CircularProgress size={16} color="inherit" /> : <Add />} disabled={refsLoading}
+            onClick={async () => {
+              const refs = await fetchRefs();
+              if (!refs || refs.accounts.length === 0 || refs.categories.length === 0) return;
+              setCreateOpen(true);
+            }}
             sx={{ textTransform: 'none', fontWeight: 600, bgcolor: '#16a34a', '&:hover': { bgcolor: '#15803d' } }}>
-            Novo Lançamento
+            {refsLoading ? 'Carregando...' : 'Novo Lançamento'}
           </Button>
         )}
       </Box>
 
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
+      {refsError && <Alert severity="warning" sx={{ mb: 2 }} action={<Button size="small" onClick={fetchRefs}>Recarregar</Button>}>{refsError}</Alert>}
+      {!refsError && !refsLoading && accounts.length === 0 && canWrite && <Alert severity="info" sx={{ mb: 2 }}>Nenhuma conta financeira ativa disponível. Cadastre ou ative uma conta antes de criar o lançamento.</Alert>}
+      {!refsError && !refsLoading && categories.length === 0 && canWrite && <Alert severity="info" sx={{ mb: 2 }}>Nenhuma categoria financeira ativa disponível.</Alert>}
       {conflictMsg && <Alert severity="warning" sx={{ mb: 2 }} action={<Button size="small" onClick={() => { setConflictMsg(''); fetchData(); }}>Recarregar</Button>}>{conflictMsg}</Alert>}
       {successMsg && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccessMsg('')}>{successMsg}</Alert>}
 
