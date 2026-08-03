@@ -311,3 +311,7 @@ export const postFinanceTransaction = async (id, body) => {
 export const cancelFinanceTransaction = async (id, body) => {
   return performPost(`/api/admin/finance/transactions/${id}/cancel`, body, 'Erro ao cancelar lançamento.');
 };
+
+export const reverseFinanceTransaction = async (id, body) => {
+  return performPost(`/api/admin/finance/transactions/${id}/reverse`, body, 'Erro ao estornar lançamento.');
+};

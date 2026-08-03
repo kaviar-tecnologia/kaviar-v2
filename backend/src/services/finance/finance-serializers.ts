@@ -259,6 +259,7 @@ export function serializeTransactionItem(transaction: any) {
     source_id: transaction.source_id ?? null,
     origin_type: transaction.origin_type,
     origin_id: transaction.origin_id ?? null,
+    reversal_of_id: transaction.reversal_of_id ?? null,
     account: serializeAccountSummary(transaction.account),
     counterparty_account: serializeAccountSummary(transaction.counterparty_account),
     category: serializeCategorySummary(transaction.category),

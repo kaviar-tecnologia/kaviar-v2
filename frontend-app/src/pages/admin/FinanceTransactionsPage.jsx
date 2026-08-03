@@ -4,7 +4,7 @@
  * Uses: useAdminAuth, adminFinanceService, parseBRLToCentsString, formatCentsStringToBRL
  * No Number/parseFloat/Math for money. CAS via expected_updated_at.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Container,
   Dialog, DialogActions, DialogContent, DialogTitle, Grid, MenuItem,
@@ -16,7 +16,7 @@ import { useAdminAuth } from '../../hooks/useAdminAuth';
 import {
   listFinanceTransactions, listFinanceAccounts, listFinanceCategories,
   listFinanceCostCenters, createFinanceTransaction, updateFinanceTransaction,
-  postFinanceTransaction, cancelFinanceTransaction,
+  postFinanceTransaction, cancelFinanceTransaction, reverseFinanceTransaction,
 } from '../../services/adminFinanceService';
 import { parseBRLToCentsString, formatCentsStringToBRL } from '../../utils/brlCurrency';
 
@@ -65,7 +65,9 @@ export default function FinanceTransactionsPage() {
   const [editDialog, setEditDialog] = useState(null); // txn to edit
   const [postDialog, setPostDialog] = useState(null); // txn to liquidate
   const [cancelDialog, setCancelDialog] = useState(null); // txn to cancel
+  const [reverseDialog, setReverseDialog] = useState(null); // txn to reverse
   const [conflictMsg, setConflictMsg] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   // Reference data
   const [accounts, setAccounts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -124,6 +126,22 @@ export default function FinanceTransactionsPage() {
     }
   };
 
+  const handleReverse = async (txn, reversalDate, reason) => {
+    setSuccessMsg(''); setConflictMsg(''); setError('');
+    try {
+      await reverseFinanceTransaction(txn.id, { expected_updated_at: txn.updated_at, reversal_date: reversalDate, reason });
+      setReverseDialog(null);
+      setSuccessMsg('Lançamento estornado com sucesso.');
+      await fetchData();
+    } catch (err) {
+      const msg = err?.message || err?.error || 'Erro ao estornar';
+      if (msg.includes('409') || msg.includes('Conflito') || msg.includes('alterado') || msg.includes('já possui')) {
+        setConflictMsg('O lançamento foi alterado ou já possui estorno. Recarregue os dados.');
+        setReverseDialog(null);
+      } else { setError(msg); }
+    }
+  };
+
   const rows = data?.data || [];
   const pagination = data?.pagination;
 
@@ -144,6 +162,7 @@ export default function FinanceTransactionsPage() {
 
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
       {conflictMsg && <Alert severity="warning" sx={{ mb: 2 }} action={<Button size="small" onClick={() => { setConflictMsg(''); fetchData(); }}>Recarregar</Button>}>{conflictMsg}</Alert>}
+      {successMsg && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccessMsg('')}>{successMsg}</Alert>}
 
       {/* Filters */}
       <Card sx={{ mb: 3, border: '1px solid #E5E7EB' }}>
@@ -202,7 +221,9 @@ export default function FinanceTransactionsPage() {
                           <Button size="small" color="error" sx={{ fontSize: 9, minWidth: 'auto', px: 1 }} onClick={() => setCancelDialog(txn)}>Cancelar</Button>
                         </Box>
                       )}
-                      {txn.status === 'POSTED' && <Typography sx={{ fontSize: 9, color: '#6b7280' }}>Estorno necessário</Typography>}
+                      {txn.status === 'POSTED' && txn.transaction_type !== 'REVERSAL' && !txn.reversal_of_id && <Button size="small" color="warning" sx={{ fontSize: 9, minWidth: 'auto', px: 1 }} onClick={() => setReverseDialog(txn)}>Estornar</Button>}
+                      {txn.status === 'REVERSED' && <Chip label="Estornado" size="small" sx={{ fontSize: 9, height: 18, color: '#7c3aed', bgcolor: '#7c3aed15' }} />}
+                      {txn.transaction_type === 'REVERSAL' && <Chip label="Estorno" size="small" sx={{ fontSize: 9, height: 18, color: '#6b7280', bgcolor: '#6b728015' }} />}
                     </TableCell>}
                   </TableRow>
                 ))}
@@ -224,6 +245,9 @@ export default function FinanceTransactionsPage() {
 
       {/* Cancel Dialog */}
       {cancelDialog && <CancelDialog txn={cancelDialog} onClose={() => setCancelDialog(null)} onConfirm={handleCancel} />}
+
+      {/* Reversal Dialog */}
+      {reverseDialog && <ReversalDialog txn={reverseDialog} onClose={() => setReverseDialog(null)} onConfirm={handleReverse} />}
     </Container>
   );
 }
@@ -435,6 +459,53 @@ function EditDialog({ txn, onClose, onSaved, onConflict, accounts, categories, c
       <DialogActions>
         <Button onClick={onClose} disabled={submitting}>Cancelar</Button>
         <Button variant="contained" onClick={handleSave} disabled={submitting} sx={{ bgcolor: '#2563EB', '&:hover': { bgcolor: '#1D4ED8' } }}>{submitting ? 'Salvando...' : 'Salvar Alterações'}</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+// ── Reversal Dialog ────────────────────────────────────────────────────────
+function ReversalDialog({ txn, onClose, onConfirm }) {
+  const [date, setDate] = useState(todayLocalISO());
+  const [reason, setReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const handle = async () => {
+    if (submittingRef.current) return;
+
+    const trimmedReason = reason.trim();
+    if (trimmedReason.length < 3) return;
+
+    submittingRef.current = true;
+    setSubmitting(true);
+
+    try {
+      await onConfirm(txn, date, trimmedReason);
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+  };
+  return (
+    <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle sx={{ fontWeight: 700, color: '#7c3aed' }}>Estornar Lançamento</DialogTitle>
+      <DialogContent>
+        <Box sx={{ mt: 1 }}>
+          <Typography variant="body2"><strong>Descrição:</strong> {txn.description}</Typography>
+          <Typography variant="body2"><strong>Conta:</strong> {txn.account?.name}</Typography>
+          <Typography variant="body2"><strong>Categoria:</strong> {txn.category?.name}</Typography>
+          <Typography variant="body2"><strong>Direção:</strong> {DIR_LABELS[txn.direction]}</Typography>
+          <Typography variant="body2"><strong>Valor:</strong> {formatCentsStringToBRL(txn.net_amount_cents)}</Typography>
+          <Typography variant="body2"><strong>Data transação:</strong> {formatCalendarDate(txn.transaction_date)}</Typography>
+          <Typography variant="body2"><strong>Liquidação:</strong> {formatCalendarDate(txn.settlement_date)}</Typography>
+          <Alert severity="info" sx={{ mt: 2, mb: 2 }}>O estorno criará um lançamento inverso e não editará o lançamento original.</Alert>
+          <TextField label="Data do estorno *" type="date" size="small" fullWidth sx={{ mb: 2 }} value={date} onChange={(e) => setDate(e.target.value)} InputLabelProps={{ shrink: true }} />
+          <TextField label="Motivo do estorno *" fullWidth size="small" value={reason} onChange={(e) => setReason(e.target.value)} multiline rows={2} placeholder="Informe o motivo (mín. 3 caracteres)..." />
+        </Box>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} disabled={submitting}>Voltar</Button>
+        <Button variant="contained" color="warning" onClick={handle} disabled={submitting || reason.trim().length < 3}>{submitting ? 'Estornando...' : 'Confirmar Estorno'}</Button>
       </DialogActions>
     </Dialog>
   );
