@@ -275,27 +275,76 @@ export default function AccountantReportPage() {
 
   return (
     <Container maxWidth="lg" sx={{ mt: 2, pb: 6 }}>
-      {/* Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Box>
-          <Typography variant="h5" sx={{ fontWeight: 700, color: '#F8FAFC' }}>
-            📊 Área do Contador
-          </Typography>
-          <Typography variant="body2" sx={{ color: '#CBD5E1', mt: 0.5 }}>
-            Relatório financeiro de corridas — somente leitura
-          </Typography>
+      {/* Header + Tabs — clear surface with high contrast */}
+      <Box
+        sx={{
+          bgcolor: '#FFFFFF',
+          border: '1px solid #E5E7EB',
+          borderRadius: 3,
+          boxShadow: '0 8px 24px rgba(15, 23, 42, 0.08)',
+          px: 3,
+          pt: 3,
+          pb: 0,
+          mb: 3,
+        }}
+      >
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+          <Box>
+            <Typography variant="h5" sx={{ fontWeight: 700, color: '#111827' }}>
+              📊 Área do Contador
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#4B5563', mt: 0.5 }}>
+              {activeTab === 0
+                ? 'Relatório financeiro de corridas — somente leitura'
+                : 'Relatório de lançamentos manuais — somente leitura'}
+            </Typography>
+          </Box>
+          <Chip
+            icon={<Lock sx={{ fontSize: 14 }} />}
+            label="Somente Leitura"
+            size="small"
+            sx={{ bgcolor: '#FEF3C7', color: '#92400E', fontWeight: 600, border: '1px solid #FDE68A' }}
+          />
         </Box>
-        <Chip
-          icon={<Lock sx={{ fontSize: 14 }} />}
-          label="Somente Leitura"
-          size="small"
-          sx={{ bgcolor: '#FEF3C7', color: '#92400E', fontWeight: 600, border: '1px solid #FDE68A' }}
-        />
-      </Box>
 
-      {/* Tabs */}
-      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
-        <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)}>
+        {/* Tabs — always visible with explicit colors */}
+        <Tabs
+          value={activeTab}
+          onChange={(_, v) => setActiveTab(v)}
+          variant="scrollable"
+          scrollButtons="auto"
+          allowScrollButtonsMobile
+          sx={{
+            mt: 2,
+            minHeight: 46,
+            '& .MuiTabs-indicator': {
+              height: 3,
+              borderRadius: 999,
+              backgroundColor: '#2563EB',
+            },
+            '& .MuiTab-root': {
+              minHeight: 46,
+              px: 2,
+              color: '#4B5563',
+              opacity: 1,
+              fontWeight: 700,
+              textTransform: 'none',
+              borderRadius: '10px 10px 0 0',
+              '&:hover': {
+                color: '#1D4ED8',
+                backgroundColor: '#EFF6FF',
+              },
+              '&.Mui-selected': {
+                color: '#1D4ED8',
+                backgroundColor: '#EFF6FF',
+              },
+              '&:focus-visible': {
+                outline: '2px solid #2563EB',
+                outlineOffset: -2,
+              },
+            },
+          }}
+        >
           <Tab label="Corridas" />
           <Tab label="Lançamentos Manuais" />
         </Tabs>
