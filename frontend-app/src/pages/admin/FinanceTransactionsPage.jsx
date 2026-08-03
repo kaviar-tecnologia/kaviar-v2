@@ -29,8 +29,27 @@ const TYPE_OPTIONS_OUT = [{ value: 'EXPENSE', label: 'Despesa' }, { value: 'PAYA
 const PAYMENT_OPTIONS = [{ v: 'PIX', l: 'Pix' }, { v: 'BOLETO', l: 'Boleto' }, { v: 'BANK_TRANSFER', l: 'Transferência' }, { v: 'CARD', l: 'Cartão' }, { v: 'CASH', l: 'Dinheiro' }, { v: 'NONE', l: 'Nenhum' }];
 const COUNTERPARTY_TYPES = [{ v: 'ACCOUNTING', l: 'Contabilidade' }, { v: 'MARKETING', l: 'Divulgação' }, { v: 'LEGAL', l: 'Jurídico' }, { v: 'PARTNER', l: 'Sócio' }, { v: 'TERRITORIAL_MANAGER', l: 'Gestor' }, { v: 'GOVERNMENT', l: 'Governo/Prefeitura' }, { v: 'TECHNOLOGY', l: 'Tecnologia' }, { v: 'OTHER', l: 'Outro' }];
 
-function formatDate(v) { if (!v) return '—'; return new Date(v).toLocaleDateString('pt-BR'); }
-function todayISO() { return new Date().toISOString().slice(0, 10); }
+/** Extract YYYY-MM-DD part without timezone conversion */
+function datePart(value) { if (!value) return ''; return String(value).slice(0, 10); }
+
+/** Format YYYY-MM-DD to DD/MM/YYYY without new Date() interpretation */
+function formatCalendarDate(value) {
+  const iso = datePart(value);
+  if (!iso) return '—';
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!match) return '—';
+  const [, year, month, day] = match;
+  return `${day}/${month}/${year}`;
+}
+
+/** Today in local timezone as YYYY-MM-DD (no UTC shift) */
+function todayLocalISO() {
+  const now = new Date();
+  const year = String(now.getFullYear());
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 export default function FinanceTransactionsPage() {
   const { getAdminData, isSuperAdmin } = useAdminAuth();
@@ -168,12 +187,12 @@ export default function FinanceTransactionsPage() {
                   <TableRow><TableCell colSpan={8} align="center" sx={{ py: 6, color: '#9CA3AF' }}>Nenhum lançamento encontrado.</TableCell></TableRow>
                 ) : rows.map((txn) => (
                   <TableRow key={txn.id} hover>
-                    <TableCell sx={{ fontSize: 11 }}>{formatDate(txn.competence_date)}</TableCell>
+                    <TableCell sx={{ fontSize: 11 }}>{formatCalendarDate(txn.competence_date)}</TableCell>
                     <TableCell sx={{ fontSize: 11, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{txn.description}</TableCell>
                     <TableCell sx={{ fontSize: 11 }}>{txn.category?.name || '—'}</TableCell>
                     <TableCell><Chip label={DIR_LABELS[txn.direction] || txn.direction} size="small" sx={{ fontSize: 10, height: 20, fontWeight: 600, bgcolor: txn.direction === 'IN' ? '#dcfce7' : '#fef2f2', color: txn.direction === 'IN' ? '#16a34a' : '#dc2626' }} /></TableCell>
                     <TableCell sx={{ fontSize: 11, fontWeight: 600 }} align="right">{formatCentsStringToBRL(txn.net_amount_cents)}</TableCell>
-                    <TableCell sx={{ fontSize: 11 }}>{formatDate(txn.due_date)}</TableCell>
+                    <TableCell sx={{ fontSize: 11 }}>{formatCalendarDate(txn.due_date)}</TableCell>
                     <TableCell><Chip label={STATUS_LABELS[txn.status] || txn.status} size="small" sx={{ fontSize: 10, height: 20, fontWeight: 600, bgcolor: `${STATUS_COLORS[txn.status] || '#6b7280'}15`, color: STATUS_COLORS[txn.status] || '#6b7280' }} /></TableCell>
                     {canWrite && <TableCell sx={{ fontSize: 10 }}>
                       {(txn.status === 'DRAFT' || txn.status === 'PENDING') && (
@@ -211,7 +230,7 @@ export default function FinanceTransactionsPage() {
 
 // ── Create Dialog ──────────────────────────────────────────────────────────
 function CreateDialog({ open, onClose, onCreated, accounts, categories, costCenters }) {
-  const [form, setForm] = useState({ account_id: '', category_id: '', cost_center_id: '', direction: 'OUT', transaction_type: 'EXPENSE', payment_method: 'PIX', competence_date: todayISO(), transaction_date: todayISO(), due_date: '', valor: '', description: '', memo: '', metadata: {} });
+  const [form, setForm] = useState({ account_id: '', category_id: '', cost_center_id: '', direction: 'OUT', transaction_type: 'EXPENSE', payment_method: 'PIX', competence_date: todayLocalISO(), transaction_date: todayLocalISO(), due_date: '', valor: '', description: '', memo: '', metadata: {} });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
@@ -280,7 +299,7 @@ function CreateDialog({ open, onClose, onCreated, accounts, categories, costCent
 
 // ── Post (Liquidate) Dialog ────────────────────────────────────────────────
 function PostDialog({ txn, onClose, onConfirm }) {
-  const [date, setDate] = useState(todayISO());
+  const [date, setDate] = useState(todayLocalISO());
   const [submitting, setSubmitting] = useState(false);
   const handle = async () => { setSubmitting(true); await onConfirm(txn, date); setSubmitting(false); };
   return (
@@ -293,7 +312,7 @@ function PostDialog({ txn, onClose, onConfirm }) {
           <Typography variant="body2"><strong>Categoria:</strong> {txn.category?.name}</Typography>
           <Typography variant="body2"><strong>Direção:</strong> {DIR_LABELS[txn.direction]}</Typography>
           <Typography variant="body2"><strong>Valor:</strong> {formatCentsStringToBRL(txn.net_amount_cents)}</Typography>
-          <Typography variant="body2"><strong>Data transação:</strong> {formatDate(txn.transaction_date)}</Typography>
+          <Typography variant="body2"><strong>Data transação:</strong> {formatCalendarDate(txn.transaction_date)}</Typography>
           <TextField label="Data de liquidação" type="date" size="small" fullWidth sx={{ mt: 2 }} value={date} onChange={(e) => setDate(e.target.value)} InputLabelProps={{ shrink: true }} />
         </Box>
       </DialogContent>
@@ -366,7 +385,7 @@ function EditDialog({ txn, onClose, onSaved, onConflict, accounts, categories, c
         description: form.description.trim(),
         account_id: form.account_id || undefined,
         category_id: form.category_id || undefined,
-        cost_center_id: form.cost_center_id || undefined,
+        cost_center_id: form.cost_center_id || null,
         direction: form.direction,
         transaction_type: form.transaction_type,
         payment_method: form.payment_method || undefined,
@@ -375,8 +394,8 @@ function EditDialog({ txn, onClose, onSaved, onConflict, accounts, categories, c
         due_date: form.due_date || null,
         gross_amount_cents: cents,
         net_amount_cents: cents,
-        memo: form.memo || undefined,
-        metadata: Object.keys(form.metadata).length > 0 ? form.metadata : undefined,
+        memo: form.memo.trim() ? form.memo.trim() : null,
+        metadata: Object.keys(form.metadata).some(k => form.metadata[k]) ? form.metadata : null,
       };
       await updateFinanceTransaction(txn.id, body);
       onSaved();

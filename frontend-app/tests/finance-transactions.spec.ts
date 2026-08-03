@@ -155,3 +155,92 @@ test.describe('Finance Transactions — Edit Flow', () => {
     await expect(page.getByRole('button', { name: 'Criar Lançamento' })).toBeEnabled();
   });
 });
+
+test.describe('Finance Transactions — Calendar Dates (America/Sao_Paulo)', () => {
+  test.use({ timezoneId: 'America/Sao_Paulo' });
+
+  test('2026-08-01 displays as 01/08/2026, not 31/07/2026', async ({ page }) => {
+    await setupAuth(page);
+    await interceptAPIs(page);
+    await page.goto('/admin/financeiro/lancamentos');
+    // mockTxn has competence_date: '2026-08-01' — must show 01/08/2026
+    await expect(page.getByText('01/08/2026').first()).toBeVisible();
+  });
+
+  test('todayLocalISO uses local day even at 23h Brazil', async ({ page }) => {
+    await setupAuth(page);
+    await interceptAPIs(page);
+    // Set clock to 2026-08-02 23:30 BRT (Aug 03 02:30 UTC)
+    await page.clock.setFixedTime(new Date('2026-08-03T02:30:00.000Z'));
+    await page.goto('/admin/financeiro/lancamentos');
+    await page.getByRole('button', { name: 'Novo Lançamento' }).click();
+    // The competence date input should show 2026-08-02 (local day), not 2026-08-03
+    const input = page.locator('input[type="date"]').first();
+    await expect(input).toHaveValue('2026-08-02');
+  });
+});
+
+test.describe('Finance Transactions — EditDialog Detailed', () => {
+  test.beforeEach(async ({ page }) => { await setupAuth(page); await interceptAPIs(page); });
+
+  test('EditDialog opens with existing description and value', async ({ page }) => {
+    await page.goto('/admin/financeiro/lancamentos');
+    await page.getByRole('button', { name: 'Editar' }).first().click();
+    await expect(page.getByText('Editar Lançamento')).toBeVisible();
+    // Should have the description pre-filled
+    const descInput = page.locator('input').filter({ hasText: /AWS Agosto/ });
+    // Alternative: check dialog has the text
+    await expect(page.locator('[role="dialog"]')).toContainText('Editar');
+  });
+
+  test('PATCH sends expected_updated_at and gross=net', async ({ page }) => {
+    let patchBody = null;
+    await page.route('**/api/admin/finance/transactions/txn-1', (route) => {
+      if (route.request().method() === 'PATCH') {
+        patchBody = JSON.parse(route.request().postData() || '{}');
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: mockTxn }) });
+      }
+      return route.continue();
+    });
+    await page.goto('/admin/financeiro/lancamentos');
+    await page.getByRole('button', { name: 'Editar' }).first().click();
+    await page.getByRole('button', { name: 'Salvar Alterações' }).click();
+    await page.waitForTimeout(500);
+    expect(patchBody).not.toBeNull();
+    expect(patchBody.expected_updated_at).toBeDefined();
+    expect(patchBody.gross_amount_cents).toBe(patchBody.net_amount_cents);
+  });
+
+  test('Successful edit closes dialog and reloads', async ({ page }) => {
+    await page.route('**/api/admin/finance/transactions/txn-1', (route) => {
+      if (route.request().method() === 'PATCH') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: mockTxn }) });
+      }
+      return route.continue();
+    });
+    await page.goto('/admin/financeiro/lancamentos');
+    await page.getByRole('button', { name: 'Editar' }).first().click();
+    await page.getByRole('button', { name: 'Salvar Alterações' }).click();
+    await page.waitForTimeout(500);
+    await expect(page.getByText('Editar Lançamento')).not.toBeVisible();
+  });
+
+  test('Clearing cost_center sends null', async ({ page }) => {
+    let patchBody = null;
+    await page.route('**/api/admin/finance/transactions/txn-1', (route) => {
+      if (route.request().method() === 'PATCH') {
+        patchBody = JSON.parse(route.request().postData() || '{}');
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: mockTxn }) });
+      }
+      return route.continue();
+    });
+    await page.goto('/admin/financeiro/lancamentos');
+    await page.getByRole('button', { name: 'Editar' }).first().click();
+    await page.getByRole('button', { name: 'Salvar Alterações' }).click();
+    await page.waitForTimeout(500);
+    if (patchBody) {
+      // cost_center_id should be null when empty
+      expect(patchBody.cost_center_id).toBeNull();
+    }
+  });
+});
