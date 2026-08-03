@@ -432,4 +432,115 @@ router.get('/transactions/:id', async (req: Request, res: Response) => {
   }
 });
 
+// ── Manual Transaction CRUD (SUPER_ADMIN only for writes) ─────────────────
+
+import {
+  financeTransactionCreateBodySchema,
+  financeTransactionUpdateBodySchema,
+  financeTransactionPostBodySchema,
+  financeTransactionCancelBodySchema,
+} from '../services/finance/finance-transaction-validation';
+import {
+  createFinanceTransaction,
+  updateFinanceTransaction,
+  postFinanceTransaction,
+  cancelFinanceTransaction,
+  TransactionWriteError,
+} from '../services/finance/finance-transaction-crud.service';
+
+function requireSuperAdminRole(req: Request, res: Response): boolean {
+  const admin = (req as any).admin;
+  if (admin?.role !== 'SUPER_ADMIN') {
+    res.status(403).json({ success: false, error: 'Somente SUPER_ADMIN pode executar esta ação' });
+    return false;
+  }
+  return true;
+}
+
+function transactionWriteError(res: Response, error: unknown) {
+  if (error instanceof TransactionWriteError) {
+    return res.status(error.status).json({ success: false, error: error.message });
+  }
+  return res.status(500).json({ success: false, error: 'Erro interno do servidor' });
+}
+
+router.post('/transactions', async (req: Request, res: Response) => {
+  try {
+    if (!requireSuperAdminRole(req, res)) return;
+    const parsed = financeTransactionCreateBodySchema.safeParse(req.body);
+    if (!parsed.success) return validationError(res, parsed.error);
+
+    const admin = (req as any).admin;
+    const record = await createFinanceTransaction(parsed.data, admin);
+    if (!record) return res.status(500).json({ success: false, error: 'Falha ao criar lançamento' });
+
+    await registerFinanceAudit(req, 'FINANCE_TRANSACTION_CREATE', 'financial_transactions', record.id, null, { id: record.id, description: record.description });
+    return res.status(201).json({ success: true, data: serializeTransactionDetail(record) });
+  } catch (error) {
+    console.error('[ADMIN_FINANCE_TRANSACTION_CREATE]', error);
+    return transactionWriteError(res, error);
+  }
+});
+
+router.patch('/transactions/:id', async (req: Request, res: Response) => {
+  try {
+    if (!requireSuperAdminRole(req, res)) return;
+    const parsedParams = financeIdParamSchema.safeParse(req.params);
+    if (!parsedParams.success) return validationError(res, parsedParams.error);
+    const parsedBody = financeTransactionUpdateBodySchema.safeParse(req.body);
+    if (!parsedBody.success) return validationError(res, parsedBody.error);
+
+    const admin = (req as any).admin;
+    const record = await updateFinanceTransaction(parsedParams.data.id, parsedBody.data, admin);
+    if (!record) return res.status(500).json({ success: false, error: 'Falha ao atualizar lançamento' });
+
+    await registerFinanceAudit(req, 'FINANCE_TRANSACTION_UPDATE', 'financial_transactions', record.id, null, parsedBody.data);
+    return res.json({ success: true, data: serializeTransactionDetail(record) });
+  } catch (error) {
+    console.error('[ADMIN_FINANCE_TRANSACTION_UPDATE]', error);
+    return transactionWriteError(res, error);
+  }
+});
+
+router.post('/transactions/:id/post', async (req: Request, res: Response) => {
+  try {
+    if (!requireSuperAdminRole(req, res)) return;
+    const parsedParams = financeIdParamSchema.safeParse(req.params);
+    if (!parsedParams.success) return validationError(res, parsedParams.error);
+    const parsedBody = financeTransactionPostBodySchema.safeParse(req.body || {});
+    if (!parsedBody.success) return validationError(res, parsedBody.error);
+
+    const admin = (req as any).admin;
+    const settlementDate = parsedBody.data?.settlement_date;
+    const record = await postFinanceTransaction(parsedParams.data.id, settlementDate, admin);
+    if (!record) return res.status(500).json({ success: false, error: 'Falha ao liquidar lançamento' });
+
+    await registerFinanceAudit(req, 'FINANCE_TRANSACTION_POST', 'financial_transactions', record.id, { status: 'DRAFT' }, { status: 'POSTED' });
+    return res.json({ success: true, data: serializeTransactionDetail(record) });
+  } catch (error) {
+    console.error('[ADMIN_FINANCE_TRANSACTION_POST]', error);
+    return transactionWriteError(res, error);
+  }
+});
+
+router.post('/transactions/:id/cancel', async (req: Request, res: Response) => {
+  try {
+    if (!requireSuperAdminRole(req, res)) return;
+    const parsedParams = financeIdParamSchema.safeParse(req.params);
+    if (!parsedParams.success) return validationError(res, parsedParams.error);
+    const parsedBody = financeTransactionCancelBodySchema.safeParse(req.body);
+    if (!parsedBody.success) return validationError(res, parsedBody.error);
+
+    const admin = (req as any).admin;
+    const record = await cancelFinanceTransaction(parsedParams.data.id, parsedBody.data, admin);
+    if (!record) return res.status(500).json({ success: false, error: 'Falha ao cancelar lançamento' });
+
+    await registerFinanceAudit(req, 'FINANCE_TRANSACTION_CANCEL', 'financial_transactions', record.id, null, { canceled_reason: parsedBody.data.canceled_reason });
+    return res.json({ success: true, data: serializeTransactionDetail(record) });
+  } catch (error) {
+    console.error('[ADMIN_FINANCE_TRANSACTION_CANCEL]', error);
+    return transactionWriteError(res, error);
+  }
+});
+
 export default router;
