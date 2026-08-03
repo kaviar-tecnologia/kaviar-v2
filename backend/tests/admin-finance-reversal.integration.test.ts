@@ -27,6 +27,7 @@ integrationDescribe('Reversal Integration — Real PostgreSQL', () => {
   let prisma: PrismaClient;
   const uid = randomUUID().slice(0, 8);
   const admin = { id: `admin-${uid}`, email: `admin-${uid}@test.local`, role: 'SUPER_ADMIN' };
+  const auditContext = { adminId: admin.id, adminEmail: admin.email, ipAddress: '127.0.0.1', userAgent: 'integration-test' };
   let testAccountId: string;
   let testCategoryId: string;
 
@@ -77,7 +78,7 @@ integrationDescribe('Reversal Integration — Real PostgreSQL', () => {
       expected_updated_at: original.updated_at,
       reversal_date: new Date('2026-08-10T00:00:00.000Z'),
       reason: 'Duplicado',
-    }, admin);
+    }, admin, auditContext);
 
     expect(result.original?.status).toBe('REVERSED');
     expect(result.reversal?.transaction_type).toBe('REVERSAL');
@@ -100,7 +101,7 @@ integrationDescribe('Reversal Integration — Real PostgreSQL', () => {
       expected_updated_at: original.updated_at,
       reversal_date: new Date('2026-08-10T00:00:00.000Z'),
       reason: 'Erro de classificação',
-    }, admin);
+    }, admin, auditContext);
     expect(result.reversal?.direction).toBe('OUT');
   });
 
@@ -108,8 +109,8 @@ integrationDescribe('Reversal Integration — Real PostgreSQL', () => {
     const original = await createPosted();
     const body = { expected_updated_at: original.updated_at, reversal_date: new Date('2026-08-10T00:00:00.000Z'), reason: 'Concurrency' };
     const results = await Promise.allSettled([
-      reverseFinanceTransaction(original.id, body, admin),
-      reverseFinanceTransaction(original.id, body, admin),
+      reverseFinanceTransaction(original.id, body, admin, auditContext),
+      reverseFinanceTransaction(original.id, body, admin, auditContext),
     ]);
     const fulfilled = results.filter(r => r.status === 'fulfilled');
     const rejected = results.filter(r => r.status === 'rejected');

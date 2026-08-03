@@ -107,6 +107,16 @@ async function registerFinanceAudit(
   });
 }
 
+function financeTransactionAuditContext(req: Request): FinanceTransactionAuditContext {
+  const ctx = auditCtx(req);
+  return {
+    adminId: ctx.adminId,
+    adminEmail: ctx.adminEmail,
+    ipAddress: ctx.ip,
+    userAgent: ctx.ua,
+  };
+}
+
 router.get('/accounts', async (req: Request, res: Response) => {
   try {
     const parsed = financeAccountsListQuerySchema.safeParse(req.query);
@@ -473,10 +483,7 @@ router.post('/transactions', async (req: Request, res: Response) => {
     if (!parsed.success) return validationError(res, parsed.error);
 
     const admin = (req as any).admin;
-    const result = await createFinanceTransaction(parsed.data, admin);
-    if (!result.record) return res.status(500).json({ success: false, error: 'Falha ao criar lançamento' });
-
-    await registerFinanceAudit(req, 'FINANCE_TRANSACTION_CREATE', 'financial_transactions', result.record.id, result.auditBefore, result.auditAfter);
+    const result = await createFinanceTransaction(parsed.data, admin, financeTransactionAuditContext(req));
     return res.status(201).json({ success: true, data: serializeTransactionDetail(result.record) });
   } catch (error) {
     console.error('[ADMIN_FINANCE_TRANSACTION_CREATE]', error);
@@ -493,10 +500,7 @@ router.patch('/transactions/:id', async (req: Request, res: Response) => {
     if (!parsedBody.success) return validationError(res, parsedBody.error);
 
     const admin = (req as any).admin;
-    const result = await updateFinanceTransaction(parsedParams.data.id, parsedBody.data, admin);
-    if (!result.record) return res.status(500).json({ success: false, error: 'Falha ao atualizar lançamento' });
-
-    await registerFinanceAudit(req, 'FINANCE_TRANSACTION_UPDATE', 'financial_transactions', result.record.id, result.auditBefore, result.auditAfter);
+    const result = await updateFinanceTransaction(parsedParams.data.id, parsedBody.data, admin, financeTransactionAuditContext(req));
     return res.json({ success: true, data: serializeTransactionDetail(result.record) });
   } catch (error) {
     console.error('[ADMIN_FINANCE_TRANSACTION_UPDATE]', error);
@@ -513,10 +517,7 @@ router.post('/transactions/:id/post', async (req: Request, res: Response) => {
     if (!parsedBody.success) return validationError(res, parsedBody.error);
 
     const admin = (req as any).admin;
-    const result = await postFinanceTransaction(parsedParams.data.id, parsedBody.data, admin);
-    if (!result.record) return res.status(500).json({ success: false, error: 'Falha ao liquidar lançamento' });
-
-    await registerFinanceAudit(req, 'FINANCE_TRANSACTION_POST', 'financial_transactions', result.record.id, result.auditBefore, result.auditAfter);
+    const result = await postFinanceTransaction(parsedParams.data.id, parsedBody.data, admin, financeTransactionAuditContext(req));
     return res.json({ success: true, data: serializeTransactionDetail(result.record) });
   } catch (error) {
     console.error('[ADMIN_FINANCE_TRANSACTION_POST]', error);
@@ -533,10 +534,7 @@ router.post('/transactions/:id/cancel', async (req: Request, res: Response) => {
     if (!parsedBody.success) return validationError(res, parsedBody.error);
 
     const admin = (req as any).admin;
-    const result = await cancelFinanceTransaction(parsedParams.data.id, parsedBody.data, admin);
-    if (!result.record) return res.status(500).json({ success: false, error: 'Falha ao cancelar lançamento' });
-
-    await registerFinanceAudit(req, 'FINANCE_TRANSACTION_CANCEL', 'financial_transactions', result.record.id, result.auditBefore, result.auditAfter);
+    const result = await cancelFinanceTransaction(parsedParams.data.id, parsedBody.data, admin, financeTransactionAuditContext(req));
     return res.json({ success: true, data: serializeTransactionDetail(result.record) });
   } catch (error) {
     console.error('[ADMIN_FINANCE_TRANSACTION_CANCEL]', error);
@@ -544,6 +542,7 @@ router.post('/transactions/:id/cancel', async (req: Request, res: Response) => {
   }
 });
 
+import { FinanceTransactionAuditContext } from '../services/finance/finance-transaction-audit';
 import { financeTransactionReverseBodySchema } from '../services/finance/finance-transaction-reversal-validation';
 import { reverseFinanceTransaction } from '../services/finance/finance-transaction-reversal.service';
 
@@ -556,9 +555,7 @@ router.post('/transactions/:id/reverse', async (req: Request, res: Response) => 
     if (!parsedBody.success) return validationError(res, parsedBody.error);
 
     const admin = (req as any).admin;
-    const result = await reverseFinanceTransaction(parsedParams.data.id, parsedBody.data, admin);
-
-    await registerFinanceAudit(req, 'FINANCE_TRANSACTION_REVERSE', 'financial_transactions', parsedParams.data.id, result.auditBefore, result.auditAfter);
+    const result = await reverseFinanceTransaction(parsedParams.data.id, parsedBody.data, admin, financeTransactionAuditContext(req));
     return res.json({
       success: true,
       data: {

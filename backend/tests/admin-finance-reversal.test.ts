@@ -78,6 +78,7 @@ function setupSuccessMock(original = postedTxn) {
     .mockResolvedValue(original);     // subsequent calls: reload
   const updateManyMock = vi.fn().mockResolvedValue({ count: 1 });
   const createMock = vi.fn().mockResolvedValue({ id: 'txn-reversal' });
+  const executeRawMock = vi.fn().mockResolvedValue(1);
 
   prismaMock.$transaction.mockImplementation(async (fn: any) => {
     const tx = {
@@ -86,11 +87,12 @@ function setupSuccessMock(original = postedTxn) {
         updateMany: updateManyMock,
         create: createMock,
       },
+      $executeRaw: executeRawMock,
     };
     return fn(tx);
   });
 
-  return { findUniqueMock, updateManyMock, createMock };
+  return { findUniqueMock, updateManyMock, createMock, executeRawMock };
 }
 
 function setupRejectionMock(original: any) {
@@ -105,6 +107,7 @@ function setupRejectionMock(original: any) {
         updateMany: updateManyMock,
         create: createMock,
       },
+      $executeRaw: vi.fn().mockResolvedValue(1),
     };
     return fn(tx);
   });
@@ -323,6 +326,7 @@ describe('POST /api/admin/finance/transactions/:id/reverse', () => {
       prismaMock.$transaction.mockImplementation(async (fn: any) => {
         return fn({
           financial_transactions: { findUnique: findUniqueMock, updateMany: updateManyMock, create: createMock },
+          $executeRaw: vi.fn().mockResolvedValue(1),
         });
       });
 
