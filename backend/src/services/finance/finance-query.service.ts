@@ -681,6 +681,7 @@ export async function listFinanceTransactions(query: any) {
         source_id: true,
         origin_type: true,
         origin_id: true,
+        reversal_of_id: true,
         competence_date: true,
         transaction_date: true,
         due_date: true,

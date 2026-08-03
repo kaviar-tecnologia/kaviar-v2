@@ -67,6 +67,7 @@ export default function FinanceTransactionsPage() {
   const [cancelDialog, setCancelDialog] = useState(null); // txn to cancel
   const [reverseDialog, setReverseDialog] = useState(null); // txn to reverse
   const [conflictMsg, setConflictMsg] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   // Reference data
   const [accounts, setAccounts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -126,9 +127,12 @@ export default function FinanceTransactionsPage() {
   };
 
   const handleReverse = async (txn, reversalDate, reason) => {
+    setSuccessMsg(''); setError('');
     try {
       await reverseFinanceTransaction(txn.id, { expected_updated_at: txn.updated_at, reversal_date: reversalDate, reason });
-      setReverseDialog(null); fetchData();
+      setReverseDialog(null);
+      setSuccessMsg('Lançamento estornado com sucesso.');
+      await fetchData();
     } catch (err) {
       const msg = err?.message || err?.error || 'Erro ao estornar';
       if (msg.includes('409') || msg.includes('Conflito') || msg.includes('alterado') || msg.includes('já possui')) {
@@ -158,6 +162,7 @@ export default function FinanceTransactionsPage() {
 
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
       {conflictMsg && <Alert severity="warning" sx={{ mb: 2 }} action={<Button size="small" onClick={() => { setConflictMsg(''); fetchData(); }}>Recarregar</Button>}>{conflictMsg}</Alert>}
+      {successMsg && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccessMsg('')}>{successMsg}</Alert>}
 
       {/* Filters */}
       <Card sx={{ mb: 3, border: '1px solid #E5E7EB' }}>

@@ -7,30 +7,7 @@ import { prisma } from '../../lib/prisma';
 import { Prisma } from '@prisma/client';
 import type { FinanceTransactionReverseBody } from './finance-transaction-reversal-validation';
 import { TransactionWriteError } from './finance-transaction-crud.service';
-
-// Shared select for consistent serialization
-export const FINANCE_TRANSACTION_DETAIL_SELECT = {
-  id: true, external_reference: true, source_type: true, source_id: true,
-  origin_type: true, origin_id: true, provider: true, provider_event_id: true,
-  account_id: true, counterparty_account_id: true, category_id: true, cost_center_id: true,
-  direction: true, transaction_type: true, status: true, payment_method: true,
-  competence_date: true, transaction_date: true, due_date: true, settlement_date: true,
-  gross_amount_cents: true, fee_amount_cents: true, discount_amount_cents: true,
-  retention_amount_cents: true, net_amount_cents: true, transfer_amount_cents: true,
-  reversal_of_id: true, canceled_reason: true, canceled_at: true,
-  description: true, memo: true, metadata: true, idempotency_key: true,
-  created_by_admin_id: true, approved_by_admin_id: true, responsible_admin_id: true,
-  created_at: true, updated_at: true,
-  account: { select: { id: true, code: true, name: true, type: true, is_active: true } },
-  counterparty_account: { select: { id: true, code: true, name: true, type: true } },
-  category: { select: { id: true, code: true, name: true, kind: true, is_active: true } },
-  cost_center: { select: { id: true, code: true, name: true, type: true } },
-  reversal_of: { select: { id: true, description: true, status: true, direction: true } },
-  reversals: { select: { id: true, description: true, status: true, direction: true } },
-  created_by_admin: { select: { id: true, name: true } },
-  approved_by_admin: { select: { id: true, name: true } },
-  responsible_admin: { select: { id: true, name: true } },
-};
+import { FINANCE_TRANSACTION_DETAIL_SELECT } from './finance-transaction-selects';
 
 export async function reverseFinanceTransaction(
   id: string,
