@@ -11,6 +11,10 @@ on:
         description: "Type DEPLOY_PRODUCTION to continue"
         required: true
         type: string
+      prisma_confirmation:
+        description: "NO_PRISMA_CHANGES if none, or APPLY_PRISMA_MIGRATIONS if Prisma files changed"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -342,29 +346,117 @@ jobs:
           echo "production_sha=${PRODUCTION_SHA}" >> "$GITHUB_OUTPUT"
           echo "Prisma changed: ${PRISMA_CHANGED}"
 
-  block-prisma-changes:
+  prisma-deploy-gate:
     needs:
       - validate-target-commit
       - resolve-deploy-state
     runs-on: ubuntu-latest
+    outputs:
+      requires_migration: ${{ steps.gate.outputs.requires_migration }}
     steps:
-      - name: Block deploy if Prisma changes detected
+      - name: Validate Prisma confirmation
+        id: gate
         env:
           PRISMA_CHANGED: ${{ needs.resolve-deploy-state.outputs.prisma_changed }}
+          PRISMA_CONFIRMATION: ${{ inputs.prisma_confirmation }}
         run: |
-          if [ "${PRISMA_CHANGED}" != "false" ]; then
-            echo "❌ PRISMA_CHANGES_REQUIRE_SEPARATE_MIGRATION_WORKFLOW"
-            echo "   prisma_changed=${PRISMA_CHANGED} (expected 'false' to proceed)"
-            echo "   If Prisma schema or migrations changed, run the migration workflow first."
-            echo "   If detection failed, investigate before deploying."
+          set -euo pipefail
+
+          echo "Prisma changed: ${PRISMA_CHANGED}"
+          echo "Prisma confirmation: ${PRISMA_CONFIRMATION}"
+
+          if [ "${PRISMA_CHANGED}" = "false" ]; then
+            if [ "${PRISMA_CONFIRMATION}" != "NO_PRISMA_CHANGES" ]; then
+              echo "❌ PRISMA_CONFIRMATION_MISMATCH"
+              echo "   No Prisma changes detected, but confirmation was not NO_PRISMA_CHANGES"
+              echo "   Got: ${PRISMA_CONFIRMATION}"
+              exit 1
+            fi
+            echo "✓ No Prisma changes and confirmation matches"
+            echo "requires_migration=false" >> "$GITHUB_OUTPUT"
+          else
+            if [ "${PRISMA_CONFIRMATION}" != "APPLY_PRISMA_MIGRATIONS" ]; then
+              echo "❌ PRISMA_CONFIRMATION_MISMATCH"
+              echo "   Prisma changes detected (prisma_changed=${PRISMA_CHANGED})"
+              echo "   Expected confirmation: APPLY_PRISMA_MIGRATIONS"
+              echo "   Got: ${PRISMA_CONFIRMATION}"
+              exit 1
+            fi
+            echo "✓ Prisma changes detected and confirmation matches — will run migrations"
+            echo "requires_migration=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  run-prisma-migrations:
+    needs:
+      - validate-target-commit
+      - prisma-deploy-gate
+    if: needs.prisma-deploy-gate.outputs.requires_migration == 'true'
+    uses: ./.github/workflows/deploy-prisma-migrations.yml
+    with:
+      orchestrated_by_backend: true
+    secrets: inherit
+
+  post-migration-revalidation:
+    needs:
+      - validate-target-commit
+      - prisma-deploy-gate
+      - run-prisma-migrations
+    if: always() && needs.prisma-deploy-gate.outputs.requires_migration == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify migration succeeded
+        env:
+          MIGRATION_RESULT: ${{ needs.run-prisma-migrations.result }}
+        run: |
+          if [ "${MIGRATION_RESULT}" != "success" ]; then
+            echo "❌ PRISMA_MIGRATION_FAILED"
+            echo "   Migration result: ${MIGRATION_RESULT}"
+            echo "   Cannot proceed with backend deploy."
             exit 1
           fi
-          echo "✓ No Prisma changes detected — deploy may proceed"
+          echo "✓ Prisma migrations completed successfully"
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Revalidate main after migration
+        env:
+          TARGET_SHA: ${{ needs.validate-target-commit.outputs.target_sha }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-2
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags origin main
+          CURRENT_MAIN="$(git rev-parse origin/main)"
+          if [ "$CURRENT_MAIN" != "$TARGET_SHA" ]; then
+            echo "❌ MAIN_ADVANCED_DURING_MIGRATION"
+            exit 1
+          fi
+          echo "✓ Main unchanged after migration"
+
+          # Verify ECS service still on expected task definition
+          CURRENT_TD=$(aws ecs describe-services \
+            --cluster kaviar-cluster \
+            --services kaviar-backend-service \
+            --region us-east-2 \
+            --query 'services[0].taskDefinition' --output text)
+          echo "ECS task definition: ${CURRENT_TD}"
+          echo "✓ ECS service state verified"
 
   revalidate-target-commit:
     needs:
       - validate-target-commit
-      - block-prisma-changes
+      - prisma-deploy-gate
+      - run-prisma-migrations
+      - post-migration-revalidation
+    if: |
+      always() &&
+      needs.prisma-deploy-gate.result == 'success' &&
+      (needs.run-prisma-migrations.result == 'success' || needs.run-prisma-migrations.result == 'skipped') &&
+      (needs.post-migration-revalidation.result == 'success' || needs.post-migration-revalidation.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -399,8 +491,20 @@ jobs:
       - validate-target-commit
       - resolve-production-state
       - resolve-deploy-state
-      - block-prisma-changes
+      - prisma-deploy-gate
+      - run-prisma-migrations
+      - post-migration-revalidation
       - revalidate-target-commit
+    if: |
+      always() &&
+      needs.validate-inputs.result == 'success' &&
+      needs.validate-target-commit.result == 'success' &&
+      needs.resolve-production-state.result == 'success' &&
+      needs.resolve-deploy-state.result == 'success' &&
+      needs.prisma-deploy-gate.result == 'success' &&
+      (needs.run-prisma-migrations.result == 'success' || needs.run-prisma-migrations.result == 'skipped') &&
+      (needs.post-migration-revalidation.result == 'success' || needs.post-migration-revalidation.result == 'skipped') &&
+      needs.revalidate-target-commit.result == 'success'
     runs-on: ubuntu-latest
 
     steps:
