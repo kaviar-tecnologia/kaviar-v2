@@ -30,7 +30,15 @@ const mockReportResponse = {
         created_at: '2026-07-16T14:00:00Z', completed_at: '2026-07-16T14:15:00Z',
         canceled_at: null, driver_id: 'd2', driver_name: 'Pedro',
         passenger_first_name: 'Lucia', final_price: null, fee_percent: null,
-        fee_amount: null, driver_earnings: null, settlement_territory: null,
+        fee_amount: null, driver_earnings: null, settlement_territory: 'adjacent',
+        credit_cost: null, settled_at: null,
+      },
+      {
+        id: 'ride-003-ghi', status: 'completed', financial_status: 'UNSETTLED',
+        created_at: '2026-07-17T18:23:00Z', completed_at: '2026-07-17T18:35:00Z',
+        canceled_at: null, driver_id: null, driver_name: null,
+        passenger_first_name: 'Maria', final_price: null, fee_percent: null,
+        fee_amount: null, driver_earnings: null, settlement_territory: 'external',
         credit_cost: null, settled_at: null,
       },
     ],
@@ -224,5 +232,46 @@ test.describe('Currency Formatter (no parseFloat)', () => {
     await interceptReport(page, emptyReport);
     await page.goto('/admin/financeiro/contador');
     await expect(page.getByText('R$ 0,00').first()).toBeVisible();
+  });
+});
+
+test.describe('Territory Labels', () => {
+  test('translates "adjacent" to "Adjacente"', async ({ page }) => {
+    await setupAuth(page);
+    await interceptReport(page);
+    await page.goto('/admin/financeiro/contador');
+    await expect(page.getByText('Adjacente').first()).toBeVisible();
+  });
+
+  test('translates "external" to "Externo"', async ({ page }) => {
+    await setupAuth(page);
+    await interceptReport(page);
+    await page.goto('/admin/financeiro/contador');
+    await expect(page.getByText('Externo').first()).toBeVisible();
+  });
+
+  test('translates "local" to "Local"', async ({ page }) => {
+    await setupAuth(page);
+    await interceptReport(page);
+    await page.goto('/admin/financeiro/contador');
+    await expect(page.getByText('Local').first()).toBeVisible();
+  });
+});
+
+test.describe('Incomplete Data Handling', () => {
+  test('completed ride with driver_id=null shows "Dados incompletos"', async ({ page }) => {
+    await setupAuth(page);
+    await interceptReport(page);
+    await page.goto('/admin/financeiro/contador');
+    // ride-003 has driver_id: null → "Dados incompletos"
+    await expect(page.getByText('Dados incompletos').first()).toBeVisible();
+  });
+
+  test('completed ride with driver_id present but driver_name null shows "Não liquidado"', async ({ page }) => {
+    await setupAuth(page);
+    // ride-002 has driver_id: 'd2', driver_name: 'Pedro', UNSETTLED → "Não liquidado"
+    await interceptReport(page);
+    await page.goto('/admin/financeiro/contador');
+    await expect(page.getByText('Não liquidado').first()).toBeVisible();
   });
 });
