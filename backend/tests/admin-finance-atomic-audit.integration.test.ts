@@ -242,6 +242,7 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
     expect(logs[0].new_value).not.toBeNull();
     expect(logs[0].ip_address).toBe('127.0.0.1');
     expect(logs[0].user_agent).toBe('integration-test');
+    expect(logs[0].reason).toBeNull();
     // Verify new_value content
     const newVal = logs[0].new_value as any;
     expect(newVal.id).toBe(txId);
@@ -375,12 +376,13 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
 
   it('POST success → audit log exists', async () => {
     const tx = await createDraftTransaction();
+    const settlementDate = new Date('2026-08-05T00:00:00.000Z');
 
     await postFinanceTransaction(
       tx.id,
       {
         expected_updated_at: tx.updated_at,
-        settlement_date: new Date('2026-08-05T00:00:00.000Z'),
+        settlement_date: settlementDate,
       },
       admin,
       makeAuditContext(),
@@ -401,12 +403,13 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
     const newVal = logs[0].new_value as any;
     expect(oldVal.status).toBe('DRAFT');
     expect(newVal.status).toBe('POSTED');
-    expect(newVal.settlement_date).toBeDefined();
+    expect(newVal.settlement_date).toBe(settlementDate.toISOString());
     expect(newVal.approved_by_admin_id).toBe(adminId);
 
-    // Verify status changed in DB
+    // Verify status and settlement_date in DB
     const dbTx = await prisma.financial_transactions.findUnique({ where: { id: tx.id } });
     expect(dbTx!.status).toBe('POSTED');
+    expect(dbTx!.settlement_date?.toISOString()).toBe(settlementDate.toISOString());
   });
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -576,6 +579,9 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
     // Monetary values as strings
     expect(newVal.gross_amount_cents).toBe('10000');
     expect(newVal.net_amount_cents).toBe('10000');
+    expect(newVal.fee_amount_cents).toBe('0');
+    expect(newVal.discount_amount_cents).toBe('0');
+    expect(newVal.retention_amount_cents).toBe('0');
   });
 
   // ══════════════════════════════════════════════════════════════════════════
