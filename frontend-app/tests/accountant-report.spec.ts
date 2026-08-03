@@ -474,3 +474,50 @@ test.describe('Manual Transactions Tab', () => {
     await expect(page.getByText('Carlos')).toBeVisible();
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DETAIL DIALOG
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test.describe('Manual Transactions - Detail Dialog', () => {
+  test.beforeEach(async ({ page }) => { await setupAuth(page); });
+
+  test('clicking "Ver reversão" opens dialog with reversal details', async ({ page }) => {
+    await interceptReport(page);
+    await interceptManualTx(page);
+    await page.goto('/admin/financeiro/contador');
+    await page.getByRole('tab', { name: 'Lançamentos Manuais' }).click();
+    await expect(page.getByText('Pagamento original')).toBeVisible();
+    // tx-003 is REVERSED with reversal link → "Ver reversão" button
+    await page.getByRole('button', { name: 'Ver reversão' }).click();
+    // Dialog should open
+    await expect(page.getByText('Detalhes da Transação')).toBeVisible();
+    // Should show reversal details (tx-002)
+    await expect(page.getByText('tx-002')).toBeVisible();
+  });
+
+  test('clicking "Ver original" opens dialog with original details', async ({ page }) => {
+    await interceptReport(page);
+    await interceptManualTx(page);
+    await page.goto('/admin/financeiro/contador');
+    await page.getByRole('tab', { name: 'Lançamentos Manuais' }).click();
+    await expect(page.getByText('Estorno pagamento duplicado')).toBeVisible();
+    // tx-002 is REVERSAL with original link → "Ver original" button
+    await page.getByRole('button', { name: 'Ver original' }).click();
+    // Dialog should open
+    await expect(page.getByText('Detalhes da Transação')).toBeVisible();
+    // Should show original details (tx-003)
+    await expect(page.getByText('tx-003')).toBeVisible();
+  });
+
+  test('transaction types shown in Portuguese', async ({ page }) => {
+    await interceptReport(page);
+    await interceptManualTx(page);
+    await page.goto('/admin/financeiro/contador');
+    await page.getByRole('tab', { name: 'Lançamentos Manuais' }).click();
+    // tx-001 is INCOME → 'Receita', tx-002 is REVERSAL → 'Reversão', tx-003 is EXPENSE → 'Despesa'
+    await expect(page.getByText('Receita').first()).toBeVisible();
+    await expect(page.getByText('Reversão').first()).toBeVisible();
+    await expect(page.getByText('Despesa').first()).toBeVisible();
+  });
+});

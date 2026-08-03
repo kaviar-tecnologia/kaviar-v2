@@ -619,16 +619,36 @@ function parseManualFilters(query: any): ManualTransactionFilters | { error: str
   const page = (Number.isFinite(rawPage) && rawPage > 0) ? rawPage : 1;
   const limit = (Number.isFinite(rawLimit) && rawLimit > 0) ? Math.min(rawLimit, MAX_LIMIT) : DEFAULT_LIMIT;
 
+  const searchRaw = query.search && typeof query.search === 'string' ? query.search.trim() : undefined;
+  if (searchRaw && searchRaw.length > 100) {
+    return { error: 'Busca não pode exceder 100 caracteres.' };
+  }
+
+  const accountId = query.account_id && typeof query.account_id === 'string' ? query.account_id.trim() : undefined;
+  if (query.account_id && typeof query.account_id === 'string' && query.account_id.trim() === '') {
+    return { error: 'account_id não pode ser vazio.' };
+  }
+
+  const categoryId = query.category_id && typeof query.category_id === 'string' ? query.category_id.trim() : undefined;
+  if (query.category_id && typeof query.category_id === 'string' && query.category_id.trim() === '') {
+    return { error: 'category_id não pode ser vazio.' };
+  }
+
+  const costCenterId = query.cost_center_id && typeof query.cost_center_id === 'string' ? query.cost_center_id.trim() : undefined;
+  if (query.cost_center_id && typeof query.cost_center_id === 'string' && query.cost_center_id.trim() === '') {
+    return { error: 'cost_center_id não pode ser vazio.' };
+  }
+
   return {
     startDate,
     endDate,
     status: query.status && typeof query.status === 'string' ? query.status.trim() : undefined,
     direction: query.direction && typeof query.direction === 'string' ? query.direction.trim() : undefined,
     transactionType: query.transaction_type && typeof query.transaction_type === 'string' ? query.transaction_type.trim() : undefined,
-    accountId: query.account_id && typeof query.account_id === 'string' ? query.account_id.trim() : undefined,
-    categoryId: query.category_id && typeof query.category_id === 'string' ? query.category_id.trim() : undefined,
-    costCenterId: query.cost_center_id && typeof query.cost_center_id === 'string' ? query.cost_center_id.trim() : undefined,
-    search: query.search && typeof query.search === 'string' ? query.search.trim() : undefined,
+    accountId,
+    categoryId,
+    costCenterId,
+    search: searchRaw,
     page,
     limit,
   };
@@ -825,7 +845,7 @@ router.get('/manual-transactions', async (req: Request, res: Response) => {
         approver.name AS approved_by_name,
         rev.id AS reversal_id,
         to_char(rev.transaction_date, 'YYYY-MM-DD') AS reversal_date,
-        rev.canceled_reason AS reversal_reason,
+        CASE WHEN t.transaction_type = 'REVERSAL' THEN t.memo ELSE rev.memo END AS reversal_reason,
         orig.id AS original_id,
         orig.description AS original_description
       FROM financial_transactions t
@@ -844,11 +864,9 @@ router.get('/manual-transactions', async (req: Request, res: Response) => {
       LIMIT $${params.length + 1} OFFSET $${params.length + 2}
     `;
 
-    const [summaryResult, countResult, listResult] = await Promise.all([
-      client.query(summarySQL, params),
-      client.query(countSQL, params),
-      client.query(listSQL, [...params, filters.limit, offset]),
-    ]);
+    const summaryResult = await client.query(summarySQL, params);
+    const countResult = await client.query(countSQL, params);
+    const listResult = await client.query(listSQL, [...params, filters.limit, offset]);
 
     await client.query('COMMIT');
 
@@ -1027,7 +1045,7 @@ router.get('/manual-transactions/csv', async (req: Request, res: Response) => {
           t.net_amount_cents::text AS net_amount_cents,
           t.reversal_of_id,
           rev.id AS reversal_id,
-          rev.canceled_reason AS reversal_reason,
+          CASE WHEN t.transaction_type = 'REVERSAL' THEN t.memo ELSE rev.memo END AS reversal_reason,
           creator.name AS created_by_name,
           approver.name AS approved_by_name,
           t.created_at

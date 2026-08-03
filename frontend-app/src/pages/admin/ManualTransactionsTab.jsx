@@ -11,6 +11,9 @@ import {
   CardContent,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogContent,
+  DialogTitle,
   Grid,
   MenuItem,
   Table,
@@ -30,15 +33,14 @@ function getToken() {
   return localStorage.getItem('kaviar_admin_token');
 }
 
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+function formatLocalCivilDate(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
-
-function thirtyDaysAgoStr() {
-  const d = new Date();
-  d.setDate(d.getDate() - 30);
-  return d.toISOString().slice(0, 10);
-}
+function todayStr() { return formatLocalCivilDate(); }
+function thirtyDaysAgoStr() { const d = new Date(); d.setDate(d.getDate() - 30); return formatLocalCivilDate(d); }
 
 function formatCentsToReais(value) {
   if (value == null || value === '') return '—';
@@ -78,6 +80,14 @@ const STATUS_COLORS = {
 
 const DIRECTION_LABELS = { IN: 'Entrada', OUT: 'Saída' };
 
+const TYPE_LABELS = {
+  INCOME: 'Receita', EXPENSE: 'Despesa', TRANSFER: 'Transferência',
+  RECEIVABLE: 'Conta a receber', PAYABLE: 'Conta a pagar', ADJUSTMENT: 'Ajuste',
+  REVERSAL: 'Reversão', REFUND: 'Reembolso', RECONCILIATION: 'Conciliação',
+  ACCRUAL: 'Apropriação', SETTLEMENT: 'Liquidação', WITHDRAWAL: 'Retirada',
+  DEPOSIT: 'Depósito', TAX: 'Tributo', FEE: 'Tarifa', COMPENSATION: 'Compensação',
+};
+
 const STATUS_OPTIONS = [
   { value: '', label: 'Todos' },
   { value: 'DRAFT', label: 'Rascunho' },
@@ -110,6 +120,7 @@ export default function ManualTransactionsTab() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [data, setData] = useState(null);
+  const [detailTxn, setDetailTxn] = useState(null);
 
   const [startDate, setStartDate] = useState(thirtyDaysAgoStr());
   const [endDate, setEndDate] = useState(todayStr());
@@ -328,16 +339,31 @@ export default function ManualTransactionsTab() {
                               bgcolor: tx.direction === 'IN' ? '#DCFCE7' : '#FEE2E2',
                               color: tx.direction === 'IN' ? '#16A34A' : '#DC2626' }} />
                         </TableCell>
-                        <TableCell sx={{ fontSize: 11 }}>{tx.transaction_type || '—'}</TableCell>
+                        <TableCell sx={{ fontSize: 11 }}>{TYPE_LABELS[tx.transaction_type] || tx.transaction_type || '—'}</TableCell>
                         <TableCell>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                             <Chip label={statusDisplay.label} size="small"
                               sx={{ fontSize: 10, height: 20, fontWeight: 600,
                                 bgcolor: `${statusDisplay.color}15`, color: statusDisplay.color }} />
                             {statusDisplay.reversalId && (
-                              <Typography component="span" sx={{ fontSize: 10, color: '#9333EA', cursor: 'pointer', textDecoration: 'underline' }}>
-                                ver reversão
-                              </Typography>
+                              <Button size="small" variant="text"
+                                onClick={() => {
+                                  const rev = transactions.find(t => t.id === tx.reversal?.id);
+                                  setDetailTxn(rev || { id: tx.reversal?.id, description: 'Reversão', ...tx.reversal });
+                                }}
+                                sx={{ fontSize: 10, color: '#9333EA', textTransform: 'none', minWidth: 0, p: 0 }}>
+                                Ver reversão
+                              </Button>
+                            )}
+                            {tx.original && (
+                              <Button size="small" variant="text"
+                                onClick={() => {
+                                  const orig = transactions.find(t => t.id === tx.original?.id);
+                                  setDetailTxn(orig || { id: tx.original?.id, description: tx.original?.description });
+                                }}
+                                sx={{ fontSize: 10, color: '#9333EA', textTransform: 'none', minWidth: 0, p: 0 }}>
+                                Ver original
+                              </Button>
                             )}
                           </Box>
                         </TableCell>
@@ -366,6 +392,26 @@ export default function ManualTransactionsTab() {
           )}
         </Card>
       )}
+      {/* Detail Dialog */}
+      <Dialog open={!!detailTxn} onClose={() => setDetailTxn(null)} maxWidth="sm" fullWidth data-testid="detail-dialog">
+        <DialogTitle sx={{ fontWeight: 700 }}>Detalhes da Transação</DialogTitle>
+        <DialogContent>
+          {detailTxn && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              <Typography variant="body2"><strong>ID:</strong> {detailTxn.id || '—'}</Typography>
+              <Typography variant="body2"><strong>Descrição:</strong> {detailTxn.description || '—'}</Typography>
+              <Typography variant="body2"><strong>Status:</strong> {STATUS_LABELS[detailTxn.status] || detailTxn.status || '—'}</Typography>
+              <Typography variant="body2"><strong>Tipo:</strong> {TYPE_LABELS[detailTxn.transaction_type] || detailTxn.transaction_type || '—'}</Typography>
+              <Typography variant="body2"><strong>Direção:</strong> {DIRECTION_LABELS[detailTxn.direction] || detailTxn.direction || '—'}</Typography>
+              <Typography variant="body2"><strong>Valor líquido:</strong> {formatCentsToReais(detailTxn.net_amount_cents)}</Typography>
+              <Typography variant="body2"><strong>Data referência:</strong> {detailTxn.reporting_date || '—'}</Typography>
+              <Typography variant="body2"><strong>Motivo estorno:</strong> {detailTxn.reversal?.reason || detailTxn.canceled_reason || '—'}</Typography>
+              <Typography variant="body2"><strong>Criado por:</strong> {detailTxn.created_by || '—'}</Typography>
+              <Typography variant="body2"><strong>Aprovado por:</strong> {detailTxn.approved_by || '—'}</Typography>
+            </Box>
+          )}
+        </DialogContent>
+      </Dialog>
     </Box>
   );
 }

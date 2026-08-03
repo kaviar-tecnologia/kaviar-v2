@@ -452,3 +452,83 @@ describe('Manual Transactions CSV', () => {
     expect(res.body.code).toBe('INTEGRITY_SETTLEMENT_DATE_MISSING');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MEMO-BASED REVERSAL REASON
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('Manual Transactions - Memo-based reversal reason', () => {
+  it('reversal_reason comes from reversal memo, not canceled_reason', async () => {
+    const reversedOriginal = {
+      ...validTransaction,
+      id: 'tx-020', status: 'REVERSED', canceled_reason: null,
+      reversal_id: 'tx-021', reversal_date: '2026-07-20', reversal_reason: 'Motivo real do estorno',
+    };
+    setupFullSuccess({ transactions: [reversedOriginal] });
+    const res = await request(app).get('/api/admin/finance/accountant-report/manual-transactions');
+    expect(res.status).toBe(200);
+    const tx = res.body.data.transactions[0];
+    expect(tx.reversal.reason).toBe('Motivo real do estorno');
+  });
+
+  it('SQL uses memo field for reversal_reason, not canceled_reason', async () => {
+    setupFullSuccess();
+    await request(app).get('/api/admin/finance/accountant-report/manual-transactions');
+    // The listSQL is the 7th call (BEGIN, preval1, preval2, preval3, summary, count, list)
+    const listCall = client.query.mock.calls[6];
+    const sql = listCall[0];
+    // Verify memo-based logic is present
+    expect(sql).toContain('memo');
+    expect(sql).toContain("CASE WHEN t.transaction_type = 'REVERSAL' THEN t.memo ELSE rev.memo END AS reversal_reason");
+    // Verify old pattern is NOT present
+    expect(sql).not.toContain('rev.canceled_reason AS reversal_reason');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SEARCH LIMIT AND FILTER VALIDATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('Manual Transactions - Search limit and filter validation', () => {
+  it('rejects search exceeding 100 characters', async () => {
+    const longSearch = 'a'.repeat(101);
+    const res = await request(app)
+      .get('/api/admin/finance/accountant-report/manual-transactions')
+      .query({ search: longSearch });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('100 caracteres');
+  });
+
+  it('allows search with exactly 100 characters', async () => {
+    const search100 = 'a'.repeat(100);
+    setupFullSuccess();
+    const res = await request(app)
+      .get('/api/admin/finance/accountant-report/manual-transactions')
+      .query({ search: search100 });
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects empty-after-trim account_id', async () => {
+    const res = await request(app)
+      .get('/api/admin/finance/accountant-report/manual-transactions')
+      .query({ account_id: '   ' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('account_id');
+  });
+
+  it('rejects empty-after-trim category_id', async () => {
+    const res = await request(app)
+      .get('/api/admin/finance/accountant-report/manual-transactions')
+      .query({ category_id: '   ' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('category_id');
+  });
+
+  it('rejects empty-after-trim cost_center_id', async () => {
+    const res = await request(app)
+      .get('/api/admin/finance/accountant-report/manual-transactions')
+      .query({ cost_center_id: '   ' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('cost_center_id');
+  });
+});
