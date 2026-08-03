@@ -8,6 +8,7 @@
     "test": "vitest run",
     "test:finance-reversal:integration": "RUN_FINANCE_REVERSAL_INTEGRATION=1 vitest run tests/admin-finance-reversal.integration.test.ts",
     "test:finance-atomic-audit:integration": "RUN_FINANCE_ATOMIC_AUDIT_INTEGRATION=1 vitest run tests/admin-finance-atomic-audit.integration.test.ts",
+    "test:accountant-manual:integration": "RUN_ACCOUNTANT_MANUAL_INTEGRATION=1 vitest run tests/admin-accountant-manual-transactions.integration.test.ts",
     "dev:3003": "dotenv -e .env.development -- tsx watch src/server.ts",
     "build": "./node_modules/.bin/tsc -p tsconfig.build.json",
     "postbuild": "mkdir -p dist/scripts && cp scripts/beta-monitor-dog.js dist/scripts/ && cp scripts/beta-phase1-checkpoint.sh dist/scripts/ && cp scripts/beta-phase1-go-nogo.sh dist/scripts/ && cp scripts/beta-phase2-activate.sh dist/scripts/ && cp scripts/update-rollout.js dist/scripts/ && cp scripts/check-rollout.js dist/scripts/ && cp scripts/promote-premium-tourism.js dist/scripts/",
