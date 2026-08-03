@@ -12,8 +12,10 @@ import {
   Chip,
   CircularProgress,
   Dialog,
+  DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
   Grid,
   MenuItem,
   Table,
@@ -33,14 +35,27 @@ function getToken() {
   return localStorage.getItem('kaviar_admin_token');
 }
 
-function formatLocalCivilDate(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+// ── FIX 4: São Paulo timezone for civil dates ─────────────────────────────────
+
+const SAO_PAULO_TZ = 'America/Sao_Paulo';
+function formatSaoPauloCivilDate(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: SAO_PAULO_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  return formatter.format(date); // Returns YYYY-MM-DD in en-CA locale
 }
-function todayStr() { return formatLocalCivilDate(); }
-function thirtyDaysAgoStr() { const d = new Date(); d.setDate(d.getDate() - 30); return formatLocalCivilDate(d); }
+function todayStr() { return formatSaoPauloCivilDate(); }
+function thirtyDaysAgoStr() { const d = new Date(); d.setDate(d.getDate() - 30); return formatSaoPauloCivilDate(d); }
+
+// ── FIX 1: Reversal reason helper ─────────────────────────────────────────────
+
+function getReversalReason(tx) {
+  if (!tx) return null;
+  if (tx.transaction_type === 'REVERSAL') {
+    return tx.reversal_reason || tx.memo || tx.reason || null;
+  }
+  return tx.reversal_reason || null;
+}
 
 function formatCentsToReais(value) {
   if (value == null || value === '') return '—';
@@ -206,6 +221,39 @@ export default function ManualTransactionsTab() {
     ? String(BigInt(realizedIn) - BigInt(realizedOut))
     : null;
 
+  // ── FIX 2: Better fallback objects ──────────────────────────────────────────
+
+  function openReversalDetail(tx) {
+    const rev = transactions.find(t => t.id === tx.reversal?.id);
+    if (rev) {
+      setDetailTxn(rev);
+    } else {
+      setDetailTxn({
+        id: tx.reversal_transaction_id || tx.reversal?.id,
+        transaction_type: 'REVERSAL',
+        status: 'POSTED',
+        reversal_reason: tx.reversal_reason || tx.reversal?.reason,
+        description: `Estorno de: ${tx.description}`,
+        _partial: true,
+      });
+    }
+  }
+
+  function openOriginalDetail(tx) {
+    const orig = transactions.find(t => t.id === tx.original?.id);
+    if (orig) {
+      setDetailTxn(orig);
+    } else {
+      setDetailTxn({
+        id: tx.reversal_of_id || tx.original?.id,
+        transaction_type: tx.transaction_type !== 'REVERSAL' ? tx.transaction_type : null,
+        reversal_reason: tx.reversal_reason,
+        description: `Original: ${tx.reversal_of_id || tx.original?.id}`,
+        _partial: true,
+      });
+    }
+  }
+
   return (
     <Box>
       {error && (
@@ -347,20 +395,14 @@ export default function ManualTransactionsTab() {
                                 bgcolor: `${statusDisplay.color}15`, color: statusDisplay.color }} />
                             {statusDisplay.reversalId && (
                               <Button size="small" variant="text"
-                                onClick={() => {
-                                  const rev = transactions.find(t => t.id === tx.reversal?.id);
-                                  setDetailTxn(rev || { id: tx.reversal?.id, description: 'Reversão', ...tx.reversal });
-                                }}
+                                onClick={() => openReversalDetail(tx)}
                                 sx={{ fontSize: 10, color: '#9333EA', textTransform: 'none', minWidth: 0, p: 0 }}>
                                 Ver reversão
                               </Button>
                             )}
                             {tx.original && (
                               <Button size="small" variant="text"
-                                onClick={() => {
-                                  const orig = transactions.find(t => t.id === tx.original?.id);
-                                  setDetailTxn(orig || { id: tx.original?.id, description: tx.original?.description });
-                                }}
+                                onClick={() => openOriginalDetail(tx)}
                                 sx={{ fontSize: 10, color: '#9333EA', textTransform: 'none', minWidth: 0, p: 0 }}>
                                 Ver original
                               </Button>
@@ -392,25 +434,101 @@ export default function ManualTransactionsTab() {
           )}
         </Card>
       )}
-      {/* Detail Dialog */}
-      <Dialog open={!!detailTxn} onClose={() => setDetailTxn(null)} maxWidth="sm" fullWidth data-testid="detail-dialog">
+
+      {/* FIX 3: Complete Detail Dialog */}
+      <Dialog
+        open={!!detailTxn}
+        onClose={() => setDetailTxn(null)}
+        maxWidth="sm"
+        fullWidth
+        data-testid="detail-dialog"
+      >
         <DialogTitle sx={{ fontWeight: 700 }}>Detalhes da Transação</DialogTitle>
         <DialogContent>
           {detailTxn && (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              {/* Partial fallback note */}
+              {detailTxn._partial && (
+                <Alert severity="info" sx={{ mb: 1 }} data-testid="partial-note">
+                  Detalhes parciais — a transação relacionada não está nesta página.
+                </Alert>
+              )}
+
               <Typography variant="body2"><strong>ID:</strong> {detailTxn.id || '—'}</Typography>
+
+              {!detailTxn._partial && (
+                <>
+                  <Typography variant="body2"><strong>Data referência:</strong> {detailTxn.reporting_date || '—'}</Typography>
+                  <Typography variant="body2"><strong>Data transação:</strong> {detailTxn.transaction_date || '—'}</Typography>
+                  <Typography variant="body2"><strong>Competência:</strong> {detailTxn.competence_date || '—'}</Typography>
+                  <Typography variant="body2"><strong>Liquidação:</strong> {detailTxn.settlement_date || '—'}</Typography>
+                </>
+              )}
+
               <Typography variant="body2"><strong>Descrição:</strong> {detailTxn.description || '—'}</Typography>
-              <Typography variant="body2"><strong>Status:</strong> {STATUS_LABELS[detailTxn.status] || detailTxn.status || '—'}</Typography>
-              <Typography variant="body2"><strong>Tipo:</strong> {TYPE_LABELS[detailTxn.transaction_type] || detailTxn.transaction_type || '—'}</Typography>
+
+              {!detailTxn._partial && (
+                <>
+                  <Typography variant="body2"><strong>Conta:</strong> {detailTxn.account?.name || '—'}</Typography>
+                  <Typography variant="body2"><strong>Categoria:</strong> {detailTxn.category?.name || '—'}</Typography>
+                  <Typography variant="body2"><strong>Centro de custo:</strong> {detailTxn.cost_center?.name || '—'}</Typography>
+                </>
+              )}
+
+              <Divider sx={{ my: 0.5 }} />
+
               <Typography variant="body2"><strong>Direção:</strong> {DIRECTION_LABELS[detailTxn.direction] || detailTxn.direction || '—'}</Typography>
-              <Typography variant="body2"><strong>Valor líquido:</strong> {formatCentsToReais(detailTxn.net_amount_cents)}</Typography>
-              <Typography variant="body2"><strong>Data referência:</strong> {detailTxn.reporting_date || '—'}</Typography>
-              <Typography variant="body2"><strong>Motivo estorno:</strong> {detailTxn.reversal?.reason || detailTxn.canceled_reason || '—'}</Typography>
-              <Typography variant="body2"><strong>Criado por:</strong> {detailTxn.created_by || '—'}</Typography>
-              <Typography variant="body2"><strong>Aprovado por:</strong> {detailTxn.approved_by || '—'}</Typography>
+              <Typography variant="body2"><strong>Tipo:</strong> {TYPE_LABELS[detailTxn.transaction_type] || detailTxn.transaction_type || '—'}</Typography>
+              <Typography variant="body2"><strong>Status:</strong> {STATUS_LABELS[detailTxn.status] || detailTxn.status || '—'}</Typography>
+
+              {!detailTxn._partial && (
+                <>
+                  <Divider sx={{ my: 0.5 }} />
+                  <Typography variant="body2"><strong>Valor bruto:</strong> {formatCentsToReais(detailTxn.gross_amount_cents)}</Typography>
+                  <Typography variant="body2"><strong>Taxas:</strong> {formatCentsToReais(detailTxn.fee_amount_cents)}</Typography>
+                  <Typography variant="body2"><strong>Descontos:</strong> {formatCentsToReais(detailTxn.discount_amount_cents)}</Typography>
+                  <Typography variant="body2"><strong>Retenções:</strong> {formatCentsToReais(detailTxn.retention_amount_cents)}</Typography>
+                  <Typography variant="body2"><strong>Valor líquido:</strong> {formatCentsToReais(detailTxn.net_amount_cents)}</Typography>
+                </>
+              )}
+
+              <Divider sx={{ my: 0.5 }} />
+
+              {/* canceled_reason only for CANCELED status */}
+              {detailTxn.status === 'CANCELED' && detailTxn.canceled_reason && (
+                <Typography variant="body2"><strong>Motivo cancelamento:</strong> {detailTxn.canceled_reason}</Typography>
+              )}
+
+              {/* FIX 1: reversal_reason from getReversalReason */}
+              <Typography variant="body2"><strong>Motivo estorno:</strong> {getReversalReason(detailTxn) || '—'}</Typography>
+
+              {!detailTxn._partial && (
+                <>
+                  {detailTxn.reversal_of_id && (
+                    <Typography variant="body2"><strong>Reversão de (ID original):</strong> {detailTxn.reversal_of_id}</Typography>
+                  )}
+                  {(detailTxn.reversal?.id || detailTxn.reversal_transaction_id) && (
+                    <Typography variant="body2"><strong>ID reversora:</strong> {detailTxn.reversal?.id || detailTxn.reversal_transaction_id}</Typography>
+                  )}
+                </>
+              )}
+
+              <Divider sx={{ my: 0.5 }} />
+
+              {!detailTxn._partial && (
+                <>
+                  <Typography variant="body2"><strong>Criado por:</strong> {detailTxn.created_by || '—'}</Typography>
+                  <Typography variant="body2"><strong>Aprovado por:</strong> {detailTxn.approved_by || '—'}</Typography>
+                </>
+              )}
             </Box>
           )}
         </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDetailTxn(null)} data-testid="detail-close-btn">
+            Fechar
+          </Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );

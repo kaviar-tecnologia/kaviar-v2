@@ -554,6 +554,8 @@ const VALID_TRANSACTION_TYPES = [
 ] as const;
 
 // ── Manual Transactions Filters ───────────────────────────────────────────────
+// NOTE (PR documentation): In this version, the frontend only exposes: date range, status, direction.
+// The following filters are available via API only: search, account_id, category_id, cost_center_id, transaction_type.
 
 interface ManualTransactionFilters {
   startDate: string; // YYYY-MM-DD
@@ -569,11 +571,47 @@ interface ManualTransactionFilters {
   limit: number;
 }
 
-function parseManualFilters(query: any): ManualTransactionFilters | { error: string } {
+// ── FIX 4: São Paulo timezone defaults ────────────────────────────────────────
+
+function saoPauloCivilToday(): Date {
   const now = new Date();
-  const todayStr = formatDateISO(now);
-  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  const thirtyDaysAgoStr = formatDateISO(thirtyDaysAgo);
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'
+  });
+  const parts = formatter.format(now).split('-');
+  return new Date(Date.UTC(+parts[0], +parts[1] - 1, +parts[2], 23, 59, 59, 999));
+}
+
+function saoPauloCivilThirtyDaysAgo(): Date {
+  const now = new Date();
+  now.setDate(now.getDate() - 30);
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'
+  });
+  const parts = formatter.format(now).split('-');
+  return new Date(Date.UTC(+parts[0], +parts[1] - 1, +parts[2], 0, 0, 0, 0));
+}
+
+function saoPauloCivilTodayStr(): string {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'
+  });
+  return formatter.format(now);
+}
+
+function saoPauloCivilThirtyDaysAgoStr(): string {
+  const now = new Date();
+  now.setDate(now.getDate() - 30);
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'
+  });
+  return formatter.format(now);
+}
+
+function parseManualFilters(query: any): ManualTransactionFilters | { error: string } {
+  const todayStr = saoPauloCivilTodayStr();
+  const thirtyDaysAgoStr = saoPauloCivilThirtyDaysAgoStr();
 
   let startDate: string;
   let endDate: string;
@@ -628,15 +666,24 @@ function parseManualFilters(query: any): ManualTransactionFilters | { error: str
   if (query.account_id && typeof query.account_id === 'string' && query.account_id.trim() === '') {
     return { error: 'account_id não pode ser vazio.' };
   }
+  if (accountId && accountId.length > 200) {
+    return { error: 'account_id não pode exceder 200 caracteres.' };
+  }
 
   const categoryId = query.category_id && typeof query.category_id === 'string' ? query.category_id.trim() : undefined;
   if (query.category_id && typeof query.category_id === 'string' && query.category_id.trim() === '') {
     return { error: 'category_id não pode ser vazio.' };
   }
+  if (categoryId && categoryId.length > 200) {
+    return { error: 'category_id não pode exceder 200 caracteres.' };
+  }
 
   const costCenterId = query.cost_center_id && typeof query.cost_center_id === 'string' ? query.cost_center_id.trim() : undefined;
   if (query.cost_center_id && typeof query.cost_center_id === 'string' && query.cost_center_id.trim() === '') {
     return { error: 'cost_center_id não pode ser vazio.' };
+  }
+  if (costCenterId && costCenterId.length > 200) {
+    return { error: 'cost_center_id não pode exceder 200 caracteres.' };
   }
 
   return {
@@ -711,13 +758,18 @@ function buildManualWhereClause(filters: ManualTransactionFilters): { where: str
 // ── GET /manual-transactions ──────────────────────────────────────────────────
 
 router.get('/manual-transactions', async (req: Request, res: Response) => {
-  const client = await pool.connect();
+  let client: any = null;
+  let transactionStarted = false;
+
   try {
+    client = await pool.connect();
     await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    transactionStarted = true;
 
     const parsed = parseManualFilters(req.query);
     if ('error' in parsed) {
       await client.query('ROLLBACK');
+      transactionStarted = false;
       return res.status(400).json({ success: false, error: parsed.error });
     }
 
@@ -733,6 +785,7 @@ router.get('/manual-transactions', async (req: Request, res: Response) => {
     `);
     if (preVal1.rows[0].count > 0) {
       await client.query('ROLLBACK');
+      transactionStarted = false;
       return res.status(500).json({
         success: false,
         code: 'INTEGRITY_SETTLEMENT_DATE_MISSING',
@@ -751,6 +804,7 @@ router.get('/manual-transactions', async (req: Request, res: Response) => {
     `);
     if (preVal2.rows.length > 0) {
       await client.query('ROLLBACK');
+      transactionStarted = false;
       return res.status(500).json({
         success: false,
         code: 'INTEGRITY_DUPLICATE_REVERSALS',
@@ -770,6 +824,7 @@ router.get('/manual-transactions', async (req: Request, res: Response) => {
     `);
     if (preVal3.rows[0].count > 0) {
       await client.query('ROLLBACK');
+      transactionStarted = false;
       return res.status(500).json({
         success: false,
         code: 'INTEGRITY_TYPE_INCONSISTENCY',
@@ -869,6 +924,7 @@ router.get('/manual-transactions', async (req: Request, res: Response) => {
     const listResult = await client.query(listSQL, [...params, filters.limit, offset]);
 
     await client.query('COMMIT');
+    transactionStarted = false;
 
     const summary = summaryResult.rows[0];
     const total = countResult.rows[0].total;
@@ -894,6 +950,7 @@ router.get('/manual-transactions', async (req: Request, res: Response) => {
       retention_amount_cents: row.retention_amount_cents,
       net_amount_cents: row.net_amount_cents,
       reversal_of_id: row.reversal_of_id || null,
+      reversal_reason: row.reversal_reason || null,
       canceled_reason: row.canceled_reason || null,
       canceled_at: row.canceled_at || null,
       account: { name: row.account_name, code: row.account_code },
@@ -934,28 +991,39 @@ router.get('/manual-transactions', async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    await client.query('ROLLBACK').catch(() => {});
-    console.error('[MANUAL_TRANSACTIONS_REPORT]', error);
-    return res.status(500).json({
-      success: false,
-      code: 'INTERNAL_ERROR',
-      error: 'Erro interno do servidor',
-    });
+    if (client && transactionStarted) {
+      try { await client.query('ROLLBACK'); } catch (rollbackErr) {
+        console.error('[ACCOUNTANT_MANUAL] ROLLBACK failed:', rollbackErr);
+      }
+    }
+    console.error('[ACCOUNTANT_MANUAL_TRANSACTIONS]', error);
+    if (!res.headersSent) {
+      return res.status(500).json({
+        success: false,
+        code: 'INTERNAL_ERROR',
+        error: 'Erro interno do servidor',
+      });
+    }
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
 // ── GET /manual-transactions/csv ──────────────────────────────────────────────
 
 router.get('/manual-transactions/csv', async (req: Request, res: Response) => {
-  const client = await pool.connect();
+  let client: any = null;
+  let transactionStarted = false;
+
   try {
+    client = await pool.connect();
     await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    transactionStarted = true;
 
     const parsed = parseManualFilters(req.query);
     if ('error' in parsed) {
       await client.query('ROLLBACK');
+      transactionStarted = false;
       return res.status(400).json({ success: false, error: parsed.error });
     }
 
@@ -971,6 +1039,7 @@ router.get('/manual-transactions/csv', async (req: Request, res: Response) => {
     `);
     if (preVal1.rows[0].count > 0) {
       await client.query('ROLLBACK');
+      transactionStarted = false;
       return res.status(500).json({
         success: false,
         code: 'INTEGRITY_SETTLEMENT_DATE_MISSING',
@@ -989,6 +1058,7 @@ router.get('/manual-transactions/csv', async (req: Request, res: Response) => {
     `);
     if (preVal2.rows.length > 0) {
       await client.query('ROLLBACK');
+      transactionStarted = false;
       return res.status(500).json({
         success: false,
         code: 'INTEGRITY_DUPLICATE_REVERSALS',
@@ -1008,6 +1078,7 @@ router.get('/manual-transactions/csv', async (req: Request, res: Response) => {
     `);
     if (preVal3.rows[0].count > 0) {
       await client.query('ROLLBACK');
+      transactionStarted = false;
       return res.status(500).json({
         success: false,
         code: 'INTEGRITY_TYPE_INCONSISTENCY',
@@ -1066,6 +1137,7 @@ router.get('/manual-transactions/csv', async (req: Request, res: Response) => {
 
     const result = await client.query(csvSQL, params);
     await client.query('COMMIT');
+    transactionStarted = false;
 
     if (result.rows.length > CSV_MAX_ROWS) {
       return res.status(422).json({
@@ -1128,7 +1200,7 @@ router.get('/manual-transactions/csv', async (req: Request, res: Response) => {
 
     const csvContent = [
       headers.map(h => `"${h}"`).join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
+      ...rows.map((row: string[]) => row.map((cell: string) => `"${cell}"`).join(',')),
     ].join('\r\n');
 
     const filename = `kaviar-transacoes-manuais-${filters.startDate}-a-${filters.endDate}.csv`;
@@ -1137,15 +1209,21 @@ router.get('/manual-transactions/csv', async (req: Request, res: Response) => {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     return res.send('\uFEFF' + csvContent);
   } catch (error) {
-    await client.query('ROLLBACK').catch(() => {});
-    console.error('[MANUAL_TRANSACTIONS_CSV]', error);
-    return res.status(500).json({
-      success: false,
-      code: 'INTERNAL_ERROR',
-      error: 'Erro ao gerar CSV',
-    });
+    if (client && transactionStarted) {
+      try { await client.query('ROLLBACK'); } catch (rollbackErr) {
+        console.error('[ACCOUNTANT_MANUAL] ROLLBACK failed:', rollbackErr);
+      }
+    }
+    console.error('[ACCOUNTANT_MANUAL_TRANSACTIONS]', error);
+    if (!res.headersSent) {
+      return res.status(500).json({
+        success: false,
+        code: 'INTERNAL_ERROR',
+        error: 'Erro ao gerar CSV',
+      });
+    }
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 

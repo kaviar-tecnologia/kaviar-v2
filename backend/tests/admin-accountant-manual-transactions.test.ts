@@ -531,4 +531,118 @@ describe('Manual Transactions - Search limit and filter validation', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toContain('cost_center_id');
   });
+
+  // FIX 6: Filter IDs max length (200 chars)
+  it('rejects account_id exceeding 200 characters', async () => {
+    const longId = 'a'.repeat(201);
+    const res = await request(app)
+      .get('/api/admin/finance/accountant-report/manual-transactions')
+      .query({ account_id: longId });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('account_id');
+    expect(res.body.error).toContain('200');
+  });
+
+  it('rejects category_id exceeding 200 characters', async () => {
+    const longId = 'a'.repeat(201);
+    const res = await request(app)
+      .get('/api/admin/finance/accountant-report/manual-transactions')
+      .query({ category_id: longId });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('category_id');
+    expect(res.body.error).toContain('200');
+  });
+
+  it('rejects cost_center_id exceeding 200 characters', async () => {
+    const longId = 'a'.repeat(201);
+    const res = await request(app)
+      .get('/api/admin/finance/accountant-report/manual-transactions')
+      .query({ cost_center_id: longId });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('cost_center_id');
+    expect(res.body.error).toContain('200');
+  });
+
+  it('allows account_id with exactly 200 characters', async () => {
+    const id200 = 'a'.repeat(200);
+    setupFullSuccess();
+    const res = await request(app)
+      .get('/api/admin/finance/accountant-report/manual-transactions')
+      .query({ account_id: id200 });
+    expect(res.status).toBe(200);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FIX 8: pool.connect() PROTECTION TESTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('Manual Transactions - pool.connect() protection', () => {
+  it('pool.connect() rejects → 500, no ROLLBACK attempt, release not called (client is null)', async () => {
+    poolMock.connect.mockRejectedValueOnce(new Error('Connection pool exhausted'));
+    const res = await request(app).get('/api/admin/finance/accountant-report/manual-transactions');
+    expect(res.status).toBe(500);
+    expect(res.body.code).toBe('INTERNAL_ERROR');
+    // client.query should not have been called at all (no BEGIN, no ROLLBACK)
+    expect(client.query).not.toHaveBeenCalled();
+    // release should not have been called since client is null
+    expect(client.release).not.toHaveBeenCalled();
+  });
+
+  it('summary succeeds, count fails → ROLLBACK called, list not called, release called', async () => {
+    // BEGIN
+    client.query.mockResolvedValueOnce({});
+    // pre-validations pass (3 calls)
+    setupPreValidationsPass();
+    // summary
+    client.query.mockResolvedValueOnce({ rows: [validSummary] });
+    // count FAILS
+    client.query.mockRejectedValueOnce(new Error('count query failed'));
+    // ROLLBACK
+    client.query.mockResolvedValueOnce({});
+
+    const res = await request(app).get('/api/admin/finance/accountant-report/manual-transactions');
+    expect(res.status).toBe(500);
+    expect(res.body.code).toBe('INTERNAL_ERROR');
+
+    // Verify ROLLBACK was called (last successful query call)
+    const calls = client.query.mock.calls;
+    const lastCallBeforeError = calls[calls.length - 1];
+    expect(lastCallBeforeError[0]).toBe('ROLLBACK');
+
+    // Verify list was not called (only 7 calls: BEGIN + 3prevals + summary + count(fail) + ROLLBACK)
+    expect(client.query).toHaveBeenCalledTimes(7);
+
+    // release was called
+    expect(client.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('all succeed → COMMIT called, no ROLLBACK', async () => {
+    setupFullSuccess();
+    const res = await request(app).get('/api/admin/finance/accountant-report/manual-transactions');
+    expect(res.status).toBe(200);
+
+    // Verify COMMIT was called
+    const calls = client.query.mock.calls;
+    const commitCalls = calls.filter(c => c[0] === 'COMMIT');
+    expect(commitCalls.length).toBe(1);
+
+    // Verify no ROLLBACK
+    const rollbackCalls = calls.filter(c => c[0] === 'ROLLBACK');
+    expect(rollbackCalls.length).toBe(0);
+
+    // release was called
+    expect(client.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('pool.connect() rejects for CSV → 500, no ROLLBACK, no release', async () => {
+    poolMock.connect.mockRejectedValueOnce(new Error('Connection pool exhausted'));
+    const res = await request(app)
+      .get('/api/admin/finance/accountant-report/manual-transactions/csv')
+      .query({ start_date: '2026-07-01', end_date: '2026-07-30' });
+    expect(res.status).toBe(500);
+    expect(res.body.code).toBe('INTERNAL_ERROR');
+    expect(client.query).not.toHaveBeenCalled();
+    expect(client.release).not.toHaveBeenCalled();
+  });
 });

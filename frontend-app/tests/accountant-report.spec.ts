@@ -75,38 +75,67 @@ const mockManualTxResponse = {
       {
         id: 'tx-001', direction: 'IN', transaction_type: 'INCOME', status: 'POSTED',
         reporting_date: '2026-07-15', description: 'Receita de aluguel',
-        net_amount_cents: '100000', account: { name: 'Conta Principal', code: 'CP' },
+        net_amount_cents: '100000', gross_amount_cents: '110000',
+        fee_amount_cents: '5000', discount_amount_cents: '3000',
+        retention_amount_cents: '2000',
+        account: { name: 'Conta Principal', code: 'CP' },
         category: { name: 'Aluguéis', code: 'ALG' },
         cost_center: { name: 'Operações', code: 'OPS' },
         reversal: null, original: null, reversal_of_id: null,
-        transaction_date: '2026-07-10', payment_method: 'PIX',
+        reversal_reason: null,
+        transaction_date: '2026-07-10', competence_date: '2026-07-01',
+        settlement_date: '2026-07-15', payment_method: 'PIX',
+        created_by: 'Admin Fulano', approved_by: 'Diretor Silva',
+        canceled_reason: null,
       },
       {
         id: 'tx-002', direction: 'OUT', transaction_type: 'REVERSAL', status: 'POSTED',
         reporting_date: '2026-07-16', description: 'Estorno pagamento duplicado',
-        net_amount_cents: '45000', account: { name: 'Conta Principal', code: 'CP' },
+        net_amount_cents: '45000', gross_amount_cents: '45000',
+        fee_amount_cents: '0', discount_amount_cents: '0',
+        retention_amount_cents: '0',
+        account: { name: 'Conta Principal', code: 'CP' },
         category: { name: 'Estornos', code: 'EST' },
         cost_center: null,
         reversal: null, original: { id: 'tx-003', description: 'Pagamento original' },
-        reversal_of_id: 'tx-003', transaction_date: '2026-07-12', payment_method: 'TED',
+        reversal_of_id: 'tx-003', transaction_date: '2026-07-12',
+        competence_date: '2026-07-12', settlement_date: '2026-07-16',
+        payment_method: 'TED',
+        reversal_reason: 'Duplicidade detectada',
+        created_by: 'Admin Fulano', approved_by: null,
+        canceled_reason: null,
       },
       {
         id: 'tx-003', direction: 'OUT', transaction_type: 'EXPENSE', status: 'REVERSED',
         reporting_date: '2026-07-10', description: 'Pagamento original',
-        net_amount_cents: '45000', account: { name: 'Conta Principal', code: 'CP' },
+        net_amount_cents: '45000', gross_amount_cents: '48000',
+        fee_amount_cents: '2000', discount_amount_cents: '1000',
+        retention_amount_cents: '0',
+        account: { name: 'Conta Principal', code: 'CP' },
         category: { name: 'Fornecedores', code: 'FORN' },
         cost_center: { name: 'Operações', code: 'OPS' },
         reversal: { id: 'tx-002', date: '2026-07-16', reason: 'Duplicidade' },
         original: null, reversal_of_id: null,
-        transaction_date: '2026-07-08', payment_method: 'TED',
+        reversal_reason: 'Duplicidade',
+        transaction_date: '2026-07-08', competence_date: '2026-07-08',
+        settlement_date: '2026-07-10', payment_method: 'TED',
+        created_by: 'Admin Fulano', approved_by: 'Diretor Silva',
+        canceled_reason: null,
       },
       {
         id: 'tx-004', direction: 'IN', transaction_type: 'INCOME', status: 'DRAFT',
         reporting_date: '2026-07-18', description: 'Lançamento rascunho',
-        net_amount_cents: '50000', account: { name: 'Conta Secundária', code: 'CS' },
+        net_amount_cents: '50000', gross_amount_cents: '50000',
+        fee_amount_cents: '0', discount_amount_cents: '0',
+        retention_amount_cents: '0',
+        account: { name: 'Conta Secundária', code: 'CS' },
         category: null, cost_center: null,
         reversal: null, original: null, reversal_of_id: null,
-        transaction_date: '2026-07-18', payment_method: null,
+        reversal_reason: null,
+        transaction_date: '2026-07-18', competence_date: '2026-07-18',
+        settlement_date: null, payment_method: null,
+        created_by: null, approved_by: null,
+        canceled_reason: null,
       },
     ],
     pagination: { page: 1, limit: 50, total: 4, total_pages: 1 },
@@ -519,5 +548,96 @@ test.describe('Manual Transactions - Detail Dialog', () => {
     await expect(page.getByText('Receita').first()).toBeVisible();
     await expect(page.getByText('Reversão').first()).toBeVisible();
     await expect(page.getByText('Despesa').first()).toBeVisible();
+  });
+
+  // ── FIX 9: Enhanced detail dialog tests ─────────────────────────────────────
+
+  test('reversal_reason shown from mock reversal_reason field', async ({ page }) => {
+    await interceptReport(page);
+    await interceptManualTx(page);
+    await page.goto('/admin/financeiro/contador');
+    await page.getByRole('tab', { name: 'Lançamentos Manuais' }).click();
+    // tx-002 is REVERSAL with reversal_reason: 'Duplicidade detectada'
+    await page.getByRole('button', { name: 'Ver original' }).click();
+    await expect(page.getByText('Detalhes da Transação')).toBeVisible();
+    // tx-003 has reversal_reason: 'Duplicidade'
+    await expect(page.getByText('Duplicidade')).toBeVisible();
+  });
+
+  test('dialog shows all expected fields for full transaction', async ({ page }) => {
+    await interceptReport(page);
+    await interceptManualTx(page);
+    await page.goto('/admin/financeiro/contador');
+    await page.getByRole('tab', { name: 'Lançamentos Manuais' }).click();
+    // Click Ver reversão to open tx-002 (which is in the list so full detail is shown)
+    await page.getByRole('button', { name: 'Ver reversão' }).click();
+    await expect(page.getByText('Detalhes da Transação')).toBeVisible();
+
+    // Scope assertions to the dialog (MUI Dialog uses role=dialog)
+    const dialog = page.getByRole('dialog');
+
+    // Verify key fields are shown
+    await expect(dialog.getByText('tx-002')).toBeVisible();
+    await expect(dialog.getByText('Estorno pagamento duplicado')).toBeVisible();
+    await expect(dialog.getByText('Conta Principal')).toBeVisible();
+    await expect(dialog.getByText('Estornos')).toBeVisible();
+    await expect(dialog.getByText('Saída')).toBeVisible();
+    await expect(dialog.getByText('Tipo: Reversão')).toBeVisible();
+    await expect(dialog.getByText('Liquidado')).toBeVisible();
+    // Check amount fields (gross_amount_cents = 45000 → R$ 450,00)
+    await expect(dialog.getByText('Valor bruto: R$ 450,00')).toBeVisible();
+    await expect(dialog.getByText('Valor líquido: R$ 450,00')).toBeVisible();
+    await expect(dialog.getByText('Duplicidade detectada')).toBeVisible();
+    await expect(dialog.getByText('Admin Fulano')).toBeVisible();
+  });
+
+  test('partial fallback message when transaction not in current page', async ({ page }) => {
+    // Use a response where tx-002 references tx-005 which is NOT in the list
+    const customResponse = {
+      ...mockManualTxResponse,
+      data: {
+        ...mockManualTxResponse.data,
+        transactions: [
+          {
+            ...mockManualTxResponse.data.transactions[2], // tx-003 (REVERSED)
+            reversal: { id: 'tx-999', date: '2026-07-20', reason: 'Não encontrado' },
+          },
+        ],
+      },
+    };
+    await interceptReport(page);
+    await interceptManualTx(page, customResponse);
+    await page.goto('/admin/financeiro/contador');
+    await page.getByRole('tab', { name: 'Lançamentos Manuais' }).click();
+    await page.getByRole('button', { name: 'Ver reversão' }).click();
+    await expect(page.getByText('Detalhes da Transação')).toBeVisible();
+    // Partial note should be shown
+    await expect(page.getByText('Detalhes parciais')).toBeVisible();
+    await expect(page.getByText('a transação relacionada não está nesta página')).toBeVisible();
+  });
+
+  test('Fechar button closes the dialog', async ({ page }) => {
+    await interceptReport(page);
+    await interceptManualTx(page);
+    await page.goto('/admin/financeiro/contador');
+    await page.getByRole('tab', { name: 'Lançamentos Manuais' }).click();
+    await page.getByRole('button', { name: 'Ver reversão' }).click();
+    await expect(page.getByText('Detalhes da Transação')).toBeVisible();
+    // Click Fechar button
+    await page.getByRole('button', { name: 'Fechar' }).click();
+    // Dialog should close
+    await expect(page.getByText('Detalhes da Transação')).not.toBeVisible();
+  });
+
+  test('dialog closes on Escape key', async ({ page }) => {
+    await interceptReport(page);
+    await interceptManualTx(page);
+    await page.goto('/admin/financeiro/contador');
+    await page.getByRole('tab', { name: 'Lançamentos Manuais' }).click();
+    await page.getByRole('button', { name: 'Ver reversão' }).click();
+    await expect(page.getByText('Detalhes da Transação')).toBeVisible();
+    // Press Escape
+    await page.keyboard.press('Escape');
+    await expect(page.getByText('Detalhes da Transação')).not.toBeVisible();
   });
 });
