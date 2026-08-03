@@ -4,7 +4,7 @@
  * Uses: useAdminAuth, adminFinanceService, parseBRLToCentsString, formatCentsStringToBRL
  * No Number/parseFloat/Math for money. CAS via expected_updated_at.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Container,
   Dialog, DialogActions, DialogContent, DialogTitle, Grid, MenuItem,
@@ -127,7 +127,7 @@ export default function FinanceTransactionsPage() {
   };
 
   const handleReverse = async (txn, reversalDate, reason) => {
-    setSuccessMsg(''); setError('');
+    setSuccessMsg(''); setConflictMsg(''); setError('');
     try {
       await reverseFinanceTransaction(txn.id, { expected_updated_at: txn.updated_at, reversal_date: reversalDate, reason });
       setReverseDialog(null);
@@ -469,11 +469,22 @@ function ReversalDialog({ txn, onClose, onConfirm }) {
   const [date, setDate] = useState(todayLocalISO());
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const handle = async () => {
-    if (!reason.trim() || reason.trim().length < 3) return;
+    if (submittingRef.current) return;
+
+    const trimmedReason = reason.trim();
+    if (trimmedReason.length < 3) return;
+
+    submittingRef.current = true;
     setSubmitting(true);
-    try { await onConfirm(txn, date, reason.trim()); }
-    finally { setSubmitting(false); }
+
+    try {
+      await onConfirm(txn, date, trimmedReason);
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
   };
   return (
     <Dialog open onClose={onClose} maxWidth="sm" fullWidth>

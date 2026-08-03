@@ -62,7 +62,7 @@ export const FINANCE_TRANSACTION_DETAIL_SELECT = {
   // Relations
   account: { select: { id: true, code: true, name: true, type: true, is_active: true } },
   counterparty_account: { select: { id: true, code: true, name: true, type: true, is_active: true } },
-  category: { select: { id: true, code: true, name: true, kind: true, is_active: true, is_postable: true } },
+  category: { select: { id: true, code: true, name: true, kind: true, is_active: true, is_postable: true, sort_order: true } },
   cost_center: { select: { id: true, code: true, name: true, type: true, is_active: true } },
   reversal_of: { select: TRANSACTION_SUMMARY_SELECT },
   reversals: {
@@ -82,7 +82,7 @@ export const FINANCE_TRANSACTION_DETAIL_SELECT = {
       created_at: true,
       updated_at: true,
       created_by_admin: { select: { id: true, name: true, role: true } },
-      category: { select: { id: true, code: true, name: true, kind: true, is_active: true, is_postable: true } },
+      category: { select: { id: true, code: true, name: true, kind: true, is_active: true, is_postable: true, sort_order: true } },
       cost_center: { select: { id: true, code: true, name: true, type: true, is_active: true } },
     },
     orderBy: [{ created_at: 'asc' as const }, { id: 'asc' as const }],

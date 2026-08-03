@@ -306,10 +306,11 @@ test.describe('Finance Transactions — Reversal Flow', () => {
     await expect(dialog.getByRole('button', { name: 'Confirmar Estorno' })).toBeDisabled();
   });
 
-  test('Successful reversal: closes dialog, shows success, updates list', async ({ page }) => {
+  test('Successful reversal: closes dialog, shows success, updates list, blocks double-submit', async ({ page }) => {
     let reversalRequests = 0;
     let capturedBody: any = null;
     let listCallCount = 0;
+    let resolveResponse: (() => void) | null = null;
 
     // Mutable list interceptor: before reversal shows original data, after shows updated
     await page.unroute('**/api/admin/finance/transactions?**');
@@ -319,12 +320,16 @@ test.describe('Finance Transactions — Reversal Flow', () => {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(response) });
     });
 
-    // Reversal interceptor with payload capture
+    // Reversal interceptor: first request is held pending to allow double-click test
     await page.unroute('**/api/admin/finance/transactions/*/reverse');
     await page.route('**/api/admin/finance/transactions/*/reverse', (route) => {
       reversalRequests++;
       capturedBody = JSON.parse(route.request().postData() || '{}');
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { original: mockPostedReversed, reversal: mockReversal } }) });
+      // Hold the response to simulate network latency — second click must be blocked by ref guard
+      const responsePromise = new Promise<void>((resolve) => { resolveResponse = resolve; });
+      responsePromise.then(() => {
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { original: mockPostedReversed, reversal: mockReversal } }) });
+      });
     });
 
     await page.goto('/admin/financeiro/lancamentos');
@@ -335,9 +340,22 @@ test.describe('Finance Transactions — Reversal Flow', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
 
+    // Set the date explicitly
+    await dialog.locator('input[type="date"]').fill('2026-08-10');
     await dialog.getByRole('textbox', { name: 'Motivo do estorno *' }).fill('  Pagamento duplicado detectado  ');
     await expect(dialog.getByRole('button', { name: 'Confirmar Estorno' })).toBeEnabled();
-    await dialog.getByRole('button', { name: 'Confirmar Estorno' }).click();
+
+    // Double-click rapidly — both clicks fire before network response arrives
+    const confirmButton = dialog.getByRole('button', { name: 'Confirmar Estorno' });
+    await confirmButton.evaluate((element) => {
+      element.click();
+      element.click();
+    });
+
+    // Wait a tick then release the pending response
+    await page.waitForTimeout(100);
+    expect(reversalRequests).toBe(1); // Only 1 request reached the server
+    resolveResponse!();
 
     // Dialog closes
     await expect(dialog).not.toBeVisible();
@@ -345,25 +363,22 @@ test.describe('Finance Transactions — Reversal Flow', () => {
     // Success message
     await expect(page.getByText('Lançamento estornado com sucesso.')).toBeVisible();
 
-    // Payload verification
+    // Payload verification with exact values
     expect(capturedBody).not.toBeNull();
-    expect(capturedBody.expected_updated_at).toBeDefined();
-    expect(capturedBody.reversal_date).toBeDefined();
+    expect(capturedBody.expected_updated_at).toBe(mockPosted.updated_at);
+    expect(capturedBody.reversal_date).toBe('2026-08-10');
     expect(capturedBody.reason).toBe('Pagamento duplicado detectado');
 
     // After reload, the list shows updated state
-    // The reversed original gets a "Estornado" chip, the new REVERSAL gets a "Estorno" chip
     const reversalRow = page.locator('tr').filter({ hasText: 'Estorno: Twilio Jul' });
     await expect(reversalRow).toBeVisible();
-    // Estorno chip (exact text in a Chip/span)
     await expect(reversalRow.getByText('Estorno', { exact: true })).toBeVisible();
-    // Check "Estornado" chip exists somewhere on the page (the reversed original)
     await expect(page.getByText('Estornado', { exact: true }).first()).toBeVisible();
 
     // REVERSAL entry should not have Estornar button
     await expect(reversalRow.getByRole('button', { name: 'Estornar' })).not.toBeVisible();
 
-    // Only one reversal request was made (double-submit prevention)
+    // Final confirmation: exactly 1 request total
     expect(reversalRequests).toBe(1);
   });
 
