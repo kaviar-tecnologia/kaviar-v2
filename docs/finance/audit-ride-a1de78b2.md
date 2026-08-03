@@ -1,28 +1,35 @@
-# Registro: Corrida a1de78b2 — Teste Conhecido
+# Registros observados na Área do Contador
 
-## Contexto confirmado
+## Corrida 7c4b1985
 
-- O passageiro (Jorge) se cadastrou para conhecer o sistema
-- A corrida foi solicitada na região de Maricá/Região Serrana
-- O aplicativo do motorista foi aberto fora da área de atuação
-- A oferta não apareceu para nenhum motorista
-- Nenhum motorista realizou a corrida
-- Não houve pagamento, taxa da plataforma ou ganho de motorista
+- Passageiro: Jorge
+- Status operacional: Sem motorista
+- Status financeiro: Não liquidado
+- Contexto confirmado: teste realizado na região de Maricá/Região Serrana, fora da área de atuação. A oferta não apareceu para o motorista. Nenhum motorista realizou a corrida. Não houve pagamento.
+- Classificação: REGISTRO_DE_TESTE_CONHECIDO_SEM_IMPACTO_NOS_TOTAIS_LIQUIDADOS
 
-## Classificação
+## Corrida a1de78b2
 
-REGISTRO_DE_TESTE_CONHECIDO_SEM_IMPACTO_NOS_TOTAIS_LIQUIDADOS
+- Passageiro exibido: menina
+- Status operacional: Concluída
+- Motorista: ausente
+- Status financeiro: Dados incompletos (exibição visual da tela)
+- Valores financeiros: ausentes (—)
 
-## Comportamento na Área do Contador
+### Fatos observados
 
-- O registro aparece na listagem operacional (corrida existiu)
-- Status financeiro: "Dados incompletos" (indicação visual clara)
-- Valores financeiros: traços (—) — nenhum valor inventado
-- **Não entra nos totais** do resumo (somas usam apenas settlements com `settled_at IS NOT NULL`)
-- Não representa prejuízo, erro contábil ou fraude
+- A corrida aparece como concluída sem motorista vinculado
+- Não possui settlement liquidado
+- Não entra nos totais financeiros apresentados ao contador
 
-## Decisão
+### Origem
 
-- Nenhuma correção de status ou valores necessária
-- Nenhuma auditoria adicional no banco requerida
-- Registro mantido como está — evidência histórica de uso do sistema
+- A origem exata desta corrida não foi confirmada
+- Não deve ser associada ao relato do passageiro Jorge sem nova evidência
+- Não há indicação de fraude, prejuízo ou erro contábil
+
+### Impacto na Área do Contador
+
+- Nenhum: o resumo soma apenas settlements com `settled_at IS NOT NULL`
+- A tela exibe "Dados incompletos" como indicação visual clara
+- Nenhuma ação corretiva necessária neste momento
