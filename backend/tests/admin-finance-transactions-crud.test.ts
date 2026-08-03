@@ -174,3 +174,102 @@ describe('POST /api/admin/finance/transactions/:id/cancel', () => {
     expect(res.body.error).toContain('estorno');
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Additional validation tests
+// ══════════════════════════════════════════════════════════════════════════════
+
+describe('Validation: monetary and dates', () => {
+  it('gross_amount_cents = "0" → 400 (must be > 0)', async () => {
+    const res = await request(app).post('/api/admin/finance/transactions').send({ ...validCreateBody, gross_amount_cents: '0', net_amount_cents: '0' });
+    expect(res.status).toBe(400);
+  });
+
+  it('negative gross → 400', async () => {
+    const res = await request(app).post('/api/admin/finance/transactions').send({ ...validCreateBody, gross_amount_cents: '-100', net_amount_cents: '-100' });
+    expect(res.status).toBe(400);
+  });
+
+  it('overflow bigint → 400', async () => {
+    const res = await request(app).post('/api/admin/finance/transactions').send({ ...validCreateBody, gross_amount_cents: '99999999999999999999999', net_amount_cents: '99999999999999999999999' });
+    expect(res.status).toBe(400);
+  });
+
+  it('non-numeric amount → 400', async () => {
+    const res = await request(app).post('/api/admin/finance/transactions').send({ ...validCreateBody, gross_amount_cents: 'abc', net_amount_cents: 'abc' });
+    expect(res.status).toBe(400);
+  });
+
+  it('invalid date Feb 30 → 400', async () => {
+    const res = await request(app).post('/api/admin/finance/transactions').send({ ...validCreateBody, competence_date: '2026-02-30' });
+    expect(res.status).toBe(400);
+  });
+
+  it('invalid date Apr 31 → 400', async () => {
+    const res = await request(app).post('/api/admin/finance/transactions').send({ ...validCreateBody, transaction_date: '2026-04-31' });
+    expect(res.status).toBe(400);
+  });
+
+  it('due_date before transaction_date → 400', async () => {
+    const res = await request(app).post('/api/admin/finance/transactions').send({ ...validCreateBody, transaction_date: '2026-08-15', due_date: '2026-08-01' });
+    expect(res.status).toBe(400);
+  });
+
+  it('net != gross in V1 → 400', async () => {
+    const res = await request(app).post('/api/admin/finance/transactions').send({ ...validCreateBody, gross_amount_cents: '15000', net_amount_cents: '14000' });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('Validation: direction/type compatibility', () => {
+  it('IN + EXPENSE → 400', async () => {
+    const res = await request(app).post('/api/admin/finance/transactions').send({ ...validCreateBody, direction: 'IN', transaction_type: 'EXPENSE' });
+    expect(res.status).toBe(400);
+  });
+
+  it('OUT + INCOME → 400', async () => {
+    const res = await request(app).post('/api/admin/finance/transactions').send({ ...validCreateBody, direction: 'OUT', transaction_type: 'INCOME' });
+    expect(res.status).toBe(400);
+  });
+
+  it('IN + INCOME → 201', async () => {
+    const res = await request(app).post('/api/admin/finance/transactions').send({ ...validCreateBody, direction: 'IN', transaction_type: 'INCOME' });
+    expect(res.status).toBe(201);
+  });
+});
+
+describe('Validation: references and concurrency', () => {
+  it('missing category_id → 400', async () => {
+    const { category_id, ...body } = validCreateBody;
+    const res = await request(app).post('/api/admin/finance/transactions').send(body);
+    expect(res.status).toBe(400);
+  });
+
+  it('inactive category → 400', async () => {
+    prismaMock.financial_categories.findUnique.mockResolvedValue({ id: 'cat-1', is_active: false });
+    const res = await request(app).post('/api/admin/finance/transactions').send(validCreateBody);
+    expect(res.status).toBe(400);
+  });
+
+  it('expected_updated_at missing on PATCH → 400', async () => {
+    const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({ description: 'x' });
+    expect(res.status).toBe(400);
+  });
+
+  it('metadata with unknown property → 400', async () => {
+    const res = await request(app).post('/api/admin/finance/transactions').send({ ...validCreateBody, metadata: { unknown_field: 'x' } });
+    expect(res.status).toBe(400);
+  });
+
+  it('FINANCE role POST → 403', async () => {
+    authState.admin = { id: 'f1', email: 'f@t.l', role: 'FINANCE' };
+    const res = await request(app).post('/api/admin/finance/transactions').send(validCreateBody);
+    expect(res.status).toBe(403);
+  });
+
+  it('unauthenticated → 401', async () => {
+    authState.admin = null;
+    const res = await request(app).post('/api/admin/finance/transactions').send(validCreateBody);
+    expect(res.status).toBe(401);
+  });
+});
