@@ -171,10 +171,21 @@ export async function reverseFinanceTransaction(
       },
     };
   } catch (error) {
-    // Handle P2002 unique constraint (idempotency_key) as 409
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+    // Handle P2002 unique constraint ONLY for idempotency_key
+    if (isIdempotencyKeyConflict(error)) {
       throw new TransactionWriteError('Este lançamento já possui um estorno', 409);
     }
     throw error;
   }
+}
+
+function isIdempotencyKeyConflict(error: unknown): error is Prisma.PrismaClientKnownRequestError {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+    return false;
+  }
+  const target = error.meta?.target;
+  if (Array.isArray(target)) {
+    return target.some((field) => String(field).includes('idempotency_key'));
+  }
+  return String(target ?? '').includes('idempotency_key');
 }
