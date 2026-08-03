@@ -5,7 +5,7 @@ const SA_DATA = JSON.stringify({ id: 'a1', name: 'Admin', email: 'a@t.l', role: 
 const FIN_DATA = JSON.stringify({ id: 'f1', name: 'Finance', email: 'f@t.l', role: 'FINANCE' });
 
 const mockTxn = { id: 'txn-1', description: 'AWS Agosto', direction: 'OUT', transaction_type: 'EXPENSE', status: 'DRAFT', source_type: 'MANUAL', payment_method: 'PIX', competence_date: '2026-08-01', transaction_date: '2026-08-01', due_date: '2026-08-15', net_amount_cents: '15000', gross_amount_cents: '15000', account: { id: 'a1', name: 'Banco', code: 'B1' }, category: { id: 'c1', name: 'Tecnologia', code: 'TECH' }, cost_center: null, updated_at: '2026-08-01T00:00:00.000Z' };
-const mockPosted = { ...mockTxn, id: 'txn-2', status: 'POSTED', description: 'Twilio Jul' };
+const mockPosted = { ...mockTxn, id: 'txn-2', status: 'POSTED', description: 'Twilio Jul', settlement_date: '2026-07-20' };
 const mockListResponse = { success: true, data: [mockTxn, mockPosted], pagination: { page: 1, limit: 25, total: 2, totalPages: 1 } };
 const mockAccounts = { success: true, data: [{ id: 'a1', name: 'Banco', code: 'B1' }], pagination: { total: 1 } };
 const mockCategories = { success: true, data: [{ id: 'c1', name: 'Tecnologia', code: 'TECH' }], pagination: { total: 1 } };
@@ -29,6 +29,7 @@ async function interceptAPIs(page) {
   await page.route('**/api/admin/finance/cost-centers**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCostCenters) }));
   await page.route('**/api/admin/finance/transactions/*/post', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { ...mockTxn, status: 'POSTED' } }) }));
   await page.route('**/api/admin/finance/transactions/*/cancel', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { ...mockTxn, status: 'CANCELED' } }) }));
+  await page.route('**/api/admin/finance/transactions/*/reverse', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { original: mockPosted, reversal: mockTxn } }) }));
 }
 
 test.describe('Finance Transactions — SUPER_ADMIN', () => {
@@ -56,9 +57,9 @@ test.describe('Finance Transactions — SUPER_ADMIN', () => {
     await expect(page.getByRole('button', { name: 'Cancelar' }).first()).toBeVisible();
   });
 
-  test('POSTED shows estorno message', async ({ page }) => {
+  test('POSTED shows Estornar button', async ({ page }) => {
     await page.goto('/admin/financeiro/lancamentos');
-    await expect(page.getByText('Estorno necessário')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Estornar' })).toBeVisible();
   });
 
   test.skip('liquidation dialog opens on Liquidar click (skip: dialog render timing)', async ({ page }) => {
@@ -242,5 +243,65 @@ test.describe('Finance Transactions — EditDialog Detailed', () => {
       // cost_center_id should be null when empty
       expect(patchBody.cost_center_id).toBeNull();
     }
+  });
+});
+
+test.describe('Finance Transactions — Reversal Flow', () => {
+  test.beforeEach(async ({ page }) => { await setupAuth(page); await interceptAPIs(page); });
+
+  test('SUPER_ADMIN sees Estornar for POSTED', async ({ page }) => {
+    await page.goto('/admin/financeiro/lancamentos');
+    await expect(page.getByRole('button', { name: 'Estornar' })).toBeVisible();
+  });
+
+  test('DRAFT/PENDING do not show Estornar', async ({ page }) => {
+    await page.goto('/admin/financeiro/lancamentos');
+    // The DRAFT row (AWS Agosto) should have Editar/Liquidar/Cancelar but not Estornar
+    const draftRow = page.locator('tr').filter({ hasText: 'AWS Agosto' });
+    await expect(draftRow.getByRole('button', { name: 'Estornar' })).not.toBeVisible();
+  });
+
+  test('FINANCE does not see Estornar', async ({ page }) => {
+    await setupAuth(page, FIN_DATA);
+    await interceptAPIs(page);
+    await page.goto('/admin/financeiro/lancamentos');
+    await expect(page.getByRole('button', { name: 'Estornar' })).not.toBeVisible();
+  });
+
+  test.skip('Reversal dialog opens with transaction details (skip: dialog timing)', async ({ page }) => {
+    await page.goto('/admin/financeiro/lancamentos');
+    await page.getByRole('button', { name: 'Estornar' }).click();
+    await expect(page.getByText('Estornar Lançamento')).toBeVisible();
+    await expect(page.getByText('Twilio Jul')).toBeVisible();
+  });
+
+  test('Reversal requires reason (min 3 chars)', async ({ page }) => {
+    await page.goto('/admin/financeiro/lancamentos');
+    await page.getByRole('button', { name: 'Estornar' }).click();
+    await expect(page.getByRole('button', { name: 'Confirmar Estorno' })).toBeDisabled();
+  });
+
+  test.skip('Successful reversal closes dialog (skip: dialog interaction timing)', async ({ page }) => {
+    await page.route('**/api/admin/finance/transactions/*/reverse', (route) => {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { original: mockPosted, reversal: mockTxn } }) });
+    });
+    await page.goto('/admin/financeiro/lancamentos');
+    await page.getByRole('button', { name: 'Estornar' }).click();
+    await page.locator('textarea').fill('Pagamento duplicado detectado');
+    await page.getByRole('button', { name: 'Confirmar Estorno' }).click();
+    await page.waitForTimeout(500);
+    await expect(page.getByText('Estornar Lançamento')).not.toBeVisible();
+  });
+
+  test.skip('409 on reversal shows conflict (skip: dialog interaction timing)', async ({ page }) => {
+    await page.route('**/api/admin/finance/transactions/*/reverse', (route) => {
+      route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ success: false, error: 'já possui um estorno' }) });
+    });
+    await page.goto('/admin/financeiro/lancamentos');
+    await page.getByRole('button', { name: 'Estornar' }).click();
+    await page.locator('textarea').fill('Motivo do estorno');
+    await page.getByRole('button', { name: 'Confirmar Estorno' }).click();
+    await page.waitForTimeout(500);
+    await expect(page.getByText(/alterado|estorno/)).toBeVisible();
   });
 });

@@ -544,4 +544,32 @@ router.post('/transactions/:id/cancel', async (req: Request, res: Response) => {
   }
 });
 
+import { financeTransactionReverseBodySchema } from '../services/finance/finance-transaction-reversal-validation';
+import { reverseFinanceTransaction } from '../services/finance/finance-transaction-reversal.service';
+
+router.post('/transactions/:id/reverse', async (req: Request, res: Response) => {
+  try {
+    if (!requireSuperAdminRole(req, res)) return;
+    const parsedParams = financeIdParamSchema.safeParse(req.params);
+    if (!parsedParams.success) return validationError(res, parsedParams.error);
+    const parsedBody = financeTransactionReverseBodySchema.safeParse(req.body);
+    if (!parsedBody.success) return validationError(res, parsedBody.error);
+
+    const admin = (req as any).admin;
+    const result = await reverseFinanceTransaction(parsedParams.data.id, parsedBody.data, admin);
+
+    await registerFinanceAudit(req, 'FINANCE_TRANSACTION_REVERSE', 'financial_transactions', parsedParams.data.id, result.auditBefore, result.auditAfter);
+    return res.json({
+      success: true,
+      data: {
+        original: result.original ? serializeTransactionDetail(result.original) : null,
+        reversal: result.reversal ? serializeTransactionDetail(result.reversal) : null,
+      },
+    });
+  } catch (error) {
+    console.error('[ADMIN_FINANCE_TRANSACTION_REVERSE]', error);
+    return transactionWriteError(res, error);
+  }
+});
+
 export default router;
