@@ -542,4 +542,593 @@ router.get('/csv', async (req: Request, res: Response) => {
   }
 });
 
+// ── Manual Transactions Constants ─────────────────────────────────────────────
+
+const REALIZED_STATUSES = ['POSTED', 'REVERSED', 'RECONCILED', 'CLOSED'] as const;
+const VALID_STATUSES = ['DRAFT', 'PENDING', 'POSTED', 'CANCELED', 'REVERSED', 'BLOCKED', 'RECONCILED', 'CLOSED'] as const;
+const VALID_DIRECTIONS = ['IN', 'OUT'] as const;
+const VALID_TRANSACTION_TYPES = [
+  'INCOME', 'EXPENSE', 'TRANSFER', 'RECEIVABLE', 'PAYABLE', 'ADJUSTMENT',
+  'REVERSAL', 'REFUND', 'RECONCILIATION', 'ACCRUAL', 'SETTLEMENT',
+  'WITHDRAWAL', 'DEPOSIT', 'TAX', 'FEE', 'COMPENSATION',
+] as const;
+
+// ── Manual Transactions Filters ───────────────────────────────────────────────
+
+interface ManualTransactionFilters {
+  startDate: string; // YYYY-MM-DD
+  endDate: string;   // YYYY-MM-DD
+  status?: string;
+  direction?: string;
+  transactionType?: string;
+  accountId?: string;
+  categoryId?: string;
+  costCenterId?: string;
+  search?: string;
+  page: number;
+  limit: number;
+}
+
+function parseManualFilters(query: any): ManualTransactionFilters | { error: string } {
+  const now = new Date();
+  const todayStr = formatDateISO(now);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgoStr = formatDateISO(thirtyDaysAgo);
+
+  let startDate: string;
+  let endDate: string;
+
+  if (query.start_date) {
+    const parsed = parseStrictDate(query.start_date, 'start');
+    if (!parsed) return { error: 'start_date inválida. Use formato YYYY-MM-DD com data existente.' };
+    startDate = query.start_date.trim();
+  } else {
+    startDate = thirtyDaysAgoStr;
+  }
+
+  if (query.end_date) {
+    const parsed = parseStrictDate(query.end_date, 'end');
+    if (!parsed) return { error: 'end_date inválida. Use formato YYYY-MM-DD com data existente.' };
+    endDate = query.end_date.trim();
+  } else {
+    endDate = todayStr;
+  }
+
+  if (endDate < startDate) return { error: 'end_date deve ser posterior a start_date' };
+
+  const startD = new Date(startDate + 'T00:00:00Z');
+  const endD = new Date(endDate + 'T23:59:59Z');
+  const diffMs = endD.getTime() - startD.getTime();
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays > MAX_PERIOD_DAYS) return { error: `Período máximo permitido: ${MAX_PERIOD_DAYS} dias` };
+
+  if (query.status && !(VALID_STATUSES as readonly string[]).includes(query.status)) {
+    return { error: `Status inválido. Valores aceitos: ${VALID_STATUSES.join(', ')}` };
+  }
+
+  if (query.direction && !(VALID_DIRECTIONS as readonly string[]).includes(query.direction)) {
+    return { error: `Direção inválida. Valores aceitos: ${VALID_DIRECTIONS.join(', ')}` };
+  }
+
+  if (query.transaction_type && !(VALID_TRANSACTION_TYPES as readonly string[]).includes(query.transaction_type)) {
+    return { error: `Tipo de transação inválido. Valores aceitos: ${VALID_TRANSACTION_TYPES.join(', ')}` };
+  }
+
+  const rawPage = parseInt(query.page, 10);
+  const rawLimit = parseInt(query.limit, 10);
+  const page = (Number.isFinite(rawPage) && rawPage > 0) ? rawPage : 1;
+  const limit = (Number.isFinite(rawLimit) && rawLimit > 0) ? Math.min(rawLimit, MAX_LIMIT) : DEFAULT_LIMIT;
+
+  return {
+    startDate,
+    endDate,
+    status: query.status && typeof query.status === 'string' ? query.status.trim() : undefined,
+    direction: query.direction && typeof query.direction === 'string' ? query.direction.trim() : undefined,
+    transactionType: query.transaction_type && typeof query.transaction_type === 'string' ? query.transaction_type.trim() : undefined,
+    accountId: query.account_id && typeof query.account_id === 'string' ? query.account_id.trim() : undefined,
+    categoryId: query.category_id && typeof query.category_id === 'string' ? query.category_id.trim() : undefined,
+    costCenterId: query.cost_center_id && typeof query.cost_center_id === 'string' ? query.cost_center_id.trim() : undefined,
+    search: query.search && typeof query.search === 'string' ? query.search.trim() : undefined,
+    page,
+    limit,
+  };
+}
+
+function buildManualWhereClause(filters: ManualTransactionFilters): { where: string; params: any[] } {
+  const conditions: string[] = [
+    `t.source_type = 'MANUAL'`,
+    `(CASE WHEN t.status IN ('POSTED','REVERSED','RECONCILED','CLOSED') THEN t.settlement_date ELSE t.transaction_date END) >= $1::date`,
+    `(CASE WHEN t.status IN ('POSTED','REVERSED','RECONCILED','CLOSED') THEN t.settlement_date ELSE t.transaction_date END) < ($2::date + INTERVAL '1 day')`,
+  ];
+  const params: any[] = [filters.startDate, filters.endDate];
+  let paramIdx = 3;
+
+  if (filters.status) {
+    conditions.push(`t.status = $${paramIdx}::financial_transaction_status`);
+    params.push(filters.status);
+    paramIdx++;
+  }
+
+  if (filters.direction) {
+    conditions.push(`t.direction = $${paramIdx}::financial_direction`);
+    params.push(filters.direction);
+    paramIdx++;
+  }
+
+  if (filters.transactionType) {
+    conditions.push(`t.transaction_type = $${paramIdx}::financial_transaction_type`);
+    params.push(filters.transactionType);
+    paramIdx++;
+  }
+
+  if (filters.accountId) {
+    conditions.push(`t.account_id = $${paramIdx}`);
+    params.push(filters.accountId);
+    paramIdx++;
+  }
+
+  if (filters.categoryId) {
+    conditions.push(`t.category_id = $${paramIdx}`);
+    params.push(filters.categoryId);
+    paramIdx++;
+  }
+
+  if (filters.costCenterId) {
+    conditions.push(`t.cost_center_id = $${paramIdx}`);
+    params.push(filters.costCenterId);
+    paramIdx++;
+  }
+
+  if (filters.search) {
+    conditions.push(`(t.id ILIKE $${paramIdx} OR t.description ILIKE $${paramIdx} OR t.external_reference ILIKE $${paramIdx})`);
+    params.push(`%${filters.search}%`);
+    paramIdx++;
+  }
+
+  return { where: conditions.join(' AND '), params };
+}
+
+// ── GET /manual-transactions ──────────────────────────────────────────────────
+
+router.get('/manual-transactions', async (req: Request, res: Response) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+
+    const parsed = parseManualFilters(req.query);
+    if ('error' in parsed) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, error: parsed.error });
+    }
+
+    const filters = parsed;
+
+    // ── Pre-validation 1: settlement_date NULL for realized statuses ──
+    const preVal1 = await client.query(`
+      SELECT COUNT(*)::int AS count
+      FROM financial_transactions
+      WHERE source_type = 'MANUAL'
+        AND status IN ('POSTED','REVERSED','RECONCILED','CLOSED')
+        AND settlement_date IS NULL
+    `);
+    if (preVal1.rows[0].count > 0) {
+      await client.query('ROLLBACK');
+      return res.status(500).json({
+        success: false,
+        code: 'INTEGRITY_SETTLEMENT_DATE_MISSING',
+        error: `${preVal1.rows[0].count} transação(ões) realizadas sem data de liquidação.`,
+      });
+    }
+
+    // ── Pre-validation 2: duplicate reversals ──
+    const preVal2 = await client.query(`
+      SELECT reversal_of_id, COUNT(*)::int AS cnt
+      FROM financial_transactions
+      WHERE source_type = 'MANUAL'
+        AND reversal_of_id IS NOT NULL
+      GROUP BY reversal_of_id
+      HAVING COUNT(*) > 1
+    `);
+    if (preVal2.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(500).json({
+        success: false,
+        code: 'INTEGRITY_DUPLICATE_REVERSALS',
+        error: `${preVal2.rows.length} transação(ões) com múltiplas reversões.`,
+      });
+    }
+
+    // ── Pre-validation 3: type consistency ──
+    const preVal3 = await client.query(`
+      SELECT COUNT(*)::int AS count
+      FROM financial_transactions
+      WHERE source_type = 'MANUAL'
+        AND (
+          (transaction_type = 'REVERSAL' AND reversal_of_id IS NULL)
+          OR (reversal_of_id IS NOT NULL AND transaction_type != 'REVERSAL')
+        )
+    `);
+    if (preVal3.rows[0].count > 0) {
+      await client.query('ROLLBACK');
+      return res.status(500).json({
+        success: false,
+        code: 'INTEGRITY_TYPE_INCONSISTENCY',
+        error: `${preVal3.rows[0].count} transação(ões) com inconsistência entre tipo e campo de reversão.`,
+      });
+    }
+
+    // ── Build WHERE clause ──
+    const { where, params } = buildManualWhereClause(filters);
+    const offset = (filters.page - 1) * filters.limit;
+
+    // ── Summary ──
+    const summarySQL = `
+      SELECT
+        COUNT(*) FILTER (WHERE status = 'DRAFT')::int AS draft_transactions,
+        COUNT(*) FILTER (WHERE status = 'PENDING')::int AS pending_transactions,
+        COUNT(*) FILTER (WHERE status = 'POSTED')::int AS posted_transactions,
+        COUNT(*) FILTER (WHERE status = 'CANCELED')::int AS canceled_transactions,
+        COUNT(*) FILTER (WHERE status = 'REVERSED')::int AS reversed_transactions,
+        COUNT(*) FILTER (WHERE status = 'BLOCKED')::int AS blocked_transactions,
+        COUNT(*) FILTER (WHERE status = 'RECONCILED')::int AS reconciled_transactions,
+        COUNT(*) FILTER (WHERE status = 'CLOSED')::int AS closed_transactions,
+        COALESCE(SUM(net_amount_cents) FILTER (WHERE status IN ('POSTED','REVERSED','RECONCILED','CLOSED') AND direction = 'IN'), 0)::text AS realized_in_total_cents,
+        COALESCE(SUM(net_amount_cents) FILTER (WHERE status IN ('POSTED','REVERSED','RECONCILED','CLOSED') AND direction = 'OUT'), 0)::text AS realized_out_total_cents
+      FROM financial_transactions t
+      WHERE ${where}
+    `;
+
+    // ── Count ──
+    const countSQL = `
+      SELECT COUNT(*)::int AS total
+      FROM financial_transactions t
+      WHERE ${where}
+    `;
+
+    // ── Listing ──
+    const listSQL = `
+      SELECT
+        t.id,
+        t.external_reference,
+        t.source_type,
+        t.direction,
+        t.transaction_type,
+        t.status,
+        t.payment_method,
+        to_char(t.competence_date, 'YYYY-MM-DD') AS competence_date,
+        to_char(t.transaction_date, 'YYYY-MM-DD') AS transaction_date,
+        to_char(t.due_date, 'YYYY-MM-DD') AS due_date,
+        to_char(t.settlement_date, 'YYYY-MM-DD') AS settlement_date,
+        to_char(
+          CASE WHEN t.status IN ('POSTED','REVERSED','RECONCILED','CLOSED')
+            THEN t.settlement_date ELSE t.transaction_date END,
+          'YYYY-MM-DD'
+        ) AS reporting_date,
+        t.description,
+        t.memo,
+        t.gross_amount_cents::text AS gross_amount_cents,
+        t.fee_amount_cents::text AS fee_amount_cents,
+        t.discount_amount_cents::text AS discount_amount_cents,
+        t.retention_amount_cents::text AS retention_amount_cents,
+        t.net_amount_cents::text AS net_amount_cents,
+        t.reversal_of_id,
+        t.canceled_reason,
+        to_char(t.canceled_at, 'YYYY-MM-DD') AS canceled_at,
+        t.created_at,
+        a.name AS account_name,
+        a.code AS account_code,
+        cat.name AS category_name,
+        cat.code AS category_code,
+        cc.name AS cost_center_name,
+        cc.code AS cost_center_code,
+        creator.name AS created_by_name,
+        approver.name AS approved_by_name,
+        rev.id AS reversal_id,
+        to_char(rev.transaction_date, 'YYYY-MM-DD') AS reversal_date,
+        rev.canceled_reason AS reversal_reason,
+        orig.id AS original_id,
+        orig.description AS original_description
+      FROM financial_transactions t
+      LEFT JOIN financial_accounts a ON a.id = t.account_id
+      LEFT JOIN financial_categories cat ON cat.id = t.category_id
+      LEFT JOIN financial_cost_centers cc ON cc.id = t.cost_center_id
+      LEFT JOIN admins creator ON creator.id = t.created_by_admin_id
+      LEFT JOIN admins approver ON approver.id = t.approved_by_admin_id
+      LEFT JOIN financial_transactions rev ON rev.reversal_of_id = t.id AND rev.source_type = 'MANUAL'
+      LEFT JOIN financial_transactions orig ON orig.id = t.reversal_of_id AND orig.source_type = 'MANUAL'
+      WHERE ${where}
+      ORDER BY
+        (CASE WHEN t.status IN ('POSTED','REVERSED','RECONCILED','CLOSED') THEN t.settlement_date ELSE t.transaction_date END) DESC,
+        t.created_at DESC,
+        t.id DESC
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+    `;
+
+    const [summaryResult, countResult, listResult] = await Promise.all([
+      client.query(summarySQL, params),
+      client.query(countSQL, params),
+      client.query(listSQL, [...params, filters.limit, offset]),
+    ]);
+
+    await client.query('COMMIT');
+
+    const summary = summaryResult.rows[0];
+    const total = countResult.rows[0].total;
+    const totalPages = Math.ceil(total / filters.limit);
+
+    const transactions = listResult.rows.map((row: any) => ({
+      id: row.id,
+      external_reference: row.external_reference || null,
+      direction: row.direction,
+      transaction_type: row.transaction_type,
+      status: row.status,
+      payment_method: row.payment_method || null,
+      competence_date: row.competence_date,
+      transaction_date: row.transaction_date,
+      due_date: row.due_date || null,
+      settlement_date: row.settlement_date || null,
+      reporting_date: row.reporting_date,
+      description: row.description,
+      memo: row.memo || null,
+      gross_amount_cents: row.gross_amount_cents,
+      fee_amount_cents: row.fee_amount_cents,
+      discount_amount_cents: row.discount_amount_cents,
+      retention_amount_cents: row.retention_amount_cents,
+      net_amount_cents: row.net_amount_cents,
+      reversal_of_id: row.reversal_of_id || null,
+      canceled_reason: row.canceled_reason || null,
+      canceled_at: row.canceled_at || null,
+      account: { name: row.account_name, code: row.account_code },
+      category: row.category_name ? { name: row.category_name, code: row.category_code } : null,
+      cost_center: row.cost_center_name ? { name: row.cost_center_name, code: row.cost_center_code } : null,
+      created_by: row.created_by_name || null,
+      approved_by: row.approved_by_name || null,
+      reversal: row.reversal_id ? { id: row.reversal_id, date: row.reversal_date, reason: row.reversal_reason || null } : null,
+      original: row.original_id ? { id: row.original_id, description: row.original_description } : null,
+    }));
+
+    return res.json({
+      success: true,
+      data: {
+        summary: {
+          draft_transactions: summary.draft_transactions,
+          pending_transactions: summary.pending_transactions,
+          posted_transactions: summary.posted_transactions,
+          canceled_transactions: summary.canceled_transactions,
+          reversed_transactions: summary.reversed_transactions,
+          blocked_transactions: summary.blocked_transactions,
+          reconciled_transactions: summary.reconciled_transactions,
+          closed_transactions: summary.closed_transactions,
+          realized_in_total_cents: summary.realized_in_total_cents,
+          realized_out_total_cents: summary.realized_out_total_cents,
+          period: {
+            start: filters.startDate,
+            end: filters.endDate,
+          },
+        },
+        transactions,
+        pagination: {
+          page: filters.page,
+          limit: filters.limit,
+          total,
+          total_pages: totalPages,
+        },
+      },
+    });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[MANUAL_TRANSACTIONS_REPORT]', error);
+    return res.status(500).json({
+      success: false,
+      code: 'INTERNAL_ERROR',
+      error: 'Erro interno do servidor',
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// ── GET /manual-transactions/csv ──────────────────────────────────────────────
+
+router.get('/manual-transactions/csv', async (req: Request, res: Response) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+
+    const parsed = parseManualFilters(req.query);
+    if ('error' in parsed) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, error: parsed.error });
+    }
+
+    const filters = parsed;
+
+    // ── Pre-validation 1: settlement_date NULL for realized statuses ──
+    const preVal1 = await client.query(`
+      SELECT COUNT(*)::int AS count
+      FROM financial_transactions
+      WHERE source_type = 'MANUAL'
+        AND status IN ('POSTED','REVERSED','RECONCILED','CLOSED')
+        AND settlement_date IS NULL
+    `);
+    if (preVal1.rows[0].count > 0) {
+      await client.query('ROLLBACK');
+      return res.status(500).json({
+        success: false,
+        code: 'INTEGRITY_SETTLEMENT_DATE_MISSING',
+        error: `${preVal1.rows[0].count} transação(ões) realizadas sem data de liquidação.`,
+      });
+    }
+
+    // ── Pre-validation 2: duplicate reversals ──
+    const preVal2 = await client.query(`
+      SELECT reversal_of_id, COUNT(*)::int AS cnt
+      FROM financial_transactions
+      WHERE source_type = 'MANUAL'
+        AND reversal_of_id IS NOT NULL
+      GROUP BY reversal_of_id
+      HAVING COUNT(*) > 1
+    `);
+    if (preVal2.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(500).json({
+        success: false,
+        code: 'INTEGRITY_DUPLICATE_REVERSALS',
+        error: `${preVal2.rows.length} transação(ões) com múltiplas reversões.`,
+      });
+    }
+
+    // ── Pre-validation 3: type consistency ──
+    const preVal3 = await client.query(`
+      SELECT COUNT(*)::int AS count
+      FROM financial_transactions
+      WHERE source_type = 'MANUAL'
+        AND (
+          (transaction_type = 'REVERSAL' AND reversal_of_id IS NULL)
+          OR (reversal_of_id IS NOT NULL AND transaction_type != 'REVERSAL')
+        )
+    `);
+    if (preVal3.rows[0].count > 0) {
+      await client.query('ROLLBACK');
+      return res.status(500).json({
+        success: false,
+        code: 'INTEGRITY_TYPE_INCONSISTENCY',
+        error: `${preVal3.rows[0].count} transação(ões) com inconsistência entre tipo e campo de reversão.`,
+      });
+    }
+
+    // ── Build WHERE clause ──
+    const { where, params } = buildManualWhereClause(filters);
+
+    // ── Single CTE query with LIMIT 5001 ──
+    const csvSQL = `
+      WITH filtered AS (
+        SELECT
+          t.id,
+          to_char(
+            CASE WHEN t.status IN ('POSTED','REVERSED','RECONCILED','CLOSED')
+              THEN t.settlement_date ELSE t.transaction_date END,
+            'YYYY-MM-DD'
+          ) AS reporting_date,
+          to_char(t.transaction_date, 'YYYY-MM-DD') AS transaction_date,
+          to_char(t.competence_date, 'YYYY-MM-DD') AS competence_date,
+          to_char(t.settlement_date, 'YYYY-MM-DD') AS settlement_date,
+          t.description,
+          a.name AS account_name,
+          cat.name AS category_name,
+          cc.name AS cost_center_name,
+          t.direction,
+          t.transaction_type,
+          t.status,
+          t.gross_amount_cents::text AS gross_amount_cents,
+          t.fee_amount_cents::text AS fee_amount_cents,
+          t.discount_amount_cents::text AS discount_amount_cents,
+          t.retention_amount_cents::text AS retention_amount_cents,
+          t.net_amount_cents::text AS net_amount_cents,
+          t.reversal_of_id,
+          rev.id AS reversal_id,
+          rev.canceled_reason AS reversal_reason,
+          creator.name AS created_by_name,
+          approver.name AS approved_by_name,
+          t.created_at
+        FROM financial_transactions t
+        LEFT JOIN financial_accounts a ON a.id = t.account_id
+        LEFT JOIN financial_categories cat ON cat.id = t.category_id
+        LEFT JOIN financial_cost_centers cc ON cc.id = t.cost_center_id
+        LEFT JOIN admins creator ON creator.id = t.created_by_admin_id
+        LEFT JOIN admins approver ON approver.id = t.approved_by_admin_id
+        LEFT JOIN financial_transactions rev ON rev.reversal_of_id = t.id AND rev.source_type = 'MANUAL'
+        WHERE ${where}
+      )
+      SELECT *
+      FROM filtered
+      ORDER BY reporting_date DESC, created_at DESC, id DESC
+      LIMIT ${CSV_MAX_ROWS + 1}
+    `;
+
+    const result = await client.query(csvSQL, params);
+    await client.query('COMMIT');
+
+    if (result.rows.length > CSV_MAX_ROWS) {
+      return res.status(422).json({
+        success: false,
+        code: 'CSV_ROW_LIMIT_EXCEEDED',
+        error: 'O relatório possui mais de 5.000 linhas. Reduza o período ou aplique mais filtros.',
+        max: CSV_MAX_ROWS,
+      });
+    }
+
+    const headers = [
+      'ID',
+      'Data referência',
+      'Data transação',
+      'Competência',
+      'Liquidação',
+      'Descrição',
+      'Conta',
+      'Categoria',
+      'Centro de custo',
+      'Direção',
+      'Tipo',
+      'Status',
+      'Valor bruto (centavos)',
+      'Taxas',
+      'Descontos',
+      'Retenções',
+      'Valor líquido (centavos)',
+      'ID original',
+      'ID reversora',
+      'Motivo estorno',
+      'Criado por',
+      'Aprovado por',
+    ];
+
+    const rows = result.rows.map((row: any) => [
+      csvSafe(row.id),
+      csvSafe(row.reporting_date),
+      csvSafe(row.transaction_date),
+      csvSafe(row.competence_date),
+      csvSafe(row.settlement_date),
+      csvSafe(row.description),
+      csvSafe(row.account_name),
+      csvSafe(row.category_name),
+      csvSafe(row.cost_center_name),
+      csvSafe(row.direction),
+      csvSafe(row.transaction_type),
+      csvSafe(row.status),
+      csvSafe(row.gross_amount_cents),
+      csvSafe(row.fee_amount_cents),
+      csvSafe(row.discount_amount_cents),
+      csvSafe(row.retention_amount_cents),
+      csvSafe(row.net_amount_cents),
+      csvSafe(row.reversal_of_id),
+      csvSafe(row.reversal_id),
+      csvSafe(row.reversal_reason),
+      csvSafe(row.created_by_name),
+      csvSafe(row.approved_by_name),
+    ]);
+
+    const csvContent = [
+      headers.map(h => `"${h}"`).join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
+    ].join('\r\n');
+
+    const filename = `kaviar-transacoes-manuais-${filters.startDate}-a-${filters.endDate}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send('\uFEFF' + csvContent);
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[MANUAL_TRANSACTIONS_CSV]', error);
+    return res.status(500).json({
+      success: false,
+      code: 'INTERNAL_ERROR',
+      error: 'Erro ao gerar CSV',
+    });
+  } finally {
+    client.release();
+  }
+});
+
 export default router;

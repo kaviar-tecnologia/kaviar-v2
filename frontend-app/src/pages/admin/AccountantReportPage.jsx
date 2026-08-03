@@ -18,6 +18,7 @@ import {
   Container,
   Grid,
   MenuItem,
+  Tab,
   Table,
   TableBody,
   TableCell,
@@ -25,6 +26,7 @@ import {
   TableHead,
   TablePagination,
   TableRow,
+  Tabs,
   TextField,
   Typography,
 } from '@mui/material';
@@ -36,6 +38,7 @@ import {
   Refresh,
 } from '@mui/icons-material';
 import { API_BASE_URL } from '../../config/api';
+import ManualTransactionsTab from './ManualTransactionsTab';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────
 
@@ -163,6 +166,7 @@ function getFinancialStatusDisplay(ride) {
 // ── Component ───────────────────────────────────────────────────────────────────
 
 export default function AccountantReportPage() {
+  const [activeTab, setActiveTab] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [data, setData] = useState(null);
@@ -289,6 +293,17 @@ export default function AccountantReportPage() {
         />
       </Box>
 
+      {/* Tabs */}
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+        <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)}>
+          <Tab label="Corridas" />
+          <Tab label="Lançamentos Manuais" />
+        </Tabs>
+      </Box>
+
+      {activeTab === 1 && <ManualTransactionsTab />}
+
+      {activeTab === 0 && (<>
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
           {error}
@@ -522,6 +537,7 @@ export default function AccountantReportPage() {
           )}
         </Card>
       )}
+      </>)}
     </Container>
   );
 }
