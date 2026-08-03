@@ -273,3 +273,76 @@ describe('Validation: references and concurrency', () => {
     expect(res.status).toBe(401);
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Review fixes: dates, net=gross on PATCH, settlement_date
+// ══════════════════════════════════════════════════════════════════════════════
+
+describe('PATCH: due_date and transaction_date chronology', () => {
+  it('PATCH due_date before transaction_date → 400', async () => {
+    prismaMock.financial_transactions.findUnique.mockResolvedValue({ ...mockTransaction, status: 'DRAFT', source_type: 'MANUAL', transaction_date: new Date('2026-08-15') });
+    const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({ expected_updated_at: '2026-08-01T00:00:00.000Z', due_date: '2026-08-01' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('due_date');
+  });
+
+  it('PATCH transaction_date after existing due_date → 400', async () => {
+    prismaMock.financial_transactions.findUnique.mockResolvedValue({ ...mockTransaction, status: 'DRAFT', source_type: 'MANUAL', due_date: new Date('2026-08-10') });
+    const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({ expected_updated_at: '2026-08-01T00:00:00.000Z', transaction_date: '2026-08-20' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('due_date');
+  });
+
+  it('PATCH due_date = null (clear) → 200', async () => {
+    prismaMock.financial_transactions.findUnique.mockResolvedValue({ ...mockTransaction, status: 'DRAFT', source_type: 'MANUAL', due_date: new Date('2026-08-15') });
+    prismaMock.financial_transactions.updateMany.mockResolvedValue({ count: 1 });
+    const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({ expected_updated_at: '2026-08-01T00:00:00.000Z', due_date: null });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('PATCH: net = gross enforcement', () => {
+  it('PATCH only gross (breaks net = gross) → 400', async () => {
+    prismaMock.financial_transactions.findUnique.mockResolvedValue({ ...mockTransaction, status: 'DRAFT', source_type: 'MANUAL', gross_amount_cents: BigInt(15000), net_amount_cents: BigInt(15000) });
+    const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({ expected_updated_at: '2026-08-01T00:00:00.000Z', gross_amount_cents: '20000' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('net_amount_cents');
+  });
+
+  it('PATCH only net (breaks net = gross) → 400', async () => {
+    prismaMock.financial_transactions.findUnique.mockResolvedValue({ ...mockTransaction, status: 'DRAFT', source_type: 'MANUAL', gross_amount_cents: BigInt(15000), net_amount_cents: BigInt(15000) });
+    const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({ expected_updated_at: '2026-08-01T00:00:00.000Z', net_amount_cents: '20000' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('net_amount_cents');
+  });
+
+  it('PATCH gross and net equal → 200', async () => {
+    prismaMock.financial_transactions.findUnique.mockResolvedValue({ ...mockTransaction, status: 'DRAFT', source_type: 'MANUAL', gross_amount_cents: BigInt(15000), net_amount_cents: BigInt(15000) });
+    prismaMock.financial_transactions.updateMany.mockResolvedValue({ count: 1 });
+    const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({ expected_updated_at: '2026-08-01T00:00:00.000Z', gross_amount_cents: '20000', net_amount_cents: '20000' });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('POST /post: settlement_date validation', () => {
+  it('settlement_date before transaction_date → 400', async () => {
+    prismaMock.financial_transactions.findUnique.mockResolvedValue({ ...mockTransaction, status: 'DRAFT', source_type: 'MANUAL', transaction_date: new Date('2026-08-15') });
+    const res = await request(app).post('/api/admin/finance/transactions/txn-1/post').send({ expected_updated_at: '2026-08-01T00:00:00.000Z', settlement_date: '2026-08-01' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('settlement_date');
+  });
+
+  it('settlement_date = transaction_date → 200', async () => {
+    prismaMock.financial_transactions.findUnique.mockResolvedValue({ ...mockTransaction, status: 'DRAFT', source_type: 'MANUAL', transaction_date: new Date('2026-08-01') });
+    prismaMock.financial_transactions.updateMany.mockResolvedValue({ count: 1 });
+    const res = await request(app).post('/api/admin/finance/transactions/txn-1/post').send({ expected_updated_at: '2026-08-01T00:00:00.000Z', settlement_date: '2026-08-01' });
+    expect(res.status).toBe(200);
+  });
+
+  it('settlement_date after transaction_date → 200', async () => {
+    prismaMock.financial_transactions.findUnique.mockResolvedValue({ ...mockTransaction, status: 'DRAFT', source_type: 'MANUAL', transaction_date: new Date('2026-08-01') });
+    prismaMock.financial_transactions.updateMany.mockResolvedValue({ count: 1 });
+    const res = await request(app).post('/api/admin/finance/transactions/txn-1/post').send({ expected_updated_at: '2026-08-01T00:00:00.000Z', settlement_date: '2026-08-15' });
+    expect(res.status).toBe(200);
+  });
+});

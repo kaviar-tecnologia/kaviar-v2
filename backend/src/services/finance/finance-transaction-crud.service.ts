@@ -175,6 +175,20 @@ export async function updateFinanceTransaction(
     throw new TransactionWriteError('Conta de contraparte não pode ser igual à conta principal');
   }
 
+  // Validate due_date >= transaction_date with effective values
+  const effectiveTransactionDate = fields.transaction_date ?? before.transaction_date;
+  const effectiveDueDate = fields.due_date !== undefined ? fields.due_date : before.due_date;
+  if (effectiveDueDate && effectiveTransactionDate && effectiveDueDate < effectiveTransactionDate) {
+    throw new TransactionWriteError('due_date não pode ser anterior a transaction_date');
+  }
+
+  // Validate net = gross in V1
+  const effectiveGross = fields.gross_amount_cents ?? before.gross_amount_cents;
+  const effectiveNet = fields.net_amount_cents ?? before.net_amount_cents;
+  if (effectiveGross !== effectiveNet) {
+    throw new TransactionWriteError('Nesta versão, net_amount_cents deve ser igual a gross_amount_cents');
+  }
+
   // CAS: atomic update only if conditions match
   const result = await prisma.financial_transactions.updateMany({
     where: {
@@ -208,6 +222,12 @@ export async function postFinanceTransaction(
   if (!before) throw new TransactionWriteError('Lançamento não encontrado', 404);
   if (before.source_type !== 'MANUAL') throw new TransactionWriteError('Somente lançamentos manuais podem ser liquidados', 403);
 
+  // Validate settlement_date >= transaction_date
+  const settlementDate = body.settlement_date ?? new Date();
+  if (before.transaction_date && settlementDate < before.transaction_date) {
+    throw new TransactionWriteError('settlement_date não pode ser anterior a transaction_date');
+  }
+
   const result = await prisma.financial_transactions.updateMany({
     where: {
       id,
@@ -217,7 +237,7 @@ export async function postFinanceTransaction(
     },
     data: {
       status: 'POSTED',
-      settlement_date: body.settlement_date ?? new Date(),
+      settlement_date: settlementDate,
       approved_by_admin_id: admin.id,
     },
   });

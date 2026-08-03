@@ -46,8 +46,8 @@ function strictCalendarDate(field: string) {
 
 function optionalCalendarDate(field: string) {
   return z.preprocess(
-    (v) => (v === '' || v === null || v === undefined ? undefined : v),
-    strictCalendarDate(field).optional()
+    (v) => (v === '' || v === undefined ? undefined : v),
+    z.union([z.null(), strictCalendarDate(field)]).optional()
   );
 }
 
