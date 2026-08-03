@@ -448,6 +448,8 @@ import {
   TransactionWriteError,
 } from '../services/finance/finance-transaction-crud.service';
 
+import type { FinanceTransactionPostBody } from '../services/finance/finance-transaction-validation';
+
 function requireSuperAdminRole(req: Request, res: Response): boolean {
   const admin = (req as any).admin;
   if (admin?.role !== 'SUPER_ADMIN') {
@@ -471,11 +473,11 @@ router.post('/transactions', async (req: Request, res: Response) => {
     if (!parsed.success) return validationError(res, parsed.error);
 
     const admin = (req as any).admin;
-    const record = await createFinanceTransaction(parsed.data, admin);
-    if (!record) return res.status(500).json({ success: false, error: 'Falha ao criar lançamento' });
+    const result = await createFinanceTransaction(parsed.data, admin);
+    if (!result.record) return res.status(500).json({ success: false, error: 'Falha ao criar lançamento' });
 
-    await registerFinanceAudit(req, 'FINANCE_TRANSACTION_CREATE', 'financial_transactions', record.id, null, { id: record.id, description: record.description });
-    return res.status(201).json({ success: true, data: serializeTransactionDetail(record) });
+    await registerFinanceAudit(req, 'FINANCE_TRANSACTION_CREATE', 'financial_transactions', result.record.id, result.auditBefore, result.auditAfter);
+    return res.status(201).json({ success: true, data: serializeTransactionDetail(result.record) });
   } catch (error) {
     console.error('[ADMIN_FINANCE_TRANSACTION_CREATE]', error);
     return transactionWriteError(res, error);
@@ -491,11 +493,11 @@ router.patch('/transactions/:id', async (req: Request, res: Response) => {
     if (!parsedBody.success) return validationError(res, parsedBody.error);
 
     const admin = (req as any).admin;
-    const record = await updateFinanceTransaction(parsedParams.data.id, parsedBody.data, admin);
-    if (!record) return res.status(500).json({ success: false, error: 'Falha ao atualizar lançamento' });
+    const result = await updateFinanceTransaction(parsedParams.data.id, parsedBody.data, admin);
+    if (!result.record) return res.status(500).json({ success: false, error: 'Falha ao atualizar lançamento' });
 
-    await registerFinanceAudit(req, 'FINANCE_TRANSACTION_UPDATE', 'financial_transactions', record.id, null, parsedBody.data);
-    return res.json({ success: true, data: serializeTransactionDetail(record) });
+    await registerFinanceAudit(req, 'FINANCE_TRANSACTION_UPDATE', 'financial_transactions', result.record.id, result.auditBefore, result.auditAfter);
+    return res.json({ success: true, data: serializeTransactionDetail(result.record) });
   } catch (error) {
     console.error('[ADMIN_FINANCE_TRANSACTION_UPDATE]', error);
     return transactionWriteError(res, error);
@@ -507,16 +509,15 @@ router.post('/transactions/:id/post', async (req: Request, res: Response) => {
     if (!requireSuperAdminRole(req, res)) return;
     const parsedParams = financeIdParamSchema.safeParse(req.params);
     if (!parsedParams.success) return validationError(res, parsedParams.error);
-    const parsedBody = financeTransactionPostBodySchema.safeParse(req.body || {});
+    const parsedBody = financeTransactionPostBodySchema.safeParse(req.body);
     if (!parsedBody.success) return validationError(res, parsedBody.error);
 
     const admin = (req as any).admin;
-    const settlementDate = parsedBody.data?.settlement_date;
-    const record = await postFinanceTransaction(parsedParams.data.id, settlementDate, admin);
-    if (!record) return res.status(500).json({ success: false, error: 'Falha ao liquidar lançamento' });
+    const result = await postFinanceTransaction(parsedParams.data.id, parsedBody.data, admin);
+    if (!result.record) return res.status(500).json({ success: false, error: 'Falha ao liquidar lançamento' });
 
-    await registerFinanceAudit(req, 'FINANCE_TRANSACTION_POST', 'financial_transactions', record.id, { status: 'DRAFT' }, { status: 'POSTED' });
-    return res.json({ success: true, data: serializeTransactionDetail(record) });
+    await registerFinanceAudit(req, 'FINANCE_TRANSACTION_POST', 'financial_transactions', result.record.id, result.auditBefore, result.auditAfter);
+    return res.json({ success: true, data: serializeTransactionDetail(result.record) });
   } catch (error) {
     console.error('[ADMIN_FINANCE_TRANSACTION_POST]', error);
     return transactionWriteError(res, error);
@@ -532,11 +533,11 @@ router.post('/transactions/:id/cancel', async (req: Request, res: Response) => {
     if (!parsedBody.success) return validationError(res, parsedBody.error);
 
     const admin = (req as any).admin;
-    const record = await cancelFinanceTransaction(parsedParams.data.id, parsedBody.data, admin);
-    if (!record) return res.status(500).json({ success: false, error: 'Falha ao cancelar lançamento' });
+    const result = await cancelFinanceTransaction(parsedParams.data.id, parsedBody.data, admin);
+    if (!result.record) return res.status(500).json({ success: false, error: 'Falha ao cancelar lançamento' });
 
-    await registerFinanceAudit(req, 'FINANCE_TRANSACTION_CANCEL', 'financial_transactions', record.id, null, { canceled_reason: parsedBody.data.canceled_reason });
-    return res.json({ success: true, data: serializeTransactionDetail(record) });
+    await registerFinanceAudit(req, 'FINANCE_TRANSACTION_CANCEL', 'financial_transactions', result.record.id, result.auditBefore, result.auditAfter);
+    return res.json({ success: true, data: serializeTransactionDetail(result.record) });
   } catch (error) {
     console.error('[ADMIN_FINANCE_TRANSACTION_CANCEL]', error);
     return transactionWriteError(res, error);

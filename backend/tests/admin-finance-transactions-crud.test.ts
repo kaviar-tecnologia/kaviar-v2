@@ -8,7 +8,7 @@ const { prismaMock, authState } = vi.hoisted(() => {
     financial_accounts: { findUnique: vi.fn() },
     financial_categories: { findUnique: vi.fn() },
     financial_cost_centers: { findUnique: vi.fn() },
-    financial_transactions: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn(), findMany: vi.fn(), count: vi.fn() },
+    financial_transactions: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn(), findMany: vi.fn(), count: vi.fn() },
   };
   return { prismaMock, authState: { admin: { id: 'admin-1', email: 'sa@test.local', role: 'SUPER_ADMIN' } as any } };
 });
@@ -108,64 +108,70 @@ describe('POST /api/admin/finance/transactions', () => {
 describe('PATCH /api/admin/finance/transactions/:id', () => {
   it('FINANCE role → 403', async () => {
     authState.admin = { id: 'f1', email: 'f@t.l', role: 'FINANCE' };
-    const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({ description: 'new' });
+    const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({ expected_updated_at: '2026-08-01T00:00:00.000Z', description: 'new' });
     expect(res.status).toBe(403);
   });
 
-  it('non-MANUAL source → 403', async () => {
-    prismaMock.financial_transactions.findUnique.mockResolvedValueOnce({ id: 'txn-1', status: 'DRAFT', source_type: 'RIDE' });
-    const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({ description: 'x' });
+  it('CAS conflict → 409', async () => {
+    prismaMock.financial_transactions.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.financial_transactions.findUnique.mockResolvedValue({ id: 'txn-1', status: 'DRAFT', source_type: 'MANUAL', updated_at: new Date() });
+    const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({ expected_updated_at: '2026-08-01T00:00:00.000Z', description: 'x' });
+    expect(res.status).toBe(409);
+  });
+
+  it('non-MANUAL source via CAS → finds and returns 403', async () => {
+    prismaMock.financial_transactions.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.financial_transactions.findUnique.mockResolvedValue({ id: 'txn-1', status: 'DRAFT', source_type: 'RIDE', updated_at: new Date() });
+    const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({ expected_updated_at: '2026-08-01T00:00:00.000Z', description: 'x' });
     expect(res.status).toBe(403);
   });
 
-  it('POSTED status → 400', async () => {
-    prismaMock.financial_transactions.findUnique.mockResolvedValueOnce({ id: 'txn-1', status: 'POSTED', source_type: 'MANUAL' });
-    const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({ description: 'x' });
-    expect(res.status).toBe(400);
-  });
-
-  it('DRAFT → editable', async () => {
-    prismaMock.financial_transactions.findUnique
-      .mockResolvedValueOnce({ id: 'txn-1', status: 'DRAFT', source_type: 'MANUAL' })
-      .mockResolvedValueOnce(mockTransaction);
-    const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({ description: 'updated' });
+  it('DRAFT + matching updated_at → editable', async () => {
+    prismaMock.financial_transactions.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.financial_transactions.findUnique.mockResolvedValue(mockTransaction);
+    const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({ expected_updated_at: '2026-08-01T00:00:00.000Z', description: 'updated' });
     expect(res.status).toBe(200);
+  });
+
+  it('empty body (only expected_updated_at) → 400', async () => {
+    const res = await request(app).patch('/api/admin/finance/transactions/txn-1').send({ expected_updated_at: '2026-08-01T00:00:00.000Z' });
+    expect(res.status).toBe(400);
   });
 });
 
 describe('POST /api/admin/finance/transactions/:id/post', () => {
   it('liquidates DRAFT → POSTED', async () => {
-    prismaMock.financial_transactions.findUnique
-      .mockResolvedValueOnce({ id: 'txn-1', status: 'DRAFT', source_type: 'MANUAL' })
-      .mockResolvedValueOnce({ ...mockTransaction, status: 'POSTED' });
-    const res = await request(app).post('/api/admin/finance/transactions/txn-1/post').send({});
+    prismaMock.financial_transactions.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.financial_transactions.findUnique.mockResolvedValue({ ...mockTransaction, status: 'POSTED' });
+    const res = await request(app).post('/api/admin/finance/transactions/txn-1/post').send({ expected_updated_at: '2026-08-01T00:00:00.000Z' });
     expect(res.status).toBe(200);
   });
 
   it('FINANCE → 403', async () => {
     authState.admin = { id: 'f1', email: 'f@t.l', role: 'FINANCE' };
-    const res = await request(app).post('/api/admin/finance/transactions/txn-1/post').send({});
+    const res = await request(app).post('/api/admin/finance/transactions/txn-1/post').send({ expected_updated_at: '2026-08-01T00:00:00.000Z' });
     expect(res.status).toBe(403);
   });
 });
 
 describe('POST /api/admin/finance/transactions/:id/cancel', () => {
   it('cancels with reason', async () => {
-    prismaMock.financial_transactions.findUnique
-      .mockResolvedValueOnce({ id: 'txn-1', status: 'DRAFT', source_type: 'MANUAL' })
-      .mockResolvedValueOnce({ ...mockTransaction, status: 'CANCELED' });
-    const res = await request(app).post('/api/admin/finance/transactions/txn-1/cancel').send({ canceled_reason: 'Duplicado' });
+    prismaMock.financial_transactions.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.financial_transactions.findUnique.mockResolvedValue({ ...mockTransaction, status: 'CANCELED' });
+    const res = await request(app).post('/api/admin/finance/transactions/txn-1/cancel').send({ expected_updated_at: '2026-08-01T00:00:00.000Z', canceled_reason: 'Duplicado' });
     expect(res.status).toBe(200);
   });
 
   it('missing reason → 400', async () => {
-    const res = await request(app).post('/api/admin/finance/transactions/txn-1/cancel').send({});
+    const res = await request(app).post('/api/admin/finance/transactions/txn-1/cancel').send({ expected_updated_at: '2026-08-01T00:00:00.000Z' });
     expect(res.status).toBe(400);
   });
 
-  it('already canceled → 400', async () => {
-    prismaMock.financial_transactions.findUnique.mockResolvedValueOnce({ id: 'txn-1', status: 'CANCELED', source_type: 'MANUAL' });
-    const res = await request(app).post('/api/admin/finance/transactions/txn-1/cancel').send({ canceled_reason: 'test' });
+  it('POSTED via CAS → 400 (exige estorno)', async () => {
+    prismaMock.financial_transactions.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.financial_transactions.findUnique.mockResolvedValue({ id: 'txn-1', status: 'POSTED', source_type: 'MANUAL' });
+    const res = await request(app).post('/api/admin/finance/transactions/txn-1/cancel').send({ expected_updated_at: '2026-08-01T00:00:00.000Z', canceled_reason: 'test' });
     expect(res.status).toBe(400);
+    expect(res.body.error).toContain('estorno');
   });
 });
