@@ -461,6 +461,7 @@ describe('HTTP 500 when audit INSERT fails', () => {
   it('POST /api/admin/finance/transactions → 500 on audit failure', async () => {
     const res = await request(app).post('/api/admin/finance/transactions').send(validCreateBody);
     expect(res.status).toBe(500);
+    expect(res.body).toEqual({ success: false, error: 'Erro interno do servidor' });
     expect(res.body.success).not.toBe(true);
     expect(JSON.stringify(res.body)).not.toContain('forced audit');
     expect(res.status).not.toBe(409);
@@ -477,6 +478,7 @@ describe('HTTP 500 when audit INSERT fails', () => {
       expected_updated_at: '2026-08-01T00:00:00.000Z', description: 'Updated desc',
     });
     expect(res.status).toBe(500);
+    expect(res.body).toEqual({ success: false, error: 'Erro interno do servidor' });
     expect(res.body.success).not.toBe(true);
     expect(JSON.stringify(res.body)).not.toContain('forced audit');
     expect(res.status).not.toBe(409);
@@ -493,6 +495,7 @@ describe('HTTP 500 when audit INSERT fails', () => {
       expected_updated_at: '2026-08-01T00:00:00.000Z',
     });
     expect(res.status).toBe(500);
+    expect(res.body).toEqual({ success: false, error: 'Erro interno do servidor' });
     expect(res.body.success).not.toBe(true);
     expect(JSON.stringify(res.body)).not.toContain('forced audit');
     expect(res.status).not.toBe(409);
@@ -509,6 +512,7 @@ describe('HTTP 500 when audit INSERT fails', () => {
       expected_updated_at: '2026-08-01T00:00:00.000Z', canceled_reason: 'Duplicado detectado',
     });
     expect(res.status).toBe(500);
+    expect(res.body).toEqual({ success: false, error: 'Erro interno do servidor' });
     expect(res.body.success).not.toBe(true);
     expect(JSON.stringify(res.body)).not.toContain('forced audit');
     expect(res.status).not.toBe(409);
@@ -531,6 +535,7 @@ describe('HTTP 500 when audit INSERT fails', () => {
       expected_updated_at: '2026-08-05T10:00:00.000Z', reversal_date: '2026-08-10', reason: 'Pagamento duplicado',
     });
     expect(res.status).toBe(500);
+    expect(res.body).toEqual({ success: false, error: 'Erro interno do servidor' });
     expect(res.body.success).not.toBe(true);
     expect(JSON.stringify(res.body)).not.toContain('forced audit');
     expect(res.status).not.toBe(409);
@@ -608,6 +613,7 @@ describe('Null reload → service throws, $executeRaw NOT called, route returns 
 
     const res = await request(app).post('/api/admin/finance/transactions').send(validCreateBody);
     expect(res.status).toBe(500);
+    expect(res.body).toEqual({ success: false, error: 'Erro interno do servidor' });
     expect(executeRawMock).not.toHaveBeenCalled();
   });
 
@@ -629,6 +635,7 @@ describe('Null reload → service throws, $executeRaw NOT called, route returns 
       expected_updated_at: '2026-08-01T00:00:00.000Z', description: 'Updated',
     });
     expect(res.status).toBe(500);
+    expect(res.body).toEqual({ success: false, error: 'Erro interno do servidor' });
     expect(executeRawMock).not.toHaveBeenCalled();
   });
 
@@ -648,6 +655,7 @@ describe('Null reload → service throws, $executeRaw NOT called, route returns 
       expected_updated_at: '2026-08-01T00:00:00.000Z',
     });
     expect(res.status).toBe(500);
+    expect(res.body).toEqual({ success: false, error: 'Erro interno do servidor' });
     expect(executeRawMock).not.toHaveBeenCalled();
   });
 
@@ -667,6 +675,7 @@ describe('Null reload → service throws, $executeRaw NOT called, route returns 
       expected_updated_at: '2026-08-01T00:00:00.000Z', canceled_reason: 'Duplicado detectado',
     });
     expect(res.status).toBe(500);
+    expect(res.body).toEqual({ success: false, error: 'Erro interno do servidor' });
     expect(executeRawMock).not.toHaveBeenCalled();
   });
 
@@ -693,6 +702,31 @@ describe('Null reload → service throws, $executeRaw NOT called, route returns 
       expected_updated_at: '2026-08-05T10:00:00.000Z', reversal_date: '2026-08-10', reason: 'Pagamento duplicado',
     });
     expect(res.status).toBe(500);
+    expect(res.body).toEqual({ success: false, error: 'Erro interno do servidor' });
+    expect(executeRawMock).not.toHaveBeenCalled();
+  });
+
+  it('REVERSE: updatedOriginal valid but createdReversal null → 500', async () => {
+    const postedTxn = {
+      ...fullMockRecord, id: 'txn-1', status: 'POSTED', source_type: 'MANUAL',
+      settlement_date: new Date('2026-08-05'), updated_at: new Date('2026-08-05T10:00:00Z'), reversals: [],
+    };
+    let findUniqueCallCount = 0;
+    txMock.financial_transactions.findUnique.mockImplementation(async () => {
+      findUniqueCallCount++;
+      if (findUniqueCallCount === 1) return postedTxn; // validation
+      if (findUniqueCallCount === 2) return { ...postedTxn, status: 'REVERSED' }; // updatedOriginal (valid)
+      return null; // createdReversal (null)
+    });
+    txMock.financial_transactions.updateMany.mockResolvedValue({ count: 1 });
+    txMock.financial_transactions.create.mockResolvedValue({ id: 'txn-reversal' });
+    executeRawMock.mockResolvedValue(1);
+
+    const res = await request(app).post('/api/admin/finance/transactions/txn-1/reverse').send({
+      expected_updated_at: '2026-08-05T10:00:00.000Z', reversal_date: '2026-08-10', reason: 'Pagamento duplicado',
+    });
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ success: false, error: 'Erro interno do servidor' });
     expect(executeRawMock).not.toHaveBeenCalled();
   });
 });

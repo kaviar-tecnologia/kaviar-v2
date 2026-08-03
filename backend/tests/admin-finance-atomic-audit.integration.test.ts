@@ -242,6 +242,12 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
     expect(logs[0].new_value).not.toBeNull();
     expect(logs[0].ip_address).toBe('127.0.0.1');
     expect(logs[0].user_agent).toBe('integration-test');
+    // Verify new_value content
+    const newVal = logs[0].new_value as any;
+    expect(newVal.id).toBe(txId);
+    // Monetary values stored as strings
+    expect(newVal.gross_amount_cents).toBe('5000');
+    expect(newVal.net_amount_cents).toBe('5000');
   });
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -307,12 +313,22 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
     expect(logs[0].entity_id).toBe(tx.id);
     expect(logs[0].old_value).not.toBeNull();
     expect(logs[0].new_value).not.toBeNull();
+    expect(logs[0].entity_type).toBe('financial_transactions');
+    expect(logs[0].admin_email).toBe(adminEmail);
+    expect(logs[0].ip_address).toBe('127.0.0.1');
+    expect(logs[0].user_agent).toBe('integration-test');
+    expect(logs[0].reason).toBeNull();
 
     // Verify old/new contain the description change
     const oldVal = logs[0].old_value as any;
     const newVal = logs[0].new_value as any;
     expect(oldVal.description).toBe(tx.description);
     expect(newVal.description).toBe('Updated description');
+    // Verify old/new contain monetary changes as strings
+    expect(oldVal.gross_amount_cents).toBe('10000');
+    expect(newVal.gross_amount_cents).toBe('20000');
+    expect(oldVal.net_amount_cents).toBe('10000');
+    expect(newVal.net_amount_cents).toBe('20000');
   });
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -321,7 +337,11 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
 
   it('UPDATE rollback (null adminId) → original unchanged, no audit', async () => {
     const tx = await createDraftTransaction();
+    // Capture original state
     const originalDesc = tx.description;
+    const originalGross = tx.gross_amount_cents;
+    const originalNet = tx.net_amount_cents;
+    const originalUpdatedAt = tx.updated_at;
 
     await expect(
       updateFinanceTransaction(
@@ -337,10 +357,12 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
       ),
     ).rejects.toThrow();
 
-    // Verify original unchanged
+    // Verify ALL original fields unchanged
     const dbTx = await prisma.financial_transactions.findUnique({ where: { id: tx.id } });
     expect(dbTx!.description).toBe(originalDesc);
-    expect(dbTx!.gross_amount_cents).toBe(BigInt(10000));
+    expect(dbTx!.gross_amount_cents).toBe(originalGross);
+    expect(dbTx!.net_amount_cents).toBe(originalNet);
+    expect(dbTx!.updated_at.getTime()).toBe(originalUpdatedAt.getTime());
 
     // Verify no audit log
     const logs = await queryAuditLogs(tx.id);
@@ -369,6 +391,18 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
     expect(logs[0].action).toBe('FINANCE_TRANSACTION_POST');
     expect(logs[0].admin_id).toBe(adminId);
     expect(logs[0].entity_id).toBe(tx.id);
+    expect(logs[0].entity_type).toBe('financial_transactions');
+    expect(logs[0].admin_email).toBe(adminEmail);
+    expect(logs[0].ip_address).toBe('127.0.0.1');
+    expect(logs[0].user_agent).toBe('integration-test');
+    expect(logs[0].reason).toBeNull();
+    // Verify old/new values
+    const oldVal = logs[0].old_value as any;
+    const newVal = logs[0].new_value as any;
+    expect(oldVal.status).toBe('DRAFT');
+    expect(newVal.status).toBe('POSTED');
+    expect(newVal.settlement_date).toBeDefined();
+    expect(newVal.approved_by_admin_id).toBe(adminId);
 
     // Verify status changed in DB
     const dbTx = await prisma.financial_transactions.findUnique({ where: { id: tx.id } });
@@ -381,6 +415,11 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
 
   it('POST rollback (null adminId) → status unchanged, no audit', async () => {
     const tx = await createDraftTransaction();
+    // Capture original state
+    const originalStatus = tx.status;
+    const originalSettlementDate = tx.settlement_date;
+    const originalApprovedBy = tx.approved_by_admin_id;
+    const originalUpdatedAt = tx.updated_at;
 
     await expect(
       postFinanceTransaction(
@@ -394,9 +433,12 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
       ),
     ).rejects.toThrow();
 
-    // Verify status unchanged
+    // Verify ALL original fields unchanged
     const dbTx = await prisma.financial_transactions.findUnique({ where: { id: tx.id } });
-    expect(dbTx!.status).toBe('DRAFT');
+    expect(dbTx!.status).toBe(originalStatus);
+    expect(dbTx!.settlement_date).toEqual(originalSettlementDate);
+    expect(dbTx!.approved_by_admin_id).toBe(originalApprovedBy);
+    expect(dbTx!.updated_at.getTime()).toBe(originalUpdatedAt.getTime());
 
     // Verify no audit log
     const logs = await queryAuditLogs(tx.id);
@@ -426,6 +468,17 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
     expect(logs[0].admin_id).toBe(adminId);
     expect(logs[0].entity_id).toBe(tx.id);
     expect(logs[0].reason).toBe('Motivo de cancelamento de teste');
+    expect(logs[0].entity_type).toBe('financial_transactions');
+    expect(logs[0].admin_email).toBe(adminEmail);
+    expect(logs[0].ip_address).toBe('127.0.0.1');
+    expect(logs[0].user_agent).toBe('integration-test');
+    // Verify old/new values
+    const oldVal = logs[0].old_value as any;
+    const newVal = logs[0].new_value as any;
+    expect(oldVal.status).toBe('DRAFT');
+    expect(newVal.status).toBe('CANCELED');
+    expect(newVal.canceled_reason).toBe('Motivo de cancelamento de teste');
+    expect(newVal.canceled_at).toBeDefined();
 
     // Verify status changed in DB
     const dbTx = await prisma.financial_transactions.findUnique({ where: { id: tx.id } });
@@ -438,6 +491,11 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
 
   it('CANCEL rollback (null adminId) → status unchanged, no audit', async () => {
     const tx = await createDraftTransaction();
+    // Capture original state
+    const originalStatus = tx.status;
+    const originalCanceledReason = tx.canceled_reason;
+    const originalCanceledAt = tx.canceled_at;
+    const originalUpdatedAt = tx.updated_at;
 
     await expect(
       cancelFinanceTransaction(
@@ -451,9 +509,12 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
       ),
     ).rejects.toThrow();
 
-    // Verify status unchanged
+    // Verify ALL original fields unchanged
     const dbTx = await prisma.financial_transactions.findUnique({ where: { id: tx.id } });
-    expect(dbTx!.status).toBe('DRAFT');
+    expect(dbTx!.status).toBe(originalStatus);
+    expect(dbTx!.canceled_reason).toBe(originalCanceledReason);
+    expect(dbTx!.canceled_at).toEqual(originalCanceledAt);
+    expect(dbTx!.updated_at.getTime()).toBe(originalUpdatedAt.getTime());
 
     // Verify no audit log
     const logs = await queryAuditLogs(tx.id);
@@ -484,6 +545,10 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
     expect(logs[0].admin_id).toBe(adminId);
     expect(logs[0].entity_id).toBe(tx.id);
     expect(logs[0].reason).toBe('Estorno de teste');
+    expect(logs[0].entity_type).toBe('financial_transactions');
+    expect(logs[0].admin_email).toBe(adminEmail);
+    expect(logs[0].ip_address).toBe('127.0.0.1');
+    expect(logs[0].user_agent).toBe('integration-test');
 
     // Verify original is REVERSED
     const dbOriginal = await prisma.financial_transactions.findUnique({ where: { id: tx.id } });
@@ -496,6 +561,21 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
     expect(reversals).toHaveLength(1);
     expect(reversals[0].status).toBe('POSTED');
     expect(reversals[0].direction).toBe('IN'); // original was OUT
+
+    // Verify old_value
+    const oldVal = logs[0].old_value as any;
+    expect(oldVal.original_transaction_id).toBe(tx.id);
+    expect(oldVal.original_status_before).toBe('POSTED');
+    // Verify new_value
+    const newVal = logs[0].new_value as any;
+    expect(newVal.original_status_after).toBe('REVERSED');
+    expect(newVal.reversal_transaction_id).toBe(reversals[0].id);
+    expect(newVal.reversal_of_id).toBe(tx.id);
+    expect(newVal.reversal_direction).toBe('IN');
+    expect(newVal.reversal_transaction_type).toBe('REVERSAL');
+    // Monetary values as strings
+    expect(newVal.gross_amount_cents).toBe('10000');
+    expect(newVal.net_amount_cents).toBe('10000');
   });
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -504,6 +584,8 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
 
   it('REVERSE rollback (null adminId) → original stays POSTED, no reversal, no audit', async () => {
     const tx = await createPostedTransaction();
+    // Capture original updated_at
+    const originalUpdatedAt = tx.updated_at;
 
     await expect(
       reverseFinanceTransaction(
@@ -518,15 +600,22 @@ describe.skipIf(SKIP)('Atomic Audit Integration — Real PostgreSQL', () => {
       ),
     ).rejects.toThrow();
 
-    // Verify original still POSTED
+    // Verify original still POSTED with same updated_at
     const dbOriginal = await prisma.financial_transactions.findUnique({ where: { id: tx.id } });
     expect(dbOriginal!.status).toBe('POSTED');
+    expect(dbOriginal!.updated_at.getTime()).toBe(originalUpdatedAt.getTime());
 
-    // Verify no reversal transaction
-    const reversals = await prisma.financial_transactions.count({
+    // Verify no reversal transaction via reversal_of_id
+    const reversalsByRef = await prisma.financial_transactions.count({
       where: { reversal_of_id: tx.id },
     });
-    expect(reversals).toBe(0);
+    expect(reversalsByRef).toBe(0);
+
+    // Verify no reversal transaction via idempotency_key
+    const reversalsByKey = await prisma.financial_transactions.count({
+      where: { idempotency_key: `finance-reversal:${tx.id}` },
+    });
+    expect(reversalsByKey).toBe(0);
 
     // Verify no audit log
     const logs = await queryAuditLogs(tx.id);
