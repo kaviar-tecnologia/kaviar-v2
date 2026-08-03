@@ -5,8 +5,12 @@ const SA_DATA = JSON.stringify({ id: 'a1', name: 'Admin', email: 'a@t.l', role: 
 const FIN_DATA = JSON.stringify({ id: 'f1', name: 'Finance', email: 'f@t.l', role: 'FINANCE' });
 
 const mockTxn = { id: 'txn-1', description: 'AWS Agosto', direction: 'OUT', transaction_type: 'EXPENSE', status: 'DRAFT', source_type: 'MANUAL', payment_method: 'PIX', competence_date: '2026-08-01', transaction_date: '2026-08-01', due_date: '2026-08-15', net_amount_cents: '15000', gross_amount_cents: '15000', account: { id: 'a1', name: 'Banco', code: 'B1' }, category: { id: 'c1', name: 'Tecnologia', code: 'TECH' }, cost_center: null, updated_at: '2026-08-01T00:00:00.000Z' };
-const mockPosted = { ...mockTxn, id: 'txn-2', status: 'POSTED', description: 'Twilio Jul', settlement_date: '2026-07-20' };
+const mockPosted = { ...mockTxn, id: 'txn-2', status: 'POSTED', description: 'Twilio Jul', settlement_date: '2026-07-20', direction: 'OUT', transaction_type: 'EXPENSE', reversal_of_id: null, updated_at: '2026-08-05T10:00:00.000Z' };
+const mockReversal = { id: 'txn-reversal', description: 'Estorno: Twilio Jul', direction: 'IN', transaction_type: 'REVERSAL', status: 'POSTED', source_type: 'MANUAL', payment_method: 'INTERNAL', reversal_of_id: 'txn-2', competence_date: '2026-08-10', transaction_date: '2026-08-10', due_date: null, settlement_date: '2026-08-10', net_amount_cents: '15000', gross_amount_cents: '15000', account: { id: 'a1', name: 'Banco', code: 'B1' }, category: { id: 'c1', name: 'Tecnologia', code: 'TECH' }, cost_center: null, updated_at: '2026-08-10T00:00:00.000Z' };
+const mockPostedReversed = { ...mockPosted, status: 'REVERSED' };
+
 const mockListResponse = { success: true, data: [mockTxn, mockPosted], pagination: { page: 1, limit: 25, total: 2, totalPages: 1 } };
+const mockListAfterReversal = { success: true, data: [mockTxn, mockPostedReversed, mockReversal], pagination: { page: 1, limit: 25, total: 3, totalPages: 1 } };
 const mockAccounts = { success: true, data: [{ id: 'a1', name: 'Banco', code: 'B1' }], pagination: { total: 1 } };
 const mockCategories = { success: true, data: [{ id: 'c1', name: 'Tecnologia', code: 'TECH' }], pagination: { total: 1 } };
 const mockCostCenters = { success: true, data: [], pagination: { total: 0 } };
@@ -29,7 +33,7 @@ async function interceptAPIs(page) {
   await page.route('**/api/admin/finance/cost-centers**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCostCenters) }));
   await page.route('**/api/admin/finance/transactions/*/post', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { ...mockTxn, status: 'POSTED' } }) }));
   await page.route('**/api/admin/finance/transactions/*/cancel', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { ...mockTxn, status: 'CANCELED' } }) }));
-  await page.route('**/api/admin/finance/transactions/*/reverse', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { original: mockPosted, reversal: mockTxn } }) }));
+  await page.route('**/api/admin/finance/transactions/*/reverse', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { original: mockPostedReversed, reversal: mockReversal } }) }));
 }
 
 test.describe('Finance Transactions — SUPER_ADMIN', () => {
@@ -64,7 +68,6 @@ test.describe('Finance Transactions — SUPER_ADMIN', () => {
 
   test.skip('liquidation dialog opens on Liquidar click (skip: dialog render timing)', async ({ page }) => {
     await page.goto('/admin/financeiro/lancamentos');
-    await page.waitForTimeout(500);
     await page.getByRole('button', { name: 'Liquidar' }).first().click();
     await expect(page.getByText('Confirmar Liquidação')).toBeVisible({ timeout: 5000 });
   });
@@ -206,7 +209,7 @@ test.describe('Finance Transactions — EditDialog Detailed', () => {
     await page.goto('/admin/financeiro/lancamentos');
     await page.getByRole('button', { name: 'Editar' }).first().click();
     await page.getByRole('button', { name: 'Salvar Alterações' }).click();
-    await page.waitForTimeout(500);
+    await expect(page.getByText('Editar Lançamento')).not.toBeVisible();
     expect(patchBody).not.toBeNull();
     expect(patchBody.expected_updated_at).toBeDefined();
     expect(patchBody.gross_amount_cents).toBe(patchBody.net_amount_cents);
@@ -222,7 +225,6 @@ test.describe('Finance Transactions — EditDialog Detailed', () => {
     await page.goto('/admin/financeiro/lancamentos');
     await page.getByRole('button', { name: 'Editar' }).first().click();
     await page.getByRole('button', { name: 'Salvar Alterações' }).click();
-    await page.waitForTimeout(500);
     await expect(page.getByText('Editar Lançamento')).not.toBeVisible();
   });
 
@@ -238,7 +240,7 @@ test.describe('Finance Transactions — EditDialog Detailed', () => {
     await page.goto('/admin/financeiro/lancamentos');
     await page.getByRole('button', { name: 'Editar' }).first().click();
     await page.getByRole('button', { name: 'Salvar Alterações' }).click();
-    await page.waitForTimeout(500);
+    await expect(page.getByText('Editar Lançamento')).not.toBeVisible();
     if (patchBody) {
       // cost_center_id should be null when empty
       expect(patchBody.cost_center_id).toBeNull();
@@ -268,40 +270,129 @@ test.describe('Finance Transactions — Reversal Flow', () => {
     await expect(page.getByRole('button', { name: 'Estornar' })).not.toBeVisible();
   });
 
-  test.skip('Reversal dialog opens with transaction details (skip: dialog timing)', async ({ page }) => {
+  test('Reversal dialog opens with transaction details', async ({ page }) => {
     await page.goto('/admin/financeiro/lancamentos');
     await page.getByRole('button', { name: 'Estornar' }).click();
-    await expect(page.getByText('Estornar Lançamento')).toBeVisible();
-    await expect(page.getByText('Twilio Jul')).toBeVisible();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText('Estornar Lançamento')).toBeVisible();
+
+    // Verify transaction details shown in dialog
+    await expect(dialog.getByText('Twilio Jul')).toBeVisible();
+    await expect(dialog.getByText('Banco')).toBeVisible();
+    await expect(dialog.getByText('Tecnologia')).toBeVisible();
+    // Direction label
+    await expect(dialog.getByText(/Saída|OUT/)).toBeVisible();
+    // Amount and dates
+    await expect(dialog.getByText(/150/)).toBeVisible();
+    await expect(dialog.getByText(/20\/07\/2026/)).toBeVisible();
+
+    // Confirm input fields exist
+    await expect(dialog.locator('input[type="date"]')).toBeVisible();
+    await expect(dialog.getByRole('textbox', { name: 'Motivo do estorno *' })).toBeVisible();
+
+    // Buttons
+    await expect(dialog.getByRole('button', { name: 'Confirmar Estorno' })).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Voltar' })).toBeVisible();
   });
 
   test('Reversal requires reason (min 3 chars)', async ({ page }) => {
     await page.goto('/admin/financeiro/lancamentos');
     await page.getByRole('button', { name: 'Estornar' }).click();
-    await expect(page.getByRole('button', { name: 'Confirmar Estorno' })).toBeDisabled();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Confirmar Estorno' })).toBeDisabled();
   });
 
-  test.skip('Successful reversal closes dialog (skip: dialog interaction timing)', async ({ page }) => {
-    await page.route('**/api/admin/finance/transactions/*/reverse', (route) => {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { original: mockPosted, reversal: mockTxn } }) });
+  test('Successful reversal: closes dialog, shows success, updates list', async ({ page }) => {
+    let reversalRequests = 0;
+    let capturedBody: any = null;
+    let listCallCount = 0;
+
+    // Mutable list interceptor: before reversal shows original data, after shows updated
+    await page.unroute('**/api/admin/finance/transactions?**');
+    await page.route('**/api/admin/finance/transactions?**', (route) => {
+      listCallCount++;
+      const response = listCallCount <= 1 ? mockListResponse : mockListAfterReversal;
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(response) });
     });
+
+    // Reversal interceptor with payload capture
+    await page.unroute('**/api/admin/finance/transactions/*/reverse');
+    await page.route('**/api/admin/finance/transactions/*/reverse', (route) => {
+      reversalRequests++;
+      capturedBody = JSON.parse(route.request().postData() || '{}');
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { original: mockPostedReversed, reversal: mockReversal } }) });
+    });
+
     await page.goto('/admin/financeiro/lancamentos');
+    await expect(page.getByText('Twilio Jul')).toBeVisible();
+
+    // Open dialog and fill in
     await page.getByRole('button', { name: 'Estornar' }).click();
-    await page.locator('textarea').fill('Pagamento duplicado detectado');
-    await page.getByRole('button', { name: 'Confirmar Estorno' }).click();
-    await page.waitForTimeout(500);
-    await expect(page.getByText('Estornar Lançamento')).not.toBeVisible();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+
+    await dialog.getByRole('textbox', { name: 'Motivo do estorno *' }).fill('  Pagamento duplicado detectado  ');
+    await expect(dialog.getByRole('button', { name: 'Confirmar Estorno' })).toBeEnabled();
+    await dialog.getByRole('button', { name: 'Confirmar Estorno' }).click();
+
+    // Dialog closes
+    await expect(dialog).not.toBeVisible();
+
+    // Success message
+    await expect(page.getByText('Lançamento estornado com sucesso.')).toBeVisible();
+
+    // Payload verification
+    expect(capturedBody).not.toBeNull();
+    expect(capturedBody.expected_updated_at).toBeDefined();
+    expect(capturedBody.reversal_date).toBeDefined();
+    expect(capturedBody.reason).toBe('Pagamento duplicado detectado');
+
+    // After reload, the list shows updated state
+    // The reversed original gets a "Estornado" chip, the new REVERSAL gets a "Estorno" chip
+    const reversalRow = page.locator('tr').filter({ hasText: 'Estorno: Twilio Jul' });
+    await expect(reversalRow).toBeVisible();
+    // Estorno chip (exact text in a Chip/span)
+    await expect(reversalRow.getByText('Estorno', { exact: true })).toBeVisible();
+    // Check "Estornado" chip exists somewhere on the page (the reversed original)
+    await expect(page.getByText('Estornado', { exact: true }).first()).toBeVisible();
+
+    // REVERSAL entry should not have Estornar button
+    await expect(reversalRow.getByRole('button', { name: 'Estornar' })).not.toBeVisible();
+
+    // Only one reversal request was made (double-submit prevention)
+    expect(reversalRequests).toBe(1);
   });
 
-  test.skip('409 on reversal shows conflict (skip: dialog interaction timing)', async ({ page }) => {
+  test('409 on reversal shows conflict alert', async ({ page }) => {
+    let reversalRequests = 0;
+
+    await page.unroute('**/api/admin/finance/transactions/*/reverse');
     await page.route('**/api/admin/finance/transactions/*/reverse', (route) => {
-      route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ success: false, error: 'já possui um estorno' }) });
+      reversalRequests++;
+      route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ success: false, error: 'Este lançamento já possui um estorno' }) });
     });
+
     await page.goto('/admin/financeiro/lancamentos');
     await page.getByRole('button', { name: 'Estornar' }).click();
-    await page.locator('textarea').fill('Motivo do estorno');
-    await page.getByRole('button', { name: 'Confirmar Estorno' }).click();
-    await page.waitForTimeout(500);
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+
+    await dialog.getByRole('textbox', { name: 'Motivo do estorno *' }).fill('Motivo do estorno');
+    await dialog.getByRole('button', { name: 'Confirmar Estorno' }).click();
+
+    // Conflict alert appears (outside dialog — dialog closes on 409)
     await expect(page.getByText(/alterado|estorno/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Recarregar' })).toBeVisible();
+
+    // No success message
+    await expect(page.getByText('Lançamento estornado com sucesso.')).not.toBeVisible();
+
+    // Only one reversal request
+    expect(reversalRequests).toBe(1);
   });
 });
