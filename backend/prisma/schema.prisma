@@ -49,6 +49,11 @@ enum financial_account_type {
   ESCROW
 }
 
+enum accounting_nature_type {
+  DEBIT
+  CREDIT
+}
+
 enum financial_category_kind {
   REVENUE
   EXPENSE
@@ -2445,21 +2450,29 @@ model financial_accounts {
 }
 
 model financial_categories {
-  id                  String                  @id @default(uuid())
-  code                String
-  name                String
-  kind                financial_category_kind
-  parent_id           String?
-  default_direction   financial_direction?
-  requires_document   Boolean                 @default(false)
-  is_system           Boolean                 @default(false)
-  is_active           Boolean                 @default(true)
-  is_postable         Boolean
-  sort_order          Int                     @default(0)
-  created_by_admin_id String?
-  updated_by_admin_id String?
-  created_at          DateTime                @default(now())
-  updated_at          DateTime                @updatedAt
+  id                    String                  @id @default(uuid())
+  code                  String
+  name                  String
+  kind                  financial_category_kind
+  parent_id             String?
+  default_direction     financial_direction?
+  requires_document     Boolean                 @default(false)
+  is_system             Boolean                 @default(false)
+  is_active             Boolean                 @default(true)
+  is_postable           Boolean
+  sort_order            Int                     @default(0)
+  accounting_code       String?
+  accounting_nature     accounting_nature_type?
+  dre_group             String?
+  balance_sheet_group   String?
+  fiscal_classification String?
+  deductible            Boolean?
+  export_code           String?
+  accountant_notes      String?
+  created_by_admin_id   String?
+  updated_by_admin_id   String?
+  created_at            DateTime                @default(now())
+  updated_at            DateTime                @updatedAt
 
   parent           financial_categories?  @relation("financial_categories_hierarchy", fields: [parent_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
   children         financial_categories[] @relation("financial_categories_hierarchy")
