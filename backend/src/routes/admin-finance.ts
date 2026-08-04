@@ -417,6 +417,25 @@ router.post('/recognition-policies/:id/supersede', async (req: Request, res: Res
   }
 });
 
+// ── Dashboard Summary ─────────────────────────────────────────────────────────
+
+import { queryDashboardSummary } from '../services/finance/finance-dashboard.service';
+
+router.get('/dashboard-summary', async (req: Request, res: Response) => {
+  try {
+    const parsed = financeTransactionsListQuerySchema.safeParse({ ...req.query, page: '1', limit: '1' });
+    if (!parsed.success) return validationError(res, parsed.error);
+
+    const { page: _p, limit: _l, ...filters } = parsed.data;
+    const result = await queryDashboardSummary(filters);
+
+    return res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('[ADMIN_FINANCE_DASHBOARD_SUMMARY]', error);
+    return res.status(500).json({ success: false, error: 'Erro interno ao gerar resumo financeiro.' });
+  }
+});
+
 // ── CSV Export ────────────────────────────────────────────────────────────────
 
 import {
