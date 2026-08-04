@@ -197,9 +197,14 @@ app.use(express.urlencoded({ extended: true }));
 
 // Rate limiting (in-memory, no Redis needed)
 import rateLimit from 'express-rate-limit';
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, message: { error: 'Too many attempts, try again later' } });
-const publicLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, message: { error: 'Too many requests' } });
-const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 120, message: { error: 'Rate limit exceeded' } });
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { error: 'Too many attempts, try again later' },
+  skip: () => process.env.NODE_ENV === 'test',
+});
+const publicLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, message: { error: 'Too many requests' }, skip: () => process.env.NODE_ENV === 'test' });
+const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 120, message: { error: 'Rate limit exceeded' }, skip: () => process.env.NODE_ENV === 'test' });
 app.use('/api/admin/auth', authLimiter);
 app.use('/api/auth', authLimiter);
 app.use('/api/public', publicLimiter);
