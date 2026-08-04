@@ -661,19 +661,22 @@ export default function FinanceiroPage() {
                   <TableCell>Sistema</TableCell>
                     <TableCell>Situação</TableCell>
                   <TableCell>Classificação</TableCell>
+                  <TableCell>Cód. contábil</TableCell>
+                  <TableCell>Grupo DRE</TableCell>
+                  <TableCell>Dedutível</TableCell>
                   <TableCell>Ordem</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {categoriesState.loading ? (
                   <TableRow>
-                    <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
+                    <TableCell colSpan={11} align="center" sx={{ py: 4 }}>
                       <CircularProgress size={22} />
                     </TableCell>
                   </TableRow>
                 ) : categoriesState.data.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8}>
+                    <TableCell colSpan={11}>
                       <EmptyState message="Nenhuma categoria encontrada para os filtros selecionados." />
                     </TableCell>
                   </TableRow>
@@ -703,6 +706,15 @@ export default function FinanceiroPage() {
                             />
                           );
                         })()}
+                      </TableCell>
+                      <TableCell sx={{ fontSize: '0.8rem', color: '#6B7280' }}>{item.accounting_code || '-'}</TableCell>
+                      <TableCell sx={{ fontSize: '0.8rem', color: '#6B7280' }}>{item.dre_group || '-'}</TableCell>
+                      <TableCell>
+                        {item.deductible === true ? (
+                          <Chip size="small" label="Sim" sx={{ bgcolor: '#DCFCE7', color: '#166534' }} />
+                        ) : item.deductible === false ? (
+                          <Chip size="small" label="Não" sx={{ bgcolor: '#FEE2E2', color: '#991B1B' }} />
+                        ) : '-'}
                       </TableCell>
                       <TableCell>{item.sort_order ?? '-'}</TableCell>
                     </TableRow>
