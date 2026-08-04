@@ -4484,6 +4484,10 @@ model accountant_invites {
   revoked_by_admin_id String?
   accepted_ip         String?
   accepted_user_agent String?
+  last_email_sent_at  DateTime?
+  last_email_status   String?
+  last_email_error    String?
+  last_email_log_id   String?
   created_at          DateTime                  @default(now())
 
   accountant          accountants               @relation(fields: [accountant_id], references: [id])
