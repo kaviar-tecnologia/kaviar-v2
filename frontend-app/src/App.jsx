@@ -54,6 +54,8 @@ import { DriverProvider } from "./contexts/DriverContext";
 import { AuthProvider } from "./auth/AuthContext";
 import { AccountantAuthProvider } from "./auth/AccountantAuthContext";
 import AccountantLoginPage from "./pages/accountant/AccountantLoginPage";
+import AccountantHomePage from "./pages/accountant/AccountantHomePage";
+import AccountantProtectedRoute from "./components/accountant/AccountantProtectedRoute";
 import ActivateAccountPage from "./pages/accountant/ActivateAccountPage";
 import ForgotPasswordPage from "./pages/accountant/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/accountant/ResetPasswordPage";
@@ -492,6 +494,15 @@ export default function App() {
           <Route path="/contador/ativar" element={<ActivateAccountPage />} />
           <Route path="/contador/esqueci-senha" element={<ForgotPasswordPage />} />
           <Route path="/contador/redefinir-senha" element={<ResetPasswordPage />} />
+
+          {/* Portal do Contador (protected) */}
+          <Route path="/contador" element={
+            <AccountantAuthProvider>
+              <AccountantProtectedRoute>
+                <AccountantHomePage />
+              </AccountantProtectedRoute>
+            </AccountantAuthProvider>
+          } />
 
           {/* Mantém o AuthApp (se ainda existir fluxo interno) */}
           <Route path="/auth/*" element={<AuthApp />} />
