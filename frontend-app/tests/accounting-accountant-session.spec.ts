@@ -76,7 +76,7 @@ test.describe('Accountant Session & Protected Route', () => {
     );
 
     await page.goto('/contador');
-    await expect(page.getByText('Acesso indisponível')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Acesso indisponível' })).toBeVisible();
   });
 
   test('423 shows locked message', async ({ page }) => {
