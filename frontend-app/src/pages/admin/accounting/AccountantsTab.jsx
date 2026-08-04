@@ -1,10 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Box,
   Button,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Snackbar,
   Table,
   TableBody,
   TableCell,
@@ -13,10 +18,33 @@ import {
   TablePagination,
   TableRow,
   TextField,
+  Typography,
 } from '@mui/material';
 import { Add } from '@mui/icons-material';
-import { listAccountants, updateAccountant } from '../../../services/adminAccountingService';
+import {
+  listAccountants,
+  updateAccountant,
+  inviteAccountant,
+  reinviteAccountant,
+  revokeAccountantInvite,
+} from '../../../services/adminAccountingService';
 import AccountantFormDialog from '../../../components/admin/accounting/AccountantFormDialog';
+
+function getInviteChip(row) {
+  if (row.status === 'ACTIVE') {
+    return <Chip label="Ativado" size="small" color="primary" />;
+  }
+  if (row.status === 'INVITED') {
+    if (row.last_email_status === 'SENT') {
+      return <Chip label="Enviado" size="small" color="success" />;
+    }
+    if (row.last_email_status === 'FAILED') {
+      return <Chip label="Falha no envio" size="small" color="error" />;
+    }
+    return <Chip label="Pendente" size="small" color="default" />;
+  }
+  return <Chip label={row.status || '—'} size="small" color="default" />;
+}
 
 export default function AccountantsTab() {
   const [rows, setRows] = useState([]);
@@ -29,6 +57,13 @@ export default function AccountantsTab() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState(null);
   const [successMsg, setSuccessMsg] = useState('');
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarMsg, setSnackbarMsg] = useState('');
+  const [inviteLoading, setInviteLoading] = useState({});
+  const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
+  const [revokeTarget, setRevokeTarget] = useState(null);
+
+  const actionRef = useRef({});
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -77,6 +112,73 @@ export default function AccountantsTab() {
     }
   };
 
+  const handleInvite = async (id) => {
+    if (actionRef.current[`invite-${id}`]) return;
+    actionRef.current[`invite-${id}`] = true;
+    setInviteLoading((prev) => ({ ...prev, [`invite-${id}`]: true }));
+    setError('');
+    try {
+      await inviteAccountant(id);
+      setSnackbarMsg('Convite enviado com sucesso.');
+      setSnackbarOpen(true);
+      fetchData();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setInviteLoading((prev) => ({ ...prev, [`invite-${id}`]: false }));
+      actionRef.current[`invite-${id}`] = false;
+    }
+  };
+
+  const handleReinvite = async (id) => {
+    if (actionRef.current[`reinvite-${id}`]) return;
+    actionRef.current[`reinvite-${id}`] = true;
+    setInviteLoading((prev) => ({ ...prev, [`reinvite-${id}`]: true }));
+    setError('');
+    try {
+      await reinviteAccountant(id);
+      setSnackbarMsg('Convite reenviado com sucesso.');
+      setSnackbarOpen(true);
+      fetchData();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setInviteLoading((prev) => ({ ...prev, [`reinvite-${id}`]: false }));
+      actionRef.current[`reinvite-${id}`] = false;
+    }
+  };
+
+  const handleOpenRevokeDialog = (row) => {
+    setRevokeTarget(row);
+    setRevokeDialogOpen(true);
+  };
+
+  const handleCloseRevokeDialog = () => {
+    setRevokeDialogOpen(false);
+    setRevokeTarget(null);
+  };
+
+  const handleConfirmRevoke = async () => {
+    if (!revokeTarget) return;
+    const id = revokeTarget.id;
+    if (actionRef.current[`revoke-${id}`]) return;
+    actionRef.current[`revoke-${id}`] = true;
+    setInviteLoading((prev) => ({ ...prev, [`revoke-${id}`]: true }));
+    setError('');
+    try {
+      await revokeAccountantInvite(id);
+      setSnackbarMsg('Convite revogado com sucesso.');
+      setSnackbarOpen(true);
+      fetchData();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setInviteLoading((prev) => ({ ...prev, [`revoke-${id}`]: false }));
+      actionRef.current[`revoke-${id}`] = false;
+      handleCloseRevokeDialog();
+    }
+  };
+
   return (
     <Box>
       <Box sx={{ display: 'flex', gap: 1.5, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -110,6 +212,7 @@ export default function AccountantsTab() {
                 <TableCell>CPF</TableCell>
                 <TableCell>Escritório</TableCell>
                 <TableCell>Status</TableCell>
+                <TableCell>Convite</TableCell>
                 <TableCell>Ativo</TableCell>
                 <TableCell align="right">Ações</TableCell>
               </TableRow>
@@ -117,7 +220,7 @@ export default function AccountantsTab() {
             <TableBody>
               {rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} align="center" sx={{ py: 4, color: '#6B7280' }}>
+                  <TableCell colSpan={8} align="center" sx={{ py: 4, color: '#6B7280' }}>
                     Nenhum contador encontrado.
                   </TableCell>
                 </TableRow>
@@ -134,6 +237,7 @@ export default function AccountantsTab() {
                       color={row.status === 'ACTIVE' ? 'success' : 'default'}
                     />
                   </TableCell>
+                  <TableCell>{getInviteChip(row)}</TableCell>
                   <TableCell>
                     <Chip
                       label={row.is_active ? 'Sim' : 'Não'}
@@ -146,6 +250,36 @@ export default function AccountantsTab() {
                     <Button size="small" onClick={() => handleEdit(row.id)}>Editar</Button>
                     {row.status === 'ACTIVE' && (
                       <Button size="small" color="warning" onClick={() => handleSuspend(row.id)}>Suspender</Button>
+                    )}
+                    {row.status === 'INVITED' && !row.last_email_sent_at && (
+                      <Button
+                        size="small"
+                        color="primary"
+                        disabled={!!inviteLoading[`invite-${row.id}`]}
+                        onClick={() => handleInvite(row.id)}
+                      >
+                        {inviteLoading[`invite-${row.id}`] ? <CircularProgress size={16} /> : 'Convidar'}
+                      </Button>
+                    )}
+                    {row.status === 'INVITED' && !!row.last_email_sent_at && (
+                      <Button
+                        size="small"
+                        color="primary"
+                        disabled={!!inviteLoading[`reinvite-${row.id}`]}
+                        onClick={() => handleReinvite(row.id)}
+                      >
+                        {inviteLoading[`reinvite-${row.id}`] ? <CircularProgress size={16} /> : 'Reenviar'}
+                      </Button>
+                    )}
+                    {row.status === 'INVITED' && (
+                      <Button
+                        size="small"
+                        color="error"
+                        disabled={!!inviteLoading[`revoke-${row.id}`]}
+                        onClick={() => handleOpenRevokeDialog(row)}
+                      >
+                        {inviteLoading[`revoke-${row.id}`] ? <CircularProgress size={16} /> : 'Revogar convite'}
+                      </Button>
                     )}
                   </TableCell>
                 </TableRow>
@@ -171,6 +305,29 @@ export default function AccountantsTab() {
         accountantId={editId}
         onClose={() => { setDialogOpen(false); setEditId(null); }}
         onSuccess={handleSuccess}
+      />
+
+      <Dialog
+        open={revokeDialogOpen}
+        onClose={handleCloseRevokeDialog}
+        aria-labelledby="revoke-invite-dialog-title"
+      >
+        <DialogTitle id="revoke-invite-dialog-title">Revogar convite</DialogTitle>
+        <DialogContent>
+          <Typography>Deseja revogar o convite? O contador precisará de um novo convite.</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseRevokeDialog}>Cancelar</Button>
+          <Button onClick={handleConfirmRevoke} color="error">Revogar</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={4000}
+        onClose={() => setSnackbarOpen(false)}
+        message={snackbarMsg}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       />
     </Box>
   );

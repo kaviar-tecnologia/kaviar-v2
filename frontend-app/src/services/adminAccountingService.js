@@ -159,6 +159,23 @@ export const updateAccountant = async (id, data) => {
   );
 };
 
+// ── Accountant Invites ───────────────────────────────────────────────────────
+
+export const inviteAccountant = async (id) => {
+  const { data } = await api.post(`${BASE_PATH}/accountants/${encodeURIComponent(id)}/invite`);
+  return data;
+};
+
+export const reinviteAccountant = async (id) => {
+  const { data } = await api.post(`${BASE_PATH}/accountants/${encodeURIComponent(id)}/reinvite`);
+  return data;
+};
+
+export const revokeAccountantInvite = async (id) => {
+  const { data } = await api.post(`${BASE_PATH}/accountants/${encodeURIComponent(id)}/revoke-invite`);
+  return data;
+};
+
 // ── Accountant Links ────────────────────────────────────────────────────────
 
 export const listAccountantLinks = async (params = {}) => {
