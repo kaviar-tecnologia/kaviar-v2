@@ -1,6 +1,7 @@
 import { prisma } from '../../lib/prisma';
 import { paginationResult } from './accounting-validation';
 import { EntityValidationError } from './accounting-entities.service';
+import { writeAccountingAuditTx } from './accounting-audit';
 
 interface ListFirmsParams {
   page: number;
@@ -68,7 +69,7 @@ export async function getAccountingFirm(id: string) {
   });
 }
 
-export async function createAccountingFirm(data: CreateFirmInput) {
+export async function createAccountingFirm(data: CreateFirmInput, adminId: string, ip?: string, userAgent?: string) {
   // Validate document_type matches document_number length
   if (data.document_type === 'CNPJ' && data.document_number.length !== 14) {
     throw new EntityValidationError('CNPJ deve conter 14 dígitos');
@@ -85,22 +86,36 @@ export async function createAccountingFirm(data: CreateFirmInput) {
     throw new EntityValidationError('Documento já cadastrado');
   }
 
-  return prisma.accounting_firms.create({
-    data: {
-      razao_social: data.razao_social,
-      nome_fantasia: data.nome_fantasia ?? null,
-      document_type: data.document_type,
-      document_number: data.document_number,
-      crc: data.crc ?? null,
-      crc_uf: data.crc_uf ?? null,
-      email: data.email,
-      telefone: data.telefone ?? null,
-    },
-    include: { _count: { select: { accountants: true } } },
+  return prisma.$transaction(async (tx) => {
+    const firm = await tx.accounting_firms.create({
+      data: {
+        razao_social: data.razao_social,
+        nome_fantasia: data.nome_fantasia ?? null,
+        document_type: data.document_type,
+        document_number: data.document_number,
+        crc: data.crc ?? null,
+        crc_uf: data.crc_uf ?? null,
+        email: data.email,
+        telefone: data.telefone ?? null,
+      },
+      include: { _count: { select: { accountants: true } } },
+    });
+
+    await writeAccountingAuditTx(tx, {
+      adminId,
+      action: 'CREATE_ACCOUNTING_FIRM',
+      entityType: 'accounting_firm',
+      entityId: firm.id,
+      newValue: data,
+      ipAddress: ip,
+      userAgent,
+    });
+
+    return firm;
   });
 }
 
-export async function updateAccountingFirm(id: string, data: UpdateFirmInput) {
+export async function updateAccountingFirm(id: string, data: UpdateFirmInput, adminId: string, ip?: string, userAgent?: string) {
   const firm = await prisma.accounting_firms.findUnique({ where: { id } });
   if (!firm) return null;
 
@@ -123,9 +138,24 @@ export async function updateAccountingFirm(id: string, data: UpdateFirmInput) {
     }
   }
 
-  return prisma.accounting_firms.update({
-    where: { id },
-    data,
-    include: { _count: { select: { accountants: true } } },
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.accounting_firms.update({
+      where: { id },
+      data,
+      include: { _count: { select: { accountants: true } } },
+    });
+
+    await writeAccountingAuditTx(tx, {
+      adminId,
+      action: 'UPDATE_ACCOUNTING_FIRM',
+      entityType: 'accounting_firm',
+      entityId: id,
+      oldValue: firm,
+      newValue: data,
+      ipAddress: ip,
+      userAgent,
+    });
+
+    return updated;
   });
 }

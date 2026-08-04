@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
 import { authenticateAdmin, requireSuperAdmin } from '../middlewares/auth';
-import { audit } from '../utils/audit';
 
 import {
   createLegalEntitySchema,
@@ -20,7 +19,8 @@ import {
 import {
   serializeLegalEntity,
   serializeAccountingFirm,
-  serializeAccountant,
+  serializeAccountantListItem,
+  serializeAccountantDetail,
   serializeAccountantLink,
 } from '../services/accounting/accounting-serializers';
 
@@ -35,22 +35,6 @@ const router = Router();
 // All routes require SUPER_ADMIN
 router.use(authenticateAdmin);
 router.use(requireSuperAdmin);
-
-// ── Audit helper ─────────────────────────────────────────────────────────────
-
-function logAccountingAction(req: Request, action: string, entityType: string, entityId: string, oldValue?: any, newValue?: any) {
-  const admin = (req as any).admin;
-  audit({
-    adminId: admin.id,
-    adminEmail: admin.email,
-    action,
-    entityType,
-    entityId,
-    oldValue,
-    newValue,
-    ipAddress: req.ip,
-  }).catch(() => {}); // fire-and-forget
-}
 
 // ═══════════════════════════════════════════════════════════════════
 // Legal Entities
@@ -80,8 +64,8 @@ router.get('/entities/:id', async (req: Request, res: Response) => {
 router.post('/entities', async (req: Request, res: Response) => {
   try {
     const data = createLegalEntitySchema.parse(req.body);
-    const entity = await entitiesService.createLegalEntity(data);
-    logAccountingAction(req, 'CREATE_LEGAL_ENTITY', 'legal_entity', entity.id, null, data);
+    const admin = (req as any).admin;
+    const entity = await entitiesService.createLegalEntity(data, admin.id, req.ip, req.headers['user-agent']);
     res.status(201).json({ success: true, data: serializeLegalEntity(entity) });
   } catch (err: any) {
     if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
@@ -93,9 +77,9 @@ router.post('/entities', async (req: Request, res: Response) => {
 router.patch('/entities/:id', async (req: Request, res: Response) => {
   try {
     const data = updateLegalEntitySchema.parse(req.body);
-    const entity = await entitiesService.updateLegalEntity(req.params.id, data);
+    const admin = (req as any).admin;
+    const entity = await entitiesService.updateLegalEntity(req.params.id, data, admin.id, req.ip, req.headers['user-agent']);
     if (!entity) return res.status(404).json({ success: false, error: 'Entidade não encontrada' });
-    logAccountingAction(req, 'UPDATE_LEGAL_ENTITY', 'legal_entity', req.params.id, null, data);
     res.json({ success: true, data: serializeLegalEntity(entity) });
   } catch (err: any) {
     if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
@@ -132,8 +116,8 @@ router.get('/firms/:id', async (req: Request, res: Response) => {
 router.post('/firms', async (req: Request, res: Response) => {
   try {
     const data = createAccountingFirmSchema.parse(req.body);
-    const firm = await firmsService.createAccountingFirm(data);
-    logAccountingAction(req, 'CREATE_ACCOUNTING_FIRM', 'accounting_firm', firm.id, null, data);
+    const admin = (req as any).admin;
+    const firm = await firmsService.createAccountingFirm(data, admin.id, req.ip, req.headers['user-agent']);
     res.status(201).json({ success: true, data: serializeAccountingFirm(firm) });
   } catch (err: any) {
     if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
@@ -145,9 +129,9 @@ router.post('/firms', async (req: Request, res: Response) => {
 router.patch('/firms/:id', async (req: Request, res: Response) => {
   try {
     const data = updateAccountingFirmSchema.parse(req.body);
-    const firm = await firmsService.updateAccountingFirm(req.params.id, data);
+    const admin = (req as any).admin;
+    const firm = await firmsService.updateAccountingFirm(req.params.id, data, admin.id, req.ip, req.headers['user-agent']);
     if (!firm) return res.status(404).json({ success: false, error: 'Escritório não encontrado' });
-    logAccountingAction(req, 'UPDATE_ACCOUNTING_FIRM', 'accounting_firm', req.params.id, null, data);
     res.json({ success: true, data: serializeAccountingFirm(firm) });
   } catch (err: any) {
     if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
@@ -164,7 +148,7 @@ router.get('/accountants', async (req: Request, res: Response) => {
   try {
     const query = listAccountantsQuerySchema.parse(req.query);
     const result = await accountantsService.listAccountants(query);
-    res.json({ success: true, data: result.rows.map(serializeAccountant), pagination: result.pagination });
+    res.json({ success: true, data: result.rows.map(serializeAccountantListItem), pagination: result.pagination });
   } catch (err: any) {
     if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Parâmetros inválidos', details: err.errors });
     res.status(500).json({ success: false, error: 'Erro interno' });
@@ -175,7 +159,7 @@ router.get('/accountants/:id', async (req: Request, res: Response) => {
   try {
     const accountant = await accountantsService.getAccountant(req.params.id);
     if (!accountant) return res.status(404).json({ success: false, error: 'Contador não encontrado' });
-    res.json({ success: true, data: serializeAccountant(accountant) });
+    res.json({ success: true, data: serializeAccountantDetail(accountant) });
   } catch {
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
@@ -184,9 +168,9 @@ router.get('/accountants/:id', async (req: Request, res: Response) => {
 router.post('/accountants', async (req: Request, res: Response) => {
   try {
     const data = createAccountantSchema.parse(req.body);
-    const accountant = await accountantsService.createAccountant(data);
-    logAccountingAction(req, 'CREATE_ACCOUNTANT', 'accountant', accountant.id, null, { ...data, cpf: '***' });
-    res.status(201).json({ success: true, data: serializeAccountant(accountant) });
+    const admin = (req as any).admin;
+    const accountant = await accountantsService.createAccountant(data, admin.id, req.ip, req.headers['user-agent']);
+    res.status(201).json({ success: true, data: serializeAccountantDetail(accountant) });
   } catch (err: any) {
     if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
     if (err instanceof EntityValidationError) return res.status(400).json({ success: false, error: err.message });
@@ -197,10 +181,10 @@ router.post('/accountants', async (req: Request, res: Response) => {
 router.patch('/accountants/:id', async (req: Request, res: Response) => {
   try {
     const data = updateAccountantSchema.parse(req.body);
-    const accountant = await accountantsService.updateAccountant(req.params.id, data);
+    const admin = (req as any).admin;
+    const accountant = await accountantsService.updateAccountant(req.params.id, data, admin.id, req.ip, req.headers['user-agent']);
     if (!accountant) return res.status(404).json({ success: false, error: 'Contador não encontrado' });
-    logAccountingAction(req, 'UPDATE_ACCOUNTANT', 'accountant', req.params.id, null, data);
-    res.json({ success: true, data: serializeAccountant(accountant) });
+    res.json({ success: true, data: serializeAccountantDetail(accountant) });
   } catch (err: any) {
     if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
     if (err instanceof EntityValidationError) return res.status(400).json({ success: false, error: err.message });
@@ -237,8 +221,7 @@ router.post('/links', async (req: Request, res: Response) => {
   try {
     const data = createAccountantLinkSchema.parse(req.body);
     const admin = (req as any).admin;
-    const link = await linksService.createAccountantLink({ ...data, created_by_admin_id: admin.id });
-    logAccountingAction(req, 'CREATE_ACCOUNTANT_LINK', 'accountant_entity_link', link.id, null, data);
+    const link = await linksService.createAccountantLink({ ...data, created_by_admin_id: admin.id }, admin.id, req.ip, req.headers['user-agent']);
     res.status(201).json({ success: true, data: serializeAccountantLink(link) });
   } catch (err: any) {
     if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
@@ -250,9 +233,9 @@ router.post('/links', async (req: Request, res: Response) => {
 router.patch('/links/:id', async (req: Request, res: Response) => {
   try {
     const data = updateAccountantLinkSchema.parse(req.body);
-    const link = await linksService.updateAccountantLink(req.params.id, data);
+    const admin = (req as any).admin;
+    const link = await linksService.updateAccountantLink(req.params.id, data, admin.id, req.ip, req.headers['user-agent']);
     if (!link) return res.status(404).json({ success: false, error: 'Vínculo não encontrado' });
-    logAccountingAction(req, 'UPDATE_ACCOUNTANT_LINK', 'accountant_entity_link', req.params.id, null, data);
     res.json({ success: true, data: serializeAccountantLink(link) });
   } catch (err: any) {
     if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });

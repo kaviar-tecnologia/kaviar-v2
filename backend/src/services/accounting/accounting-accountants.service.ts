@@ -1,6 +1,7 @@
 import { prisma } from '../../lib/prisma';
 import { paginationResult } from './accounting-validation';
 import { EntityValidationError } from './accounting-entities.service';
+import { writeAccountingAuditTx } from './accounting-audit';
 
 interface ListAccountantsParams {
   page: number;
@@ -27,6 +28,10 @@ interface UpdateAccountantInput {
   crc_uf?: string | null;
   status?: 'INVITED' | 'ACTIVE' | 'SUSPENDED' | 'BLOCKED' | 'REVOKED';
   is_active?: boolean;
+}
+
+function resolveIsActive(status: string): boolean {
+  return status === 'ACTIVE';
 }
 
 export async function listAccountants(params: ListAccountantsParams) {
@@ -66,7 +71,7 @@ export async function getAccountant(id: string) {
   });
 }
 
-export async function createAccountant(data: CreateAccountantInput) {
+export async function createAccountant(data: CreateAccountantInput, adminId: string, ip?: string, userAgent?: string) {
   // Validate firm exists
   const firm = await prisma.accounting_firms.findUnique({
     where: { id: data.accounting_firm_id },
@@ -90,22 +95,39 @@ export async function createAccountant(data: CreateAccountantInput) {
     throw new EntityValidationError('CPF já cadastrado');
   }
 
-  return prisma.accountants.create({
-    data: {
-      accounting_firm_id: data.accounting_firm_id,
-      nome_completo: data.nome_completo,
-      email: data.email,
-      cpf: data.cpf,
-      crc: data.crc ?? null,
-      crc_uf: data.crc_uf ?? null,
-      status: 'INVITED',
-      invited_at: new Date(),
-    },
-    include: { firm: true },
+  const initialStatus = 'INVITED';
+
+  return prisma.$transaction(async (tx) => {
+    const accountant = await tx.accountants.create({
+      data: {
+        accounting_firm_id: data.accounting_firm_id,
+        nome_completo: data.nome_completo,
+        email: data.email,
+        cpf: data.cpf,
+        crc: data.crc ?? null,
+        crc_uf: data.crc_uf ?? null,
+        status: initialStatus,
+        is_active: resolveIsActive(initialStatus),
+        invited_at: new Date(),
+      },
+      include: { firm: true },
+    });
+
+    await writeAccountingAuditTx(tx, {
+      adminId,
+      action: 'CREATE_ACCOUNTANT',
+      entityType: 'accountant',
+      entityId: accountant.id,
+      newValue: data,
+      ipAddress: ip,
+      userAgent,
+    });
+
+    return accountant;
   });
 }
 
-export async function updateAccountant(id: string, data: UpdateAccountantInput) {
+export async function updateAccountant(id: string, data: UpdateAccountantInput, adminId: string, ip?: string, userAgent?: string) {
   const accountant = await prisma.accountants.findUnique({ where: { id } });
   if (!accountant) return null;
 
@@ -114,15 +136,39 @@ export async function updateAccountant(id: string, data: UpdateAccountantInput) 
     if (existing) throw new EntityValidationError('E-mail já cadastrado por outro contador');
   }
 
+  // Build update payload — enforce status/is_active coherence
+  const updateData: any = { ...data };
+
+  // Remove is_active from client input — it's derived from status
+  delete updateData.is_active;
+
+  // If status changes, set is_active accordingly
+  const effectiveStatus = data.status ?? accountant.status;
+  updateData.is_active = resolveIsActive(effectiveStatus);
+
   // If activating, set activated_at
-  const extraData: any = {};
   if (data.status === 'ACTIVE' && accountant.status !== 'ACTIVE') {
-    extraData.activated_at = new Date();
+    updateData.activated_at = new Date();
   }
 
-  return prisma.accountants.update({
-    where: { id },
-    data: { ...data, ...extraData },
-    include: { firm: true },
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.accountants.update({
+      where: { id },
+      data: updateData,
+      include: { firm: true },
+    });
+
+    await writeAccountingAuditTx(tx, {
+      adminId,
+      action: 'UPDATE_ACCOUNTANT',
+      entityType: 'accountant',
+      entityId: id,
+      oldValue: accountant,
+      newValue: data,
+      ipAddress: ip,
+      userAgent,
+    });
+
+    return updated;
   });
 }

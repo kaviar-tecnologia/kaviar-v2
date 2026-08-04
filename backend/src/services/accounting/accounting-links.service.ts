@@ -1,6 +1,7 @@
 import { prisma } from '../../lib/prisma';
 import { paginationResult } from './accounting-validation';
 import { EntityValidationError } from './accounting-entities.service';
+import { writeAccountingAuditTx } from './accounting-audit';
 
 interface ListLinksParams {
   page: number;
@@ -76,7 +77,7 @@ export async function getAccountantLink(id: string) {
   });
 }
 
-export async function createAccountantLink(data: CreateLinkInput) {
+export async function createAccountantLink(data: CreateLinkInput, adminId: string, ip?: string, userAgent?: string) {
   // Validate accountant exists and is active
   const accountant = await prisma.accountants.findUnique({ where: { id: data.accountant_id } });
   if (!accountant) throw new EntityValidationError('Contador não encontrado');
@@ -114,28 +115,42 @@ export async function createAccountantLink(data: CreateLinkInput) {
     }
   }
 
-  return prisma.accountant_entity_links.create({
-    data: {
-      accountant_id: data.accountant_id,
-      legal_entity_id: data.legal_entity_id,
-      scope: data.scope,
-      can_view: data.can_view ?? true,
-      can_upload: data.can_upload ?? false,
-      can_download: data.can_download ?? true,
-      can_request_correction: data.can_request_correction ?? false,
-      can_mark_processed: data.can_mark_processed ?? false,
-      can_close_period: data.can_close_period ?? false,
-      inherits_children: data.inherits_children ?? false,
-      starts_at: new Date(data.starts_at),
-      ends_at: data.ends_at ? new Date(data.ends_at) : null,
-      status: 'ACTIVE',
-      created_by_admin_id: data.created_by_admin_id,
-    },
-    include: linkInclude,
+  return prisma.$transaction(async (tx) => {
+    const link = await tx.accountant_entity_links.create({
+      data: {
+        accountant_id: data.accountant_id,
+        legal_entity_id: data.legal_entity_id,
+        scope: data.scope,
+        can_view: data.can_view ?? true,
+        can_upload: data.can_upload ?? false,
+        can_download: data.can_download ?? true,
+        can_request_correction: data.can_request_correction ?? false,
+        can_mark_processed: data.can_mark_processed ?? false,
+        can_close_period: data.can_close_period ?? false,
+        inherits_children: data.inherits_children ?? false,
+        starts_at: new Date(data.starts_at),
+        ends_at: data.ends_at ? new Date(data.ends_at) : null,
+        status: 'ACTIVE',
+        created_by_admin_id: data.created_by_admin_id,
+      },
+      include: linkInclude,
+    });
+
+    await writeAccountingAuditTx(tx, {
+      adminId,
+      action: 'CREATE_ACCOUNTANT_LINK',
+      entityType: 'accountant_entity_link',
+      entityId: link.id,
+      newValue: data,
+      ipAddress: ip,
+      userAgent,
+    });
+
+    return link;
   });
 }
 
-export async function updateAccountantLink(id: string, data: UpdateLinkInput) {
+export async function updateAccountantLink(id: string, data: UpdateLinkInput, adminId: string, ip?: string, userAgent?: string) {
   const link = await prisma.accountant_entity_links.findUnique({ where: { id } });
   if (!link) return null;
 
@@ -144,9 +159,24 @@ export async function updateAccountantLink(id: string, data: UpdateLinkInput) {
     updateData.ends_at = data.ends_at ? new Date(data.ends_at) : null;
   }
 
-  return prisma.accountant_entity_links.update({
-    where: { id },
-    data: updateData,
-    include: linkInclude,
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.accountant_entity_links.update({
+      where: { id },
+      data: updateData,
+      include: linkInclude,
+    });
+
+    await writeAccountingAuditTx(tx, {
+      adminId,
+      action: 'UPDATE_ACCOUNTANT_LINK',
+      entityType: 'accountant_entity_link',
+      entityId: id,
+      oldValue: link,
+      newValue: data,
+      ipAddress: ip,
+      userAgent,
+    });
+
+    return updated;
   });
 }

@@ -12,7 +12,11 @@ const { prismaMock, authState } = vi.hoisted(() => {
       create: vi.fn(),
       update: vi.fn(),
     },
+    accountants: { count: vi.fn().mockResolvedValue(0) },
+    $transaction: vi.fn(),
+    $executeRaw: vi.fn(),
   };
+  prismaMock.$transaction.mockImplementation((fn: Function) => fn(prismaMock));
   return {
     prismaMock,
     authState: {

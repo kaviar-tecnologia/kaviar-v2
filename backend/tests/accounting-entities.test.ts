@@ -12,7 +12,12 @@ const { prismaMock, authState } = vi.hoisted(() => {
       create: vi.fn(),
       update: vi.fn(),
     },
+    accountant_entity_links: { count: vi.fn().mockResolvedValue(0) },
+    $transaction: vi.fn(),
+    $executeRaw: vi.fn(),
   };
+  // Default: $transaction passes the mock itself as tx
+  prismaMock.$transaction.mockImplementation((fn: Function) => fn(prismaMock));
   return {
     prismaMock,
     authState: {

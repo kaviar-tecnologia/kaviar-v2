@@ -1,5 +1,6 @@
 import { prisma } from '../../lib/prisma';
 import { paginationResult } from './accounting-validation';
+import { writeAccountingAuditTx } from './accounting-audit';
 
 interface ListEntitiesParams {
   page: number;
@@ -69,7 +70,7 @@ export async function getLegalEntity(id: string) {
   });
 }
 
-export async function createLegalEntity(data: CreateEntityInput) {
+export async function createLegalEntity(data: CreateEntityInput, adminId: string, ip?: string, userAgent?: string) {
   // Business rule: FILIAL must have a parent that is MATRIZ
   if (data.entity_type === 'FILIAL') {
     if (!data.parent_entity_id) {
@@ -92,22 +93,36 @@ export async function createLegalEntity(data: CreateEntityInput) {
     throw new EntityValidationError('CNPJ já cadastrado');
   }
 
-  return prisma.legal_entities.create({
-    data: {
-      razao_social: data.razao_social,
-      nome_fantasia: data.nome_fantasia ?? null,
-      cnpj: data.cnpj,
-      entity_type: data.entity_type,
-      parent_entity_id: data.parent_entity_id ?? null,
-      uf: data.uf ?? null,
-      municipio: data.municipio ?? null,
-      endereco: data.endereco ?? null,
-    },
-    include: { parent: true, _count: { select: { children: true } } },
+  return prisma.$transaction(async (tx) => {
+    const entity = await tx.legal_entities.create({
+      data: {
+        razao_social: data.razao_social,
+        nome_fantasia: data.nome_fantasia ?? null,
+        cnpj: data.cnpj,
+        entity_type: data.entity_type,
+        parent_entity_id: data.parent_entity_id ?? null,
+        uf: data.uf ?? null,
+        municipio: data.municipio ?? null,
+        endereco: data.endereco ?? null,
+      },
+      include: { parent: true, _count: { select: { children: true } } },
+    });
+
+    await writeAccountingAuditTx(tx, {
+      adminId,
+      action: 'CREATE_LEGAL_ENTITY',
+      entityType: 'legal_entity',
+      entityId: entity.id,
+      newValue: data,
+      ipAddress: ip,
+      userAgent,
+    });
+
+    return entity;
   });
 }
 
-export async function updateLegalEntity(id: string, data: UpdateEntityInput) {
+export async function updateLegalEntity(id: string, data: UpdateEntityInput, adminId: string, ip?: string, userAgent?: string) {
   const entity = await prisma.legal_entities.findUnique({ where: { id } });
   if (!entity) return null;
 
@@ -139,10 +154,25 @@ export async function updateLegalEntity(id: string, data: UpdateEntityInput) {
     }
   }
 
-  return prisma.legal_entities.update({
-    where: { id },
-    data,
-    include: { parent: true, _count: { select: { children: true } } },
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.legal_entities.update({
+      where: { id },
+      data,
+      include: { parent: true, _count: { select: { children: true } } },
+    });
+
+    await writeAccountingAuditTx(tx, {
+      adminId,
+      action: 'UPDATE_LEGAL_ENTITY',
+      entityType: 'legal_entity',
+      entityId: id,
+      oldValue: entity,
+      newValue: data,
+      ipAddress: ip,
+      userAgent,
+    });
+
+    return updated;
   });
 }
 
