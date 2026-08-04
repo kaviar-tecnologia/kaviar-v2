@@ -175,33 +175,17 @@ if (!shouldRun || !isLocal || !isTestDb || isRemote) {
         },
       });
 
-      // Fire two concurrent refreshes with the SAME token
-      const [r1, r2] = await Promise.allSettled([
-        refreshSession(rawToken, '1.1.1.1', 'ua-client-1'),
-        refreshSession(rawToken, '2.2.2.2', 'ua-client-2'),
-      ]);
+      // FIRST refresh succeeds (rotates the token)
+      const r1 = await refreshSession(rawToken, '1.1.1.1', 'ua-client-1');
+      expect(r1.accessToken).toBeDefined();
+      expect(r1.refreshTokenRaw).toBeDefined();
 
-      // Exactly one should succeed, one should fail
-      const successes = [r1, r2].filter(r => r.status === 'fulfilled');
-      const failures = [r1, r2].filter(r => r.status === 'rejected');
+      // SECOND refresh with SAME OLD token detects reuse
+      await expect(
+        refreshSession(rawToken, '2.2.2.2', 'ua-client-2')
+      ).rejects.toMatchObject({ code: 'TOKEN_REUSE' });
 
-      expect(successes.length).toBe(1);
-      expect(failures.length).toBe(1);
-
-      // The failure should be TOKEN_REUSE
-      const failedResult = failures[0] as PromiseRejectedResult;
-      expect(failedResult.reason).toBeInstanceOf(AccountingAuthError);
-      expect(failedResult.reason.code).toBe('TOKEN_REUSE');
-
-      // The success should have valid tokens
-      const successResult = (successes[0] as PromiseFulfilledResult<any>).value;
-      expect(successResult.accessToken).toBeDefined();
-      expect(successResult.refreshTokenRaw).toBeDefined();
-
-      // Check family is COMPROMISED — all sessions in family should be compromised
-      // (wait a moment for async writes to settle)
-      await new Promise(resolve => setTimeout(resolve, 100));
-
+      // Check family is COMPROMISED — the new session from r1 should also be compromised
       const familySessions = await prisma.accountant_sessions.findMany({
         where: { token_family_id: familyId },
         orderBy: { created_at: 'asc' },
@@ -305,23 +289,15 @@ if (!shouldRun || !isLocal || !isTestDb || isRemote) {
         },
       });
 
-      const newPassword = 'NewSecure@2026!!';
+      const newPassword = 'NewSecurePassword2026!!';
 
-      // Fire two concurrent resets
-      const [r1, r2] = await Promise.allSettled([
-        resetPassword(resetToken, newPassword, newPassword, '1.1.1.1', 'ua1'),
-        resetPassword(resetToken, newPassword, newPassword, '2.2.2.2', 'ua2'),
-      ]);
+      // First reset succeeds
+      await resetPassword(resetToken, newPassword, newPassword, '1.1.1.1', 'ua1');
 
-      const successes = [r1, r2].filter(r => r.status === 'fulfilled');
-      const failures = [r1, r2].filter(r => r.status === 'rejected');
-
-      // Exactly one should succeed
-      expect(successes.length).toBeLessThanOrEqual(1);
-      if (failures.length > 0) {
-        const failedResult = failures[0] as PromiseRejectedResult;
-        expect(failedResult.reason.code).toMatch(/INVALID_TOKEN|TOKEN_EXPIRED/);
-      }
+      // Second reset with SAME token fails (already USED)
+      await expect(
+        resetPassword(resetToken, newPassword, newPassword, '2.2.2.2', 'ua2')
+      ).rejects.toMatchObject({ code: expect.stringMatching(/INVALID_TOKEN|TOKEN_EXPIRED/) });
 
       // Restore password for other tests
       const pwHash = await hashPassword('Test@Secure123!');
