@@ -87,9 +87,9 @@ test.describe('Integrated — Categories CRUD', () => {
 
   test('fetch created category — fields persisted', async ({ authToken }) => {
     if (!createdCategoryId) test.skip();
-    const { status, body } = await apiGet(`/api/admin/finance/categories?limit=200`, authToken);
+    const { status, body } = await apiGet(`/api/admin/finance/categories/${createdCategoryId}`, authToken);
     expect(status).toBe(200);
-    const cat = body.data.find((c: any) => c.id === createdCategoryId);
+    const cat = body.data;
     expect(cat).toBeDefined();
     expect(cat.accounting_code).toBe('3.1.99.01');
     expect(cat.dre_group).toBe('Custos E2E');
@@ -151,7 +151,7 @@ test.describe('Integrated — Manual Transactions', () => {
     if (accRes.body.data.length === 0) test.skip();
     accountId = accRes.body.data[0].id;
 
-    const catRes = await apiGet('/api/admin/finance/categories?limit=10&is_active=true', authToken);
+    const catRes = await apiGet('/api/admin/finance/categories?limit=100&is_active=true', authToken);
     expect(catRes.status).toBe(200);
     const postable = catRes.body.data.find((c: any) => c.is_postable && c.kind === 'EXPENSE');
     if (!postable) test.skip();
@@ -248,7 +248,7 @@ test.describe('Integrated — CAS Conflict (HTTP 409)', () => {
     if (accRes.body.data.length === 0) test.skip();
     accountId = accRes.body.data[0].id;
 
-    const catRes = await apiGet('/api/admin/finance/categories?limit=10&is_active=true', authToken);
+    const catRes = await apiGet('/api/admin/finance/categories?limit=100&is_active=true', authToken);
     const postable = catRes.body.data.find((c: any) => c.is_postable && c.kind === 'EXPENSE');
     if (!postable) test.skip();
     categoryId = postable.id;
@@ -341,9 +341,13 @@ test.describe('Integrated — CSV Export', () => {
     expect(res.headers.get('content-type')).toContain('text/csv');
     expect(res.headers.get('content-disposition')).toContain('attachment');
 
-    const text = await res.text();
-    // BOM
-    expect(text.charCodeAt(0)).toBe(0xFEFF);
+    // Check BOM via raw bytes (Node.js fetch text() strips BOM by design)
+    const buf = Buffer.from(await res.arrayBuffer());
+    expect(buf[0]).toBe(0xEF);
+    expect(buf[1]).toBe(0xBB);
+    expect(buf[2]).toBe(0xBF);
+    // Decode after BOM for content assertions
+    const text = buf.slice(3).toString('utf8');
     // Semicolons
     expect(text).toContain(';');
     // Header columns
