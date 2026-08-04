@@ -2,8 +2,8 @@
  * E2E: Accounting Portal — Accounting Firms (Escritórios)
  * CRUD operations, document formatting, status chips.
  */
-import { test, expect } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import { test, expect } from 'playwright/test';
+import type { Page } from 'playwright/test';
 
 const ADMIN_TOKEN = 'test-admin-token-mock';
 const SA_DATA = JSON.stringify({ id: 'admin-1', name: 'Admin', email: 'admin@kaviar.com', role: 'SUPER_ADMIN' });

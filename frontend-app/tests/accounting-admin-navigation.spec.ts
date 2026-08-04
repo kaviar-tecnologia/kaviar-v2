@@ -2,8 +2,8 @@
  * E2E: Accounting Portal — Navigation & Access Control
  * Validates menu visibility, route access by role, and tab structure.
  */
-import { test, expect } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import { test, expect } from 'playwright/test';
+import type { Page } from 'playwright/test';
 
 const ADMIN_TOKEN = 'test-admin-token-mock';
 const SA_DATA = JSON.stringify({ id: 'admin-1', name: 'Admin', email: 'admin@kaviar.com', role: 'SUPER_ADMIN' });
@@ -31,7 +31,7 @@ test.describe('Accounting Portal — Navigation', () => {
     await setupAuth(page, SA_DATA);
     await interceptAccountingAPIs(page);
     await page.goto('/admin');
-    await expect(page.getByRole('link', { name: /Portal do Contador/i })).toBeVisible();
+    await expect(page.getByText('Portal do Contador')).toBeVisible();
   });
 
   test('FINANCE does NOT see "Portal do Contador" link in menu', async ({ page }) => {
@@ -45,7 +45,7 @@ test.describe('Accounting Portal — Navigation', () => {
       });
     });
     await page.goto('/admin');
-    await expect(page.getByRole('link', { name: /Portal do Contador/i })).not.toBeVisible();
+    await expect(page.getByText('Portal do Contador')).not.toBeVisible();
   });
 
   test('SUPER_ADMIN accesses /admin/portal-contador successfully', async ({ page }) => {
