@@ -15,7 +15,7 @@ import {
   TextField,
 } from '@mui/material';
 import { Add } from '@mui/icons-material';
-import { listAccountantLinks } from '../../../services/adminAccountingService';
+import { listAccountantLinks, updateAccountantLink } from '../../../services/adminAccountingService';
 import LinkFormDialog from '../../../components/admin/accounting/LinkFormDialog';
 
 const formatDate = (iso) => {
@@ -69,6 +69,17 @@ export default function LinksTab() {
     setEditId(null);
     fetchData();
     setTimeout(() => setSuccessMsg(''), 4000);
+  };
+
+  const handleRevoke = async (id) => {
+    try {
+      await updateAccountantLink(id, { status: 'REVOKED' });
+      setSuccessMsg('Vínculo revogado com sucesso.');
+      fetchData();
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   return (
@@ -140,6 +151,9 @@ export default function LinksTab() {
                   </TableCell>
                   <TableCell align="right">
                     <Button size="small" onClick={() => handleEdit(row.id)}>Editar</Button>
+                    {row.status === 'ACTIVE' && (
+                      <Button size="small" color="warning" onClick={() => handleRevoke(row.id)}>Revogar</Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

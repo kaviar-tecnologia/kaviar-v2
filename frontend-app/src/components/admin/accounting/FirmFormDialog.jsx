@@ -106,41 +106,41 @@ export default function FirmFormDialog({ open, mode, firmId, onClose, onSuccess 
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{mode === 'edit' ? 'Editar Escritório' : 'Novo Escritório'}</DialogTitle>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth aria-labelledby="firm-dialog-title">
+      <DialogTitle id="firm-dialog-title">{mode === 'edit' ? 'Editar Escritório' : 'Novo Escritório'}</DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
         {fetching ? (
           <CircularProgress sx={{ alignSelf: 'center', my: 4 }} />
         ) : (
           <>
             {error && <Alert severity="error">{error}</Alert>}
-            <TextField label="Razão Social" value={form.razao_social} onChange={handleChange('razao_social')} required size="small" />
-            <TextField label="Nome Fantasia" value={form.nome_fantasia} onChange={handleChange('nome_fantasia')} size="small" />
+            <TextField id="firm-razao-social" label="Razão Social" value={form.razao_social} onChange={handleChange('razao_social')} required size="small" />
+            <TextField id="firm-nome-fantasia" label="Nome Fantasia" value={form.nome_fantasia} onChange={handleChange('nome_fantasia')} size="small" />
             <FormControl size="small">
-              <InputLabel>Tipo de Documento</InputLabel>
-              <Select value={form.document_type} label="Tipo de Documento" onChange={handleChange('document_type')}>
+              <InputLabel id="firm-document-type-label">Tipo de Documento</InputLabel>
+              <Select id="firm-document-type" labelId="firm-document-type-label" value={form.document_type} label="Tipo de Documento" onChange={handleChange('document_type')}>
                 <MenuItem value="CNPJ">CNPJ</MenuItem>
                 <MenuItem value="CPF">CPF</MenuItem>
               </Select>
             </FormControl>
-            <TextField label="Número do Documento" value={form.document_number} onChange={handleChange('document_number')} size="small" />
-            <TextField label="CRC" value={form.crc} onChange={handleChange('crc')} size="small" placeholder="Registro CRC" />
+            <TextField id="firm-document-number" label="Número do Documento" value={form.document_number} onChange={handleChange('document_number')} size="small" />
+            <TextField id="firm-crc" label="CRC" value={form.crc} onChange={handleChange('crc')} size="small" placeholder="Registro CRC" />
             <FormControl size="small">
-              <InputLabel>UF do CRC</InputLabel>
-              <Select value={form.crc_uf} label="UF do CRC" onChange={handleChange('crc_uf')}>
+              <InputLabel id="firm-crc-uf-label">UF do CRC</InputLabel>
+              <Select id="firm-crc-uf" labelId="firm-crc-uf-label" value={form.crc_uf} label="UF do CRC" onChange={handleChange('crc_uf')}>
                 <MenuItem value="">—</MenuItem>
                 {UF_LIST.map((uf) => <MenuItem key={uf} value={uf}>{uf}</MenuItem>)}
               </Select>
             </FormControl>
-            <TextField label="Email" value={form.email} onChange={handleChange('email')} type="email" size="small" />
-            <TextField label="Telefone" value={form.telefone} onChange={handleChange('telefone')} size="small" />
+            <TextField id="firm-email" label="Email" value={form.email} onChange={handleChange('email')} type="email" size="small" />
+            <TextField id="firm-telefone" label="Telefone" value={form.telefone} onChange={handleChange('telefone')} size="small" />
           </>
         )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={loading}>Cancelar</Button>
         <Button onClick={handleSubmit} variant="contained" disabled={loading || fetching}>
-          {loading ? <CircularProgress size={20} /> : mode === 'edit' ? 'Salvar' : 'Criar'}
+          {loading ? <CircularProgress size={20} /> : 'Salvar escritório'}
         </Button>
       </DialogActions>
     </Dialog>

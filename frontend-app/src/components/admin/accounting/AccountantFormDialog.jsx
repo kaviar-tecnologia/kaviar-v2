@@ -119,32 +119,32 @@ export default function AccountantFormDialog({ open, mode, accountantId, onClose
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{mode === 'edit' ? 'Editar Contador' : 'Novo Contador'}</DialogTitle>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth aria-labelledby="accountant-dialog-title">
+      <DialogTitle id="accountant-dialog-title">{mode === 'edit' ? 'Editar Contador' : 'Novo Contador'}</DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
         {fetching ? (
           <CircularProgress sx={{ alignSelf: 'center', my: 4 }} />
         ) : (
           <>
             {error && <Alert severity="error">{error}</Alert>}
-            <TextField label="Nome Completo" value={form.nome_completo} onChange={handleChange('nome_completo')} required size="small" />
-            <TextField label="Email" value={form.email} onChange={handleChange('email')} type="email" required size="small" />
+            <TextField id="accountant-nome-completo" label="Nome Completo" value={form.nome_completo} onChange={handleChange('nome_completo')} required size="small" />
+            <TextField id="accountant-email" label="Email" value={form.email} onChange={handleChange('email')} type="email" required size="small" />
             {mode === 'create' ? (
-              <TextField label="CPF" value={form.cpf} onChange={handleChange('cpf')} size="small" placeholder="Somente números" inputProps={{ maxLength: 14 }} />
+              <TextField id="accountant-cpf" label="CPF" value={form.cpf} onChange={handleChange('cpf')} size="small" placeholder="Somente números" inputProps={{ maxLength: 14 }} />
             ) : (
-              <TextField label="CPF (mascarado)" value={form.cpf} size="small" disabled />
+              <TextField id="accountant-cpf" label="CPF (mascarado)" value={form.cpf} size="small" disabled />
             )}
-            <TextField label="CRC" value={form.crc} onChange={handleChange('crc')} size="small" />
+            <TextField id="accountant-crc" label="CRC" value={form.crc} onChange={handleChange('crc')} size="small" />
             <FormControl size="small">
-              <InputLabel>UF do CRC</InputLabel>
-              <Select value={form.crc_uf} label="UF do CRC" onChange={handleChange('crc_uf')}>
+              <InputLabel id="accountant-crc-uf-label">UF do CRC</InputLabel>
+              <Select id="accountant-crc-uf" labelId="accountant-crc-uf-label" value={form.crc_uf} label="UF do CRC" onChange={handleChange('crc_uf')}>
                 <MenuItem value="">—</MenuItem>
                 {UF_LIST.map((uf) => <MenuItem key={uf} value={uf}>{uf}</MenuItem>)}
               </Select>
             </FormControl>
             <FormControl size="small">
-              <InputLabel>Escritório</InputLabel>
-              <Select value={form.accounting_firm_id} label="Escritório" onChange={handleChange('accounting_firm_id')}>
+              <InputLabel id="accountant-firm-label">Escritório</InputLabel>
+              <Select id="accountant-firm" labelId="accountant-firm-label" value={form.accounting_firm_id} label="Escritório" onChange={handleChange('accounting_firm_id')}>
                 <MenuItem value="">— Nenhum —</MenuItem>
                 {firms.map((f) => (
                   <MenuItem key={f.id} value={f.id}>{f.razao_social}</MenuItem>
@@ -157,7 +157,7 @@ export default function AccountantFormDialog({ open, mode, accountantId, onClose
       <DialogActions>
         <Button onClick={onClose} disabled={loading}>Cancelar</Button>
         <Button onClick={handleSubmit} variant="contained" disabled={loading || fetching}>
-          {loading ? <CircularProgress size={20} /> : mode === 'edit' ? 'Salvar' : 'Criar'}
+          {loading ? <CircularProgress size={20} /> : 'Salvar contador'}
         </Button>
       </DialogActions>
     </Dialog>

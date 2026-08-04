@@ -15,7 +15,7 @@ import {
   TextField,
 } from '@mui/material';
 import { Add } from '@mui/icons-material';
-import { listAccountants } from '../../../services/adminAccountingService';
+import { listAccountants, updateAccountant } from '../../../services/adminAccountingService';
 import AccountantFormDialog from '../../../components/admin/accounting/AccountantFormDialog';
 
 export default function AccountantsTab() {
@@ -64,6 +64,17 @@ export default function AccountantsTab() {
     setEditId(null);
     fetchData();
     setTimeout(() => setSuccessMsg(''), 4000);
+  };
+
+  const handleSuspend = async (id) => {
+    try {
+      await updateAccountant(id, { status: 'SUSPENDED' });
+      setSuccessMsg('Contador suspenso com sucesso.');
+      fetchData();
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   return (
@@ -133,6 +144,9 @@ export default function AccountantsTab() {
                   </TableCell>
                   <TableCell align="right">
                     <Button size="small" onClick={() => handleEdit(row.id)}>Editar</Button>
+                    {row.status === 'ACTIVE' && (
+                      <Button size="small" color="warning" onClick={() => handleSuspend(row.id)}>Suspender</Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

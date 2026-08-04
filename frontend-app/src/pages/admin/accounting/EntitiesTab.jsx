@@ -19,7 +19,7 @@ import {
   TextField,
 } from '@mui/material';
 import { Add } from '@mui/icons-material';
-import { listLegalEntities } from '../../../services/adminAccountingService';
+import { listLegalEntities, updateLegalEntity } from '../../../services/adminAccountingService';
 import EntityFormDialog from '../../../components/admin/accounting/EntityFormDialog';
 
 const formatCnpj = (cnpj) => {
@@ -81,6 +81,17 @@ export default function EntitiesTab() {
     setTimeout(() => setSuccessMsg(''), 4000);
   };
 
+  const handleDeactivate = async (id) => {
+    try {
+      await updateLegalEntity(id, { is_active: false });
+      setSuccessMsg('Empresa desativada com sucesso.');
+      fetchData();
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   return (
     <Box>
       <Box sx={{ display: 'flex', gap: 1.5, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -92,16 +103,16 @@ export default function EntitiesTab() {
           sx={{ minWidth: 200 }}
         />
         <FormControl size="small" sx={{ minWidth: 120 }}>
-          <InputLabel>Tipo</InputLabel>
-          <Select value={filterType} label="Tipo" onChange={(e) => { setFilterType(e.target.value); setPage(0); }}>
+          <InputLabel id="filter-entity-type-label">Tipo</InputLabel>
+          <Select id="filter-entity-type" labelId="filter-entity-type-label" value={filterType} label="Tipo" onChange={(e) => { setFilterType(e.target.value); setPage(0); }}>
             <MenuItem value="">Todos</MenuItem>
             <MenuItem value="MATRIZ">Matriz</MenuItem>
             <MenuItem value="FILIAL">Filial</MenuItem>
           </Select>
         </FormControl>
         <FormControl size="small" sx={{ minWidth: 120 }}>
-          <InputLabel>Status</InputLabel>
-          <Select value={filterStatus} label="Status" onChange={(e) => { setFilterStatus(e.target.value); setPage(0); }}>
+          <InputLabel id="filter-entity-status-label">Status</InputLabel>
+          <Select id="filter-entity-status" labelId="filter-entity-status-label" value={filterStatus} label="Status" onChange={(e) => { setFilterStatus(e.target.value); setPage(0); }}>
             <MenuItem value="">Todos</MenuItem>
             <MenuItem value="ACTIVE">Ativo</MenuItem>
             <MenuItem value="INACTIVE">Inativo</MenuItem>
@@ -157,6 +168,9 @@ export default function EntitiesTab() {
                   </TableCell>
                   <TableCell align="right">
                     <Button size="small" onClick={() => handleEdit(row.id)}>Editar</Button>
+                    {row.is_active && (
+                      <Button size="small" color="warning" onClick={() => handleDeactivate(row.id)}>Desativar</Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

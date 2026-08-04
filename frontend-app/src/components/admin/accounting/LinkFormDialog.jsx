@@ -131,8 +131,8 @@ export default function LinkFormDialog({ open, mode, linkId, onClose, onSuccess 
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{mode === 'edit' ? 'Editar Vínculo' : 'Novo Vínculo'}</DialogTitle>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth aria-labelledby="link-dialog-title">
+      <DialogTitle id="link-dialog-title">{mode === 'edit' ? 'Editar Vínculo' : 'Novo Vínculo'}</DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
         {fetching ? (
           <CircularProgress sx={{ alignSelf: 'center', my: 4 }} />
@@ -140,8 +140,8 @@ export default function LinkFormDialog({ open, mode, linkId, onClose, onSuccess 
           <>
             {error && <Alert severity="error">{error}</Alert>}
             <FormControl size="small" required>
-              <InputLabel>Contador</InputLabel>
-              <Select value={form.accountant_id} label="Contador" onChange={handleChange('accountant_id')}>
+              <InputLabel id="link-accountant-label">Contador</InputLabel>
+              <Select id="link-accountant" labelId="link-accountant-label" value={form.accountant_id} label="Contador" onChange={handleChange('accountant_id')}>
                 <MenuItem value="">— Selecionar —</MenuItem>
                 {accountants.map((a) => (
                   <MenuItem key={a.id} value={a.id}>{a.nome_completo}</MenuItem>
@@ -149,8 +149,8 @@ export default function LinkFormDialog({ open, mode, linkId, onClose, onSuccess 
               </Select>
             </FormControl>
             <FormControl size="small" required>
-              <InputLabel>Empresa</InputLabel>
-              <Select value={form.legal_entity_id} label="Empresa" onChange={handleChange('legal_entity_id')}>
+              <InputLabel id="link-entity-label">Empresa</InputLabel>
+              <Select id="link-entity" labelId="link-entity-label" value={form.legal_entity_id} label="Empresa" onChange={handleChange('legal_entity_id')}>
                 <MenuItem value="">— Selecionar —</MenuItem>
                 {entities.map((e) => (
                   <MenuItem key={e.id} value={e.id}>{e.razao_social}</MenuItem>
@@ -158,8 +158,8 @@ export default function LinkFormDialog({ open, mode, linkId, onClose, onSuccess 
               </Select>
             </FormControl>
             <FormControl size="small">
-              <InputLabel>Escopo</InputLabel>
-              <Select value={form.scope} label="Escopo" onChange={handleChange('scope')}>
+              <InputLabel id="link-scope-label">Escopo</InputLabel>
+              <Select id="link-scope" labelId="link-scope-label" value={form.scope} label="Escopo" onChange={handleChange('scope')}>
                 {SCOPE_OPTIONS.map((s) => <MenuItem key={s} value={s}>{s}</MenuItem>)}
               </Select>
             </FormControl>
@@ -192,7 +192,8 @@ export default function LinkFormDialog({ open, mode, linkId, onClose, onSuccess 
               sx={{ '& .MuiFormControlLabel-label': { fontSize: 13 } }}
             />
             <TextField
-              label="Início da vigência"
+              id="link-starts-at"
+              label="Data de início"
               type="date"
               value={form.starts_at}
               onChange={handleChange('starts_at')}
@@ -200,7 +201,8 @@ export default function LinkFormDialog({ open, mode, linkId, onClose, onSuccess 
               InputLabelProps={{ shrink: true }}
             />
             <TextField
-              label="Fim da vigência"
+              id="link-ends-at"
+              label="Data de término"
               type="date"
               value={form.ends_at}
               onChange={handleChange('ends_at')}
@@ -213,7 +215,7 @@ export default function LinkFormDialog({ open, mode, linkId, onClose, onSuccess 
       <DialogActions>
         <Button onClick={onClose} disabled={loading}>Cancelar</Button>
         <Button onClick={handleSubmit} variant="contained" disabled={loading || fetching}>
-          {loading ? <CircularProgress size={20} /> : mode === 'edit' ? 'Salvar' : 'Criar'}
+          {loading ? <CircularProgress size={20} /> : 'Salvar vínculo'}
         </Button>
       </DialogActions>
     </Dialog>

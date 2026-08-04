@@ -134,28 +134,28 @@ export default function EntityFormDialog({ open, mode, entityId, onClose, onSucc
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{mode === 'edit' ? 'Editar Empresa' : 'Nova Empresa'}</DialogTitle>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth aria-labelledby="entity-dialog-title">
+      <DialogTitle id="entity-dialog-title">{mode === 'edit' ? 'Editar Empresa' : 'Nova Empresa'}</DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
         {fetching ? (
           <CircularProgress sx={{ alignSelf: 'center', my: 4 }} />
         ) : (
           <>
             {error && <Alert severity="error">{error}</Alert>}
-            <TextField label="Razão Social" value={form.razao_social} onChange={handleChange('razao_social')} required size="small" />
-            <TextField label="Nome Fantasia" value={form.nome_fantasia} onChange={handleChange('nome_fantasia')} size="small" />
-            <TextField label="CNPJ" value={form.cnpj} onChange={handleChange('cnpj')} placeholder="XX.XXX.XXX/XXXX-XX" size="small" inputProps={{ maxLength: 18 }} />
+            <TextField id="entity-razao-social" label="Razão Social" value={form.razao_social} onChange={handleChange('razao_social')} required size="small" />
+            <TextField id="entity-nome-fantasia" label="Nome Fantasia" value={form.nome_fantasia} onChange={handleChange('nome_fantasia')} size="small" />
+            <TextField id="entity-cnpj" label="CNPJ" value={form.cnpj} onChange={handleChange('cnpj')} placeholder="XX.XXX.XXX/XXXX-XX" size="small" inputProps={{ maxLength: 18 }} />
             <FormControl size="small">
-              <InputLabel>Tipo</InputLabel>
-              <Select value={form.entity_type} label="Tipo" onChange={handleChange('entity_type')}>
+              <InputLabel id="entity-type-label">Tipo</InputLabel>
+              <Select id="entity-type" labelId="entity-type-label" value={form.entity_type} label="Tipo" onChange={handleChange('entity_type')}>
                 <MenuItem value="MATRIZ">Matriz</MenuItem>
                 <MenuItem value="FILIAL">Filial</MenuItem>
               </Select>
             </FormControl>
             {form.entity_type === 'FILIAL' && (
               <FormControl size="small">
-                <InputLabel>Empresa Matriz</InputLabel>
-                <Select value={form.parent_entity_id} label="Empresa Matriz" onChange={handleChange('parent_entity_id')}>
+                <InputLabel id="entity-parent-label">Empresa Matriz</InputLabel>
+                <Select id="entity-parent" labelId="entity-parent-label" value={form.parent_entity_id} label="Empresa Matriz" onChange={handleChange('parent_entity_id')}>
                   <MenuItem value="">— Selecionar —</MenuItem>
                   {parentEntities.map((e) => (
                     <MenuItem key={e.id} value={e.id}>{e.razao_social}</MenuItem>
@@ -164,21 +164,21 @@ export default function EntityFormDialog({ open, mode, entityId, onClose, onSucc
               </FormControl>
             )}
             <FormControl size="small">
-              <InputLabel>UF</InputLabel>
-              <Select value={form.uf} label="UF" onChange={handleChange('uf')}>
+              <InputLabel id="entity-uf-label">UF</InputLabel>
+              <Select id="entity-uf" labelId="entity-uf-label" value={form.uf} label="UF" onChange={handleChange('uf')}>
                 <MenuItem value="">—</MenuItem>
                 {UF_LIST.map((uf) => <MenuItem key={uf} value={uf}>{uf}</MenuItem>)}
               </Select>
             </FormControl>
-            <TextField label="Município" value={form.municipio} onChange={handleChange('municipio')} size="small" />
-            <TextField label="Endereço" value={form.endereco} onChange={handleChange('endereco')} size="small" multiline rows={2} />
+            <TextField id="entity-municipio" label="Município" value={form.municipio} onChange={handleChange('municipio')} size="small" />
+            <TextField id="entity-endereco" label="Endereço" value={form.endereco} onChange={handleChange('endereco')} size="small" multiline rows={2} />
           </>
         )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={loading}>Cancelar</Button>
         <Button onClick={handleSubmit} variant="contained" disabled={loading || fetching}>
-          {loading ? <CircularProgress size={20} /> : mode === 'edit' ? 'Salvar' : 'Criar'}
+          {loading ? <CircularProgress size={20} /> : 'Salvar empresa'}
         </Button>
       </DialogActions>
     </Dialog>
