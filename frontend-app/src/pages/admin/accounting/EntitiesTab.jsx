@@ -49,7 +49,7 @@ export default function EntitiesTab() {
     try {
       const params = { page: page + 1, limit: rowsPerPage };
       if (filterType) params.entity_type = filterType;
-      if (filterStatus) params.status = filterStatus;
+      if (filterStatus) params.is_active = filterStatus === 'active' ? 'true' : 'false';
       if (search.trim()) params.search = search.trim();
       const res = await listLegalEntities(params);
       setRows(res.data || []);
@@ -150,9 +150,9 @@ export default function EntitiesTab() {
                   <TableCell>{row.uf || '—'}</TableCell>
                   <TableCell>
                     <Chip
-                      label={row.status === 'ACTIVE' ? 'Ativo' : 'Inativo'}
+                      label={row.is_active ? 'Ativo' : 'Inativo'}
                       size="small"
-                      color={row.status === 'ACTIVE' ? 'success' : 'default'}
+                      color={row.is_active ? 'success' : 'default'}
                     />
                   </TableCell>
                   <TableCell align="right">

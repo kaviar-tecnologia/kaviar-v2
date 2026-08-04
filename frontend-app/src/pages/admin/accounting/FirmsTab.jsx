@@ -119,9 +119,9 @@ export default function FirmsTab() {
                   <TableCell>{row._count?.accountants ?? row.accountants_count ?? '—'}</TableCell>
                   <TableCell>
                     <Chip
-                      label={row.status === 'ACTIVE' ? 'Ativo' : 'Inativo'}
+                      label={row.is_active ? 'Ativo' : 'Inativo'}
                       size="small"
-                      color={row.status === 'ACTIVE' ? 'success' : 'default'}
+                      color={row.is_active ? 'success' : 'default'}
                     />
                   </TableCell>
                   <TableCell align="right">
