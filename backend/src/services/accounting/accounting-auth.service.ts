@@ -250,68 +250,82 @@ export async function refreshSession(
 
   const tokenHash = hashToken(refreshTokenRaw);
 
-  // Find session with this hash — race condition protection via $transaction
   const result = await prisma.$transaction(async (tx) => {
-    const session = await tx.accountant_sessions.findFirst({
-      where: { refresh_token_hash: tokenHash },
-      include: { accountant: true },
+    // ATOMIC: Attempt to consume the session in a single conditional UPDATE.
+    // Only one concurrent request can succeed because UPDATE takes a row lock.
+    // If zero rows affected, the token was already rotated/revoked/expired.
+    const consumed: any[] = await tx.$queryRaw`
+      UPDATE accountant_sessions
+      SET status = 'ROTATED', rotated_at = NOW()
+      WHERE refresh_token_hash = ${tokenHash}
+        AND status = 'ACTIVE'
+        AND expires_at > NOW()
+      RETURNING *
+    `;
+
+    if (consumed.length === 0) {
+      // Token was not ACTIVE — check if it exists at all to determine reuse vs invalid
+      const existing: any[] = await tx.$queryRaw`
+        SELECT id, status, token_family_id, accountant_id
+        FROM accountant_sessions
+        WHERE refresh_token_hash = ${tokenHash}
+        LIMIT 1
+      `;
+
+      if (existing.length > 0 && (existing[0].status === 'ROTATED' || existing[0].status === 'COMPROMISED')) {
+        // TOKEN REUSE DETECTED — compromise entire family
+        await tx.$executeRaw`
+          UPDATE accountant_sessions
+          SET status = 'COMPROMISED',
+              revoked_at = NOW(),
+              revocation_reason = 'TOKEN_REUSE_DETECTED',
+              reuse_detected_at = NOW()
+          WHERE token_family_id = ${existing[0].token_family_id}
+            AND status IN ('ACTIVE', 'ROTATED')
+        `;
+
+        await writeAccountingAuditTx(tx, {
+          adminId: existing[0].accountant_id,
+          action: 'SESSION_REUSE_DETECTED',
+          entityType: 'accountant_session',
+          entityId: existing[0].id,
+          newValue: { family_id: existing[0].token_family_id },
+          ipAddress: ip,
+          userAgent,
+        });
+
+        throw new AccountingAuthError('TOKEN_REUSE', 'Reutilização de token detectada', 401);
+      }
+
+      // Token expired or doesn't exist
+      throw new AccountingAuthError('INVALID_TOKEN', 'Sessão inválida ou expirada', 401);
+    }
+
+    const rotatedSession = consumed[0];
+
+    // Load accountant to check status
+    const accountant = await tx.accountants.findUnique({
+      where: { id: rotatedSession.accountant_id },
     });
 
-    if (!session) {
-      throw new AccountingAuthError('INVALID_TOKEN', 'Sessão inválida', 401);
-    }
-
-    // If session was already rotated/revoked, this is potential token reuse
-    if (session.status !== 'ACTIVE') {
-      // Potential token reuse attack — revoke entire family
-      await tx.accountant_sessions.updateMany({
-        where: { token_family_id: session.token_family_id, status: 'ACTIVE' },
-        data: {
-          status: 'COMPROMISED',
-          revoked_at: new Date(),
-          revocation_reason: 'TOKEN_REUSE_DETECTED',
-          reuse_detected_at: new Date(),
-        },
-      });
-      throw new AccountingAuthError('TOKEN_REUSE', 'Reutilização de token detectada. Todas as sessões da família revogadas.', 401);
-    }
-
-    // Check expiry
-    if (new Date() > session.expires_at) {
-      await tx.accountant_sessions.update({
-        where: { id: session.id },
-        data: { status: 'EXPIRED' },
-      });
-      throw new AccountingAuthError('SESSION_EXPIRED', 'Sessão expirada', 401);
-    }
-
-    // Check accountant is still active
-    if (session.accountant.status !== 'ACTIVE') {
+    if (!accountant || accountant.status !== 'ACTIVE') {
       throw new AccountingAuthError('ACCOUNT_INACTIVE', 'Conta não está ativa', 403);
     }
 
-    // Rotate: mark old session as ROTATED and create new one
+    // Create new session in the same family
     const newRefreshTokenRaw = generateRefreshToken();
     const newRefreshTokenHash = hashToken(newRefreshTokenRaw);
 
-    await tx.accountant_sessions.update({
-      where: { id: session.id },
-      data: {
-        status: 'ROTATED',
-        rotated_at: new Date(),
-      },
-    });
-
     const newSession = await tx.accountant_sessions.create({
       data: {
-        accountant_id: session.accountant_id,
-        token_family_id: session.token_family_id,
+        accountant_id: rotatedSession.accountant_id,
+        token_family_id: rotatedSession.token_family_id,
         refresh_token_hash: newRefreshTokenHash,
-        generation: session.generation + 1,
-        parent_session_id: session.id,
+        generation: rotatedSession.generation + 1,
+        parent_session_id: rotatedSession.id,
         status: 'ACTIVE',
-        scope: session.scope,
-        device_name: session.device_name,
+        scope: rotatedSession.scope || 'WEB',
+        device_name: rotatedSession.device_name,
         ip_address: ip || null,
         user_agent: userAgent || null,
         created_ip: ip || null,
@@ -320,16 +334,27 @@ export async function refreshSession(
       },
     });
 
-    // Update replaced_by on old session
-    await tx.accountant_sessions.update({
-      where: { id: session.id },
-      data: { replaced_by_id: newSession.id },
+    // Update replaced_by on rotated session
+    await tx.$executeRaw`
+      UPDATE accountant_sessions
+      SET replaced_by_id = ${newSession.id}
+      WHERE id = ${rotatedSession.id}
+    `;
+
+    const accessToken = generateAccessToken(rotatedSession.accountant_id, newSession.id);
+
+    await writeAccountingAuditTx(tx, {
+      adminId: rotatedSession.accountant_id,
+      action: 'SESSION_REFRESHED',
+      entityType: 'accountant_session',
+      entityId: newSession.id,
+      newValue: { generation: newSession.generation, family_id: newSession.token_family_id },
+      ipAddress: ip,
+      userAgent,
     });
 
-    const accessToken = generateAccessToken(session.accountant_id, newSession.id);
-
     return {
-      accountant: session.accountant,
+      accountant,
       session: newSession,
       accessToken,
       refreshTokenRaw: newRefreshTokenRaw,
