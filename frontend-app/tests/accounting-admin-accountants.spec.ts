@@ -218,7 +218,7 @@ test.describe('Accounting Portal — Accountants (Contadores)', () => {
     // Verify status chips render
     await expect(page.getByText('Ativo').first()).toBeVisible();
     await expect(page.getByText('INVITED', { exact: true })).toBeVisible();
-    await expect(page.getByText('SUSPENDED', { exact: true })).toBeVisible();
+    await expect(page.getByText('SUSPENDED', { exact: true }).first()).toBeVisible();
   });
 
   test('Suspension sends PATCH status=SUSPENDED', async ({ page }) => {
