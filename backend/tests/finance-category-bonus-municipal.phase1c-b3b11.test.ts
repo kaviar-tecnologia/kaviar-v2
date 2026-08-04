@@ -88,17 +88,27 @@ describe('finance category catalog phase 1C-B 3B-1.1 (bonus + municipal fees)', 
     expect(municipal?.name).not.toMatch(/%|\d/);
   });
 
-  it('keeps ids and codes unique across the 53-category catalog', () => {
-    expect(categories).toHaveLength(53);
-    expect(new Set(categories.map((category) => category.code)).size).toBe(53);
-    expect(new Set(categories.map((category) => deterministicCategoryId(category.idSource))).size).toBe(53);
+  it('keeps ids and codes unique across the 65-category catalog', () => {
+    expect(categories).toHaveLength(65);
+    expect(new Set(categories.map((category) => category.code)).size).toBe(65);
+    expect(new Set(categories.map((category) => deterministicCategoryId(category.idSource))).size).toBe(65);
   });
 
-  it('does not modify any of the previous 51 categories', () => {
+  it('does not modify any of the previous 51 categories (excluding activated and new operational)', () => {
+    // Categories added in this frente (operational categories) and the bonus/municipal pair
+    const EXCLUDED_CODES = new Set([
+      BONUS_CODE, MUNICIPAL_CODE,
+      // Frente 2/9 additions
+      'IMPOSTOS_E_TAXAS', 'IRPJ', 'CSLL', 'ISS', 'PIS_COFINS', 'SIMPLES_NACIONAL', 'OUTROS_IMPOSTOS',
+      'GITHUB', 'GESTORES_TERRITORIAIS', 'LICENCAS_MUNICIPAIS', 'DIVULGACAO_MARKETING', 'SERVICOS_JURIDICOS',
+      // Activated in Frente 2/9 (is_active/is_postable changed)
+      'CONTABILIDADE', 'PRO_LABORE', 'OUTRAS_DESPESAS',
+    ]);
+
     const previous = categories.filter(
-      (category) => category.code !== BONUS_CODE && category.code !== MUNICIPAL_CODE,
+      (category) => !EXCLUDED_CODES.has(category.code),
     );
-    expect(previous).toHaveLength(51);
+    expect(previous).toHaveLength(48);
 
     const snapshot = previous.map((category) => ({
       id: deterministicCategoryId(category.idSource),
@@ -111,10 +121,9 @@ describe('finance category catalog phase 1C-B 3B-1.1 (bonus + municipal fees)', 
     }));
     const hash = createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
 
-    // Frozen structural snapshot of the 51 pre-3B-1.1 categories (id, code, kind,
-    // parent, is_active, is_postable, sort_order). Any change to an existing
-    // category alters this hash and must be a deliberate, reviewed decision.
-    expect(hash).toBe('95192b451db84d0a2bb81100ba72ee11833bb241072cf5fb8021fc8213cbf729');
+    // Frozen structural snapshot of the 48 unchanged categories (excluding bonus/municipal
+    // and operational categories added/activated in Frente 2/9).
+    expect(hash).toMatchInlineSnapshot(`"c8f8c3ff8b870540485dee620a15070c421fbedeb178a2be95b117af335f27ff"`);
   });
 
   it('contains the expected defensive markers in the 3B-1.1 migration and never creates accounts, transactions or allocations', () => {

@@ -39,9 +39,9 @@ const expectedPostableByCode: Record<string, { id: string; is_postable: boolean 
   TELEFONIA_INTERNET: { id: 'fcat_8fff5834777905ddcb4f04658eab1b56', is_postable: true },
   REGULACAO_MUNICIPAL: { id: 'fcat_7b5e85344192f123d2f0ec9f734c8050', is_postable: true },
   TAXAS_MUNICIPAIS_SOBRE_CORRIDAS: { id: 'fcat_cd17b84eaa92c309e549b872b98146ac', is_postable: true },
-  CONTABILIDADE: { id: 'fcat_e11c24a9128072b5c8d72a1160f120cb', is_postable: false },
-  PRO_LABORE: { id: 'fcat_26dc69afcd59ee348780a6616ad410ff', is_postable: false },
-  OUTRAS_DESPESAS: { id: 'fcat_986dd29e49fd4a974f30244fff3be359', is_postable: false },
+  CONTABILIDADE: { id: 'fcat_e11c24a9128072b5c8d72a1160f120cb', is_postable: true },
+  PRO_LABORE: { id: 'fcat_26dc69afcd59ee348780a6616ad410ff', is_postable: true },
+  OUTRAS_DESPESAS: { id: 'fcat_986dd29e49fd4a974f30244fff3be359', is_postable: true },
   PROCESSAMENTO_PAGAMENTOS: { id: 'fcat_db98c7abe0d5cdc80f326d904de60799', is_postable: true },
   TAXAS_BANCARIAS: { id: 'fcat_626d1e09c46592f55bb3347b5ffcc70c', is_postable: true },
   REEMBOLSOS: { id: 'fcat_709f8138749f094ea890c3f5b1385df9', is_postable: false },
@@ -68,6 +68,18 @@ const expectedPostableByCode: Record<string, { id: string; is_postable: boolean 
   VALORES_PROCESSADOR: { id: 'fcat_55aeb27283122e6d674ac56a8fd522f2', is_postable: true },
   RECEBIVEIS_LIQUIDAR: { id: 'fcat_847582905061204c351065cd7f93b531', is_postable: true },
   REEMBOLSOS_PROCESSAMENTO: { id: 'fcat_125141013f224853afa564a2150b06a8', is_postable: true },
+  IMPOSTOS_E_TAXAS: { id: 'fcat_9cb6d78d7a883ba1c3e30f0973dbe341', is_postable: false },
+  IRPJ: { id: 'fcat_649e1e6cb04d5805ae82341832821a9e', is_postable: true },
+  CSLL: { id: 'fcat_4881f938cef55b4ebf8717c48de09ade', is_postable: true },
+  ISS: { id: 'fcat_0a0132890382603ff5428fc2ca3f2dd1', is_postable: true },
+  PIS_COFINS: { id: 'fcat_2c05f1d2f6948732afa3db9e0e992900', is_postable: true },
+  SIMPLES_NACIONAL: { id: 'fcat_29e77f028c3b0de895c04f0bdbc0be64', is_postable: true },
+  OUTROS_IMPOSTOS: { id: 'fcat_8f4c3ba427aef197682a07f1bfc88c5f', is_postable: true },
+  GITHUB: { id: 'fcat_da6b3ede41336c2473cd22bbc1affc51', is_postable: true },
+  GESTORES_TERRITORIAIS: { id: 'fcat_df1314d767be46d6f0d7c34cf7ea5afa', is_postable: true },
+  LICENCAS_MUNICIPAIS: { id: 'fcat_ed994bd0ce7c65ba47a03c8724be9f36', is_postable: true },
+  DIVULGACAO_MARKETING: { id: 'fcat_da2a5828541b6e0e1b2c3bc7e87d1254', is_postable: true },
+  SERVICOS_JURIDICOS: { id: 'fcat_ec867fa7664d6e952cbed1b850eb2e66', is_postable: true },
 };
 
 function deterministicCategoryId(source: string) {
@@ -95,16 +107,16 @@ describe('finance category postable phase 1C-B 3B-1', () => {
     expect(model).not.toContain('is_postable         Boolean                 @default');
   });
 
-  it('keeps explicit 53/53 code -> id -> is_postable mapping with canonical invariants', () => {
-    expect(categories).toHaveLength(53);
+  it('keeps explicit 65/65 code -> id -> is_postable mapping with canonical invariants', () => {
+    expect(categories).toHaveLength(65);
 
     const expectedCodes = Object.keys(expectedPostableByCode);
-    expect(expectedCodes).toHaveLength(53);
+    expect(expectedCodes).toHaveLength(65);
 
     const codeSet = new Set(categories.map((c) => c.code));
     const idSet = new Set(categories.map((c) => deterministicCategoryId(c.idSource)));
-    expect(codeSet.size).toBe(53);
-    expect(idSet.size).toBe(53);
+    expect(codeSet.size).toBe(65);
+    expect(idSet.size).toBe(65);
 
     const actualByCode = new Map(categories.map((category) => [category.code, category] as const));
     for (const code of expectedCodes) {
@@ -114,8 +126,8 @@ describe('finance category postable phase 1C-B 3B-1', () => {
       expect(category?.is_postable, `unexpected is_postable for ${code}`).toBe(expectedPostableByCode[code].is_postable);
     }
 
-    expect(categories.filter((category) => category.is_postable)).toHaveLength(31);
-    expect(categories.filter((category) => !category.is_postable)).toHaveLength(22);
+    expect(categories.filter((category) => category.is_postable)).toHaveLength(45);
+    expect(categories.filter((category) => !category.is_postable)).toHaveLength(20);
 
     const childrenMap = childrenByCode();
 
