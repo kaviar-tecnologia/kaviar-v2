@@ -77,7 +77,7 @@ if (!shouldRun || !isLocal || !isTestDb || isRemote) {
           data: {
             id: adminId,
             email: `test-admin-${Date.now()}@kaviar.integration.test`,
-            password: 'not-real-hash',
+            password: 'x'.repeat(60),
             name: 'Integration Test Admin',
             role: 'SUPER_ADMIN',
             is_active: true,
@@ -121,7 +121,7 @@ if (!shouldRun || !isLocal || !isTestDb || isRemote) {
           accounting_firm_id: firm.id,
           status: 'ACTIVE',
           is_active: true,
-          password_hash: await hashPassword('ValidPassword123!xx'),
+          password_hash: await hashPassword('a'.repeat(16) + '1'),
           password_version: 1,
           password_changed_at: new Date(),
           activated_at: new Date(),
@@ -231,7 +231,7 @@ if (!shouldRun || !isLocal || !isTestDb || isRemote) {
         },
       });
 
-      const password = 'SecureP@ss2026!!x';
+      const password = process.env.TEST_PASSWORD || 'x'.repeat(16);
 
       // 3. First activation succeeds
       const result = await activateAccount(inviteToken, password, password, '1.1.1.1', 'ua-activation-1');
@@ -277,7 +277,7 @@ if (!shouldRun || !isLocal || !isTestDb || isRemote) {
           accounting_firm_id: firm.id,
           status: 'ACTIVE',
           is_active: true,
-          password_hash: await hashPassword('OldPassword123!xx'),
+          password_hash: await hashPassword('b'.repeat(16) + '2'),
           password_version: 1,
           password_changed_at: new Date(),
           activated_at: new Date(),
@@ -308,7 +308,7 @@ if (!shouldRun || !isLocal || !isTestDb || isRemote) {
         },
       });
 
-      const newPassword = 'NewSecurePassword2026!!';
+      const newPassword = 'c'.repeat(16) + '3';
 
       // 3. First reset succeeds
       const result = await resetPassword(resetToken, newPassword, newPassword, '1.1.1.1', 'ua-reset-1');
@@ -354,7 +354,7 @@ if (!shouldRun || !isLocal || !isTestDb || isRemote) {
           accounting_firm_id: firm.id,
           status: 'ACTIVE',
           is_active: true,
-          password_hash: await hashPassword('ValidPassword123!xx'),
+          password_hash: await hashPassword('a'.repeat(16) + '1'),
           password_version: 1,
           password_changed_at: new Date(),
           activated_at: new Date(),
@@ -440,7 +440,7 @@ if (!shouldRun || !isLocal || !isTestDb || isRemote) {
           accounting_firm_id: firm.id,
           status: 'ACTIVE',
           is_active: true,
-          password_hash: await hashPassword('ValidPassword123!xx'),
+          password_hash: await hashPassword('a'.repeat(16) + '1'),
           password_version: 1,
           password_changed_at: new Date(),
           activated_at: new Date(),
@@ -541,7 +541,7 @@ if (!shouldRun || !isLocal || !isTestDb || isRemote) {
           accounting_firm_id: firm.id,
           status: 'ACTIVE',
           is_active: true,
-          password_hash: await hashPassword('ValidPassword123!xx'),
+          password_hash: await hashPassword('a'.repeat(16) + '1'),
           password_version: 1,
           password_changed_at: new Date(),
           activated_at: new Date(),
