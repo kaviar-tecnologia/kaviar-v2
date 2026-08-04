@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "test:e2e": "TZ=America/Sao_Paulo npx playwright test",
     "test:e2e:integrated": "TZ=America/Sao_Paulo npx playwright test --config=playwright.integrated.config.ts"
   },
@@ -32,8 +33,10 @@
     "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^4.2.0",
     "dotenv": "^17.2.3",
+    "jsdom": "^24.1.0",
     "playwright": "^1.57.0",
     "typescript": "^5.9.3",
-    "vite": "^5.0.0"
+    "vite": "^5.0.0",
+    "vitest": "^1.6.0"
   }
 }
