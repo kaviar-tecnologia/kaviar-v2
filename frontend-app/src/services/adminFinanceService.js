@@ -326,6 +326,14 @@ export const updateFinanceCategory = async (id, body) => {
   return performPatch(`${FINANCE_BASE_PATH}/categories/${id}`, body, 'Erro ao atualizar categoria financeira.');
 };
 
+export const exportFinanceTransactionsCsv = async (params = {}) => {
+  const query = buildQueryString(params);
+  const response = await api.get(`${FINANCE_BASE_PATH}/transactions/export.csv${query}`, {
+    responseType: 'blob',
+  });
+  return response;
+};
+
 export function getFinanceCategoryErrorPresentation(error) {
   const status = error?.status || error?.response?.status || 500;
   const rawMessage = error?.message || error?.response?.data?.error || '';

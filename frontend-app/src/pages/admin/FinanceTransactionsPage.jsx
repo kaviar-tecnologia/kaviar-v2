@@ -11,12 +11,13 @@ import {
   Table, TableBody, TableCell, TableContainer, TableHead, TablePagination,
   TableRow, TextField, Typography,
 } from '@mui/material';
-import { Add, FilterList, Refresh } from '@mui/icons-material';
+import { Add, Download, FilterList, Refresh } from '@mui/icons-material';
 import { useAdminAuth } from '../../hooks/useAdminAuth';
 import {
   listFinanceTransactions, listFinanceAccounts, listFinanceCategories,
   listFinanceCostCenters, createFinanceTransaction, updateFinanceTransaction,
   postFinanceTransaction, cancelFinanceTransaction, reverseFinanceTransaction,
+  exportFinanceTransactionsCsv,
 } from '../../services/adminFinanceService';
 import { parseBRLToCentsString, formatCentsStringToBRL } from '../../utils/brlCurrency';
 
@@ -115,6 +116,37 @@ export default function FinanceTransactionsPage() {
 
   const handleFilter = () => { setPage(0); fetchData(0, limit); };
 
+  // ── CSV Export ──────────────────────────────────────────────────────────────
+  const [exporting, setExporting] = useState(false);
+  const exportGuardRef = useRef(false);
+
+  const handleExportCsv = async () => {
+    if (exportGuardRef.current) return;
+    exportGuardRef.current = true;
+    setExporting(true);
+    setError('');
+    try {
+      const params = { source_type: 'MANUAL', ...filters };
+      Object.keys(params).forEach(k => { if (!params[k]) delete params[k]; });
+      const response = await exportFinanceTransactionsCsv(params);
+      const blob = response.data instanceof Blob ? response.data : new Blob([response.data], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `kaviar-lancamentos-${todayLocalISO()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      const msg = err?.response?.data?.error || err?.message || 'Erro ao exportar CSV';
+      setError(msg);
+    } finally {
+      setExporting(false);
+      exportGuardRef.current = false;
+    }
+  };
+
   const handlePost = async (txn, settlementDate) => {
     try {
       await postFinanceTransaction(txn.id, { expected_updated_at: txn.updated_at, settlement_date: settlementDate });
@@ -203,6 +235,7 @@ export default function FinanceTransactionsPage() {
               <MenuItem value="">Todos</MenuItem>{Object.entries(STATUS_LABELS).map(([k, v]) => <MenuItem key={k} value={k}>{v}</MenuItem>)}
             </TextField></Grid>
             <Grid item xs={6} sm={2}><Button variant="contained" size="small" startIcon={<Refresh />} onClick={handleFilter} sx={{ textTransform: 'none', fontWeight: 600 }}>Filtrar</Button></Grid>
+            <Grid item xs={6} sm={2}><Button variant="outlined" size="small" startIcon={<Download />} onClick={handleExportCsv} disabled={exporting || loading} sx={{ textTransform: 'none', fontWeight: 600 }}>{exporting ? 'Exportando...' : 'Exportar CSV'}</Button></Grid>
           </Grid>
         </CardContent>
       </Card>
