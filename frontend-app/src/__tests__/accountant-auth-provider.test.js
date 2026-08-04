@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanitizeAccountantReturnTo } from '../src/utils/sanitizeReturnTo';
+import { sanitizeAccountantReturnTo } from '../utils/sanitizeReturnTo';
 
 describe('sanitizeAccountantReturnTo', () => {
   it('accepts /contador', () => expect(sanitizeAccountantReturnTo('/contador')).toBe('/contador'));
