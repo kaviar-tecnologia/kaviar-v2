@@ -273,7 +273,8 @@ export async function refreshSession(
       `;
 
       if (existing.length > 0 && (existing[0].status === 'ROTATED' || existing[0].status === 'COMPROMISED')) {
-        // TOKEN REUSE DETECTED — compromise entire family
+        // TOKEN REUSE DETECTED — compromise entire family and COMMIT
+        // We return a signal instead of throwing so the transaction commits the compromise.
         await tx.$executeRaw`
           UPDATE accountant_sessions
           SET status = 'COMPROMISED',
@@ -294,11 +295,11 @@ export async function refreshSession(
           userAgent,
         });
 
-        throw new AccountingAuthError('TOKEN_REUSE', 'Reutilização de token detectada', 401);
+        return { reuse: true } as const;
       }
 
       // Token expired or doesn't exist
-      throw new AccountingAuthError('INVALID_TOKEN', 'Sessão inválida ou expirada', 401);
+      return { invalid: true } as const;
     }
 
     const rotatedSession = consumed[0];
@@ -360,6 +361,14 @@ export async function refreshSession(
       refreshTokenRaw: newRefreshTokenRaw,
     };
   });
+
+  // Handle signals from the transaction (thrown AFTER commit to preserve DB state)
+  if ('reuse' in result) {
+    throw new AccountingAuthError('TOKEN_REUSE', 'Reutilização de token detectada', 401);
+  }
+  if ('invalid' in result) {
+    throw new AccountingAuthError('INVALID_TOKEN', 'Sessão inválida ou expirada', 401);
+  }
 
   return result;
 }
