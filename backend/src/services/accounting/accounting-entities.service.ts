@@ -114,6 +114,11 @@ export async function updateLegalEntity(id: string, data: UpdateEntityInput) {
   const entityType = data.entity_type ?? entity.entity_type;
   const parentId = data.parent_entity_id !== undefined ? data.parent_entity_id : entity.parent_entity_id;
 
+  // Prevent self-reference
+  if (parentId === id) {
+    throw new EntityValidationError('Entidade não pode ser pai de si mesma');
+  }
+
   if (entityType === 'FILIAL' && parentId) {
     const parent = await prisma.legal_entities.findUnique({ where: { id: parentId } });
     if (!parent) throw new EntityValidationError('Entidade pai não encontrada');
@@ -122,6 +127,16 @@ export async function updateLegalEntity(id: string, data: UpdateEntityInput) {
 
   if (entityType === 'FILIAL' && !parentId) {
     throw new EntityValidationError('Filial deve ter parent_entity_id de uma MATRIZ');
+  }
+
+  // Prevent deactivation with active links
+  if (data.is_active === false && entity.is_active === true) {
+    const activeLinks = await prisma.accountant_entity_links.count({
+      where: { legal_entity_id: id, status: 'ACTIVE' },
+    });
+    if (activeLinks > 0) {
+      throw new EntityValidationError('Não é possível desativar entidade com vínculos ativos');
+    }
   }
 
   return prisma.legal_entities.update({

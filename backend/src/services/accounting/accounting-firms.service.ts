@@ -113,6 +113,16 @@ export async function updateAccountingFirm(id: string, data: UpdateFirmInput) {
     }
   }
 
+  // Prevent deactivation with active accountants
+  if (data.is_active === false && firm.is_active === true) {
+    const activeAccountants = await prisma.accountants.count({
+      where: { accounting_firm_id: id, is_active: true },
+    });
+    if (activeAccountants > 0) {
+      throw new EntityValidationError('Não é possível desativar escritório com contadores ativos');
+    }
+  }
+
   return prisma.accounting_firms.update({
     where: { id },
     data,

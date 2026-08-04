@@ -100,6 +100,20 @@ export async function createAccountantLink(data: CreateLinkInput) {
     throw new EntityValidationError('Já existe um vínculo ativo com mesmo escopo para este contador e entidade');
   }
 
+  // inherits_children only allowed for MATRIZ
+  if (data.inherits_children && entity.entity_type !== 'MATRIZ') {
+    throw new EntityValidationError('inherits_children só é permitido para entidades do tipo MATRIZ');
+  }
+
+  // Validate vigência: ends_at must be after starts_at
+  if (data.ends_at) {
+    const startsAt = new Date(data.starts_at);
+    const endsAt = new Date(data.ends_at);
+    if (endsAt <= startsAt) {
+      throw new EntityValidationError('ends_at deve ser posterior a starts_at');
+    }
+  }
+
   return prisma.accountant_entity_links.create({
     data: {
       accountant_id: data.accountant_id,
