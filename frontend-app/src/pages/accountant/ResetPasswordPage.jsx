@@ -1,0 +1,128 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { TextField, Button, Alert, CircularProgress } from '@mui/material';
+import AccountantPublicLayout from '../../components/accountant/AccountantPublicLayout';
+import accountantApi from '../../services/accountantApi';
+
+export default function ResetPasswordPage() {
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const submitting = useRef(false);
+  const tokenRef = useRef(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const hash = window.location.hash;
+    const match = hash.match(/token=([^&]+)/);
+    if (match) {
+      tokenRef.current = decodeURIComponent(match[1]);
+    }
+    // Remove fragment immediately
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  }, []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (submitting.current) return;
+
+    setError('');
+
+    if (password.length < 15) {
+      setError('A senha deve ter no mínimo 15 caracteres.');
+      return;
+    }
+    if (password !== confirmation) {
+      setError('As senhas não coincidem.');
+      return;
+    }
+    if (!tokenRef.current) {
+      setError('Token de redefinição inválido ou ausente.');
+      return;
+    }
+
+    submitting.current = true;
+    setLoading(true);
+
+    try {
+      await accountantApi.post('/api/accountant/auth/reset-password', {
+        token: tokenRef.current,
+        password,
+        password_confirmation: confirmation,
+      });
+      setSuccess(true);
+      setTimeout(() => navigate('/contador/login', { replace: true }), 3000);
+    } catch (err) {
+      const msg = err.response?.data?.error;
+      if (msg?.includes('expirado') || msg?.includes('expired')) {
+        setError('Token expirado. Solicite uma nova redefinição de senha.');
+      } else if (msg?.includes('inválido') || msg?.includes('invalid')) {
+        setError('Token inválido.');
+      } else {
+        setError('Não foi possível redefinir a senha. Tente novamente.');
+      }
+    } finally {
+      tokenRef.current = null;
+      setLoading(false);
+      submitting.current = false;
+    }
+  };
+
+  if (success) {
+    return (
+      <AccountantPublicLayout title="Senha redefinida">
+        <Alert severity="success">
+          Senha redefinida com sucesso! Redirecionando para o login...
+        </Alert>
+      </AccountantPublicLayout>
+    );
+  }
+
+  return (
+    <AccountantPublicLayout title="Redefinir senha">
+      <form onSubmit={handleSubmit} aria-labelledby="reset-title" noValidate>
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }} role="alert">
+            {error}
+          </Alert>
+        )}
+        <TextField
+          id="reset-password"
+          label="Nova senha"
+          type="password"
+          autoComplete="new-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          fullWidth
+          required
+          margin="normal"
+          helperText="Mínimo 15 caracteres"
+          inputProps={{ 'aria-label': 'Nova senha', minLength: 15 }}
+        />
+        <TextField
+          id="reset-confirm"
+          label="Confirmar senha"
+          type="password"
+          autoComplete="new-password"
+          value={confirmation}
+          onChange={(e) => setConfirmation(e.target.value)}
+          fullWidth
+          required
+          margin="normal"
+          inputProps={{ 'aria-label': 'Confirmar senha' }}
+        />
+        <Button
+          type="submit"
+          variant="contained"
+          fullWidth
+          disabled={loading}
+          sx={{ mt: 2 }}
+        >
+          {loading ? <CircularProgress size={24} /> : 'Redefinir senha'}
+        </Button>
+      </form>
+    </AccountantPublicLayout>
+  );
+}
