@@ -417,6 +417,50 @@ router.post('/recognition-policies/:id/supersede', async (req: Request, res: Res
   }
 });
 
+// ── CSV Export ────────────────────────────────────────────────────────────────
+
+import {
+  CSV_EXPORT_MAX_ROWS,
+  queryTransactionsForCsvExport,
+  buildCsvContent,
+} from '../services/finance/finance-csv-export';
+
+router.get('/transactions/export.csv', async (req: Request, res: Response) => {
+  try {
+    const parsed = financeTransactionsListQuerySchema.safeParse({ ...req.query, page: '1', limit: '1' });
+    if (!parsed.success) return validationError(res, parsed.error);
+
+    const { page: _p, limit: _l, ...filters } = parsed.data;
+    const { rows, total } = await queryTransactionsForCsvExport(filters);
+
+    if (total > CSV_EXPORT_MAX_ROWS) {
+      return res.status(422).json({
+        success: false,
+        code: 'CSV_ROW_LIMIT_EXCEEDED',
+        error: `O relatório possui ${total} linhas (máximo: ${CSV_EXPORT_MAX_ROWS}). Reduza o período ou aplique mais filtros.`,
+        total,
+        max: CSV_EXPORT_MAX_ROWS,
+      });
+    }
+
+    if (rows.length === 0) {
+      return res.status(200)
+        .setHeader('Content-Type', 'text/csv; charset=utf-8')
+        .setHeader('Content-Disposition', 'attachment; filename="kaviar-lancamentos.csv"')
+        .send(buildCsvContent([]));
+    }
+
+    const csv = buildCsvContent(rows);
+    return res.status(200)
+      .setHeader('Content-Type', 'text/csv; charset=utf-8')
+      .setHeader('Content-Disposition', 'attachment; filename="kaviar-lancamentos.csv"')
+      .send(csv);
+  } catch (error) {
+    console.error('[ADMIN_FINANCE_TRANSACTIONS_CSV_EXPORT]', error);
+    return res.status(500).json({ success: false, error: 'Erro interno ao gerar exportação CSV.' });
+  }
+});
+
 router.get('/transactions', async (req: Request, res: Response) => {
   try {
     const parsed = financeTransactionsListQuerySchema.safeParse(req.query);
