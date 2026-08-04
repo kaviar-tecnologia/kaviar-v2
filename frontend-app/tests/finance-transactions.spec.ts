@@ -402,7 +402,7 @@ test.describe('Finance Transactions — Reversal Flow', () => {
     await dialog.getByRole('button', { name: 'Confirmar Estorno' }).click();
 
     // Conflict alert appears (outside dialog — dialog closes on 409)
-    await expect(page.getByText(/alterado|estorno/)).toBeVisible();
+    await expect(page.getByRole('alert').getByText(/alterado|conflito/i)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Recarregar' })).toBeVisible();
 
     // No success message

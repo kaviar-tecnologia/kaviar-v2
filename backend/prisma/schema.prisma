@@ -221,6 +221,7 @@ model admins {
   financial_transaction_allocations_created  financial_transaction_allocations[] @relation("FinancialTransactionAllocationCreatedBy")
   financial_transaction_links_created        financial_transaction_links[]      @relation("FinancialTransactionLinkCreatedBy")
   accountant_invites_created                 accountant_invites[]               @relation("invite_creator")
+  accountant_invites_revoked                 accountant_invites[]               @relation("invite_revoker")
   accountant_links_created                   accountant_entity_links[]          @relation("link_creator")
 }
 
@@ -4399,6 +4400,7 @@ model legal_entities {
   uf                String?             @db.VarChar(2)
   municipio         String?
   endereco          String?
+  codigo_interno    String?             @unique
   is_active         Boolean             @default(true)
   created_at        DateTime            @default(now())
   updated_at        DateTime            @updatedAt
@@ -4444,15 +4446,23 @@ model accountants {
   status              accountant_status  @default(INVITED)
   is_active           Boolean            @default(true)
   mfa_enabled         Boolean            @default(false)
+  password_hash       String?
+  password_changed_at DateTime?
+  password_version    Int                @default(1)
+  failed_login_count  Int                @default(0)
+  locked_until        DateTime?
+  last_login_at       DateTime?
+  terms_accepted_at   DateTime?
   invited_at          DateTime?
   activated_at        DateTime?
-  last_access_at      DateTime?
   created_at          DateTime           @default(now())
   updated_at          DateTime           @updatedAt
 
   firm                accounting_firms   @relation(fields: [accounting_firm_id], references: [id])
   invites             accountant_invites[]
   entity_links        accountant_entity_links[]
+  sessions            accountant_sessions[]
+  password_resets     accountant_password_resets[]
 
   @@index([accounting_firm_id])
   @@index([status])
@@ -4469,10 +4479,16 @@ model accountant_invites {
   accepted_at         DateTime?
   revoked_at          DateTime?
   created_by_admin_id String
+  resent_count        Int                       @default(0)
+  last_sent_at        DateTime?
+  revoked_by_admin_id String?
+  accepted_ip         String?
+  accepted_user_agent String?
   created_at          DateTime                  @default(now())
 
   accountant          accountants               @relation(fields: [accountant_id], references: [id])
   created_by_admin    admins                    @relation("invite_creator", fields: [created_by_admin_id], references: [id])
+  revoked_by_admin    admins?                   @relation("invite_revoker", fields: [revoked_by_admin_id], references: [id])
 
   @@index([accountant_id])
   @@index([status])
@@ -4491,6 +4507,7 @@ model accountant_entity_links {
   can_mark_processed      Boolean                 @default(false)
   can_close_period        Boolean                 @default(false)
   inherits_children       Boolean                 @default(false)
+  is_primary              Boolean                 @default(false)
   starts_at               DateTime
   ends_at                 DateTime?
   status                  accountant_link_status  @default(ACTIVE)
@@ -4508,4 +4525,69 @@ model accountant_entity_links {
   @@index([status])
   @@index([starts_at, ends_at])
   @@map("accountant_entity_links")
+}
+
+enum accountant_session_status {
+  ACTIVE
+  ROTATED
+  REVOKED
+  EXPIRED
+  COMPROMISED
+}
+
+enum accountant_reset_status {
+  PENDING
+  USED
+  EXPIRED
+  REVOKED
+}
+
+model accountant_sessions {
+  id                  String                       @id @default(uuid())
+  accountant_id       String
+  token_family_id     String
+  refresh_token_hash  String
+  generation          Int                          @default(1)
+  parent_session_id   String?
+  replaced_by_id      String?
+  status              accountant_session_status    @default(ACTIVE)
+  scope               String                       @default("WEB")
+  device_name         String?
+  ip_address          String?
+  user_agent          String?
+  created_ip          String?
+  last_activity_at    DateTime?
+  created_at          DateTime                     @default(now())
+  expires_at          DateTime
+  rotated_at          DateTime?
+  revoked_at          DateTime?
+  revocation_reason   String?
+  reuse_detected_at   DateTime?
+
+  accountant          accountants                  @relation(fields: [accountant_id], references: [id], onDelete: Cascade)
+
+  @@index([accountant_id, status])
+  @@index([token_family_id, status])
+  @@index([refresh_token_hash])
+  @@map("accountant_sessions")
+}
+
+model accountant_password_resets {
+  id                  String                   @id @default(uuid())
+  accountant_id       String
+  token_hash          String
+  status              accountant_reset_status  @default(PENDING)
+  expires_at          DateTime
+  requested_ip        String?
+  requested_user_agent String?
+  used_at             DateTime?
+  used_ip             String?
+  revoked_at          DateTime?
+  created_at          DateTime                 @default(now())
+
+  accountant          accountants              @relation(fields: [accountant_id], references: [id], onDelete: Cascade)
+
+  @@index([accountant_id, status])
+  @@index([token_hash])
+  @@map("accountant_password_resets")
 }
