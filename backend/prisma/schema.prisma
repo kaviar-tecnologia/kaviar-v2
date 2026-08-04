@@ -220,6 +220,8 @@ model admins {
   financial_transactions_responsible         financial_transactions[]           @relation("FinancialTransactionResponsible")
   financial_transaction_allocations_created  financial_transaction_allocations[] @relation("FinancialTransactionAllocationCreatedBy")
   financial_transaction_links_created        financial_transaction_links[]      @relation("FinancialTransactionLinkCreatedBy")
+  accountant_invites_created                 accountant_invites[]               @relation("invite_creator")
+  accountant_links_created                   accountant_entity_links[]          @relation("link_creator")
 }
 
 model communities {
@@ -4339,4 +4341,171 @@ model territory_cycle_allocations {
 
   @@unique([ledger_entry_id])
   @@index([cycle_id])
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Portal do Contador — Frente 1: Base Entities
+// ═══════════════════════════════════════════════════════════════════
+
+enum legal_entity_type {
+  MATRIZ
+  FILIAL
+}
+
+enum accounting_firm_document_type {
+  CNPJ
+  CPF
+}
+
+enum accountant_status {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  BLOCKED
+  REVOKED
+}
+
+enum accountant_invite_status {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+enum accountant_link_status {
+  ACTIVE
+  SUSPENDED
+  REVOKED
+  EXPIRED
+}
+
+enum accountant_link_scope {
+  FISCAL
+  CONTABIL
+  FOLHA
+  SOCIETARIO
+  FINANCEIRO
+  MUNICIPAL
+  COMPLETO
+}
+
+model legal_entities {
+  id                String              @id @default(uuid())
+  razao_social      String
+  nome_fantasia     String?
+  cnpj              String              @unique
+  entity_type       legal_entity_type
+  parent_entity_id  String?
+  uf                String?             @db.VarChar(2)
+  municipio         String?
+  endereco          String?
+  is_active         Boolean             @default(true)
+  created_at        DateTime            @default(now())
+  updated_at        DateTime            @updatedAt
+
+  parent            legal_entities?     @relation("LegalEntityHierarchy", fields: [parent_entity_id], references: [id])
+  children          legal_entities[]    @relation("LegalEntityHierarchy")
+  accountant_links  accountant_entity_links[]
+
+  @@index([parent_entity_id])
+  @@index([entity_type])
+  @@index([is_active])
+  @@map("legal_entities")
+}
+
+model accounting_firms {
+  id                String                         @id @default(uuid())
+  razao_social      String
+  nome_fantasia     String?
+  document_type     accounting_firm_document_type
+  document_number   String                         @unique
+  crc               String?
+  crc_uf            String?                        @db.VarChar(2)
+  email             String
+  telefone          String?
+  is_active         Boolean                        @default(true)
+  created_at        DateTime                       @default(now())
+  updated_at        DateTime                       @updatedAt
+
+  accountants       accountants[]
+
+  @@index([is_active])
+  @@map("accounting_firms")
+}
+
+model accountants {
+  id                  String             @id @default(uuid())
+  accounting_firm_id  String
+  nome_completo       String
+  email               String             @unique
+  cpf                 String             @unique
+  crc                 String?
+  crc_uf              String?            @db.VarChar(2)
+  status              accountant_status  @default(INVITED)
+  is_active           Boolean            @default(true)
+  mfa_enabled         Boolean            @default(false)
+  invited_at          DateTime?
+  activated_at        DateTime?
+  last_access_at      DateTime?
+  created_at          DateTime           @default(now())
+  updated_at          DateTime           @updatedAt
+
+  firm                accounting_firms   @relation(fields: [accounting_firm_id], references: [id])
+  invites             accountant_invites[]
+  entity_links        accountant_entity_links[]
+
+  @@index([accounting_firm_id])
+  @@index([status])
+  @@index([is_active])
+  @@map("accountants")
+}
+
+model accountant_invites {
+  id                  String                    @id @default(uuid())
+  accountant_id       String
+  token_hash          String
+  status              accountant_invite_status  @default(PENDING)
+  expires_at          DateTime
+  accepted_at         DateTime?
+  revoked_at          DateTime?
+  created_by_admin_id String
+  created_at          DateTime                  @default(now())
+
+  accountant          accountants               @relation(fields: [accountant_id], references: [id])
+  created_by_admin    admins                    @relation("invite_creator", fields: [created_by_admin_id], references: [id])
+
+  @@index([accountant_id])
+  @@index([status])
+  @@map("accountant_invites")
+}
+
+model accountant_entity_links {
+  id                      String                  @id @default(uuid())
+  accountant_id           String
+  legal_entity_id         String
+  scope                   accountant_link_scope
+  can_view                Boolean                 @default(true)
+  can_upload              Boolean                 @default(false)
+  can_download            Boolean                 @default(true)
+  can_request_correction  Boolean                 @default(false)
+  can_mark_processed      Boolean                 @default(false)
+  can_close_period        Boolean                 @default(false)
+  inherits_children       Boolean                 @default(false)
+  starts_at               DateTime
+  ends_at                 DateTime?
+  status                  accountant_link_status  @default(ACTIVE)
+  created_by_admin_id     String
+  created_at              DateTime                @default(now())
+  updated_at              DateTime                @updatedAt
+
+  accountant              accountants             @relation(fields: [accountant_id], references: [id])
+  legal_entity            legal_entities          @relation(fields: [legal_entity_id], references: [id])
+  created_by_admin        admins                  @relation("link_creator", fields: [created_by_admin_id], references: [id])
+
+  @@unique([accountant_id, legal_entity_id, scope, status], map: "uq_active_link")
+  @@index([accountant_id])
+  @@index([legal_entity_id])
+  @@index([status])
+  @@index([starts_at, ends_at])
+  @@map("accountant_entity_links")
 }
