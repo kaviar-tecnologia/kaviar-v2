@@ -2,6 +2,7 @@ import { defineConfig } from 'playwright/test';
 
 export default defineConfig({
   testDir: './tests',
+  testIgnore: ['**/e2e-integrated/**'],
   timeout: 30000,
   retries: 0,
   use: {

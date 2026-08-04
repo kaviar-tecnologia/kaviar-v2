@@ -315,3 +315,53 @@ export const cancelFinanceTransaction = async (id, body) => {
 export const reverseFinanceTransaction = async (id, body) => {
   return performPost(`/api/admin/finance/transactions/${id}/reverse`, body, 'Erro ao estornar lançamento.');
 };
+
+// ── Categories CRUD ───────────────────────────────────────────────────────────
+
+export const createFinanceCategory = async (body) => {
+  return performPost(`${FINANCE_BASE_PATH}/categories`, body, 'Erro ao criar categoria financeira.');
+};
+
+export const updateFinanceCategory = async (id, body) => {
+  return performPatch(`${FINANCE_BASE_PATH}/categories/${id}`, body, 'Erro ao atualizar categoria financeira.');
+};
+
+export const exportFinanceTransactionsCsv = async (params = {}) => {
+  const query = buildQueryString(params);
+  const response = await api.get(`${FINANCE_BASE_PATH}/transactions/export.csv${query}`, {
+    responseType: 'blob',
+  });
+  return response;
+};
+
+export const fetchDashboardSummary = async (params = {}) => {
+  return performGet(`${FINANCE_BASE_PATH}/dashboard-summary`, params, 'Erro ao carregar resumo financeiro.');
+};
+
+export function getFinanceCategoryErrorPresentation(error) {
+  const status = error?.status || error?.response?.status || 500;
+  const rawMessage = error?.message || error?.response?.data?.error || '';
+
+  if (status === 400) {
+    return { status, message: 'Revise os campos informados.', showReload: false };
+  }
+  if (status === 403) {
+    return { status, message: 'Você não tem permissão para esta operação.', showReload: false };
+  }
+  if (status === 404) {
+    return { status, message: 'Categoria não encontrada ou foi removida.', showReload: true, reloadLabel: 'Recarregar' };
+  }
+  if (status === 409) {
+    if (includesKnownPattern(rawMessage, duplicateCodePatterns)) {
+      return { status, message: 'Já existe uma categoria com esse código.', showReload: false };
+    }
+    if (includesKnownPattern(rawMessage, versionConflictPatterns)) {
+      return { status, message: 'Os dados foram alterados por outra pessoa.', showReload: true, reloadLabel: 'Recarregar', kind: 'version_conflict' };
+    }
+    if (includesKnownPattern(rawMessage, structuralConflictPatterns)) {
+      return { status, message: 'Categoria já utilizada em lançamentos — campo estrutural bloqueado.', showReload: true, reloadLabel: 'Recarregar', kind: 'structural_conflict' };
+    }
+    return { status, message: rawMessage || 'Conflito ao salvar.', showReload: true, reloadLabel: 'Recarregar' };
+  }
+  return { status, message: rawMessage || 'Erro interno. Tente novamente.', showReload: false };
+}

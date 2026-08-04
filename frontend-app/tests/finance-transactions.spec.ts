@@ -66,10 +66,11 @@ test.describe('Finance Transactions — SUPER_ADMIN', () => {
     await expect(page.getByRole('button', { name: 'Estornar' })).toBeVisible();
   });
 
-  test.skip('liquidation dialog opens on Liquidar click (skip: dialog render timing)', async ({ page }) => {
+  test('liquidation dialog opens on Liquidar click', async ({ page }) => {
     await page.goto('/admin/financeiro/lancamentos');
     await page.getByRole('button', { name: 'Liquidar' }).first().click();
-    await expect(page.getByText('Confirmar Liquidação')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('heading', { name: 'Confirmar Liquidação' })).toBeVisible({ timeout: 3000 });
   });
 
   test('cancel dialog requires reason', async ({ page }) => {

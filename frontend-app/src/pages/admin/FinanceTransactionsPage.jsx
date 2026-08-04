@@ -11,12 +11,13 @@ import {
   Table, TableBody, TableCell, TableContainer, TableHead, TablePagination,
   TableRow, TextField, Typography,
 } from '@mui/material';
-import { Add, FilterList, Refresh } from '@mui/icons-material';
+import { Add, Download, FilterList, Refresh } from '@mui/icons-material';
 import { useAdminAuth } from '../../hooks/useAdminAuth';
 import {
   listFinanceTransactions, listFinanceAccounts, listFinanceCategories,
   listFinanceCostCenters, createFinanceTransaction, updateFinanceTransaction,
   postFinanceTransaction, cancelFinanceTransaction, reverseFinanceTransaction,
+  exportFinanceTransactionsCsv, fetchDashboardSummary,
 } from '../../services/adminFinanceService';
 import { parseBRLToCentsString, formatCentsStringToBRL } from '../../utils/brlCurrency';
 
@@ -113,7 +114,55 @@ export default function FinanceTransactionsPage() {
   useEffect(() => { fetchRefs(); }, []);
   useEffect(() => { fetchData(); }, [page, limit]);
 
-  const handleFilter = () => { setPage(0); fetchData(0, limit); };
+  const handleFilter = () => { setPage(0); fetchData(0, limit); fetchDashboard(); };
+
+  // ── Dashboard Summary ───────────────────────────────────────────────────────
+  const [dashboard, setDashboard] = useState(null);
+  const [dashLoading, setDashLoading] = useState(false);
+
+  const fetchDashboard = useCallback(async () => {
+    setDashLoading(true);
+    try {
+      const params = { source_type: 'MANUAL', ...filters };
+      Object.keys(params).forEach(k => { if (!params[k]) delete params[k]; });
+      const result = await fetchDashboardSummary(params);
+      setDashboard(result?.data || null);
+    } catch { /* silent — cards just won't show */ }
+    finally { setDashLoading(false); }
+  }, [filters]);
+
+  useEffect(() => { fetchDashboard(); }, []);
+
+  // ── CSV Export ──────────────────────────────────────────────────────────────
+  const [exporting, setExporting] = useState(false);
+  const exportGuardRef = useRef(false);
+
+  const handleExportCsv = async () => {
+    if (exportGuardRef.current) return;
+    exportGuardRef.current = true;
+    setExporting(true);
+    setError('');
+    try {
+      const params = { source_type: 'MANUAL', ...filters };
+      Object.keys(params).forEach(k => { if (!params[k]) delete params[k]; });
+      const response = await exportFinanceTransactionsCsv(params);
+      const blob = response.data instanceof Blob ? response.data : new Blob([response.data], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `kaviar-lancamentos-${todayLocalISO()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      const msg = err?.response?.data?.error || err?.message || 'Erro ao exportar CSV';
+      setError(msg);
+    } finally {
+      setExporting(false);
+      exportGuardRef.current = false;
+    }
+  };
 
   const handlePost = async (txn, settlementDate) => {
     try {
@@ -203,11 +252,85 @@ export default function FinanceTransactionsPage() {
               <MenuItem value="">Todos</MenuItem>{Object.entries(STATUS_LABELS).map(([k, v]) => <MenuItem key={k} value={k}>{v}</MenuItem>)}
             </TextField></Grid>
             <Grid item xs={6} sm={2}><Button variant="contained" size="small" startIcon={<Refresh />} onClick={handleFilter} sx={{ textTransform: 'none', fontWeight: 600 }}>Filtrar</Button></Grid>
+            <Grid item xs={6} sm={2}><Button variant="outlined" size="small" startIcon={<Download />} onClick={handleExportCsv} disabled={exporting || loading} sx={{ textTransform: 'none', fontWeight: 600 }}>{exporting ? 'Exportando...' : 'Exportar CSV'}</Button></Grid>
           </Grid>
         </CardContent>
       </Card>
 
       {loading && !data && <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}><CircularProgress /></Box>}
+
+      {/* Dashboard Summary Cards */}
+      {dashboard?.summary && (
+        <Grid container spacing={2} sx={{ mb: 2 }}>
+          <Grid item xs={6} sm={4} md={2}>
+            <Card sx={{ p: 1.5, textAlign: 'center', bgcolor: '#F0FDF4' }}>
+              <Typography variant="caption" color="text.secondary">Receitas realizadas</Typography>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#166534' }}>{formatCentsStringToBRL(dashboard.summary.realized_revenue_cents)}</Typography>
+            </Card>
+          </Grid>
+          <Grid item xs={6} sm={4} md={2}>
+            <Card sx={{ p: 1.5, textAlign: 'center', bgcolor: '#FEF2F2' }}>
+              <Typography variant="caption" color="text.secondary">Despesas realizadas</Typography>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#991B1B' }}>{formatCentsStringToBRL(dashboard.summary.realized_expense_cents)}</Typography>
+            </Card>
+          </Grid>
+          <Grid item xs={6} sm={4} md={2}>
+            <Card sx={{ p: 1.5, textAlign: 'center', bgcolor: '#EFF6FF' }}>
+              <Typography variant="caption" color="text.secondary">Resultado realizado</Typography>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1E40AF' }}>{formatCentsStringToBRL(dashboard.summary.realized_result_cents)}</Typography>
+            </Card>
+          </Grid>
+          <Grid item xs={6} sm={4} md={2}>
+            <Card sx={{ p: 1.5, textAlign: 'center', bgcolor: '#FFFBEB' }}>
+              <Typography variant="caption" color="text.secondary">Receitas previstas</Typography>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#92400E' }}>{formatCentsStringToBRL(dashboard.summary.forecast_revenue_cents)}</Typography>
+            </Card>
+          </Grid>
+          <Grid item xs={6} sm={4} md={2}>
+            <Card sx={{ p: 1.5, textAlign: 'center', bgcolor: '#FFFBEB' }}>
+              <Typography variant="caption" color="text.secondary">Despesas previstas</Typography>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#92400E' }}>{formatCentsStringToBRL(dashboard.summary.forecast_expense_cents)}</Typography>
+            </Card>
+          </Grid>
+          <Grid item xs={6} sm={4} md={2}>
+            <Card sx={{ p: 1.5, textAlign: 'center', bgcolor: dashboard.summary.overdue_count > 0 ? '#FEF2F2' : '#F9FAFB' }}>
+              <Typography variant="caption" color="text.secondary">Total vencido ({dashboard.summary.overdue_count})</Typography>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: dashboard.summary.overdue_count > 0 ? '#DC2626' : '#6B7280' }}>{formatCentsStringToBRL(dashboard.summary.overdue_total_cents)}</Typography>
+            </Card>
+          </Grid>
+        </Grid>
+      )}
+
+      {/* DRE Gerencial */}
+      {dashboard?.dre_groups?.length > 0 && (
+        <Card sx={{ mb: 2, border: '1px solid #E5E7EB' }}>
+          <CardContent sx={{ pb: '12px !important' }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>DRE Gerencial</Typography>
+            <Table size="small">
+              <TableHead>
+                <TableRow sx={{ bgcolor: '#F9FAFB' }}>
+                  <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>Grupo DRE</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700, fontSize: 11 }}>Receitas</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700, fontSize: 11 }}>Despesas</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700, fontSize: 11 }}>Resultado</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700, fontSize: 11 }}>Lançam.</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {dashboard.dre_groups.map((g) => (
+                  <TableRow key={g.dre_group} hover>
+                    <TableCell sx={{ fontSize: 12 }}>{g.dre_group}</TableCell>
+                    <TableCell align="right" sx={{ fontSize: 12, color: '#166534' }}>{formatCentsStringToBRL(g.revenue_cents)}</TableCell>
+                    <TableCell align="right" sx={{ fontSize: 12, color: '#991B1B' }}>{formatCentsStringToBRL(g.expense_cents)}</TableCell>
+                    <TableCell align="right" sx={{ fontSize: 12, fontWeight: 600 }}>{formatCentsStringToBRL(g.result_cents)}</TableCell>
+                    <TableCell align="right" sx={{ fontSize: 12 }}>{g.transaction_count}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Table */}
       {data && (

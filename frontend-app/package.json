@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "TZ=America/Sao_Paulo npx playwright test",
+    "test:e2e:integrated": "TZ=America/Sao_Paulo npx playwright test --config=playwright.integrated.config.ts"
   },
   "dependencies": {
     "@emotion/react": "^11.11.0",

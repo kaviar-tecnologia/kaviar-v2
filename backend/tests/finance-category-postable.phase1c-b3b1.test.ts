@@ -102,9 +102,10 @@ describe('finance category postable phase 1C-B 3B-1', () => {
     const schema = readFileSync(schemaPath, 'utf8');
     const model = schema.match(/model financial_categories \{[\s\S]*?\n\}/)?.[0] ?? '';
 
-    expect(model).toContain('is_postable         Boolean');
-    expect(model).not.toContain('is_postable         Boolean?');
-    expect(model).not.toContain('is_postable         Boolean                 @default');
+    // Use regex to match regardless of Prisma column alignment changes
+    expect(model).toMatch(/is_postable\s+Boolean\b/);
+    expect(model).not.toMatch(/is_postable\s+Boolean\?/);
+    expect(model).not.toMatch(/is_postable\s+Boolean\s+@default/);
   });
 
   it('keeps explicit 65/65 code -> id -> is_postable mapping with canonical invariants', () => {

@@ -3,3 +3,7 @@
 /test_admin_fixes.sh
 /test_admin_loop.sh
 .env.local
+
+# Playwright test artifacts
+/test-results/
+/playwright-report/
