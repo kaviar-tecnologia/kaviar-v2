@@ -4502,7 +4502,7 @@ model accountant_entity_links {
   legal_entity            legal_entities          @relation(fields: [legal_entity_id], references: [id])
   created_by_admin        admins                  @relation("link_creator", fields: [created_by_admin_id], references: [id])
 
-  @@unique([accountant_id, legal_entity_id, scope, status], map: "uq_active_link")
+  // Partial unique index managed via raw SQL migration (uq_active_link)
   @@index([accountant_id])
   @@index([legal_entity_id])
   @@index([status])
