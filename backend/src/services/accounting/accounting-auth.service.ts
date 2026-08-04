@@ -423,8 +423,8 @@ export async function forgotPassword(email: string, ip?: string, userAgent?: str
   });
 
   if (!accountant || accountant.status !== 'ACTIVE') {
-    // Don't reveal if email exists
-    return { message: 'Se o email estiver cadastrado, um link de recuperação será enviado.' };
+    // Don't reveal if email exists — return null to indicate no email should be sent
+    return null;
   }
 
   const rawToken = crypto.randomBytes(32).toString('hex');
@@ -459,13 +459,7 @@ export async function forgotPassword(email: string, ip?: string, userAgent?: str
     });
   });
 
-  // TODO: Send email with reset link containing rawToken
-  // For now, return the token in non-production for testing
-  const response: any = { message: 'Se o email estiver cadastrado, um link de recuperação será enviado.' };
-  if (process.env.NODE_ENV !== 'production') {
-    response._devToken = rawToken;
-  }
-  return response;
+  return { rawToken, accountant };
 }
 
 // ═══════════════════════════════════════════════════════════════════

@@ -31,15 +31,15 @@ describe('Accounting Auth - Password Recovery', () => {
   const validPassword = 'SuperSecurePass!2024x';
 
   describe('forgotPassword', () => {
-    it('should return generic message even if email does not exist', async () => {
+    it('should return null when email does not exist (route handles generic message)', async () => {
       mockPrisma.accountants.findUnique.mockResolvedValue(null);
 
       const result = await forgotPassword('notfound@test.com', ip, userAgent);
 
-      expect(result.message).toContain('Se o email estiver cadastrado');
+      expect(result).toBeNull();
     });
 
-    it('should return generic message for valid email', async () => {
+    it('should return rawToken and accountant for valid email', async () => {
       const accountant = { id: 'acc-1', email: 'test@test.com', status: 'ACTIVE' };
       mockPrisma.accountants.findUnique.mockResolvedValue(accountant);
 
@@ -56,16 +56,19 @@ describe('Accounting Auth - Password Recovery', () => {
 
       const result = await forgotPassword('test@test.com', ip, userAgent);
 
-      expect(result.message).toContain('Se o email estiver cadastrado');
+      expect(result).not.toBeNull();
+      expect(result!.rawToken).toBeDefined();
+      expect(result!.rawToken.length).toBe(64);
+      expect(result!.accountant.id).toBe('acc-1');
     });
 
-    it('should not reveal if account is not active', async () => {
+    it('should return null for inactive account (route handles generic message)', async () => {
       const accountant = { id: 'acc-1', email: 'test@test.com', status: 'SUSPENDED' };
       mockPrisma.accountants.findUnique.mockResolvedValue(accountant);
 
       const result = await forgotPassword('test@test.com', ip, userAgent);
 
-      expect(result.message).toContain('Se o email estiver cadastrado');
+      expect(result).toBeNull();
       // Should NOT create a reset token for inactive accounts
       expect(mockPrisma.$transaction).not.toHaveBeenCalled();
     });
