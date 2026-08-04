@@ -334,6 +334,10 @@ export const exportFinanceTransactionsCsv = async (params = {}) => {
   return response;
 };
 
+export const fetchDashboardSummary = async (params = {}) => {
+  return performGet(`${FINANCE_BASE_PATH}/dashboard-summary`, params, 'Erro ao carregar resumo financeiro.');
+};
+
 export function getFinanceCategoryErrorPresentation(error) {
   const status = error?.status || error?.response?.status || 500;
   const rawMessage = error?.message || error?.response?.data?.error || '';
