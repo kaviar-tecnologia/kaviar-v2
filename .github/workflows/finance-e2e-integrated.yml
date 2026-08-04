@@ -1,0 +1,109 @@
+name: Finance E2E Integrated
+
+on:
+  pull_request:
+    paths:
+      - 'frontend-app/**'
+      - 'backend/src/**'
+      - 'backend/prisma/**'
+      - 'scripts/**'
+      - '.github/workflows/finance-e2e-integrated.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+  TZ: America/Sao_Paulo
+  DATABASE_URL: postgresql://kaviar_e2e:e2e_password@localhost:5432/kaviar_e2e
+  JWT_SECRET: e2e-ci-secret-not-production
+  NODE_ENV: test
+
+jobs:
+  e2e-integrated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: kaviar_e2e
+          POSTGRES_USER: kaviar_e2e
+          POSTGRES_PASSWORD: e2e_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kaviar_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend-app/package-lock.json
+
+      - name: Install backend dependencies
+        run: cd backend && npm ci
+
+      - name: Install frontend dependencies
+        run: cd frontend-app && npm ci
+
+      - name: Install Playwright browsers
+        run: cd frontend-app && npx playwright install --with-deps chromium
+
+      - name: Generate Prisma Client
+        run: cd backend && npx prisma generate
+
+      - name: Push schema to test DB
+        run: cd backend && npx prisma db push --accept-data-loss --skip-generate
+
+      - name: Create legacy tables
+        run: |
+          PGPASSWORD=e2e_password psql -U kaviar_e2e -h localhost -d kaviar_e2e -c "
+          CREATE TABLE IF NOT EXISTS admin_audit_logs (
+            id SERIAL PRIMARY KEY, admin_id TEXT NOT NULL, admin_email TEXT,
+            action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
+            old_value JSONB, new_value JSONB, reason TEXT, ip_address TEXT,
+            user_agent TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+          );
+          CREATE TABLE IF NOT EXISTS admin_login_history (
+            id SERIAL PRIMARY KEY, admin_id TEXT, email TEXT NOT NULL,
+            success BOOLEAN NOT NULL, fail_reason TEXT, ip_address TEXT,
+            user_agent TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+          );
+          "
+
+      - name: Run seed
+        run: cd backend && npx prisma db seed
+
+      - name: Seed E2E admins
+        run: cd backend && E2E_SEED=1 npx tsx prisma/seed-e2e-admins.ts
+
+      - name: Run E2E integrated tests
+        run: |
+          cd frontend-app && E2E_DATABASE_URL=$DATABASE_URL \
+            npx playwright test --config=playwright.integrated.config.ts
+        env:
+          E2E_DATABASE_URL: ${{ env.DATABASE_URL }}
+
+      - name: Run mock-based Playwright tests
+        run: cd frontend-app && npx playwright test
+        if: success() || failure()
+
+      - name: Upload traces on failure
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: frontend-app/test-results/
+          retention-days: 7
