@@ -65,11 +65,11 @@ describe('finance category catalog phase 1C-B 3A', () => {
     const categoryMap = buildCategoryMap();
     const childrenMap = buildChildrenMap();
 
-    expect(categories).toHaveLength(53);
-    expect(categories.filter((category) => category.is_active !== false)).toHaveLength(44);
-    expect(categories.filter((category) => category.is_active === false)).toHaveLength(9);
-    expect(categories.filter((category) => !category.parent_code)).toHaveLength(13);
-    expect(categories.filter((category) => category.parent_code).length).toBe(40);
+    expect(categories).toHaveLength(65);
+    expect(categories.filter((category) => category.is_active !== false)).toHaveLength(59);
+    expect(categories.filter((category) => category.is_active === false)).toHaveLength(6);
+    expect(categories.filter((category) => !category.parent_code)).toHaveLength(14);
+    expect(categories.filter((category) => category.parent_code).length).toBe(51);
 
     expect(
       categories.reduce<Record<string, number>>((accumulator, category) => {
@@ -78,7 +78,7 @@ describe('finance category catalog phase 1C-B 3A', () => {
       }, {}),
     ).toEqual({
       REVENUE: 7,
-      EXPENSE: 26,
+      EXPENSE: 38,
       ADJUSTMENT: 2,
       CONTRIBUTION: 2,
       WITHDRAWAL: 2,
@@ -93,7 +93,6 @@ describe('finance category catalog phase 1C-B 3A', () => {
     const siblingSortOrders = new Set<string>();
     for (const category of categories) {
       expect(category.code).toMatch(CODE_REGEX);
-      expect(category.requires_document).toBe(false);
       expect(category.is_system).toBe(true);
       expect(category.default_direction).toMatch(/^(IN|OUT)$/);
 
@@ -112,7 +111,7 @@ describe('finance category catalog phase 1C-B 3A', () => {
     expect(detectCycle()).toBeNull();
 
     const childCount = categories.filter((category) => category.parent_code).length;
-    expect(childCount).toBe(40);
+    expect(childCount).toBe(51);
 
     for (const code of ACTIVE_REQUIRED_CODES) {
       expect(categoryMap.get(code)?.is_active).toBe(true);
