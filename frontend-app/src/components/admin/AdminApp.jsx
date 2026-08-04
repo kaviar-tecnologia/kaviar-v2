@@ -1,7 +1,7 @@
 import { Routes, Route, Link, Navigate } from "react-router-dom";
 import { API_BASE_URL } from '../../config/api';
 import { Container, Typography, Box, Card, CardContent, Button, Grid, Chip, Alert, CircularProgress, ToggleButton, ToggleButtonGroup, Table, TableBody, TableCell, TableHead, TableRow, Tabs, Tab, TextField } from "@mui/material";
-import { AdminPanelSettings, Dashboard, Group, Analytics, DirectionsCar, Security, PersonAdd, Tour, People, LocationCity, Elderly, PendingActions, CheckCircle, Map, Shield, CreditCard, ChatBubble, Apartment, GridOn, DriveEta, Person, Explore, Lock, Flight, Star, Storefront, BarChart, Handshake, CardGiftcard, Paid, SupportAgent, Public, Pets, Science, Description, MarkEmailRead, Assessment } from "@mui/icons-material";
+import { AdminPanelSettings, Dashboard, Group, Analytics, DirectionsCar, Security, PersonAdd, Tour, People, LocationCity, Elderly, PendingActions, CheckCircle, Map, Shield, CreditCard, ChatBubble, Apartment, GridOn, DriveEta, Person, Explore, Lock, Flight, Star, Storefront, BarChart, Handshake, CardGiftcard, Paid, SupportAgent, Public, Pets, Science, Description, MarkEmailRead, Assessment, Business } from "@mui/icons-material";
 import { ProtectedAdminRoute } from "./ProtectedAdminRoute";
 import AdminLogin from "./AdminLogin";
 import AdminErrorBoundary from "./AdminErrorBoundary";
@@ -92,6 +92,7 @@ import PetHomologations from "../../pages/admin/PetHomologations";
 import PetHomologationDetail from "../../pages/admin/PetHomologationDetail";
 import OperatorHome from "../../pages/admin/OperatorHome";
 import ManagerHome from "../../pages/admin/ManagerHome";
+import AccountingPortalPage from "../../pages/admin/accounting/AccountingPortalPage";
 import kaviarLogo from "../../assets/logo-kaviar-full.svg";
 import { useState, useEffect } from 'react';
 
@@ -496,6 +497,7 @@ function AdminHome() {
                 { Icon: Paid, title: 'Lançamentos Manuais', desc: 'Despesas, receitas e obrigações cadastradas manualmente.', to: '/admin/financeiro/lancamentos' },
               ] : []),
               ...(isSuperAdmin ? [
+                { Icon: Business, title: 'Portal do Contador', desc: 'Empresas, escritórios, contadores e vínculos.', to: '/admin/portal-contador' },
                 { Icon: Paid, title: 'Preços e Taxas', desc: 'Ajuste preços, taxas e adicionais', to: '/admin/pricing' },
                 { Icon: Paid, title: 'Tabela Territorial', desc: 'Pisos mínimos por rota e território', to: '/admin/territory-floors' },
                 { Icon: Paid, title: 'Pacotes de Saldo', desc: 'Gerenciar pacotes de recarga do motorista', to: '/admin/credit-packages' },
@@ -747,6 +749,11 @@ export default function AdminApp() {
           <Route path="/financeiro/lancamentos" element={
             <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
               <FinanceTransactionsPage />
+            </ProtectedAdminRoute>
+          } />
+          <Route path="/portal-contador" element={
+            <ProtectedAdminRoute requireSuperAdmin>
+              <AccountingPortalPage />
             </ProtectedAdminRoute>
           } />
           <Route path="/credit-purchases" element={
