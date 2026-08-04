@@ -266,14 +266,14 @@ describe.skipIf(SKIP)('Accounting Integration — Real PostgreSQL', () => {
           data: { razao_social: 'Should Rollback', cnpj: cnpjBefore, entity_type: 'MATRIZ' },
         });
 
-        // Force audit failure with invalid admin_id (FK violation)
+        // Force audit failure: action is NOT NULL but we pass null via raw
         await tx.$executeRaw`
           INSERT INTO admin_audit_logs (admin_id, action, entity_type, entity_id)
-          VALUES ('nonexistent-admin-id-that-does-not-exist', 'TEST', 'test', 'test')
+          VALUES ('test-admin', NULL, 'test', 'test')
         `;
       });
     } catch {
-      // Expected to fail
+      // Expected to fail due to NOT NULL constraint on action
     }
 
     // Entity should NOT exist (rolled back)
