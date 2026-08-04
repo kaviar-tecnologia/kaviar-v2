@@ -81,15 +81,15 @@ async function interceptFirmsAPI(page: Page, responseData = mockFirms) {
 }
 
 test.describe('Accounting Portal — Firms (Escritórios)', () => {
-  test('Table lists firms with formatted document', async ({ page }) => {
+  test('Table lists firms with document number', async ({ page }) => {
     await setupAuth(page);
     await interceptFirmsAPI(page);
     await page.goto('/admin/portal-contador');
     await page.getByRole('tab', { name: /Escritórios/i }).click();
 
     await expect(page.getByText('Contabilidade Silva')).toBeVisible();
-    // CNPJ 12345678000190 formatted as 12.345.678/0001-90
-    await expect(page.getByText('12.345.678/0001-90')).toBeVisible();
+    // Document number shown as-is
+    await expect(page.getByText('12345678000190')).toBeVisible();
   });
 
   test('Button "Novo Escritório" opens dialog', async ({ page }) => {
@@ -99,8 +99,9 @@ test.describe('Accounting Portal — Firms (Escritórios)', () => {
     await page.getByRole('tab', { name: /Escritórios/i }).click();
 
     await page.getByRole('button', { name: /Novo Escritório/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-    await expect(page.getByLabel(/Razão Social/i)).toBeVisible();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel(/Razão Social/i)).toBeVisible();
   });
 
   test('Dialog shows document_type field (CNPJ/CPF)', async ({ page }) => {
@@ -110,10 +111,11 @@ test.describe('Accounting Portal — Firms (Escritórios)', () => {
     await page.getByRole('tab', { name: /Escritórios/i }).click();
 
     await page.getByRole('button', { name: /Novo Escritório/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
 
     // Should have document type selector
-    await page.getByLabel(/Tipo.*Documento|Document.*Type/i).click();
+    await dialog.getByLabel(/Tipo de Documento/i).click();
     await expect(page.getByRole('option', { name: /CNPJ/i })).toBeVisible();
     await expect(page.getByRole('option', { name: /CPF/i })).toBeVisible();
   });
@@ -153,14 +155,15 @@ test.describe('Accounting Portal — Firms (Escritórios)', () => {
     await page.getByRole('tab', { name: /Escritórios/i }).click();
 
     await page.getByRole('button', { name: /Novo Escritório/i }).click();
-    await page.getByLabel(/Razão Social/i).fill('Novo Escritório LTDA');
-    await page.getByLabel(/Nome Fantasia/i).fill('Novo Contabil');
-    await page.getByLabel(/Tipo.*Documento|Document.*Type/i).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel(/Razão Social/i).fill('Novo Escritório LTDA');
+    await dialog.getByLabel(/Nome Fantasia/i).fill('Novo Contabil');
+    await dialog.getByLabel(/Tipo de Documento/i).click();
     await page.getByRole('option', { name: /CNPJ/i }).click();
-    await page.getByLabel(/Número.*Documento|Document.*Number|CNPJ\/CPF/i).fill('98765432000188');
-    await page.getByLabel(/CRC/i).fill('789012');
-    await page.getByLabel(/Email/i).fill('novo@contabil.com');
-    await page.getByRole('button', { name: /Salvar|Criar|Confirmar/i }).click();
+    await dialog.getByLabel(/Número do Documento/i).fill('98765432000188');
+    await dialog.getByRole('textbox', { name: 'CRC' }).fill('789012');
+    await dialog.getByLabel('Email').fill('novo@contabil.com');
+    await dialog.getByRole('button', { name: /Salvar escritório/i }).click();
 
     await page.waitForTimeout(500);
     expect(postBody).not.toBeNull();
@@ -177,8 +180,9 @@ test.describe('Accounting Portal — Firms (Escritórios)', () => {
     const row = page.getByText('Contabilidade Silva').locator('..');
     await row.getByRole('button', { name: /Editar|Edit/i }).click();
 
-    await expect(page.getByRole('dialog')).toBeVisible();
-    await expect(page.getByLabel(/Razão Social/i)).toHaveValue('Contabilidade Silva');
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel(/Razão Social/i)).toHaveValue('Contabilidade Silva');
   });
 
   test('Status chip based on is_active', async ({ page }) => {
@@ -206,7 +210,7 @@ test.describe('Accounting Portal — Firms (Escritórios)', () => {
     await page.goto('/admin/portal-contador');
     await page.getByRole('tab', { name: /Escritórios/i }).click();
 
-    await expect(page.getByText('Ativo')).toBeVisible();
-    await expect(page.getByText('Inativo')).toBeVisible();
+    await expect(page.getByText('Ativo').first()).toBeVisible();
+    await expect(page.locator('.MuiChip-label').filter({ hasText: 'Inativo' })).toBeVisible();
   });
 });

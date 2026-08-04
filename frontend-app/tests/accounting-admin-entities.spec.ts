@@ -136,9 +136,10 @@ test.describe('Accounting Portal — Entities (Empresas)', () => {
     await page.getByRole('tab', { name: /Empresas/i }).click();
 
     await page.getByRole('button', { name: /Nova Empresa/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-    await expect(page.getByLabel(/Razão Social/i)).toBeVisible();
-    await expect(page.getByLabel(/CNPJ/i)).toBeVisible();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel(/Razão Social/i)).toBeVisible();
+    await expect(dialog.getByLabel(/CNPJ/i)).toBeVisible();
   });
 
   test('Create dialog: FILIAL shows parent entity selector', async ({ page }) => {
@@ -148,14 +149,15 @@ test.describe('Accounting Portal — Entities (Empresas)', () => {
     await page.getByRole('tab', { name: /Empresas/i }).click();
 
     await page.getByRole('button', { name: /Nova Empresa/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
 
-    // Select FILIAL type
-    await page.getByLabel(/Tipo/i).click();
-    await page.getByRole('option', { name: /FILIAL/i }).click();
+    // Select FILIAL type inside the dialog
+    await dialog.getByLabel('Tipo').click();
+    await page.getByRole('option', { name: /Filial/i }).click();
 
     // Parent entity selector should appear
-    await expect(page.getByLabel(/Matriz/i)).toBeVisible();
+    await expect(dialog.getByLabel(/Empresa Matriz/i)).toBeVisible();
   });
 
   test('Create dialog: CNPJ validation (14 digits)', async ({ page }) => {
@@ -165,14 +167,15 @@ test.describe('Accounting Portal — Entities (Empresas)', () => {
     await page.getByRole('tab', { name: /Empresas/i }).click();
 
     await page.getByRole('button', { name: /Nova Empresa/i }).click();
+    const dialog = page.getByRole('dialog');
 
     // Fill with invalid CNPJ (less than 14 digits)
-    await page.getByLabel(/CNPJ/i).fill('1234567');
-    await page.getByLabel(/Razão Social/i).fill('Test Entity');
-    await page.getByRole('button', { name: /Salvar|Criar|Confirmar/i }).click();
+    await dialog.getByLabel(/CNPJ/i).fill('1234567');
+    await dialog.getByLabel(/Razão Social/i).fill('Test Entity');
+    await dialog.getByRole('button', { name: /Salvar empresa/i }).click();
 
     // Expect validation error
-    await expect(page.getByText(/CNPJ.*14|inválido|dígitos/i)).toBeVisible();
+    await expect(dialog.getByText(/CNPJ.*14|inválido|dígitos/i)).toBeVisible();
   });
 
   test('Create sends correct POST', async ({ page }) => {
@@ -210,11 +213,13 @@ test.describe('Accounting Portal — Entities (Empresas)', () => {
     await page.getByRole('tab', { name: /Empresas/i }).click();
 
     await page.getByRole('button', { name: /Nova Empresa/i }).click();
-    await page.getByLabel(/Razão Social/i).fill('Nova Empresa LTDA');
-    await page.getByLabel(/CNPJ/i).fill('12345678000195');
-    await page.getByLabel(/UF/i).fill('RJ');
-    await page.getByLabel(/Município/i).fill('Rio de Janeiro');
-    await page.getByRole('button', { name: /Salvar|Criar|Confirmar/i }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel(/Razão Social/i).fill('Nova Empresa LTDA');
+    await dialog.getByLabel(/CNPJ/i).fill('12345678000195');
+    await dialog.getByLabel('UF').click();
+    await page.getByRole('option', { name: 'RJ' }).click();
+    await dialog.getByLabel(/Município/i).fill('Rio de Janeiro');
+    await dialog.getByRole('button', { name: /Salvar empresa/i }).click();
 
     // Wait for POST to be captured
     await page.waitForTimeout(500);
@@ -233,8 +238,9 @@ test.describe('Accounting Portal — Entities (Empresas)', () => {
     const firstRow = page.getByText('KAVIAR TECNOLOGIA LTDA').locator('..');
     await firstRow.getByRole('button', { name: /Editar|Edit/i }).click();
 
-    await expect(page.getByRole('dialog')).toBeVisible();
-    await expect(page.getByLabel(/Razão Social/i)).toHaveValue('KAVIAR TECNOLOGIA LTDA');
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel(/Razão Social/i)).toHaveValue('KAVIAR TECNOLOGIA LTDA');
   });
 
   test('Deactivation sends PATCH is_active=false', async ({ page }) => {
@@ -271,15 +277,9 @@ test.describe('Accounting Portal — Entities (Empresas)', () => {
     await page.goto('/admin/portal-contador');
     await page.getByRole('tab', { name: /Empresas/i }).click();
 
-    // Click deactivate button
+    // Click deactivate button on first entity
     const firstRow = page.getByText('KAVIAR TECNOLOGIA LTDA').locator('..');
-    await firstRow.getByRole('button', { name: /Desativar|Inativar/i }).click();
-
-    // Confirm dialog if present
-    const confirmBtn = page.getByRole('button', { name: /Confirmar|Sim/i });
-    if (await confirmBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await confirmBtn.click();
-    }
+    await firstRow.getByRole('button', { name: /Desativar/i }).click();
 
     await page.waitForTimeout(500);
     expect(patchBody).not.toBeNull();
@@ -311,7 +311,7 @@ test.describe('Accounting Portal — Entities (Empresas)', () => {
     await page.goto('/admin/portal-contador');
     await page.getByRole('tab', { name: /Empresas/i }).click();
 
-    await expect(page.getByText('Ativo')).toBeVisible();
+    await expect(page.getByText('Ativo').first()).toBeVisible();
     await expect(page.getByText('Inativo')).toBeVisible();
   });
 });

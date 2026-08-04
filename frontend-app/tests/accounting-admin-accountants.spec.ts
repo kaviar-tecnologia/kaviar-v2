@@ -18,7 +18,7 @@ async function setupAuth(page: Page, data = SA_DATA) {
 const mockAccountants = {
   success: true,
   data: [
-    { id: 'acc-1', nome_completo: 'João Silva', email: 'joao@silva.com', cpf_masked: '***.***.***-01', crc: '123456', crc_uf: 'RJ', accounting_firm_id: 'firm-1', status: 'ACTIVE', is_active: true, mfa_enabled: false, firm: { id: 'firm-1', razao_social: 'Silva Contabil' }, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+    { id: 'acc-1', nome_completo: 'João Silva', email: 'joao@silva.com', cpf_masked: '***.***.***-01', crc: '123456', crc_uf: 'RJ', accounting_firm_id: 'firm-1', status: 'ACTIVE', is_active: true, mfa_enabled: false, accounting_firm: { id: 'firm-1', razao_social: 'Silva Contabil' }, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
   ],
   pagination: { total: 1, page: 1, limit: 25 },
 };
@@ -118,9 +118,10 @@ test.describe('Accounting Portal — Accountants (Contadores)', () => {
     await page.getByRole('tab', { name: /Contadores/i }).click();
 
     await page.getByRole('button', { name: /Novo Contador/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-    await expect(page.getByLabel(/Nome Completo|Nome/i)).toBeVisible();
-    await expect(page.getByLabel(/Email/i)).toBeVisible();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel(/Nome Completo/i)).toBeVisible();
+    await expect(dialog.getByLabel('Email')).toBeVisible();
   });
 
   test('Dialog requires firm (Escritório)', async ({ page }) => {
@@ -130,10 +131,11 @@ test.describe('Accounting Portal — Accountants (Contadores)', () => {
     await page.getByRole('tab', { name: /Contadores/i }).click();
 
     await page.getByRole('button', { name: /Novo Contador/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
 
-    // Firm field should be present and required
-    await expect(page.getByLabel(/Escritório|Firma/i)).toBeVisible();
+    // Firm field should be present
+    await expect(dialog.getByLabel('Escritório')).toBeVisible();
   });
 
   test('Create sends correct POST', async ({ page }) => {
@@ -171,13 +173,14 @@ test.describe('Accounting Portal — Accountants (Contadores)', () => {
     await page.getByRole('tab', { name: /Contadores/i }).click();
 
     await page.getByRole('button', { name: /Novo Contador/i }).click();
-    await page.getByLabel(/Nome Completo|Nome/i).fill('Maria Oliveira');
-    await page.getByLabel(/Email/i).fill('maria@oliveira.com');
-    await page.getByLabel(/CPF/i).fill('12345678901');
-    await page.getByLabel(/CRC/i).fill('654321');
-    await page.getByLabel(/Escritório|Firma/i).click();
-    await page.getByRole('option', { name: /Silva Contabil|Contabilidade Silva/i }).click();
-    await page.getByRole('button', { name: /Salvar|Criar|Confirmar/i }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel(/Nome Completo/i).fill('Maria Oliveira');
+    await dialog.getByLabel('Email').fill('maria@oliveira.com');
+    await dialog.getByLabel('CPF').fill('12345678901');
+    await dialog.getByRole('textbox', { name: 'CRC' }).fill('654321');
+    await dialog.getByLabel('Escritório').click();
+    await page.getByRole('option', { name: /Contabilidade Silva/i }).click();
+    await dialog.getByRole('button', { name: /Salvar contador/i }).click();
 
     await page.waitForTimeout(500);
     expect(postBody).not.toBeNull();
@@ -192,8 +195,8 @@ test.describe('Accounting Portal — Accountants (Contadores)', () => {
       success: true,
       data: [
         { ...mockAccountants.data[0] },
-        { id: 'acc-2', nome_completo: 'Ana Invited', email: 'ana@test.com', cpf_masked: '***.***.***-02', crc: '654321', crc_uf: 'SP', accounting_firm_id: 'firm-1', status: 'INVITED', is_active: true, mfa_enabled: false, firm: { id: 'firm-1', razao_social: 'Silva Contabil' }, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-        { id: 'acc-3', nome_completo: 'Carlos Suspended', email: 'carlos@test.com', cpf_masked: '***.***.***-03', crc: '111222', crc_uf: 'MG', accounting_firm_id: 'firm-1', status: 'SUSPENDED', is_active: false, mfa_enabled: false, firm: { id: 'firm-1', razao_social: 'Silva Contabil' }, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+        { id: 'acc-2', nome_completo: 'Ana Invited', email: 'ana@test.com', cpf_masked: '***.***.***-02', crc: '654321', crc_uf: 'SP', accounting_firm_id: 'firm-1', status: 'INVITED', is_active: true, mfa_enabled: false, accounting_firm: { id: 'firm-1', razao_social: 'Silva Contabil' }, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+        { id: 'acc-3', nome_completo: 'Carlos Suspended', email: 'carlos@test.com', cpf_masked: '***.***.***-03', crc: '111222', crc_uf: 'MG', accounting_firm_id: 'firm-1', status: 'SUSPENDED', is_active: false, mfa_enabled: false, accounting_firm: { id: 'firm-1', razao_social: 'Silva Contabil' }, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
       ],
       pagination: { total: 3, page: 1, limit: 25 },
     };
@@ -213,9 +216,9 @@ test.describe('Accounting Portal — Accountants (Contadores)', () => {
     await page.getByRole('tab', { name: /Contadores/i }).click();
 
     // Verify status chips render
-    await expect(page.getByText(/Active|Ativo/i).first()).toBeVisible();
-    await expect(page.getByText(/Invited|Convidado/i)).toBeVisible();
-    await expect(page.getByText(/Suspended|Suspenso/i)).toBeVisible();
+    await expect(page.getByText('Ativo').first()).toBeVisible();
+    await expect(page.getByText('INVITED', { exact: true })).toBeVisible();
+    await expect(page.getByText('SUSPENDED', { exact: true })).toBeVisible();
   });
 
   test('Suspension sends PATCH status=SUSPENDED', async ({ page }) => {
@@ -254,13 +257,7 @@ test.describe('Accounting Portal — Accountants (Contadores)', () => {
 
     // Click suspend button
     const row = page.getByText('João Silva').locator('..');
-    await row.getByRole('button', { name: /Suspender|Suspend/i }).click();
-
-    // Confirm if dialog appears
-    const confirmBtn = page.getByRole('button', { name: /Confirmar|Sim/i });
-    if (await confirmBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await confirmBtn.click();
-    }
+    await row.getByRole('button', { name: /Suspender/i }).click();
 
     await page.waitForTimeout(500);
     expect(patchBody).not.toBeNull();

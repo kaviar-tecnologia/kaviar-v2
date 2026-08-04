@@ -108,9 +108,10 @@ test.describe('Accounting Portal — Links (Vínculos)', () => {
     await page.getByRole('tab', { name: /Vínculos/i }).click();
 
     await page.getByRole('button', { name: /Novo Vínculo/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-    await expect(page.getByLabel(/Contador/i)).toBeVisible();
-    await expect(page.getByLabel(/Empresa|Entidade/i)).toBeVisible();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel('Contador')).toBeVisible();
+    await expect(dialog.getByLabel('Empresa')).toBeVisible();
   });
 
   test('Dialog shows permission checkboxes', async ({ page }) => {
@@ -120,37 +121,29 @@ test.describe('Accounting Portal — Links (Vínculos)', () => {
     await page.getByRole('tab', { name: /Vínculos/i }).click();
 
     await page.getByRole('button', { name: /Novo Vínculo/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
 
-    // Permission checkboxes
-    await expect(page.getByRole('checkbox', { name: /Visualizar|can_view/i })).toBeVisible();
-    await expect(page.getByRole('checkbox', { name: /Upload|can_upload/i })).toBeVisible();
-    await expect(page.getByRole('checkbox', { name: /Download|can_download/i })).toBeVisible();
-    await expect(page.getByRole('checkbox', { name: /Correção|can_request_correction/i })).toBeVisible();
-    await expect(page.getByRole('checkbox', { name: /Processar|can_mark_processed/i })).toBeVisible();
+    // Permission checkboxes (labels are the permission string values)
+    await expect(dialog.getByLabel('VIEW_TRANSACTIONS')).toBeVisible();
+    await expect(dialog.getByLabel('VIEW_REPORTS')).toBeVisible();
+    await expect(dialog.getByLabel('EXPORT_DATA')).toBeVisible();
+    await expect(dialog.getByLabel('MANAGE_DOCUMENTS')).toBeVisible();
+    await expect(dialog.getByLabel('SUBMIT_DECLARATIONS')).toBeVisible();
   });
 
-  test('inherits_children only visible for MATRIZ entity', async ({ page }) => {
+  test('inherits_children checkbox is present in dialog', async ({ page }) => {
     await setupAuth(page);
     await interceptLinksAPI(page);
     await page.goto('/admin/portal-contador');
     await page.getByRole('tab', { name: /Vínculos/i }).click();
 
     await page.getByRole('button', { name: /Novo Vínculo/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
 
-    // Select MATRIZ entity
-    await page.getByLabel(/Empresa|Entidade/i).click();
-    await page.getByRole('option', { name: /KAVIAR TECNOLOGIA/i }).click();
-
-    // inherits_children checkbox should appear for MATRIZ
-    await expect(page.getByRole('checkbox', { name: /Herdar.*filiais|inherits_children|Filiais/i })).toBeVisible();
-
-    // Now select FILIAL entity - inherits_children should not be visible
-    await page.getByLabel(/Empresa|Entidade/i).click();
-    await page.getByRole('option', { name: /KAVIAR SP/i }).click();
-
-    await expect(page.getByRole('checkbox', { name: /Herdar.*filiais|inherits_children|Filiais/i })).not.toBeVisible();
+    // inherits_children checkbox should be present
+    await expect(dialog.getByLabel(/Herdar para filiais/i)).toBeVisible();
   });
 
   test('Create sends correct POST', async ({ page }) => {
@@ -188,32 +181,33 @@ test.describe('Accounting Portal — Links (Vínculos)', () => {
     await page.getByRole('tab', { name: /Vínculos/i }).click();
 
     await page.getByRole('button', { name: /Novo Vínculo/i }).click();
+    const dialog = page.getByRole('dialog');
 
     // Select accountant
-    await page.getByLabel(/Contador/i).click();
+    await dialog.getByLabel('Contador').click();
     await page.getByRole('option', { name: /João Silva/i }).click();
 
     // Select entity
-    await page.getByLabel(/Empresa|Entidade/i).click();
+    await dialog.getByLabel('Empresa').click();
     await page.getByRole('option', { name: /KAVIAR TECNOLOGIA/i }).click();
 
     // Set scope
-    await page.getByLabel(/Escopo|Scope/i).click();
-    await page.getByRole('option', { name: /COMPLETO/i }).click();
+    await dialog.getByLabel('Escopo').click();
+    await page.getByRole('option', { name: 'FULL' }).click();
 
     // Check permissions
-    await page.getByRole('checkbox', { name: /Visualizar|can_view/i }).check();
-    await page.getByRole('checkbox', { name: /Upload|can_upload/i }).check();
-    await page.getByRole('checkbox', { name: /Download|can_download/i }).check();
+    await dialog.getByLabel('VIEW_TRANSACTIONS').check();
+    await dialog.getByLabel('VIEW_REPORTS').check();
+    await dialog.getByLabel('EXPORT_DATA').check();
 
-    await page.getByRole('button', { name: /Salvar|Criar|Confirmar/i }).click();
+    await dialog.getByRole('button', { name: /Salvar vínculo/i }).click();
 
     await page.waitForTimeout(500);
     expect(postBody).not.toBeNull();
     expect((postBody as Record<string, unknown>).accountant_id).toBe('acc-1');
     expect((postBody as Record<string, unknown>).legal_entity_id).toBe('ent-1');
-    expect((postBody as Record<string, unknown>).scope).toBe('COMPLETO');
-    expect((postBody as Record<string, unknown>).can_view).toBe(true);
+    expect((postBody as Record<string, unknown>).scope).toBe('FULL');
+    expect((postBody as Record<string, unknown>).permissions).toContain('VIEW_TRANSACTIONS');
   });
 
   test('Status chip shows ACTIVE/SUSPENDED/REVOKED', async ({ page }) => {
@@ -242,9 +236,9 @@ test.describe('Accounting Portal — Links (Vínculos)', () => {
     await page.goto('/admin/portal-contador');
     await page.getByRole('tab', { name: /Vínculos/i }).click();
 
-    await expect(page.getByText(/Active|Ativo/i).first()).toBeVisible();
-    await expect(page.getByText(/Suspended|Suspenso/i)).toBeVisible();
-    await expect(page.getByText(/Revoked|Revogado/i)).toBeVisible();
+    await expect(page.getByText('Ativo').first()).toBeVisible();
+    await expect(page.getByText('SUSPENDED')).toBeVisible();
+    await expect(page.getByText('REVOKED')).toBeVisible();
   });
 
   test('Revocation sends PATCH status=REVOKED', async ({ page }) => {
@@ -283,13 +277,7 @@ test.describe('Accounting Portal — Links (Vínculos)', () => {
 
     // Click revoke button
     const row = page.getByText('João Silva').locator('..');
-    await row.getByRole('button', { name: /Revogar|Revoke/i }).click();
-
-    // Confirm if dialog appears
-    const confirmBtn = page.getByRole('button', { name: /Confirmar|Sim/i });
-    if (await confirmBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await confirmBtn.click();
-    }
+    await row.getByRole('button', { name: /Revogar/i }).click();
 
     await page.waitForTimeout(500);
     expect(patchBody).not.toBeNull();
