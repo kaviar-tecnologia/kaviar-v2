@@ -62,9 +62,9 @@ E2E_DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/kaviar_test" \
 
 | Perfil | Email | Senha | Acesso |
 |--------|-------|-------|--------|
-| SUPER_ADMIN | e2e-superadmin@kaviar.test | E2E_super_2026! | Total |
-| FINANCE | e2e-finance@kaviar.test | E2E_finance_2026! | Leitura + CSV |
-| OPERATOR | e2e-operator@kaviar.test | E2E_operator_2026! | Sem financeiro |
+| SUPER_ADMIN | e2e-superadmin@kaviar.test | `$E2E_ADMIN_PASSWORD` | Total |
+| FINANCE | e2e-finance@kaviar.test | `$E2E_ADMIN_PASSWORD` | Leitura + CSV |
+| OPERATOR | e2e-operator@kaviar.test | `$E2E_ADMIN_PASSWORD` | Sem financeiro |
 
 Criados via: `cd backend && NODE_ENV=test npx tsx prisma/seed-e2e-admins.ts`
 

@@ -25,10 +25,12 @@ async function login(email: string, password: string): Promise<string> {
 
 // ── Credentials ──────────────────────────────────────────────────────────────
 
+const E2E_PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'e2e-fallback-test-only';
+
 const CREDS = {
-  SUPER_ADMIN: { email: 'e2e-superadmin@kaviar.test', password: 'E2E_super_2026!' },
-  FINANCE: { email: 'e2e-finance@kaviar.test', password: 'E2E_finance_2026!' },
-  OPERATOR: { email: 'e2e-operator@kaviar.test', password: 'E2E_operator_2026!' },
+  SUPER_ADMIN: { email: 'e2e-superadmin@kaviar.test', password: E2E_PASSWORD },
+  FINANCE: { email: 'e2e-finance@kaviar.test', password: E2E_PASSWORD },
+  OPERATOR: { email: 'e2e-operator@kaviar.test', password: E2E_PASSWORD },
 };
 
 // ══════════════════════════════════════════════════════════════════════════════

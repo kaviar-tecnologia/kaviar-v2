@@ -20,6 +20,7 @@ env:
   DATABASE_URL: postgresql://kaviar_e2e:e2e_password@localhost:5432/kaviar_e2e
   JWT_SECRET: e2e-ci-secret-not-production
   NODE_ENV: test
+  E2E_ADMIN_PASSWORD: e2e-ci-${{ github.run_id }}-${{ github.run_attempt }}
 
 jobs:
   e2e-integrated:

@@ -16,24 +16,28 @@ import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
+const E2E_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+if (!E2E_PASSWORD) {
+  console.error('❌ E2E_ADMIN_PASSWORD environment variable is required.');
+  console.error('   Set it to any test-only password (e.g. E2E_ADMIN_PASSWORD=test-pwd-123)');
+  process.exit(1);
+}
+
 const E2E_ADMINS = [
   {
     email: 'e2e-superadmin@kaviar.test',
     name: 'E2E SuperAdmin',
     role: 'SUPER_ADMIN',
-    password: 'E2E_super_2026!',
   },
   {
     email: 'e2e-finance@kaviar.test',
     name: 'E2E Finance',
     role: 'FINANCE',
-    password: 'E2E_finance_2026!',
   },
   {
     email: 'e2e-operator@kaviar.test',
     name: 'E2E Operator',
     role: 'OPERATOR',
-    password: 'E2E_operator_2026!',
   },
 ];
 
@@ -60,7 +64,7 @@ async function seedE2EAdmins() {
   console.log('🔑 Seeding E2E administrators...');
 
   for (const admin of E2E_ADMINS) {
-    const hashedPassword = await bcrypt.hash(admin.password, 12);
+    const hashedPassword = await bcrypt.hash(E2E_PASSWORD, 12);
     await prisma.admins.upsert({
       where: { email: admin.email },
       update: { password: hashedPassword, role: admin.role, is_active: true, name: admin.name },
