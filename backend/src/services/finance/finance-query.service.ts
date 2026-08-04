@@ -6,8 +6,8 @@ import { FINANCE_TRANSACTION_DETAIL_SELECT } from './finance-transaction-selects
 const NON_FINAL_TRANSACTION_STATUSES = ['DRAFT', 'PENDING', 'BLOCKED'] as const;
 const ACCOUNT_STRUCTURAL_FIELDS = ['code', 'type', 'currency', 'opening_balance_cents', 'opening_balance_date'] as const;
 const ACCOUNT_FINANCE_PATCH_FIELDS = ['name', 'institution_name', 'bank_code', 'allows_negative_balance', 'is_cash_equivalent', 'is_active', 'notes'] as const;
-const CATEGORY_FINANCE_PATCH_FIELDS = ['name', 'parent_id', 'default_direction', 'requires_document', 'is_active', 'sort_order'] as const;
-const CATEGORY_SYSTEM_SUPER_ADMIN_PATCH_FIELDS = ['name', 'default_direction', 'requires_document', 'sort_order'] as const;
+const CATEGORY_FINANCE_PATCH_FIELDS = ['name', 'parent_id', 'default_direction', 'requires_document', 'is_active', 'sort_order', 'accounting_code', 'accounting_nature', 'dre_group', 'balance_sheet_group', 'fiscal_classification', 'deductible', 'export_code', 'accountant_notes'] as const;
+const CATEGORY_SYSTEM_SUPER_ADMIN_PATCH_FIELDS = ['name', 'default_direction', 'requires_document', 'sort_order', 'accounting_code', 'accounting_nature', 'dre_group', 'balance_sheet_group', 'fiscal_classification', 'deductible', 'export_code', 'accountant_notes'] as const;
 const COST_CENTER_STRUCTURAL_FIELDS = ['code', 'type'] as const;
 const COST_CENTER_FINANCE_PATCH_FIELDS = ['name', 'parent_id', 'territory_id', 'city', 'state', 'is_active'] as const;
 const HIERARCHY_DEPTH_LIMIT = 50;
@@ -898,6 +898,14 @@ export async function createFinanceCategory(data: any, actor: FinanceActor) {
           is_active: data.is_active ?? true,
           is_postable: false,
           sort_order: data.sort_order ?? 0,
+          accounting_code: data.accounting_code ?? null,
+          accounting_nature: data.accounting_nature ?? null,
+          dre_group: data.dre_group ?? null,
+          balance_sheet_group: data.balance_sheet_group ?? null,
+          fiscal_classification: data.fiscal_classification ?? null,
+          deductible: data.deductible ?? null,
+          export_code: data.export_code ?? null,
+          accountant_notes: data.accountant_notes ?? null,
           created_by_admin_id: actor.id,
           updated_by_admin_id: actor.id,
         },
@@ -1001,7 +1009,7 @@ export async function updateFinanceCategory(id: string, data: any, actor: Financ
     }
 
     const updateData: any = { updated_by_admin_id: actor.id };
-    for (const key of ['code', 'name', 'kind', 'parent_id', 'default_direction', 'requires_document', 'is_active', 'sort_order']) {
+    for (const key of ['code', 'name', 'kind', 'parent_id', 'default_direction', 'requires_document', 'is_active', 'sort_order', 'accounting_code', 'accounting_nature', 'dre_group', 'balance_sheet_group', 'fiscal_classification', 'deductible', 'export_code', 'accountant_notes']) {
       if (data[key] !== undefined) updateData[key] = data[key];
     }
 

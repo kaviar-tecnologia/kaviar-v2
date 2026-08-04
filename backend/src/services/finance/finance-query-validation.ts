@@ -284,6 +284,14 @@ export const financeCategoryCreateBodySchema = z
     requires_document: z.boolean().optional(),
     is_active: z.boolean().optional(),
     sort_order: z.number().int().min(0).max(100000).optional(),
+    accounting_code: optionalNullableTrimmedString(50),
+    accounting_nature: z.enum(enumValues(PrismaClient.accounting_nature_type)).nullable().optional(),
+    dre_group: optionalNullableTrimmedString(200),
+    balance_sheet_group: optionalNullableTrimmedString(200),
+    fiscal_classification: optionalNullableTrimmedString(200),
+    deductible: z.boolean().nullable().optional(),
+    export_code: optionalNullableTrimmedString(100),
+    accountant_notes: optionalNullableTrimmedString(2000),
   })
   .strict();
 
@@ -298,6 +306,14 @@ const financeCategoryPatchCoreSchema = z
     requires_document: z.boolean().optional(),
     is_active: z.boolean().optional(),
     sort_order: z.number().int().min(0).max(100000).optional(),
+    accounting_code: optionalNullableTrimmedString(50),
+    accounting_nature: z.enum(enumValues(PrismaClient.accounting_nature_type)).nullable().optional(),
+    dre_group: optionalNullableTrimmedString(200),
+    balance_sheet_group: optionalNullableTrimmedString(200),
+    fiscal_classification: optionalNullableTrimmedString(200),
+    deductible: z.boolean().nullable().optional(),
+    export_code: optionalNullableTrimmedString(100),
+    accountant_notes: optionalNullableTrimmedString(2000),
   })
   .strict();
 
