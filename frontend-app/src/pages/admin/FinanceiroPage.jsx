@@ -45,6 +45,7 @@ import {
   updateFinanceAccount,
 } from '../../services/adminFinanceService';
 import AccountFormDialog from '../../components/admin/finance/AccountFormDialog';
+import CategoryFormDialog from '../../components/admin/finance/CategoryFormDialog';
 import {
   ACCOUNT_TYPE_OPTIONS,
   buildAccountStatusPatchPayload,
@@ -159,6 +160,11 @@ export default function FinanceiroPage() {
   const toggleGuardRef = useRef(false);
   const accountDialogTriggerRef = useRef(null);
   const toggleDialogTriggerRef = useRef(null);
+
+  // Category dialog state
+  const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
+  const [categoryDialogMode, setCategoryDialogMode] = useState('create');
+  const [selectedCategoryId, setSelectedCategoryId] = useState(null);
 
   const [accountsQuery, setAccountsQuery] = useState({
     page: 1,
@@ -380,6 +386,29 @@ export default function FinanceiroPage() {
     } catch (error) {
       setCostCentersState((prev) => ({ ...prev, loading: false, error: error.message || 'Erro ao carregar centros de custo.' }));
     }
+  };
+
+  // ── Category dialog handlers ──────────────────────────────────────────────
+  const openCreateCategoryDialog = () => {
+    setSelectedCategoryId(null);
+    setCategoryDialogMode('create');
+    setCategoryDialogOpen(true);
+  };
+
+  const openEditCategoryDialog = (categoryId) => {
+    setSelectedCategoryId(categoryId);
+    setCategoryDialogMode('edit');
+    setCategoryDialogOpen(true);
+  };
+
+  const closeCategoryDialog = () => {
+    setCategoryDialogOpen(false);
+    setSelectedCategoryId(null);
+  };
+
+  const handleCategorySuccess = () => {
+    closeCategoryDialog();
+    loadCategories();
   };
 
   useEffect(() => {
@@ -645,6 +674,17 @@ export default function FinanceiroPage() {
               {categoriesState.error ? 'Tentar novamente' : 'Atualizar'}
             </Button>
           </Grid>
+          <Grid item xs={12} md={3}>
+            <Button
+              fullWidth
+              variant="contained"
+              startIcon={<Add />}
+              onClick={openCreateCategoryDialog}
+              sx={{ height: '40px' }}
+            >
+              Nova categoria
+            </Button>
+          </Grid>
         </Grid>
 
         {categoriesState.error && <Alert severity="error" sx={{ mb: 2 }}>{categoriesState.error}</Alert>}
@@ -665,18 +705,19 @@ export default function FinanceiroPage() {
                   <TableCell>Grupo DRE</TableCell>
                   <TableCell>Dedutível</TableCell>
                   <TableCell>Ordem</TableCell>
+                  <TableCell align="right">Ações</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {categoriesState.loading ? (
                   <TableRow>
-                    <TableCell colSpan={11} align="center" sx={{ py: 4 }}>
+                    <TableCell colSpan={12} align="center" sx={{ py: 4 }}>
                       <CircularProgress size={22} />
                     </TableCell>
                   </TableRow>
                 ) : categoriesState.data.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11}>
+                    <TableCell colSpan={12}>
                       <EmptyState message="Nenhuma categoria encontrada para os filtros selecionados." />
                     </TableCell>
                   </TableRow>
@@ -717,6 +758,15 @@ export default function FinanceiroPage() {
                         ) : '-'}
                       </TableCell>
                       <TableCell>{item.sort_order ?? '-'}</TableCell>
+                      <TableCell align="right">
+                        <Button
+                          size="small"
+                          startIcon={<Edit />}
+                          onClick={() => openEditCategoryDialog(item.id)}
+                        >
+                          Editar
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))
                 )}
@@ -992,6 +1042,14 @@ export default function FinanceiroPage() {
         onClose={closeAccountDialog}
         onReloadData={handleReloadAccountsFromForm}
         onSubmit={handleAccountSubmit}
+      />
+      <CategoryFormDialog
+        open={categoryDialogOpen}
+        mode={categoryDialogMode}
+        categoryId={selectedCategoryId}
+        categories={categoriesState.data}
+        onClose={closeCategoryDialog}
+        onSuccess={handleCategorySuccess}
       />
       <Dialog
         open={toggleDialogState.open}
