@@ -168,8 +168,8 @@ router.post('/login', accountantLoginRateLimit, async (req: Request, res: Respon
 
 router.post('/refresh', accountantRefreshRateLimit, async (req: Request, res: Response) => {
   try {
-    // Get refresh token from cookie or body
-    const refreshToken = req.cookies?.accountant_refresh_token || req.body?.refreshToken;
+    // Get refresh token from cookie ONLY (never from body)
+    const refreshToken = req.cookies?.accountant_refresh_token;
     const ip = req.ip || req.socket.remoteAddress;
     const userAgent = req.headers['user-agent'];
 

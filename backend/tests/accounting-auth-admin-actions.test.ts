@@ -149,7 +149,7 @@ describe('Accounting Token Service', () => {
   let tokenService: typeof import('../src/services/accounting/accounting-token.service');
 
   beforeEach(async () => {
-    process.env.ACCOUNTANT_JWT_SECRET = 'test-secret-key-for-accountant';
+    process.env.ACCOUNTANT_JWT_SECRET = 'test-jwt-' + Date.now();
     tokenService = await import('../src/services/accounting/accounting-token.service');
   });
 
@@ -182,12 +182,12 @@ describe('Accounting Token Service', () => {
 
   it('should reject token with wrong secret', () => {
     const token = tokenService.generateAccessToken('acc-1', 'session-1');
-    process.env.ACCOUNTANT_JWT_SECRET = 'different-secret';
+    process.env.ACCOUNTANT_JWT_SECRET = 'test-jwt-alt-' + Date.now();
 
     // Secret is read dynamically, so changing env should cause verification to fail
     expect(() => tokenService.verifyAccessToken(token)).toThrow();
 
     // Restore for other tests
-    process.env.ACCOUNTANT_JWT_SECRET = 'test-secret-key-for-accountant';
+    process.env.ACCOUNTANT_JWT_SECRET = 'test-jwt-' + Date.now();
   });
 });
