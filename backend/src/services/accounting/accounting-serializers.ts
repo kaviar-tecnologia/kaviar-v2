@@ -9,6 +9,12 @@ function serializeAdminSummary(admin: any) {
   return { id: admin.id, name: admin.name, role: admin.role };
 }
 
+function maskCpf(cpf: string): string {
+  if (!cpf || cpf.length < 2) return '***.***.***-**';
+  const last2 = cpf.slice(-2);
+  return `***.***.***-${last2}`;
+}
+
 // ── Legal Entity ─────────────────────────────────────────────────────────────
 
 export function serializeLegalEntity(entity: any) {
@@ -71,7 +77,30 @@ export function serializeAccountingFirmSummary(firm: any) {
 
 // ── Accountant ───────────────────────────────────────────────────────────────
 
-export function serializeAccountant(accountant: any) {
+/** Used in list endpoints — CPF is masked */
+export function serializeAccountantListItem(accountant: any) {
+  return {
+    id: accountant.id,
+    accounting_firm_id: accountant.accounting_firm_id,
+    nome_completo: accountant.nome_completo,
+    email: accountant.email,
+    cpf_masked: maskCpf(accountant.cpf),
+    crc: accountant.crc ?? null,
+    crc_uf: accountant.crc_uf ?? null,
+    status: accountant.status,
+    is_active: accountant.is_active,
+    mfa_enabled: accountant.mfa_enabled,
+    invited_at: toIso(accountant.invited_at),
+    activated_at: toIso(accountant.activated_at),
+    last_access_at: toIso(accountant.last_access_at),
+    created_at: toIso(accountant.created_at),
+    updated_at: toIso(accountant.updated_at),
+    firm: accountant.firm ? serializeAccountingFirmSummary(accountant.firm) : undefined,
+  };
+}
+
+/** Used in detail endpoint — full CPF (SUPER_ADMIN only) */
+export function serializeAccountantDetail(accountant: any) {
   return {
     id: accountant.id,
     accounting_firm_id: accountant.accounting_firm_id,
@@ -90,6 +119,11 @@ export function serializeAccountant(accountant: any) {
     updated_at: toIso(accountant.updated_at),
     firm: accountant.firm ? serializeAccountingFirmSummary(accountant.firm) : undefined,
   };
+}
+
+/** @deprecated Use serializeAccountantListItem or serializeAccountantDetail */
+export function serializeAccountant(accountant: any) {
+  return serializeAccountantDetail(accountant);
 }
 
 // ── Accountant Invite ────────────────────────────────────────────────────────
