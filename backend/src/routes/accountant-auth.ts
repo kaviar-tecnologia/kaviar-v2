@@ -1,8 +1,12 @@
 import { Router, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { authenticateAccountant } from '../middlewares/accountant-auth';
+import { forgotPasswordRateLimit } from '../middlewares/accounting-rate-limit';
 import * as authService from '../services/accounting/accounting-auth.service';
 import { AccountingAuthError } from '../services/accounting/accounting-auth.service';
+import { sendPasswordResetEmail } from '../services/accounting/accounting-email.service';
+import { writeAccountingAuditTx } from '../services/accounting/accounting-audit';
+import { prisma } from '../lib/prisma';
 
 const router = Router();
 
@@ -211,7 +215,7 @@ router.post('/logout', authenticateAccountant, async (req: Request, res: Respons
 // POST /forgot-password
 // ═══════════════════════════════════════════════════════════════════
 
-router.post('/forgot-password', accountantPasswordResetRateLimit, async (req: Request, res: Response) => {
+router.post('/forgot-password', forgotPasswordRateLimit, async (req: Request, res: Response) => {
   try {
     const { email } = req.body;
     const ip = req.ip || req.socket.remoteAddress;
@@ -222,7 +226,38 @@ router.post('/forgot-password', accountantPasswordResetRateLimit, async (req: Re
     }
 
     const result = await authService.forgotPassword(email, ip, userAgent);
-    return res.status(200).json({ success: true, ...result });
+
+    // ALWAYS return generic response (don't reveal if email exists)
+    const genericMessage = 'Se o email estiver cadastrado, um link de recuperação será enviado.';
+
+    if (result) {
+      // Account exists — send email AFTER the transaction committed
+      const emailResult = await sendPasswordResetEmail({
+        accountantId: result.accountant.id,
+        accountantEmail: result.accountant.email,
+        accountantName: result.accountant.nome_completo,
+        rawToken: result.rawToken,
+      });
+
+      // Fire-and-forget audit
+      try {
+        await prisma.$transaction(async (tx) => {
+          await writeAccountingAuditTx(tx, {
+            adminId: result.accountant.id,
+            action: emailResult.ok ? 'PASSWORD_RESET_EMAIL_SENT' : 'PASSWORD_RESET_EMAIL_FAILED',
+            entityType: 'accountant',
+            entityId: result.accountant.id,
+            newValue: { email_sent: emailResult.ok },
+            ipAddress: ip,
+            userAgent,
+          });
+        });
+      } catch {
+        // Best effort — don't fail the response
+      }
+    }
+
+    return res.status(200).json({ success: true, message: genericMessage });
   } catch (err) {
     return handleError(err, res);
   }

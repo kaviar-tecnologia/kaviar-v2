@@ -30,6 +30,8 @@ import * as accountantsService from '../services/accounting/accounting-accountan
 import * as linksService from '../services/accounting/accounting-links.service';
 import * as invitesService from '../services/accounting/accounting-invites.service';
 import * as authService from '../services/accounting/accounting-auth.service';
+import { sendInviteEmail } from '../services/accounting/accounting-email.service';
+import { inviteRateLimit, reinviteRateLimit } from '../middlewares/accounting-rate-limit';
 import { writeAccountingAuditTx } from '../services/accounting/accounting-audit';
 import { EntityValidationError } from '../services/accounting/accounting-entities.service';
 import { prisma } from '../lib/prisma';
@@ -252,27 +254,118 @@ router.patch('/links/:id', async (req: Request, res: Response) => {
 // Admin Actions on Accountants (invite, block, unblock, etc.)
 // ═══════════════════════════════════════════════════════════════════
 
-router.post('/accountants/:id/invite', async (req: Request, res: Response) => {
+router.post('/accountants/:id/invite', inviteRateLimit, async (req: Request, res: Response) => {
   try {
     const admin = (req as any).admin;
-    const result = await invitesService.createInvite(req.params.id, admin.id, req.ip, req.headers['user-agent']);
-    res.status(201).json({ success: true, data: { invite_id: result.invite.id, token: result.rawToken } });
+    const ip = req.ip;
+    const userAgent = req.headers['user-agent'];
+
+    // Verify accountant exists and is INVITED
+    const accountant = await prisma.accountants.findUnique({ where: { id: req.params.id } });
+    if (!accountant) return res.status(404).json({ success: false, error: 'Contador não encontrado' });
+    if (accountant.status !== 'INVITED') {
+      return res.status(400).json({ success: false, error: 'Somente contadores com status INVITED podem receber convite' });
+    }
+
+    // Create invite (in transaction)
+    const { invite, rawToken } = await invitesService.createInvite(req.params.id, admin.id, ip, userAgent);
+
+    // AFTER commit — send email
+    let emailSent = false;
+    try {
+      const emailResult = await sendInviteEmail({
+        accountantId: accountant.id,
+        inviteId: invite.id,
+        accountantName: accountant.nome_completo,
+        accountantEmail: accountant.email,
+        rawToken,
+        adminName: admin.name || 'Administrador',
+        adminId: admin.id,
+        isReinvite: false,
+      });
+      emailSent = emailResult.ok;
+
+      // Audit email result
+      await prisma.$transaction(async (tx) => {
+        await writeAccountingAuditTx(tx, {
+          adminId: admin.id,
+          action: emailResult.ok ? 'INVITE_EMAIL_SENT' : 'INVITE_EMAIL_FAILED',
+          entityType: 'accountant_invite',
+          entityId: invite.id,
+          newValue: { accountant_id: accountant.id, email_sent: emailResult.ok },
+          ipAddress: ip,
+          userAgent,
+        });
+      });
+    } catch {
+      // Email failure doesn't fail the request — invite still valid
+    }
+
+    res.status(201).json({ success: true, data: { invite_id: invite.id, email_sent: emailSent } });
   } catch (err: any) {
     if (err instanceof EntityValidationError) return res.status(400).json({ success: false, error: err.message });
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
 });
 
-router.post('/accountants/:id/reinvite', async (req: Request, res: Response) => {
+router.post('/accountants/:id/reinvite', reinviteRateLimit, async (req: Request, res: Response) => {
   try {
     const admin = (req as any).admin;
+    const ip = req.ip;
+    const userAgent = req.headers['user-agent'];
+
+    // Verify accountant exists and is INVITED
     const accountant = await prisma.accountants.findUnique({ where: { id: req.params.id } });
     if (!accountant) return res.status(404).json({ success: false, error: 'Contador não encontrado' });
     if (accountant.status !== 'INVITED') {
       return res.status(400).json({ success: false, error: 'Somente contadores com status INVITED podem ser reinconvidados' });
     }
-    const result = await invitesService.createInvite(req.params.id, admin.id, req.ip, req.headers['user-agent']);
-    res.status(201).json({ success: true, data: { invite_id: result.invite.id, token: result.rawToken } });
+
+    // createInvite already revokes previous PENDING invites in its transaction
+    const { invite, rawToken } = await invitesService.createInvite(req.params.id, admin.id, ip, userAgent);
+
+    // Update resent tracking
+    try {
+      await prisma.accountant_invites.update({
+        where: { id: invite.id },
+        data: { last_email_sent_at: new Date() },
+      });
+    } catch {
+      // Best effort
+    }
+
+    // AFTER commit — send reinvite email
+    let emailSent = false;
+    try {
+      const emailResult = await sendInviteEmail({
+        accountantId: accountant.id,
+        inviteId: invite.id,
+        accountantName: accountant.nome_completo,
+        accountantEmail: accountant.email,
+        rawToken,
+        adminName: admin.name || 'Administrador',
+        adminId: admin.id,
+        isReinvite: true,
+      });
+      emailSent = emailResult.ok;
+
+      // Audit email result
+      await prisma.$transaction(async (tx) => {
+        await writeAccountingAuditTx(tx, {
+          adminId: admin.id,
+          action: emailResult.ok ? 'INVITE_EMAIL_SENT' : 'INVITE_EMAIL_FAILED',
+          entityType: 'accountant_invite',
+          entityId: invite.id,
+          newValue: { accountant_id: accountant.id, email_sent: emailResult.ok, is_reinvite: true },
+          ipAddress: ip,
+          userAgent,
+        });
+      });
+    } catch {
+      // Email failure doesn't fail the request — invite still valid
+    }
+
+    res.status(201).json({ success: true, data: { invite_id: invite.id, email_sent: emailSent } });
   } catch (err: any) {
     if (err instanceof EntityValidationError) return res.status(400).json({ success: false, error: err.message });
     res.status(500).json({ success: false, error: 'Erro interno' });
