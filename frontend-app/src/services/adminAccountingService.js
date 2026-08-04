@@ -209,3 +209,10 @@ export const updateAccountantLink = async (id, data) => {
     'Não foi possível atualizar o vínculo.'
   );
 };
+
+// ── Setup Progress ──────────────────────────────────────────────────────────
+
+export const getSetupProgress = async () => {
+  const { data } = await api.get(`${BASE_PATH}/setup-progress`);
+  return data;
+};

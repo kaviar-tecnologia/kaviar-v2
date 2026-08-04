@@ -5,6 +5,7 @@ import EntitiesTab from './EntitiesTab';
 import FirmsTab from './FirmsTab';
 import AccountantsTab from './AccountantsTab';
 import LinksTab from './LinksTab';
+import SetupProgressCard from '../../../components/admin/accounting/SetupProgressCard';
 
 const TAB_KEYS = ['empresas', 'escritorios', 'contadores', 'vinculos'];
 
@@ -33,6 +34,8 @@ export default function AccountingPortalPage() {
             Sequência: Cadastre uma Empresa → Escritório → Contador → Vínculo → Convide o contador.
           </Typography>
         </Box>
+
+        <SetupProgressCard onNavigateTab={(tab) => { setActiveTab(tab); setSearchParams({ tab: TAB_KEYS[tab] }); }} />
 
         <Tabs
           value={activeTab}

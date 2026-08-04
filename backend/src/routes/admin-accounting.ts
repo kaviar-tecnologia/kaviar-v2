@@ -536,5 +536,50 @@ router.post('/accountants/:id/revoke-sessions', async (req: Request, res: Respon
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════
+// Setup Progress (Wizard)
+// ═══════════════════════════════════════════════════════════════════
+
+router.get('/setup-progress', async (req: Request, res: Response) => {
+  try {
+    const [entityCount, firmCount, accountantCount, linkCount, inviteCount, activatedCount] = await Promise.all([
+      prisma.legal_entities.count({ where: { is_active: true } }),
+      prisma.accounting_firms.count({ where: { is_active: true } }),
+      prisma.accountants.count({ where: { status: { in: ['ACTIVE', 'INVITED'] } } }),
+      prisma.accountant_entity_links.count({ where: { status: 'ACTIVE' } }),
+      prisma.accountant_invites.count({ where: { status: { in: ['PENDING', 'ACCEPTED'] } } }),
+      prisma.accountants.count({ where: { status: 'ACTIVE', password_hash: { not: null } } }),
+    ]);
+
+    const steps = {
+      entity: entityCount > 0,
+      firm: firmCount > 0,
+      accountant: accountantCount > 0,
+      link: linkCount > 0,
+      invite: inviteCount > 0,
+      activation: activatedCount > 0,
+    };
+
+    const completedSteps = Object.values(steps).filter(Boolean).length;
+    const totalSteps = 6;
+
+    // Determine next step
+    let nextStep = 'COMPLETE';
+    if (!steps.entity) nextStep = 'CREATE_ENTITY';
+    else if (!steps.firm) nextStep = 'CREATE_FIRM';
+    else if (!steps.accountant) nextStep = 'CREATE_ACCOUNTANT';
+    else if (!steps.link) nextStep = 'CREATE_LINK';
+    else if (!steps.invite) nextStep = 'SEND_INVITE';
+    else if (!steps.activation) nextStep = 'AWAIT_ACTIVATION';
+
+    res.json({
+      success: true,
+      data: { completedSteps, totalSteps, percentage: Math.round((completedSteps / totalSteps) * 100), nextStep, steps },
+    });
+  } catch {
+    res.status(500).json({ success: false, error: 'Erro ao verificar progresso' });
+  }
+});
+
 export const adminAccountingRoutes = router;
 export default router;
