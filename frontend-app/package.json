@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --environment jsdom --include 'tests/**/*.test.{js,ts}'",
     "test:e2e": "TZ=America/Sao_Paulo npx playwright test",
     "test:e2e:integrated": "TZ=America/Sao_Paulo npx playwright test --config=playwright.integrated.config.ts"
   },
