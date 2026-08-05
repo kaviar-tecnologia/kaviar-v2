@@ -129,7 +129,7 @@ jobs:
               | .family = $family
               | .containerDefinitions[0].name = $container
               | .containerDefinitions[0].image = $migrationImage
-              | .containerDefinitions[0].command = ["sh", "-lc", "npx --yes prisma migrate resolve --rolled-back 20260805010000_fix_session_status_enum_type && npx --yes prisma migrate deploy"]
+              | .containerDefinitions[0].command = ["sh", "-lc", "npx --yes prisma migrate deploy"]
               | .containerDefinitions[0].secrets = (
                   .containerDefinitions[0].secrets
                   | map(if .name == "DATABASE_URL" then .valueFrom = $migrationDatabaseUrlArn else . end)
