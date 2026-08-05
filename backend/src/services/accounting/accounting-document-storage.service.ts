@@ -11,6 +11,9 @@ const PRESIGNED_GET_EXPIRY = 300;  // 5 minutes for download
 // Max 20MB per file
 export const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
+// Max versions per document (soft limit, enforced at application level)
+export const MAX_VERSIONS_PER_DOCUMENT = 50;
+
 // Allowed MIME types
 export const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
@@ -45,7 +48,12 @@ const s3Client = new S3Client({ region: REGION });
 /**
  * Generate a deterministic, collision-safe storage key.
  * Pattern: accounting-documents/{year}/{month}/{document_id}/{version}-{nonce}{ext}
- * UNIQUE constraint on storage_key prevents any collision at DB level.
+ *
+ * SECURITY PROPERTIES:
+ * - Nonce (16 hex chars) prevents predictability
+ * - UNIQUE constraint on storage_key at DB level prevents any collision
+ * - Key is generated server-side only — client never influences it
+ * - Once emitted, key is immutable (stored in DB, presigned URL is bound to it)
  */
 export function generateStorageKey(documentId: string, versionNumber: number, extension: string): string {
   const now = new Date();
@@ -100,7 +108,21 @@ export function validateFileMetadata(params: {
 
 /**
  * Generate a presigned PUT URL for direct client upload to S3.
- * The client uploads directly to S3 using this URL.
+ *
+ * SECURITY GUARANTEES:
+ * - Expires in 5 minutes (PRESIGNED_PUT_EXPIRY)
+ * - ContentType is signed — client MUST send matching Content-Type header
+ * - ContentLength is signed — S3 rejects if body size differs
+ * - Key is bound — client cannot upload to a different key
+ * - Unique key prevents overwrite of existing objects
+ *
+ * SHA-256 LIMITATION (HONEST DOCUMENTATION):
+ * - The sha256 is stored in S3 object metadata for future verification
+ * - S3 does NOT enforce sha256 match on PUT with presigned URLs unless
+ *   x-amz-checksum-sha256 header is used (requires base64-encoded checksum)
+ * - Backend CANNOT verify sha256 at confirm time without downloading the file
+ * - This is a DECLARED hash, not a VERIFIED hash
+ * - Future: background job can download and verify, or use S3 Object Lambda
  */
 export async function generatePresignedPutUrl(params: {
   storageKey: string;
@@ -115,8 +137,6 @@ export async function generatePresignedPutUrl(params: {
     Key: storageKey,
     ContentType: mimeType,
     ContentLength: sizeBytes,
-    // ChecksumSHA256 would require the client to send base64-encoded sha256
-    // Instead we verify after upload via HeadObject
     Metadata: {
       'x-kaviar-sha256': sha256,
       'x-kaviar-original-size': String(sizeBytes),
@@ -148,18 +168,37 @@ export async function generatePresignedGetUrl(params: {
 }
 
 /**
- * Verify uploaded file exists in S3 and check size matches.
+ * Verify uploaded file exists in S3 and validate against expected values.
+ *
+ * Returns full verification result including:
+ * - existence
+ * - size match
+ * - content type match
+ * - ETag (S3 MD5 of content, useful as a change-detection fingerprint)
  */
-export async function verifyUpload(storageKey: string, expectedSize: number): Promise<{
+export async function verifyUpload(storageKey: string, expectedSize: number, expectedContentType: string): Promise<{
   exists: boolean;
   actualSize?: number;
+  actualContentType?: string;
+  etag?: string;
   sizeMatch?: boolean;
+  contentTypeMatch?: boolean;
 }> {
   try {
     const command = new HeadObjectCommand({ Bucket: BUCKET, Key: storageKey });
     const response = await s3Client.send(command);
     const actualSize = response.ContentLength ?? 0;
-    return { exists: true, actualSize, sizeMatch: actualSize === expectedSize };
+    const actualContentType = response.ContentType ?? '';
+    const etag = response.ETag ?? '';
+
+    return {
+      exists: true,
+      actualSize,
+      actualContentType,
+      etag,
+      sizeMatch: actualSize === expectedSize,
+      contentTypeMatch: actualContentType === expectedContentType,
+    };
   } catch (err: any) {
     if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) {
       return { exists: false };

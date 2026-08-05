@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { PrismaClient, accounting_document_scan_status } from '@prisma/client';
 import crypto from 'crypto';
 
@@ -6,19 +6,12 @@ const prisma = new PrismaClient({
   datasources: { db: { url: process.env.DATABASE_URL || 'postgresql://postgres:postgres@127.0.0.1:5432/kaviar_test' } },
 });
 
-// Test helpers
-const API_BASE = 'http://127.0.0.1:3003';
-
-// We'll test directly via the service layer for unit tests
-// and via HTTP for integration tests (requires running server)
-
 import {
   validateFileMetadata,
   generateStorageKey,
   getFileExtension,
   MAX_FILE_SIZE,
-  ALLOWED_MIME_TYPES,
-  ALLOWED_EXTENSIONS,
+  MAX_VERSIONS_PER_DOCUMENT,
 } from '../src/services/accounting/accounting-document-storage.service';
 
 import {
@@ -27,6 +20,10 @@ import {
 } from '../src/services/accounting/accounting-documents.service';
 
 import { VALID_STATUS_TRANSITIONS } from '../src/services/accounting/accounting-documents-validation';
+
+// ===========================================================================
+// UNIT TESTS
+// ===========================================================================
 
 describe('Accounting Documents — Unit Tests', () => {
   describe('validateFileMetadata', () => {
@@ -60,10 +57,20 @@ describe('Accounting Documents — Unit Tests', () => {
       expect(result.valid).toBe(false);
     });
 
-    it('rejects disallowed extension', () => {
+    it('rejects negative size', () => {
+      const result = validateFileMetadata({ filename: 'neg.pdf', mimeType: 'application/pdf', sizeBytes: -1 });
+      expect(result.valid).toBe(false);
+    });
+
+    it('rejects disallowed extension (.exe)', () => {
       const result = validateFileMetadata({ filename: 'virus.exe', mimeType: 'application/octet-stream', sizeBytes: 1024 });
       expect(result.valid).toBe(false);
       expect((result as any).error).toContain('Extensão não permitida');
+    });
+
+    it('rejects disallowed extension (.js)', () => {
+      const result = validateFileMetadata({ filename: 'script.js', mimeType: 'application/javascript', sizeBytes: 1024 });
+      expect(result.valid).toBe(false);
     });
 
     it('rejects disallowed MIME type', () => {
@@ -72,7 +79,7 @@ describe('Accounting Documents — Unit Tests', () => {
       expect((result as any).error).toContain('Tipo MIME não permitido');
     });
 
-    it('rejects extension/MIME mismatch', () => {
+    it('rejects extension/MIME mismatch (pdf extension with jpeg mime)', () => {
       const result = validateFileMetadata({ filename: 'fake.pdf', mimeType: 'image/jpeg', sizeBytes: 1024 });
       expect(result.valid).toBe(false);
       expect((result as any).error).toContain('não corresponde');
@@ -83,13 +90,23 @@ describe('Accounting Documents — Unit Tests', () => {
       expect(result.valid).toBe(false);
       expect((result as any).error).toContain('sem extensão');
     });
+
+    it('rejects empty filename', () => {
+      const result = validateFileMetadata({ filename: '', mimeType: 'application/pdf', sizeBytes: 1024 });
+      expect(result.valid).toBe(false);
+    });
+
+    it('handles case-insensitive extension (.PDF)', () => {
+      const result = validateFileMetadata({ filename: 'DOC.PDF', mimeType: 'application/pdf', sizeBytes: 1024 });
+      expect(result).toEqual({ valid: true });
+    });
   });
 
   describe('generateStorageKey', () => {
-    it('generates unique keys', () => {
+    it('generates unique keys for same inputs (nonce)', () => {
       const key1 = generateStorageKey('doc-123', 1, '.pdf');
       const key2 = generateStorageKey('doc-123', 1, '.pdf');
-      expect(key1).not.toBe(key2); // nonce guarantees uniqueness
+      expect(key1).not.toBe(key2);
     });
 
     it('includes document id and version', () => {
@@ -99,7 +116,7 @@ describe('Accounting Documents — Unit Tests', () => {
       expect(key).toContain('.pdf');
     });
 
-    it('organizes by year/month', () => {
+    it('starts with correct prefix', () => {
       const key = generateStorageKey('doc-xyz', 1, '.docx');
       expect(key).toMatch(/^accounting-documents\/\d{4}\/\d{2}\//);
     });
@@ -110,12 +127,26 @@ describe('Accounting Documents — Unit Tests', () => {
       expect(key1).toContain('.pdf');
       expect(key2).toContain('.pdf');
     });
+
+    it('nonce is 16 hex chars', () => {
+      const key = generateStorageKey('doc', 1, '.pdf');
+      // Pattern: .../v1-{16 hex chars}.pdf
+      const match = key.match(/v1-([a-f0-9]+)\.pdf$/);
+      expect(match).not.toBeNull();
+      expect(match![1]).toHaveLength(16);
+    });
   });
 
   describe('getFileExtension', () => {
-    it('extracts extension', () => {
+    it('extracts simple extension', () => {
       expect(getFileExtension('file.pdf')).toBe('.pdf');
+    });
+
+    it('extracts extension from multi-dot filename', () => {
       expect(getFileExtension('file.name.xlsx')).toBe('.xlsx');
+    });
+
+    it('lowercases extension', () => {
       expect(getFileExtension('FILE.PDF')).toBe('.pdf');
     });
 
@@ -130,23 +161,28 @@ describe('Accounting Documents — Unit Tests', () => {
     });
 
     it('returns EXPIRED when past', () => {
-      const past = new Date(Date.now() - 86400000); // yesterday
+      const past = new Date(Date.now() - 86400000);
       expect(computeTemporalStatus(past, null)).toBe('EXPIRED');
     });
 
     it('returns VALID when far in future', () => {
-      const future = new Date(Date.now() + 365 * 86400000); // 1 year
+      const future = new Date(Date.now() + 365 * 86400000);
       expect(computeTemporalStatus(future, 30)).toBe('VALID');
     });
 
     it('returns EXPIRING_SOON when within alert period', () => {
-      const soon = new Date(Date.now() + 15 * 86400000); // 15 days (within default 30)
+      const soon = new Date(Date.now() + 15 * 86400000);
       expect(computeTemporalStatus(soon, 30)).toBe('EXPIRING_SOON');
     });
 
     it('uses 30 days default when renewalAlertDays is null', () => {
-      const soon = new Date(Date.now() + 20 * 86400000); // 20 days
+      const soon = new Date(Date.now() + 20 * 86400000);
       expect(computeTemporalStatus(soon, null)).toBe('EXPIRING_SOON');
+    });
+
+    it('boundary: exactly at expiry returns EXPIRED', () => {
+      const now = new Date(Date.now() - 1); // 1ms in the past
+      expect(computeTemporalStatus(now, null)).toBe('EXPIRED');
     });
   });
 
@@ -173,8 +209,25 @@ describe('Accounting Documents — Unit Tests', () => {
       expect(VALID_STATUS_TRANSITIONS.ACTIVE).toContain('REPLACED');
       expect(VALID_STATUS_TRANSITIONS.ACTIVE).toContain('REVOKED');
     });
+
+    it('all states are defined', () => {
+      const allStates = ['DRAFT', 'SENT', 'UNDER_REVIEW', 'APPROVED', 'ACTIVE', 'REJECTED', 'REPLACED', 'REVOKED'];
+      for (const state of allStates) {
+        expect(VALID_STATUS_TRANSITIONS).toHaveProperty(state);
+      }
+    });
+  });
+
+  describe('MAX_VERSIONS_PER_DOCUMENT', () => {
+    it('is set to 50', () => {
+      expect(MAX_VERSIONS_PER_DOCUMENT).toBe(50);
+    });
   });
 });
+
+// ===========================================================================
+// DATABASE INTEGRATION TESTS
+// ===========================================================================
 
 describe('Accounting Documents — Database Integration', () => {
   let entityId: string;
@@ -183,7 +236,6 @@ describe('Accounting Documents — Database Integration', () => {
   let accountantId: string;
 
   beforeAll(async () => {
-    // Get existing test data
     const entity = await prisma.legal_entities.findFirst({ select: { id: true } });
     const admin = await prisma.admins.findFirst({ select: { id: true } });
     const accountant = await prisma.accountants.findFirst({ select: { id: true } });
@@ -196,7 +248,6 @@ describe('Accounting Documents — Database Integration', () => {
     adminId = admin.id;
     accountantId = accountant.id;
 
-    // Create a test document type
     const dt = await prisma.accounting_document_types.create({
       data: { code: `TEST_TYPE_${Date.now()}`, name: 'Test Type', category: 'SOCIETARIO' },
     });
@@ -204,14 +255,13 @@ describe('Accounting Documents — Database Integration', () => {
   });
 
   afterAll(async () => {
-    // Cleanup
     await prisma.accounting_company_document_files.deleteMany({ where: { document: { document_type_id: docTypeId } } });
     await prisma.accounting_company_documents.deleteMany({ where: { document_type_id: docTypeId } });
     await prisma.accounting_document_types.deleteMany({ where: { id: docTypeId } });
     await prisma.$disconnect();
   });
 
-  it('creates a document', async () => {
+  it('creates a document in DRAFT status', async () => {
     const doc = await prisma.accounting_company_documents.create({
       data: {
         legal_entity_id: entityId,
@@ -268,7 +318,9 @@ describe('Accounting Documents — Database Integration', () => {
     expect(file.uploaded_by_accountant_id).toBe(accountantId);
   });
 
-  it('rejects file with both uploaders (XOR constraint)', async () => {
+  // -- SECURITY: XOR constraint --
+
+  it('SECURITY: rejects file with BOTH uploaders', async () => {
     const doc = await prisma.accounting_company_documents.create({
       data: { legal_entity_id: entityId, document_type_id: docTypeId, status: 'DRAFT' },
     });
@@ -276,12 +328,9 @@ describe('Accounting Documents — Database Integration', () => {
     await expect(
       prisma.accounting_company_document_files.create({
         data: {
-          document_id: doc.id,
-          version_number: 1,
-          original_filename: 'test.pdf',
-          storage_key: `test-key-${crypto.randomBytes(8).toString('hex')}`,
-          mime_type: 'application/pdf',
-          size_bytes: 1024,
+          document_id: doc.id, version_number: 1,
+          original_filename: 'test.pdf', storage_key: `key-${crypto.randomBytes(8).toString('hex')}`,
+          mime_type: 'application/pdf', size_bytes: 1024,
           sha256: crypto.randomBytes(32).toString('hex'),
           uploaded_by_admin_id: adminId,
           uploaded_by_accountant_id: accountantId,
@@ -291,7 +340,7 @@ describe('Accounting Documents — Database Integration', () => {
     ).rejects.toThrow();
   });
 
-  it('rejects file with no uploader (XOR constraint)', async () => {
+  it('SECURITY: rejects file with NO uploader', async () => {
     const doc = await prisma.accounting_company_documents.create({
       data: { legal_entity_id: entityId, document_type_id: docTypeId, status: 'DRAFT' },
     });
@@ -299,12 +348,9 @@ describe('Accounting Documents — Database Integration', () => {
     await expect(
       prisma.accounting_company_document_files.create({
         data: {
-          document_id: doc.id,
-          version_number: 1,
-          original_filename: 'test.pdf',
-          storage_key: `test-key-${crypto.randomBytes(8).toString('hex')}`,
-          mime_type: 'application/pdf',
-          size_bytes: 1024,
+          document_id: doc.id, version_number: 1,
+          original_filename: 'test.pdf', storage_key: `key-${crypto.randomBytes(8).toString('hex')}`,
+          mime_type: 'application/pdf', size_bytes: 1024,
           sha256: crypto.randomBytes(32).toString('hex'),
           scan_status: 'NOT_SCANNED',
         },
@@ -312,7 +358,9 @@ describe('Accounting Documents — Database Integration', () => {
     ).rejects.toThrow();
   });
 
-  it('rejects duplicate storage_key', async () => {
+  // -- SECURITY: Unique constraints prevent overwrite --
+
+  it('SECURITY: rejects duplicate storage_key (prevents overwrite)', async () => {
     const doc = await prisma.accounting_company_documents.create({
       data: { legal_entity_id: entityId, document_type_id: docTypeId, status: 'DRAFT' },
     });
@@ -333,7 +381,7 @@ describe('Accounting Documents — Database Integration', () => {
       prisma.accounting_company_document_files.create({
         data: {
           document_id: doc.id, version_number: 2,
-          original_filename: 'b.pdf', storage_key: storageKey, // duplicate!
+          original_filename: 'b.pdf', storage_key: storageKey, // DUPLICATE
           mime_type: 'application/pdf', size_bytes: 2048,
           sha256: crypto.randomBytes(32).toString('hex'),
           uploaded_by_admin_id: adminId, scan_status: 'NOT_SCANNED',
@@ -342,7 +390,9 @@ describe('Accounting Documents — Database Integration', () => {
     ).rejects.toThrow();
   });
 
-  it('rejects duplicate version in same document', async () => {
+  // -- SECURITY: Concurrent upload protection --
+
+  it('SECURITY: rejects duplicate version_number in same document (concurrent upload safety)', async () => {
     const doc = await prisma.accounting_company_documents.create({
       data: { legal_entity_id: entityId, document_type_id: docTypeId, status: 'DRAFT' },
     });
@@ -360,7 +410,7 @@ describe('Accounting Documents — Database Integration', () => {
     await expect(
       prisma.accounting_company_document_files.create({
         data: {
-          document_id: doc.id, version_number: 1, // same version!
+          document_id: doc.id, version_number: 1, // DUPLICATE VERSION
           original_filename: 'b.pdf', storage_key: `key-${crypto.randomBytes(8).toString('hex')}`,
           mime_type: 'application/pdf', size_bytes: 2048,
           sha256: crypto.randomBytes(32).toString('hex'),
@@ -370,28 +420,58 @@ describe('Accounting Documents — Database Integration', () => {
     ).rejects.toThrow();
   });
 
-  it('getNextVersionNumber returns correct sequence', async () => {
-    const doc = await prisma.accounting_company_documents.create({
+  it('SECURITY: allows same version_number in DIFFERENT documents', async () => {
+    const doc1 = await prisma.accounting_company_documents.create({
+      data: { legal_entity_id: entityId, document_type_id: docTypeId, status: 'DRAFT' },
+    });
+    const doc2 = await prisma.accounting_company_documents.create({
       data: { legal_entity_id: entityId, document_type_id: docTypeId, status: 'DRAFT' },
     });
 
-    expect(await getNextVersionNumber(doc.id)).toBe(1);
-
-    await prisma.accounting_company_document_files.create({
+    const file1 = await prisma.accounting_company_document_files.create({
       data: {
-        document_id: doc.id, version_number: 1,
+        document_id: doc1.id, version_number: 1,
         original_filename: 'a.pdf', storage_key: `key-${crypto.randomBytes(8).toString('hex')}`,
         mime_type: 'application/pdf', size_bytes: 1024,
         sha256: crypto.randomBytes(32).toString('hex'),
         uploaded_by_admin_id: adminId, scan_status: 'NOT_SCANNED',
       },
     });
-
-    expect(await getNextVersionNumber(doc.id)).toBe(2);
+    const file2 = await prisma.accounting_company_document_files.create({
+      data: {
+        document_id: doc2.id, version_number: 1, // same version, different doc = OK
+        original_filename: 'b.pdf', storage_key: `key-${crypto.randomBytes(8).toString('hex')}`,
+        mime_type: 'application/pdf', size_bytes: 2048,
+        sha256: crypto.randomBytes(32).toString('hex'),
+        uploaded_by_admin_id: adminId, scan_status: 'NOT_SCANNED',
+      },
+    });
+    expect(file1.version_number).toBe(1);
+    expect(file2.version_number).toBe(1);
   });
 
-  it('RESTRICT prevents deleting entity with documents', async () => {
-    // Already tested via PostgreSQL, but verify via Prisma
+  // -- SECURITY: Referential integrity prevents data loss --
+
+  it('SECURITY: RESTRICT prevents deleting document with files', async () => {
+    const doc = await prisma.accounting_company_documents.create({
+      data: { legal_entity_id: entityId, document_type_id: docTypeId, status: 'DRAFT' },
+    });
+    await prisma.accounting_company_document_files.create({
+      data: {
+        document_id: doc.id, version_number: 1,
+        original_filename: 'protect.pdf', storage_key: `key-${crypto.randomBytes(8).toString('hex')}`,
+        mime_type: 'application/pdf', size_bytes: 1024,
+        sha256: crypto.randomBytes(32).toString('hex'),
+        uploaded_by_admin_id: adminId, scan_status: 'NOT_SCANNED',
+      },
+    });
+
+    await expect(
+      prisma.accounting_company_documents.delete({ where: { id: doc.id } })
+    ).rejects.toThrow();
+  });
+
+  it('SECURITY: RESTRICT prevents deleting entity with documents', async () => {
     const doc = await prisma.accounting_company_documents.findFirst({
       where: { document_type_id: docTypeId },
       select: { legal_entity_id: true },
@@ -403,16 +483,17 @@ describe('Accounting Documents — Database Integration', () => {
     }
   });
 
-  it('enum scan_status only accepts valid values', async () => {
+  // -- SECURITY: scan_status enum prevents arbitrary values --
+
+  it('SECURITY: scan_status enum only accepts valid values', async () => {
     const doc = await prisma.accounting_company_documents.create({
       data: { legal_entity_id: entityId, document_type_id: docTypeId, status: 'DRAFT' },
     });
 
-    // Valid enum values work
     const file = await prisma.accounting_company_document_files.create({
       data: {
         document_id: doc.id, version_number: 1,
-        original_filename: 'test.pdf', storage_key: `key-${crypto.randomBytes(8).toString('hex')}`,
+        original_filename: 'scan.pdf', storage_key: `key-${crypto.randomBytes(8).toString('hex')}`,
         mime_type: 'application/pdf', size_bytes: 1024,
         sha256: crypto.randomBytes(32).toString('hex'),
         uploaded_by_admin_id: adminId, scan_status: 'CLEAN',
@@ -421,10 +502,72 @@ describe('Accounting Documents — Database Integration', () => {
     expect(file.scan_status).toBe('CLEAN');
 
     // Update to INFECTED
-    const updated = await prisma.accounting_company_document_files.update({
+    const infected = await prisma.accounting_company_document_files.update({
       where: { id: file.id },
       data: { scan_status: 'INFECTED' },
     });
-    expect(updated.scan_status).toBe('INFECTED');
+    expect(infected.scan_status).toBe('INFECTED');
+  });
+
+  // -- Versioning --
+
+  it('getNextVersionNumber returns correct sequence', async () => {
+    const doc = await prisma.accounting_company_documents.create({
+      data: { legal_entity_id: entityId, document_type_id: docTypeId, status: 'DRAFT' },
+    });
+
+    expect(await getNextVersionNumber(doc.id)).toBe(1);
+
+    await prisma.accounting_company_document_files.create({
+      data: {
+        document_id: doc.id, version_number: 1,
+        original_filename: 'v1.pdf', storage_key: `key-${crypto.randomBytes(8).toString('hex')}`,
+        mime_type: 'application/pdf', size_bytes: 1024,
+        sha256: crypto.randomBytes(32).toString('hex'),
+        uploaded_by_admin_id: adminId, scan_status: 'NOT_SCANNED',
+      },
+    });
+
+    expect(await getNextVersionNumber(doc.id)).toBe(2);
+
+    await prisma.accounting_company_document_files.create({
+      data: {
+        document_id: doc.id, version_number: 2,
+        original_filename: 'v2.pdf', storage_key: `key-${crypto.randomBytes(8).toString('hex')}`,
+        mime_type: 'application/pdf', size_bytes: 2048,
+        sha256: crypto.randomBytes(32).toString('hex'),
+        uploaded_by_admin_id: adminId, scan_status: 'NOT_SCANNED',
+      },
+    });
+
+    expect(await getNextVersionNumber(doc.id)).toBe(3);
+  });
+
+  // -- Simulated concurrent version allocation --
+
+  it('SECURITY: concurrent version allocation resolved by UNIQUE constraint', async () => {
+    const doc = await prisma.accounting_company_documents.create({
+      data: { legal_entity_id: entityId, document_type_id: docTypeId, status: 'DRAFT' },
+    });
+
+    // Simulate: both read version 0, both try to create version 1
+    const createV1 = (suffix: string) => prisma.accounting_company_document_files.create({
+      data: {
+        document_id: doc.id, version_number: 1,
+        original_filename: `concurrent-${suffix}.pdf`,
+        storage_key: `key-concurrent-${suffix}-${crypto.randomBytes(8).toString('hex')}`,
+        mime_type: 'application/pdf', size_bytes: 1024,
+        sha256: crypto.randomBytes(32).toString('hex'),
+        uploaded_by_admin_id: adminId, scan_status: 'NOT_SCANNED',
+      },
+    });
+
+    const results = await Promise.allSettled([createV1('a'), createV1('b')]);
+
+    // One succeeds, one fails with unique violation
+    const successes = results.filter(r => r.status === 'fulfilled');
+    const failures = results.filter(r => r.status === 'rejected');
+    expect(successes.length).toBe(1);
+    expect(failures.length).toBe(1);
   });
 });
