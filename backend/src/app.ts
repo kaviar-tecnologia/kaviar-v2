@@ -129,6 +129,8 @@ import adminManagerCyclesRoutes from './routes/admin-manager-cycles';
 import managerFinanceRoutes from './routes/manager-finance';
 import { adminAccountingRoutes } from './routes/admin-accounting';
 import { accountantAuthRoutes } from './routes/accountant-auth';
+import { accountantPortalRoutes } from './routes/accountant-portal';
+import { authenticateAccountant } from './middlewares/accountant-auth';
 import webhooksAsaasRoutes from './routes/webhooks-asaas';
 
 const app = express();
@@ -436,6 +438,7 @@ app.use('/api/admin/finance/outbound', adminOutboundPaymentsRoutes);
 app.use('/api/admin/finance/manager-cycles', adminManagerCyclesRoutes);
 app.use('/api/admin/accounting', adminAccountingRoutes);
 app.use('/api/accountant/auth', accountantAuthRoutes);
+app.use('/api/accountant/portal', authenticateAccountant, accountantPortalRoutes);
 app.use('/api/manager/finance', managerFinanceRoutes);
 app.use('/api/webhooks/asaas', webhooksAsaasRoutes);
 app.use('/api/driver/annual-incentive', driverAnnualIncentiveRoutes);

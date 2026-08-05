@@ -59,6 +59,7 @@ import AccountantProtectedRoute from "./components/accountant/AccountantProtecte
 import ActivateAccountPage from "./pages/accountant/ActivateAccountPage";
 import ForgotPasswordPage from "./pages/accountant/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/accountant/ResetPasswordPage";
+import AccountantPlaceholderPage from "./pages/accountant/AccountantPlaceholderPage";
 
 function ConsultorForm() {
   const [form, setForm] = React.useState({ nome: '', whatsapp: '', bairro: '', cidade: '', qtd: '', obs: '' });
@@ -503,6 +504,12 @@ export default function App() {
               </AccountantProtectedRoute>
             </AccountantAuthProvider>
           } />
+          <Route path="/contador/empresas" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPlaceholderPage title="Empresas" /></AccountantProtectedRoute></AccountantAuthProvider>} />
+          <Route path="/contador/documentos" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPlaceholderPage title="Documentos" /></AccountantProtectedRoute></AccountantAuthProvider>} />
+          <Route path="/contador/competencias" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPlaceholderPage title="Competências" /></AccountantProtectedRoute></AccountantAuthProvider>} />
+          <Route path="/contador/pendencias" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPlaceholderPage title="Pendências" /></AccountantProtectedRoute></AccountantAuthProvider>} />
+          <Route path="/contador/relatorios" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPlaceholderPage title="Relatórios" /></AccountantProtectedRoute></AccountantAuthProvider>} />
+          <Route path="/contador/perfil" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPlaceholderPage title="Meu Perfil" /></AccountantProtectedRoute></AccountantAuthProvider>} />
 
           {/* Mantém o AuthApp (se ainda existir fluxo interno) */}
           <Route path="/auth/*" element={<AuthApp />} />
