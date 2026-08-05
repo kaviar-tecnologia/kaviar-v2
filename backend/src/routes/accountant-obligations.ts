@@ -49,7 +49,7 @@ const VALID_TRANSITIONS: Record<string, { targets: string[]; newOwner: Record<st
   VIEWED: { targets: ['SCHEDULED', 'PAID'], newOwner: { SCHEDULED: 'COMPANY', PAID: 'COMPANY' } },
   SCHEDULED: { targets: ['PAID'], newOwner: { PAID: 'COMPANY' } },
   PAID: { targets: ['PROOF_UPLOADED'], newOwner: { PROOF_UPLOADED: 'ACCOUNTANT' } },
-  PROOF_UPLOADED: { targets: ['UNDER_VERIFICATION'], newOwner: { UNDER_VERIFICATION: 'ACCOUNTANT' } },
+  PROOF_UPLOADED: { targets: ['VERIFIED', 'REJECTED'], newOwner: { VERIFIED: 'ACCOUNTANT', REJECTED: 'COMPANY' } },
   UNDER_VERIFICATION: { targets: ['VERIFIED', 'REJECTED'], newOwner: { VERIFIED: 'ACCOUNTANT', REJECTED: 'COMPANY' } },
   VERIFIED: { targets: ['RECONCILED'], newOwner: { RECONCILED: 'ACCOUNTANT' } },
   REJECTED: { targets: ['PROOF_UPLOADED', 'PAID'], newOwner: { PROOF_UPLOADED: 'ACCOUNTANT', PAID: 'COMPANY' } },
