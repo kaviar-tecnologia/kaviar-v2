@@ -22,7 +22,7 @@ ON CONFLICT ("cnpj") DO NOTHING;
 INSERT INTO "accountant_entity_links" (
   "id", "accountant_id", "legal_entity_id", "scope", "status",
   "can_view", "can_upload", "can_download", "can_request_correction", "can_mark_processed", "can_close_period",
-  "inherits_children", "starts_at", "created_at", "updated_at"
+  "inherits_children", "starts_at", "created_by_admin_id", "created_at", "updated_at"
 )
 SELECT
   gen_random_uuid()::text,
@@ -33,6 +33,7 @@ SELECT
   true, true, true, true, true, true,
   false,
   NOW(),
+  (SELECT id FROM admins LIMIT 1),
   NOW(),
   NOW()
 FROM accountants a
