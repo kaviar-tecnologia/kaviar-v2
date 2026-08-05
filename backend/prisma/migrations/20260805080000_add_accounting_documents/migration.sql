@@ -6,6 +6,7 @@
 -- 1. Enums
 CREATE TYPE "accounting_document_category" AS ENUM ('SOCIETARIO', 'FISCAL', 'TRABALHISTA', 'CERTIFICADO', 'PROCURACAO', 'LICENCA', 'INSCRICAO', 'OUTRO');
 CREATE TYPE "accounting_document_status" AS ENUM ('DRAFT', 'SENT', 'UNDER_REVIEW', 'APPROVED', 'ACTIVE', 'REJECTED', 'REPLACED', 'REVOKED');
+CREATE TYPE "accounting_document_scan_status" AS ENUM ('NOT_SCANNED', 'PENDING', 'CLEAN', 'INFECTED', 'FAILED');
 
 -- 2. Document types catalog (SUPER_ADMIN editable, code immutable after creation)
 CREATE TABLE "accounting_document_types" (
@@ -72,7 +73,7 @@ CREATE TABLE "accounting_company_document_files" (
     "sha256" VARCHAR(64) NOT NULL,
     "uploaded_by_admin_id" TEXT,
     "uploaded_by_accountant_id" TEXT,
-    "scan_status" VARCHAR(20) NOT NULL DEFAULT 'NOT_SCANNED',
+    "scan_status" "accounting_document_scan_status" NOT NULL DEFAULT 'NOT_SCANNED',
     "replacement_reason" TEXT,
     "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 

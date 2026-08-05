@@ -4626,6 +4626,14 @@ enum accounting_document_status {
   REVOKED
 }
 
+enum accounting_document_scan_status {
+  NOT_SCANNED
+  PENDING
+  CLEAN
+  INFECTED
+  FAILED
+}
+
 model accounting_document_types {
   id                  String                        @id @default(uuid())
   code                String                        @unique
@@ -4686,7 +4694,7 @@ model accounting_company_document_files {
   sha256                  String   @db.VarChar(64)
   uploaded_by_admin_id    String?
   uploaded_by_accountant_id String?
-  scan_status             String   @default("NOT_SCANNED") @db.VarChar(20)
+  scan_status             accounting_document_scan_status @default(NOT_SCANNED)
   replacement_reason      String?
   created_at              DateTime @default(now())
 
