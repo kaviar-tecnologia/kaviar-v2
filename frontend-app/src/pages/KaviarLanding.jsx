@@ -1,5 +1,5 @@
-import React from 'react';
-import { Box, Button, Card, CardContent, Container, Stack, Typography } from '@mui/material';
+import React, { useState } from 'react';
+import { Box, Button, Card, CardContent, Container, Menu, MenuItem, Stack, Typography } from '@mui/material';
 import {
   AdminPanelSettingsOutlined,
   BusinessCenterOutlined,
@@ -156,6 +156,7 @@ const panelCards = [
 
 export default function KaviarLanding() {
   React.useEffect(() => {
+  const [loginAnchor, setLoginAnchor] = useState(null);
     if (window.location.hash) {
       setTimeout(() => {
         const element = document.querySelector(window.location.hash);
@@ -233,9 +234,25 @@ export default function KaviarLanding() {
           </Stack>
 
           <Stack direction="row" spacing={0.8}>
-            <Button href="#paineis" sx={buttonOutlineCompact}>
+            <Button onClick={(e) => setLoginAnchor(e.currentTarget)} sx={buttonOutlineCompact}>
               Entrar
             </Button>
+            <Menu
+              anchorEl={loginAnchor}
+              open={Boolean(loginAnchor)}
+              onClose={() => setLoginAnchor(null)}
+              PaperProps={{ sx: { bgcolor: '#1A1A2E', border: '1px solid rgba(212,175,55,0.3)', borderRadius: 2, mt: 1, minWidth: 220 } }}
+            >
+              <MenuItem component="a" href="/commerce" onClick={() => setLoginAnchor(null)} sx={{ color: '#fff', '&:hover': { bgcolor: 'rgba(212,175,55,0.1)' } }}>
+                <StorefrontOutlined sx={{ mr: 1.5, color: gold, fontSize: 20 }} /> Comércio
+              </MenuItem>
+              <MenuItem component="a" href="/contador/login" onClick={() => setLoginAnchor(null)} sx={{ color: '#fff', '&:hover': { bgcolor: 'rgba(212,175,55,0.1)' } }}>
+                <BusinessCenterOutlined sx={{ mr: 1.5, color: gold, fontSize: 20 }} /> Portal do Contador
+              </MenuItem>
+              <MenuItem component="a" href="/admin/login" onClick={() => setLoginAnchor(null)} sx={{ color: '#fff', '&:hover': { bgcolor: 'rgba(212,175,55,0.1)' } }}>
+                <AdminPanelSettingsOutlined sx={{ mr: 1.5, color: gold, fontSize: 20 }} /> Administração
+              </MenuItem>
+            </Menu>
             <Button href={passengerApk} target="_blank" rel="noopener noreferrer" sx={buttonGoldCompact}>
               Baixar o app
             </Button>
