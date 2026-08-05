@@ -52,8 +52,8 @@ export default function LinkFormDialog({ open, mode, linkId, onClose, onSuccess 
     if (!open) return;
     setError('');
     Promise.all([
-      listAccountants({ limit: 200 }),
-      listLegalEntities({ limit: 200 }),
+      listAccountants({ limit: 100 }),
+      listLegalEntities({ limit: 100 }),
     ]).then(([accRes, entRes]) => {
       setAccountants(accRes.data || []);
       setEntities(entRes.data || []);

@@ -81,7 +81,7 @@ export default function EntityFormDialog({ open, mode, entityId, onClose, onSucc
     } else {
       setForm(emptyForm());
     }
-    listLegalEntities({ entity_type: 'MATRIZ', limit: 200 })
+    listLegalEntities({ entity_type: 'MATRIZ', limit: 100 })
       .then((res) => setParentEntities(res.data || []))
       .catch(() => {});
   }, [open, mode, entityId]);

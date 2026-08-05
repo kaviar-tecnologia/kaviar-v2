@@ -47,7 +47,7 @@ export default function AccountantFormDialog({ open, mode, accountantId, onClose
   useEffect(() => {
     if (!open) return;
     setError('');
-    listAccountingFirms({ limit: 200 })
+    listAccountingFirms({ limit: 100 })
       .then((res) => setFirms(res.data || []))
       .catch(() => {});
     if (mode === 'edit' && accountantId) {
