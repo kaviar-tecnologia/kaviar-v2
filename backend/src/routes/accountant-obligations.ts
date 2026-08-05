@@ -198,6 +198,11 @@ router.post('/obligations/:id/transition', async (req: Request, res: Response) =
       return res.status(400).json({ success: false, error: `Transição inválida: ${ob.status} → ${data.status}` });
     }
 
+    // Business rule: cannot send to company without boleto attached
+    if (data.status === 'SENT_TO_COMPANY' && !ob.boleto_file_id) {
+      return res.status(400).json({ success: false, error: 'Anexe o boleto ou guia antes de enviar para a empresa' });
+    }
+
     const newOwner = machine.newOwner[data.status] || ob.action_owner;
     const now = new Date();
 

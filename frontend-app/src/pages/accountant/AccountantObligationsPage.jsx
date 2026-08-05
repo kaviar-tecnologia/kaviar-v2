@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Typography, Card, CardContent, Chip, Button, Skeleton, Grid, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Select, MenuItem, FormControl, InputLabel, Alert, Snackbar, IconButton, Tooltip } from '@mui/material';
-import { Receipt, Add, Business, ArrowBack, Send, CheckCircle, CloudDownload } from '@mui/icons-material';
+import { Receipt, Add, Business, ArrowBack, Send, CheckCircle, CloudDownload, Upload } from '@mui/icons-material';
 import { useNavigate, useParams } from 'react-router-dom';
 import AccountantPortalLayout from '../../components/accountant/AccountantPortalLayout';
 import accountantApi from '../../services/accountantApi';
@@ -48,6 +48,20 @@ export default function AccountantObligationsPage() {
     }
   };
 
+  const handleUploadBoleto = async (obId, e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      await accountantApi.post(`/api/accountant/portal/obligations/${obId}/upload-boleto`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 });
+      setSnackbar({ open: true, message: 'Boleto anexado com sucesso.', severity: 'success' });
+      fetchData();
+    } catch (err) {
+      setSnackbar({ open: true, message: err.response?.data?.error || 'Erro ao anexar boleto', severity: 'error' });
+    }
+  };
+
   return (
     <AccountantPortalLayout>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
@@ -91,7 +105,18 @@ export default function AccountantObligationsPage() {
                     </Box>
                   </Box>
                   <Box sx={{ display: 'flex', gap: 0.5 }}>
-                    {ob.status === 'DRAFT' && (
+                    {ob.status === 'DRAFT' && !ob.boleto_file_id && (
+                      <>
+                        <Tooltip title="Anexar boleto">
+                          <IconButton size="small" component="label" sx={{ color: '#D4AF37' }}>
+                            <Upload fontSize="small" />
+                            <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => handleUploadBoleto(ob.id, e)} />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Anexe o boleto antes de enviar"><IconButton size="small" disabled sx={{ color: 'rgba(255,255,255,0.2)' }}><Send fontSize="small" /></IconButton></Tooltip>
+                      </>
+                    )}
+                    {ob.status === 'DRAFT' && ob.boleto_file_id && (
                       <Tooltip title="Enviar para empresa"><IconButton size="small" onClick={() => handleTransition(ob.id, 'SENT_TO_COMPANY')} sx={{ color: '#3B82F6' }}><Send fontSize="small" /></IconButton></Tooltip>
                     )}
                     {['PROOF_UPLOADED', 'UNDER_VERIFICATION'].includes(ob.status) && (
