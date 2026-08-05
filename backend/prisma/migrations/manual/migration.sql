@@ -1,0 +1,1 @@
+-- Legacy manual migrations (applied externally)

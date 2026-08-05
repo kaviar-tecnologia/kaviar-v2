@@ -81,7 +81,9 @@ CREATE TABLE "accounting_company_document_files" (
     CONSTRAINT "accounting_company_document_files_admin_fk" FOREIGN KEY ("uploaded_by_admin_id") REFERENCES "admins"("id") ON DELETE SET NULL,
     CONSTRAINT "accounting_company_document_files_accountant_fk" FOREIGN KEY ("uploaded_by_accountant_id") REFERENCES "accountants"("id") ON DELETE SET NULL,
     CONSTRAINT "accounting_company_document_files_has_uploader" CHECK (
-      "uploaded_by_admin_id" IS NOT NULL OR "uploaded_by_accountant_id" IS NOT NULL
+      ("uploaded_by_admin_id" IS NOT NULL AND "uploaded_by_accountant_id" IS NULL)
+      OR
+      ("uploaded_by_admin_id" IS NULL AND "uploaded_by_accountant_id" IS NOT NULL)
     )
 );
 
