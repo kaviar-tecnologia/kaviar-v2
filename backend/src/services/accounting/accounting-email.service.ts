@@ -11,7 +11,7 @@ import { emailService } from '../email/email.service';
 import { prisma } from '../../lib/prisma';
 import { buildInviteEmail, buildReinviteEmail, buildPasswordResetEmail } from './accounting-email-templates';
 
-const PORTAL_BASE_URL = process.env.ACCOUNTING_PORTAL_URL || 'https://admin.kaviar.com.br';
+const PORTAL_BASE_URL = process.env.ACCOUNTING_PORTAL_URL || 'https://kaviar.com.br';
 const FROM_ADDRESS = 'KAVIAR <no-reply@kaviar.com.br>';
 
 function maskEmail(email: string): string {
