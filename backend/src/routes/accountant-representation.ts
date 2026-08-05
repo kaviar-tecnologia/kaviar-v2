@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { verifyEntityAccess, getAccessibleEntityIds } from '../services/accounting/accounting-documents.service';
 import { computeFiscalHealth } from '../services/accounting/accounting-fiscal-health.service';
+import { computePendencias, getPendenciasSummary } from '../services/accounting/accounting-pendencias.service';
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -365,6 +366,41 @@ router.get('/fiscal-health', async (req: Request, res: Response) => {
     res.json({ success: true, data: { companies: results, overall: overallStatus } });
   } catch (err: any) {
     console.error('[fiscal-health] summary error:', err);
+    res.status(500).json({ success: false, error: 'Erro interno' });
+  }
+});
+
+// ============================================================
+// PENDÊNCIAS (computed, no table — single source of truth)
+// ============================================================
+
+/**
+ * GET /pendencias
+ * All pending actions for the accountant, sorted by priority.
+ * Feeds: dashboard "O que fazer agora", pendências page, alerts.
+ */
+router.get('/pendencias', async (req: Request, res: Response) => {
+  try {
+    const accountant = (req as any).accountant;
+    const pendencias = await computePendencias(accountant.id);
+    res.json({ success: true, data: pendencias });
+  } catch (err: any) {
+    console.error('[pendencias] error:', err);
+    res.status(500).json({ success: false, error: 'Erro interno' });
+  }
+});
+
+/**
+ * GET /pendencias/summary
+ * Quick counts for dashboard cards.
+ */
+router.get('/pendencias/summary', async (req: Request, res: Response) => {
+  try {
+    const accountant = (req as any).accountant;
+    const summary = await getPendenciasSummary(accountant.id);
+    res.json({ success: true, data: summary });
+  } catch (err: any) {
+    console.error('[pendencias] summary error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
 });

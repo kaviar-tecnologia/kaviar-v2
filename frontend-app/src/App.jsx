@@ -66,6 +66,7 @@ import AccountantDocumentDetailPage from "./pages/accountant/AccountantDocumentD
 import AccountantNewDocumentPage from "./pages/accountant/AccountantNewDocumentPage";
 import AccountantCertificatesPage from "./pages/accountant/AccountantCertificatesPage";
 import AccountantPowersOfAttorneyPage from "./pages/accountant/AccountantPowersOfAttorneyPage";
+import AccountantPendenciasPage from "./pages/accountant/AccountantPendenciasPage";
 import AccountantCompanyDetailPage from "./pages/accountant/AccountantCompanyDetailPage";
 
 function ConsultorForm() {
@@ -519,7 +520,7 @@ export default function App() {
           <Route path="/contador/certificados" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantCertificatesPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/procuracoes" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPowersOfAttorneyPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/competencias" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPlaceholderPage title="Competências" /></AccountantProtectedRoute></AccountantAuthProvider>} />
-          <Route path="/contador/pendencias" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPlaceholderPage title="Pendências" /></AccountantProtectedRoute></AccountantAuthProvider>} />
+          <Route path="/contador/pendencias" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPendenciasPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/relatorios" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPlaceholderPage title="Relatórios" /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/perfil" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPlaceholderPage title="Meu Perfil" /></AccountantProtectedRoute></AccountantAuthProvider>} />
 
