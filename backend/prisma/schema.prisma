@@ -4417,6 +4417,7 @@ model legal_entities {
   certificates        accounting_certificates[]          @relation("entity_certificates")
   powers_of_attorney  accounting_powers_of_attorney[]    @relation("entity_powers_of_attorney")
   payment_obligations accounting_payment_obligations[]   @relation("entity_obligations")
+  competencies        accounting_competencies[]           @relation("entity_competencies")
   @@map("legal_entities")
 }
 
@@ -4478,6 +4479,10 @@ model accountants {
   obligations_created       accounting_payment_obligations[]   @relation("obligation_creator")
   obligations_verified      accounting_payment_obligations[]   @relation("obligation_verifier")
   obligation_tokens_created accounting_obligation_access_tokens[] @relation("token_creator")
+  competencies_responsible  accounting_competencies[]              @relation("comp_responsible")
+  competencies_completed    accounting_competencies[]              @relation("comp_completed_by")
+  competencies_created      accounting_competencies[]              @relation("comp_created_by")
+  competency_doc_links      accounting_competency_documents[]      @relation("comp_doc_linker")
   @@map("accountants")
 }
 
@@ -4688,6 +4693,7 @@ model accounting_company_documents {
   @@index([status])
   @@index([expires_at])
   @@index([legal_entity_id, status])
+  competency_links         accounting_competency_documents[]
   @@map("accounting_company_documents")
 }
 
@@ -4914,12 +4920,14 @@ model accounting_payment_obligations {
   rejection_reason         String?
   created_by_accountant_id String?
   verified_by_accountant_id String?
+  competency_id            String?
   created_at               DateTime                             @default(now())
   updated_at               DateTime                             @updatedAt
 
   legal_entity             legal_entities                       @relation("entity_obligations", fields: [legal_entity_id], references: [id], onDelete: Restrict)
   created_by_accountant    accountants?                         @relation("obligation_creator", fields: [created_by_accountant_id], references: [id], onDelete: SetNull)
   verified_by_accountant   accountants?                         @relation("obligation_verifier", fields: [verified_by_accountant_id], references: [id], onDelete: SetNull)
+  competency               accounting_competencies?             @relation(fields: [competency_id], references: [id], onDelete: SetNull)
 
   @@index([legal_entity_id])
   @@index([legal_entity_id, status])
@@ -4968,4 +4976,67 @@ model accounting_obligation_audit {
   @@index([obligation_id, created_at])
   @@index([action, created_at])
   @@map("accounting_obligation_audit")
+}
+
+// ========================
+// Frente 3G: Competências Contábeis
+// ========================
+
+enum accounting_competency_status {
+  OPEN
+  WAITING_DOCUMENTS
+  UNDER_REVIEW
+  PENDING_CORRECTION
+  COMPLETED
+  REOPENED
+  CANCELED
+}
+
+model accounting_competencies {
+  id                        String                         @id @default(uuid())
+  legal_entity_id           String
+  month                     Int
+  year                      Int
+  status                    accounting_competency_status   @default(OPEN)
+  action_owner              String                         @default("ACCOUNTANT")
+  expected_deadline         DateTime?                      @db.Date
+  completed_at              DateTime?
+  completed_by_accountant_id String?
+  reopened_at               DateTime?
+  reopen_reason             String?
+  responsible_accountant_id String?
+  notes                     String?
+  created_by_accountant_id  String?
+  created_at                DateTime                       @default(now())
+  updated_at                DateTime                       @updatedAt
+
+  legal_entity              legal_entities                 @relation("entity_competencies", fields: [legal_entity_id], references: [id], onDelete: Restrict)
+  responsible_accountant    accountants?                   @relation("comp_responsible", fields: [responsible_accountant_id], references: [id], onDelete: SetNull)
+  completed_by_accountant   accountants?                   @relation("comp_completed_by", fields: [completed_by_accountant_id], references: [id], onDelete: SetNull)
+  created_by_accountant     accountants?                   @relation("comp_created_by", fields: [created_by_accountant_id], references: [id], onDelete: SetNull)
+  documents                 accounting_competency_documents[]
+  obligations               accounting_payment_obligations[]
+
+  @@unique([legal_entity_id, year, month])
+  @@index([legal_entity_id])
+  @@index([legal_entity_id, status])
+  @@index([year, month])
+  @@index([expected_deadline])
+  @@map("accounting_competencies")
+}
+
+model accounting_competency_documents {
+  id                      String   @id @default(uuid())
+  competency_id           String
+  document_id             String
+  linked_at               DateTime @default(now())
+  linked_by_accountant_id String?
+
+  competency              accounting_competencies          @relation(fields: [competency_id], references: [id], onDelete: Cascade)
+  document                accounting_company_documents     @relation(fields: [document_id], references: [id], onDelete: Cascade)
+  linked_by_accountant    accountants?                     @relation("comp_doc_linker", fields: [linked_by_accountant_id], references: [id], onDelete: SetNull)
+
+  @@unique([competency_id, document_id])
+  @@index([competency_id])
+  @@map("accounting_competency_documents")
 }

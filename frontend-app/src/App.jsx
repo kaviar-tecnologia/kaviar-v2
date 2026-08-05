@@ -71,6 +71,8 @@ import AccountantRidesReportPage from "./pages/accountant/AccountantRidesReportP
 import AccountantObligationsPage from "./pages/accountant/AccountantObligationsPage";
 import AccountantObligationDetailPage from "./pages/accountant/AccountantObligationDetailPage";
 import AccountantReportsPage from "./pages/accountant/AccountantReportsPage";
+import AccountantCompetenciesPage from "./pages/accountant/AccountantCompetenciesPage";
+import AccountantCompetencyDetailPage from "./pages/accountant/AccountantCompetencyDetailPage";
 import PublicPaymentPage from "./pages/public/PublicPaymentPage";
 import AccountantCompanyDetailPage from "./pages/accountant/AccountantCompanyDetailPage";
 
@@ -529,7 +531,8 @@ export default function App() {
           <Route path="/contador/empresas/:entityId/obrigacoes" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantObligationsPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/obrigacoes" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantObligationsPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/obrigacoes/:id" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantObligationDetailPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
-          <Route path="/contador/competencias" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPlaceholderPage title="Competências" /></AccountantProtectedRoute></AccountantAuthProvider>} />
+          <Route path="/contador/competencias" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantCompetenciesPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
+          <Route path="/contador/competencias/:id" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantCompetencyDetailPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/pendencias" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPendenciasPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/relatorios" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantReportsPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/perfil" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPlaceholderPage title="Meu Perfil" /></AccountantProtectedRoute></AccountantAuthProvider>} />

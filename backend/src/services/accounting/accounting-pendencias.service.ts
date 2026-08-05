@@ -183,6 +183,58 @@ export async function computePendencias(accountantId: string): Promise<Pendencia
     }
   }
 
+  // 2.5 COMPETENCIES — overdue, waiting documents, pending correction
+  const competencies = await prisma.accounting_competencies.findMany({
+    where: {
+      legal_entity_id: { in: [...entityIds] },
+      status: { notIn: ['COMPLETED', 'CANCELED'] },
+    },
+  });
+
+  for (const comp of competencies) {
+    const entity = entityMap.get(comp.legal_entity_id);
+    if (!entity) continue;
+
+    const periodLabel = `${['', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'][comp.month]}/${comp.year}`;
+
+    if (comp.expected_deadline) {
+      const deadline = new Date(comp.expected_deadline);
+      const diffDays = Math.floor((deadline.getTime() - today.getTime()) / 86400000);
+      if (diffDays < 0) {
+        pendencias.push({
+          id: `comp-overdue-${comp.id}`, type: 'DOCUMENT', priority: 'URGENT',
+          title: `Competência ${periodLabel} atrasada`,
+          description: `Prazo venceu há ${Math.abs(diffDays)} dias`,
+          entity_id: entity.id, entity_name: entity.razao_social, entity_cnpj: entity.cnpj,
+          action: 'Concluir competência', action_path: `/contador/competencias/${comp.id}`,
+          expires_at: comp.expected_deadline.toISOString(), days_until_expiry: diffDays,
+          created_source: 'competency_overdue',
+        });
+      } else if (diffDays <= 7) {
+        pendencias.push({
+          id: `comp-due-soon-${comp.id}`, type: 'DOCUMENT', priority: 'MEDIUM',
+          title: `Competência ${periodLabel} vence em ${diffDays}d`,
+          description: comp.status === 'WAITING_DOCUMENTS' ? 'Aguardando documentos' : 'Em andamento',
+          entity_id: entity.id, entity_name: entity.razao_social, entity_cnpj: entity.cnpj,
+          action: 'Avançar competência', action_path: `/contador/competencias/${comp.id}`,
+          expires_at: comp.expected_deadline.toISOString(), days_until_expiry: diffDays,
+          created_source: 'competency_due_soon',
+        });
+      }
+    }
+
+    if (comp.status === 'PENDING_CORRECTION') {
+      pendencias.push({
+        id: `comp-correction-${comp.id}`, type: 'DOCUMENT', priority: 'HIGH',
+        title: `Competência ${periodLabel} — correção pendente`,
+        description: 'Aguardando correção para prosseguir',
+        entity_id: entity.id, entity_name: entity.razao_social, entity_cnpj: entity.cnpj,
+        action: 'Corrigir', action_path: `/contador/competencias/${comp.id}`,
+        created_source: 'competency_correction',
+      });
+    }
+  }
+
   // 3. DOCUMENT WORKFLOW — rejected or draft without file
   const documents = await prisma.accounting_company_documents.findMany({
     where: {
