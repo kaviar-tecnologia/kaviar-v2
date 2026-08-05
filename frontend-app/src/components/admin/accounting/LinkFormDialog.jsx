@@ -24,17 +24,21 @@ import {
   updateAccountantLink,
 } from '../../../services/adminAccountingService';
 
-const SCOPE_OPTIONS = ['FULL', 'FISCAL', 'CONTABIL', 'DEPARTAMENTO_PESSOAL', 'CONSULTORIA'];
-const PERMISSION_OPTIONS = ['VIEW_TRANSACTIONS', 'VIEW_REPORTS', 'EXPORT_DATA', 'MANAGE_DOCUMENTS', 'SUBMIT_DECLARATIONS'];
+const SCOPE_OPTIONS = ['COMPLETO', 'FISCAL', 'CONTABIL', 'FOLHA', 'SOCIETARIO', 'FINANCEIRO', 'MUNICIPAL'];
 
 function emptyForm() {
   return {
     accountant_id: '',
     legal_entity_id: '',
-    scope: 'FULL',
-    permissions: [],
+    scope: 'COMPLETO',
+    can_view: true,
+    can_upload: false,
+    can_download: true,
+    can_request_correction: false,
+    can_mark_processed: false,
+    can_close_period: false,
     inherits_children: false,
-    starts_at: '',
+    starts_at: new Date().toISOString().split('T')[0], // Today as default
     ends_at: '',
   };
 }
@@ -68,7 +72,7 @@ export default function LinkFormDialog({ open, mode, linkId, onClose, onSuccess 
             accountant_id: link.accountant_id || '',
             legal_entity_id: link.legal_entity_id || '',
             scope: link.scope || 'FULL',
-            permissions: link.permissions || [],
+            can_view: link.can_view ?? true, can_upload: link.can_upload ?? false, can_download: link.can_download ?? true, can_request_correction: link.can_request_correction ?? false, can_mark_processed: link.can_mark_processed ?? false, can_close_period: link.can_close_period ?? false,
             inherits_children: link.inherits_children ?? false,
             starts_at: link.starts_at ? link.starts_at.slice(0, 10) : '',
             ends_at: link.ends_at ? link.ends_at.slice(0, 10) : '',
@@ -85,13 +89,8 @@ export default function LinkFormDialog({ open, mode, linkId, onClose, onSuccess 
     setForm((prev) => ({ ...prev, [field]: e.target.value }));
   };
 
-  const handlePermissionToggle = (perm) => {
-    setForm((prev) => ({
-      ...prev,
-      permissions: prev.permissions.includes(perm)
-        ? prev.permissions.filter((p) => p !== perm)
-        : [...prev.permissions, perm],
-    }));
+  const handleBooleanToggle = (field) => () => {
+    setForm((prev) => ({ ...prev, [field]: !prev[field] }));
   };
 
   const validate = () => {
@@ -111,9 +110,18 @@ export default function LinkFormDialog({ open, mode, linkId, onClose, onSuccess 
     setError('');
     try {
       const payload = {
-        ...form,
-        starts_at: form.starts_at || null,
-        ends_at: form.ends_at || null,
+        accountant_id: form.accountant_id,
+        legal_entity_id: form.legal_entity_id,
+        scope: form.scope,
+        can_view: form.can_view,
+        can_upload: form.can_upload,
+        can_download: form.can_download,
+        can_request_correction: form.can_request_correction,
+        can_mark_processed: form.can_mark_processed,
+        can_close_period: form.can_close_period,
+        inherits_children: form.inherits_children,
+        starts_at: form.starts_at ? new Date(form.starts_at + 'T00:00:00Z').toISOString() : new Date().toISOString(),
+        ends_at: form.ends_at ? new Date(form.ends_at + 'T23:59:59Z').toISOString() : null,
       };
       if (mode === 'edit') {
         await updateAccountantLink(linkId, payload);
@@ -123,7 +131,12 @@ export default function LinkFormDialog({ open, mode, linkId, onClose, onSuccess 
         onSuccess('Vínculo criado com sucesso.');
       }
     } catch (err) {
-      setError(err.message);
+      const data = err.response?.data;
+      let msg = data?.error || err.message || 'Erro ao salvar vínculo';
+      if (data?.details?.length) {
+        msg = `${msg} — ${data.details.map(d => `${d.path?.join('.') || 'campo'}: ${d.message}`).join('; ')}`;
+      }
+      setError(msg);
     } finally {
       setLoading(false);
       submittingRef.current = false;
@@ -165,20 +178,12 @@ export default function LinkFormDialog({ open, mode, linkId, onClose, onSuccess 
             </FormControl>
             <Box>
               <InputLabel sx={{ fontSize: 12, mb: 0.5 }}>Permissões</InputLabel>
-              {PERMISSION_OPTIONS.map((perm) => (
-                <FormControlLabel
-                  key={perm}
-                  control={
-                    <Checkbox
-                      size="small"
-                      checked={form.permissions.includes(perm)}
-                      onChange={() => handlePermissionToggle(perm)}
-                    />
-                  }
-                  label={perm}
-                  sx={{ display: 'block', '& .MuiFormControlLabel-label': { fontSize: 13 } }}
-                />
-              ))}
+              <FormControlLabel control={<Checkbox size="small" checked={form.can_view} onChange={handleBooleanToggle('can_view')} />} label="Visualizar" sx={{ display: 'block', '& .MuiFormControlLabel-label': { fontSize: 13 } }} />
+              <FormControlLabel control={<Checkbox size="small" checked={form.can_upload} onChange={handleBooleanToggle('can_upload')} />} label="Enviar documentos" sx={{ display: 'block', '& .MuiFormControlLabel-label': { fontSize: 13 } }} />
+              <FormControlLabel control={<Checkbox size="small" checked={form.can_download} onChange={handleBooleanToggle('can_download')} />} label="Baixar documentos" sx={{ display: 'block', '& .MuiFormControlLabel-label': { fontSize: 13 } }} />
+              <FormControlLabel control={<Checkbox size="small" checked={form.can_request_correction} onChange={handleBooleanToggle('can_request_correction')} />} label="Solicitar correção" sx={{ display: 'block', '& .MuiFormControlLabel-label': { fontSize: 13 } }} />
+              <FormControlLabel control={<Checkbox size="small" checked={form.can_mark_processed} onChange={handleBooleanToggle('can_mark_processed')} />} label="Marcar processado" sx={{ display: 'block', '& .MuiFormControlLabel-label': { fontSize: 13 } }} />
+              <FormControlLabel control={<Checkbox size="small" checked={form.can_close_period} onChange={handleBooleanToggle('can_close_period')} />} label="Concluir competência" sx={{ display: 'block', '& .MuiFormControlLabel-label': { fontSize: 13 } }} />
             </Box>
             <FormControlLabel
               control={
