@@ -133,10 +133,17 @@ export default function LinksTab() {
                   <TableCell>{row.scope || '—'}</TableCell>
                   <TableCell>
                     <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                      {(row.permissions || []).map((perm) => (
+                      {[
+                        row.can_view && 'Visualizar',
+                        row.can_upload && 'Enviar',
+                        row.can_download && 'Baixar',
+                        row.can_request_correction && 'Correção',
+                        row.can_mark_processed && 'Processado',
+                        row.can_close_period && 'Competência',
+                      ].filter(Boolean).map((perm) => (
                         <Chip key={perm} label={perm} size="small" variant="outlined" sx={{ fontSize: 10 }} />
                       ))}
-                      {(!row.permissions || row.permissions.length === 0) && '—'}
+                      {![row.can_view, row.can_upload, row.can_download, row.can_request_correction, row.can_mark_processed, row.can_close_period].some(Boolean) && '—'}
                     </Box>
                   </TableCell>
                   <TableCell sx={{ fontSize: 12 }}>

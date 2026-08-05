@@ -81,6 +81,7 @@ export async function activateAccount(
       where: { id: accountant.id },
       data: {
         status: 'ACTIVE',
+        is_active: true,
         password_hash: passwordHash,
         password_changed_at: new Date(),
         password_version: 1,
@@ -146,8 +147,8 @@ export async function login(
     throw new AccountingAuthError('INVALID_CREDENTIALS', 'Email e senha são obrigatórios');
   }
 
-  const accountant = await prisma.accountants.findUnique({
-    where: { email: email.toLowerCase().trim() },
+  const accountant = await prisma.accountants.findFirst({
+    where: { email: { equals: email.toLowerCase().trim(), mode: 'insensitive' } },
   });
 
   if (!accountant || !accountant.password_hash) {
@@ -418,8 +419,8 @@ export async function logoutAll(accountantId: string, reason?: string) {
 
 export async function forgotPassword(email: string, ip?: string, userAgent?: string) {
   // Always return generic response regardless of whether email exists
-  const accountant = await prisma.accountants.findUnique({
-    where: { email: email.toLowerCase().trim() },
+  const accountant = await prisma.accountants.findFirst({
+    where: { email: { equals: email.toLowerCase().trim(), mode: 'insensitive' } },
   });
 
   if (!accountant || accountant.status !== 'ACTIVE') {

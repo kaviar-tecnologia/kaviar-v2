@@ -240,10 +240,10 @@ export default function AccountantsTab() {
                   <TableCell>{getInviteChip(row)}</TableCell>
                   <TableCell>
                     <Chip
-                      label={row.is_active ? 'Sim' : 'Não'}
+                      label={row.status === 'ACTIVE' ? 'Sim' : 'Não'}
                       size="small"
                       variant="outlined"
-                      color={row.is_active ? 'success' : 'default'}
+                      color={row.status === 'ACTIVE' ? 'success' : 'default'}
                     />
                   </TableCell>
                   <TableCell align="right">
