@@ -90,15 +90,32 @@ export default function FirmFormDialog({ open, mode, firmId, onClose, onSuccess 
     setLoading(true);
     setError('');
     try {
+      // Normalize document: strip dots, slashes, dashes (send only digits)
+      const payload = {
+        ...form,
+        document_number: form.document_number.replace(/[.\-\/\s]/g, ''),
+        email: form.email.trim().toLowerCase(),
+        crc: form.crc?.trim() || null,
+        crc_uf: form.crc_uf?.trim().toUpperCase() || null,
+        telefone: form.telefone?.trim() || null,
+        nome_fantasia: form.nome_fantasia?.trim() || null,
+      };
       if (mode === 'edit') {
-        await updateAccountingFirm(firmId, form);
+        await updateAccountingFirm(firmId, payload);
         onSuccess('Escritório atualizado com sucesso.');
       } else {
-        await createAccountingFirm(form);
+        await createAccountingFirm(payload);
         onSuccess('Escritório criado com sucesso.');
       }
     } catch (err) {
-      setError(err.message);
+      const data = err.response?.data;
+      let msg = data?.error || err.message || 'Erro ao salvar escritório';
+      // Show field-level validation details if available
+      if (data?.details?.length) {
+        const fields = data.details.map(d => `${d.path?.join('.') || 'campo'}: ${d.message}`).join('; ');
+        msg = `${msg} — ${fields}`;
+      }
+      setError(msg);
     } finally {
       setLoading(false);
       submittingRef.current = false;
