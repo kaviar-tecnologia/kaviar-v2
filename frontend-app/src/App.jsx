@@ -60,6 +60,8 @@ import ActivateAccountPage from "./pages/accountant/ActivateAccountPage";
 import ForgotPasswordPage from "./pages/accountant/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/accountant/ResetPasswordPage";
 import AccountantPlaceholderPage from "./pages/accountant/AccountantPlaceholderPage";
+import AccountantCompaniesPage from "./pages/accountant/AccountantCompaniesPage";
+import AccountantCompanyDetailPage from "./pages/accountant/AccountantCompanyDetailPage";
 
 function ConsultorForm() {
   const [form, setForm] = React.useState({ nome: '', whatsapp: '', bairro: '', cidade: '', qtd: '', obs: '' });
@@ -504,7 +506,8 @@ export default function App() {
               </AccountantProtectedRoute>
             </AccountantAuthProvider>
           } />
-          <Route path="/contador/empresas" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPlaceholderPage title="Empresas" /></AccountantProtectedRoute></AccountantAuthProvider>} />
+          <Route path="/contador/empresas" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantCompaniesPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
+          <Route path="/contador/empresas/:id" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantCompanyDetailPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/documentos" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPlaceholderPage title="Documentos" /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/competencias" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPlaceholderPage title="Competências" /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/pendencias" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPlaceholderPage title="Pendências" /></AccountantProtectedRoute></AccountantAuthProvider>} />
