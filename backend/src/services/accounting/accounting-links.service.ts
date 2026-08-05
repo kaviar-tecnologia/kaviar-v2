@@ -81,7 +81,9 @@ export async function createAccountantLink(data: CreateLinkInput, adminId: strin
   // Validate accountant exists and is active
   const accountant = await prisma.accountants.findUnique({ where: { id: data.accountant_id } });
   if (!accountant) throw new EntityValidationError('Contador não encontrado');
-  if (!accountant.is_active) throw new EntityValidationError('Contador está inativo');
+  if (['SUSPENDED', 'BLOCKED', 'REVOKED'].includes(accountant.status)) {
+    throw new EntityValidationError('Contador não pode receber vínculos neste status');
+  }
 
   // Validate legal entity exists and is active
   const entity = await prisma.legal_entities.findUnique({ where: { id: data.legal_entity_id } });
