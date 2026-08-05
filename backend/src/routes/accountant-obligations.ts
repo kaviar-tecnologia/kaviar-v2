@@ -353,6 +353,83 @@ router.post('/obligations/:id/generate-link', async (req: Request, res: Response
 });
 
 // Get link status
+router.get('/obligations/reports/summary', async (req: Request, res: Response) => {
+  try {
+    const accountant = (req as any).accountant;
+    const entityIds = await getAccessibleEntityIds(accountant.id);
+    if (entityIds.length === 0) return res.json({ success: true, data: { cards: {}, obligations: [] } });
+
+    const entityId = req.query.legal_entity_id as string;
+    const filter = entityId && entityIds.includes(entityId) ? [entityId] : entityIds;
+
+    const all = await prisma.accounting_payment_obligations.findMany({
+      where: { legal_entity_id: { in: filter } },
+      include: { legal_entity: { select: { id: true, razao_social: true } } },
+      orderBy: { due_date: 'asc' },
+    });
+
+    const cards = {
+      total: all.length,
+      sent: all.filter(o => o.status === 'SENT_TO_COMPANY').length,
+      awaiting_payment: all.filter(o => ['SENT_TO_COMPANY', 'VIEWED', 'SCHEDULED'].includes(o.status)).length,
+      overdue: all.filter(o => ['SENT_TO_COMPANY', 'VIEWED', 'SCHEDULED'].includes(o.status) && new Date(o.due_date) < new Date()).length,
+      paid: all.filter(o => o.status === 'PAID').length,
+      awaiting_verification: all.filter(o => ['PROOF_UPLOADED', 'UNDER_VERIFICATION'].includes(o.status)).length,
+      verified: all.filter(o => o.status === 'VERIFIED').length,
+      reconciled: all.filter(o => o.status === 'RECONCILED').length,
+    };
+
+    res.json({ success: true, data: { cards, obligations: all.map(serialize) } });
+  } catch (err: any) {
+    console.error('[obligations] reports summary error:', err);
+    res.status(500).json({ success: false, error: 'Erro interno' });
+  }
+});
+
+// CSV export
+router.get('/obligations/reports/csv', async (req: Request, res: Response) => {
+  try {
+    const accountant = (req as any).accountant;
+    const entityIds = await getAccessibleEntityIds(accountant.id);
+    if (entityIds.length === 0) { res.setHeader('Content-Type', 'text/csv'); return res.send(''); }
+
+    const entityId = req.query.legal_entity_id as string;
+    const statusFilter = req.query.status as string;
+    const filter = entityId && entityIds.includes(entityId) ? [entityId] : entityIds;
+
+    const where: any = { legal_entity_id: { in: filter } };
+    if (statusFilter) where.status = statusFilter;
+
+    const all = await prisma.accounting_payment_obligations.findMany({
+      where,
+      include: { legal_entity: { select: { razao_social: true } } },
+      orderBy: { due_date: 'asc' },
+      take: 5000,
+    });
+
+    const BOM = '\ufeff';
+    const header = 'Empresa;Descrição;Tipo;Valor;Vencimento;Status;Pago em;Beneficiário;Referência\n';
+    const rows = all.map(o => [
+      o.legal_entity?.razao_social || '',
+      o.description,
+      o.obligation_type,
+      (o.amount_cents / 100).toFixed(2).replace('.', ','),
+      o.due_date ? new Date(o.due_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '',
+      o.status,
+      o.paid_at ? new Date(o.paid_at).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '',
+      o.beneficiary || '',
+      o.reference_number || '',
+    ].join(';')).join('\n');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename=obrigacoes_${new Date().toISOString().slice(0, 10)}.csv`);
+    res.send(BOM + header + rows);
+  } catch (err: any) {
+    console.error('[obligations] csv error:', err);
+    res.status(500).json({ success: false, error: 'Erro interno' });
+  }
+});
+
 router.get('/obligations/:id/link-status', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
@@ -482,6 +559,56 @@ router.post('/obligations/:id/send-email', async (req: Request, res: Response) =
   } catch (err: any) {
     console.error('[obligations] send-email error:', err);
     res.status(500).json({ success: false, error: 'Erro interno no envio' });
+  }
+});
+
+// Download proof file
+router.get('/obligations/:id/download-proof', async (req: Request, res: Response) => {
+  try {
+    const accountant = (req as any).accountant;
+    const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
+    if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
+    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    if (!ob.proof_storage_key) return res.status(404).json({ success: false, error: 'Comprovante não disponível' });
+
+    const { generatePresignedGetUrl } = require('../services/accounting/accounting-document-storage.service');
+    const { downloadUrl, expiresInSeconds } = await generatePresignedGetUrl({
+      storageKey: ob.proof_storage_key,
+      originalFilename: ob.proof_filename || 'comprovante.pdf',
+    });
+
+    res.json({ success: true, data: { download_url: downloadUrl, filename: ob.proof_filename, expires_in_seconds: expiresInSeconds } });
+  } catch (err: any) {
+    console.error('[obligations] download-proof error:', err);
+    res.status(500).json({ success: false, error: 'Erro interno' });
+  }
+});
+
+// Download boleto file
+router.get('/obligations/:id/download-boleto', async (req: Request, res: Response) => {
+  try {
+    const accountant = (req as any).accountant;
+    const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
+    if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
+    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    if (!ob.boleto_storage_key) return res.status(404).json({ success: false, error: 'Boleto não disponível' });
+
+    const { generatePresignedGetUrl } = require('../services/accounting/accounting-document-storage.service');
+    const { downloadUrl, expiresInSeconds } = await generatePresignedGetUrl({
+      storageKey: ob.boleto_storage_key,
+      originalFilename: ob.boleto_filename || 'boleto.pdf',
+    });
+
+    res.json({ success: true, data: { download_url: downloadUrl, filename: ob.boleto_filename, expires_in_seconds: expiresInSeconds } });
+  } catch (err: any) {
+    console.error('[obligations] download-boleto error:', err);
+    res.status(500).json({ success: false, error: 'Erro interno' });
   }
 });
 

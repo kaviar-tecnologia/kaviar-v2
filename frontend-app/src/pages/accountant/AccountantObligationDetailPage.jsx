@@ -21,6 +21,8 @@ export default function AccountantObligationDetailPage() {
   const [email, setEmail] = useState('');
   const [sendingEmail, setSendingEmail] = useState(false);
   const [generatedLink, setGeneratedLink] = useState('');
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectOpen, setRejectOpen] = useState(false);
 
   const fetchAll = () => {
     Promise.all([
@@ -71,6 +73,33 @@ export default function AccountantObligationDetailPage() {
       setSnackbar({ open: true, message: 'Status atualizado.', severity: 'success' });
       fetchAll();
     } catch (err) { setSnackbar({ open: true, message: err.response?.data?.error || 'Erro', severity: 'error' }); }
+  };
+
+  const handleReject = async () => {
+    if (!rejectReason.trim()) { setSnackbar({ open: true, message: 'Informe o motivo da rejeição', severity: 'error' }); return; }
+    try {
+      await accountantApi.post(`/api/accountant/portal/obligations/${id}/transition`, { status: 'REJECTED', rejection_reason: rejectReason });
+      setRejectOpen(false);
+      setRejectReason('');
+      setSnackbar({ open: true, message: 'Comprovante rejeitado. A empresa será notificada.', severity: 'success' });
+      fetchAll();
+    } catch (err) { setSnackbar({ open: true, message: err.response?.data?.error || 'Erro', severity: 'error' }); }
+  };
+
+  const handleDownloadProof = async () => {
+    try {
+      const res = await accountantApi.get(`/api/accountant/portal/obligations/${id}/download-proof`);
+      const url = res.data?.data?.download_url;
+      if (url) window.open(url, '_blank', 'noopener');
+    } catch (err) { setSnackbar({ open: true, message: err.response?.data?.error || 'Erro ao baixar comprovante', severity: 'error' }); }
+  };
+
+  const handleDownloadBoleto = async () => {
+    try {
+      const res = await accountantApi.get(`/api/accountant/portal/obligations/${id}/download-boleto`);
+      const url = res.data?.data?.download_url;
+      if (url) window.open(url, '_blank', 'noopener');
+    } catch (err) { setSnackbar({ open: true, message: err.response?.data?.error || 'Erro ao baixar boleto', severity: 'error' }); }
   };
 
   if (loading) return <AccountantPortalLayout><Skeleton variant="rectangular" height={300} sx={{ borderRadius: 2, bgcolor: 'rgba(255,255,255,0.05)' }} /></AccountantPortalLayout>;
@@ -153,10 +182,30 @@ export default function AccountantObligationDetailPage() {
 
           <Divider sx={{ borderColor: 'rgba(255,255,255,0.08)', my: 1.5 }} />
 
+          {/* Proof section */}
+          {ob.proof_filename && (
+            <Box sx={{ mb: 2, p: 1.5, bgcolor: 'rgba(255,255,255,0.02)', borderRadius: 1 }}>
+              <Typography sx={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, mb: 0.5 }}>Comprovante</Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography sx={{ color: '#fff', fontSize: 13 }}>📄 {ob.proof_filename}</Typography>
+                <Button size="small" onClick={handleDownloadProof} sx={{ color: '#D4AF37', textTransform: 'none', fontSize: 11 }}>Baixar</Button>
+              </Box>
+              {ob.proof_uploaded_at && <Typography sx={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, mt: 0.5 }}>Enviado em: {new Date(ob.proof_uploaded_at).toLocaleString('pt-BR')}</Typography>}
+            </Box>
+          )}
+
+          {/* Boleto download */}
+          {ob.boleto_filename && (
+            <Box sx={{ mb: 2 }}>
+              <Button size="small" onClick={handleDownloadBoleto} sx={{ color: 'rgba(255,255,255,0.6)', textTransform: 'none', fontSize: 11 }}>📎 Baixar boleto: {ob.boleto_filename}</Button>
+            </Box>
+          )}
+
           {/* Status actions */}
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             {canSend && <Button size="small" variant="contained" startIcon={<Send />} onClick={() => handleTransition('SENT_TO_COMPANY')} sx={{ bgcolor: '#3B82F6', textTransform: 'none', fontSize: 12 }}>Enviar para empresa</Button>}
             {canVerify && <Button size="small" variant="contained" startIcon={<CheckCircle />} onClick={() => handleTransition('VERIFIED')} sx={{ bgcolor: '#22C55E', textTransform: 'none', fontSize: 12 }}>Verificar comprovante</Button>}
+            {canVerify && <Button size="small" variant="outlined" onClick={() => setRejectOpen(true)} sx={{ borderColor: '#EF4444', color: '#EF4444', textTransform: 'none', fontSize: 12 }}>Rejeitar</Button>}
             {canReconcile && <Button size="small" variant="contained" startIcon={<CheckCircle />} onClick={() => handleTransition('RECONCILED')} sx={{ bgcolor: '#22C55E', textTransform: 'none', fontSize: 12 }}>Conciliar</Button>}
           </Box>
         </CardContent>
@@ -180,6 +229,27 @@ export default function AccountantObligationDetailPage() {
             ))}
           </CardContent>
         </Card>
+      )}
+
+      {/* Reject Dialog */}
+      {rejectOpen && (
+        <Box sx={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, bgcolor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1300 }}>
+          <Card sx={{ bgcolor: '#1E2433', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 2, maxWidth: 400, width: '100%', p: 3 }}>
+            <Typography sx={{ color: '#fff', fontSize: 16, fontWeight: 600, mb: 2 }}>Rejeitar comprovante</Typography>
+            <Typography sx={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, mb: 2 }}>Informe o motivo. A empresa poderá reenviar.</Typography>
+            <TextField
+              label="Motivo da rejeição *"
+              value={rejectReason}
+              onChange={e => setRejectReason(e.target.value)}
+              multiline rows={3} fullWidth
+              sx={{ mb: 2, '& .MuiInputBase-root': { color: '#fff' }, '& .MuiInputLabel-root': { color: 'rgba(255,255,255,0.4)' }, '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.15)' } }}
+            />
+            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+              <Button onClick={() => setRejectOpen(false)} sx={{ color: 'rgba(255,255,255,0.5)', textTransform: 'none' }}>Cancelar</Button>
+              <Button variant="contained" onClick={handleReject} disabled={!rejectReason.trim()} sx={{ bgcolor: '#EF4444', textTransform: 'none', '&:hover': { bgcolor: '#DC2626' } }}>Rejeitar</Button>
+            </Box>
+          </Card>
+        </Box>
       )}
 
       <Snackbar open={snackbar.open} autoHideDuration={4000} onClose={() => setSnackbar(s => ({ ...s, open: false }))} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>

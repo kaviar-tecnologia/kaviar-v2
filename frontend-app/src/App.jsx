@@ -70,6 +70,7 @@ import AccountantPendenciasPage from "./pages/accountant/AccountantPendenciasPag
 import AccountantRidesReportPage from "./pages/accountant/AccountantRidesReportPage";
 import AccountantObligationsPage from "./pages/accountant/AccountantObligationsPage";
 import AccountantObligationDetailPage from "./pages/accountant/AccountantObligationDetailPage";
+import AccountantReportsPage from "./pages/accountant/AccountantReportsPage";
 import PublicPaymentPage from "./pages/public/PublicPaymentPage";
 import AccountantCompanyDetailPage from "./pages/accountant/AccountantCompanyDetailPage";
 
@@ -530,7 +531,7 @@ export default function App() {
           <Route path="/contador/obrigacoes/:id" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantObligationDetailPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/competencias" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPlaceholderPage title="Competências" /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/pendencias" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPendenciasPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
-          <Route path="/contador/relatorios" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPlaceholderPage title="Relatórios" /></AccountantProtectedRoute></AccountantAuthProvider>} />
+          <Route path="/contador/relatorios" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantReportsPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/perfil" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPlaceholderPage title="Meu Perfil" /></AccountantProtectedRoute></AccountantAuthProvider>} />
 
           {/* Mantém o AuthApp (se ainda existir fluxo interno) */}
