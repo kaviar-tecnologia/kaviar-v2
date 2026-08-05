@@ -50,22 +50,27 @@ export default function ActivateAccountPage() {
       await accountantApi.post('/api/accountant/auth/activate', {
         token: tokenRef.current,
         password,
-        password_confirmation: confirmation,
+        passwordConfirmation: confirmation,
       });
       setSuccess(true);
+      tokenRef.current = null; // Discard only on success
       setTimeout(() => navigate('/contador/login', { replace: true }), 3000);
     } catch (err) {
       const msg = err.response?.data?.error;
       if (msg?.includes('expirado') || msg?.includes('expired')) {
         setError('Token expirado. Solicite um novo convite.');
+        tokenRef.current = null;
       } else if (msg?.includes('usado') || msg?.includes('used') || msg?.includes('inválido') || msg?.includes('invalid')) {
         setError('Token inválido ou já utilizado.');
+        tokenRef.current = null;
+      } else if (msg?.includes('Senhas') || msg?.includes('mismatch')) {
+        setError('As senhas não conferem.');
+      } else if (msg?.includes('senha') || msg?.includes('password') || msg?.includes('15')) {
+        setError(msg);
       } else {
-        setError('Não foi possível ativar a conta. Tente novamente.');
+        setError(msg || 'Não foi possível ativar a conta. Tente novamente.');
       }
     } finally {
-      // Discard token after attempt
-      tokenRef.current = null;
       setLoading(false);
       submitting.current = false;
     }
