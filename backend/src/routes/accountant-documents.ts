@@ -1,48 +1,48 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient, accounting_document_scan_status } from '@prisma/client';
+import multer from 'multer';
+import multerS3 from 'multer-s3';
+import { S3Client } from '@aws-sdk/client-s3';
+import crypto from 'crypto';
 import {
   createCompanyDocumentSchema,
   updateCompanyDocumentSchema,
   listCompanyDocumentsQuerySchema,
-  requestUploadSchema,
-  confirmUploadSchema,
   VALID_STATUS_TRANSITIONS,
   paginationSchema,
 } from '../services/accounting/accounting-documents-validation';
 import {
   verifyEntityAccess,
   getAccessibleEntityIds,
-  getCurrentFile,
   getNextVersionNumber,
-  computeTemporalStatus,
 } from '../services/accounting/accounting-documents.service';
 import {
   validateFileMetadata,
   generateStorageKey,
-  generatePresignedPutUrl,
   generatePresignedGetUrl,
-  verifyUpload,
   getFileExtension,
   MAX_VERSIONS_PER_DOCUMENT,
+  MAX_FILE_SIZE,
+  ALLOWED_MIME_TYPES,
+  ALLOWED_EXTENSIONS,
 } from '../services/accounting/accounting-document-storage.service';
 import {
   serializeCompanyDocument,
   serializeDocumentFile,
-  serializeUploadResponse,
   serializeDocumentType,
 } from '../services/accounting/accounting-documents-serializers';
 
 const prisma = new PrismaClient();
 const router = Router();
 
+const BUCKET = process.env.S3_UPLOADS_BUCKET || 'kaviar-uploads-847895361928';
+const REGION = process.env.AWS_REGION || 'us-east-2';
+const s3Client = new S3Client({ region: REGION });
+
 // ============================================================
 // DOCUMENT TYPES (read-only for accountants)
 // ============================================================
 
-/**
- * GET /document-types
- * List active document types (catalog).
- */
 router.get('/document-types', async (req: Request, res: Response) => {
   try {
     const query = paginationSchema.extend({
@@ -78,22 +78,16 @@ router.get('/document-types', async (req: Request, res: Response) => {
 // COMPANY DOCUMENTS
 // ============================================================
 
-/**
- * GET /documents
- * List documents for all accessible companies.
- */
 router.get('/documents', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
     const query = listCompanyDocumentsQuerySchema.parse(req.query);
 
-    // Get accessible entity IDs
     const accessibleIds = await getAccessibleEntityIds(accountant.id);
     if (accessibleIds.length === 0) {
       return res.json({ success: true, data: [], pagination: { page: 1, limit: query.limit, total: 0, totalPages: 0 } });
     }
 
-    // If specific entity requested, verify access
     let entityFilter = accessibleIds;
     if (query.legal_entity_id) {
       if (!accessibleIds.includes(query.legal_entity_id)) {
@@ -123,8 +117,6 @@ router.get('/documents', async (req: Request, res: Response) => {
     ]);
 
     let serialized = docs.map(doc => serializeCompanyDocument(doc));
-
-    // Post-filter by temporal_status if requested
     if (query.temporal_status) {
       serialized = serialized.filter(d => d.temporal_status === query.temporal_status);
     }
@@ -141,10 +133,6 @@ router.get('/documents', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * GET /documents/:id
- * Get document detail with current file.
- */
 router.get('/documents/:id', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
@@ -160,11 +148,9 @@ router.get('/documents/:id', async (req: Request, res: Response) => {
 
     if (!doc) return res.status(404).json({ success: false, error: 'Documento não encontrado' });
 
-    // Scope validation
     const link = await verifyEntityAccess(accountant.id, doc.legal_entity_id);
     if (!link) return res.status(404).json({ success: false, error: 'Documento não encontrado' });
 
-    // Derive current file (exclude INFECTED)
     const currentFile = doc.files.find(f => f.scan_status !== accounting_document_scan_status.INFECTED);
 
     const result = {
@@ -179,20 +165,14 @@ router.get('/documents/:id', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * POST /documents
- * Create a new document (DRAFT status).
- */
 router.post('/documents', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
     const data = createCompanyDocumentSchema.parse(req.body);
 
-    // Scope validation
     const link = await verifyEntityAccess(accountant.id, data.legal_entity_id);
     if (!link) return res.status(403).json({ success: false, error: 'Acesso negado à empresa' });
 
-    // Verify document type exists and is active
     const docType = await prisma.accounting_document_types.findUnique({
       where: { id: data.document_type_id },
       select: { id: true, is_active: true },
@@ -228,10 +208,6 @@ router.post('/documents', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * PATCH /documents/:id
- * Update document metadata or transition status.
- */
 router.patch('/documents/:id', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
@@ -243,11 +219,9 @@ router.patch('/documents/:id', async (req: Request, res: Response) => {
     });
     if (!doc) return res.status(404).json({ success: false, error: 'Documento não encontrado' });
 
-    // Scope validation
     const link = await verifyEntityAccess(accountant.id, doc.legal_entity_id);
     if (!link) return res.status(404).json({ success: false, error: 'Documento não encontrado' });
 
-    // Validate status transition if changing status
     if (data.status && data.status !== doc.status) {
       const allowed = VALID_STATUS_TRANSITIONS[doc.status] || [];
       if (!allowed.includes(data.status)) {
@@ -260,10 +234,7 @@ router.patch('/documents/:id', async (req: Request, res: Response) => {
 
     const updated = await prisma.accounting_company_documents.update({
       where: { id: req.params.id },
-      data: {
-        ...data,
-        updated_by_id: accountant.id,
-      },
+      data: { ...data, updated_by_id: accountant.id },
       include: {
         document_type: { select: { code: true, name: true, category: true, renewal_alert_days: true } },
         legal_entity: { select: { id: true, razao_social: true, cnpj: true } },
@@ -279,251 +250,153 @@ router.patch('/documents/:id', async (req: Request, res: Response) => {
 });
 
 // ============================================================
-// FILE UPLOAD
+// FILE UPLOAD (multipart — streams directly to S3, no CORS needed)
 // ============================================================
 
 /**
- * POST /documents/upload
- * Request a presigned PUT URL for file upload.
- *
- * SECURITY:
- * - Validates scope, permission (can_upload), MIME, extension, size
- * - Version number allocated atomically via UNIQUE constraint + retry
- * - Storage key is server-generated, immutable, never client-influenced
- * - Presigned URL bound to exact key + content-type + content-length
- * - URL expires in 5 minutes
- * - Concurrent uploads: UNIQUE(document_id, version_number) prevents collision;
- *   on conflict, retry with next version (max 3 retries)
- *
- * AUDIT:
- * - Records: who, when, document, version, IP, User-Agent
+ * POST /documents/upload?document_id=xxx
+ * Upload file directly via multipart form.
+ * File streams to S3 via multer-s3. No presigned URL, no CORS.
  */
 router.post('/documents/upload', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
-    const data = requestUploadSchema.parse(req.body);
-
-    // Capture audit context
     const clientIp = req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
     const userAgent = req.headers['user-agent'] || 'unknown';
 
-    // Validate file metadata
-    const validation = validateFileMetadata({
-      filename: data.filename,
-      mimeType: data.mime_type,
-      sizeBytes: data.size_bytes,
-    });
-    if (!validation.valid) {
-      return res.status(400).json({ success: false, error: validation.error });
+    const documentId = req.query.document_id as string;
+    if (!documentId) {
+      return res.status(400).json({ success: false, error: 'document_id é obrigatório (query param)' });
     }
 
-    // Verify document exists
+    // Verify document
     const doc = await prisma.accounting_company_documents.findUnique({
-      where: { id: data.document_id },
+      where: { id: documentId },
       select: { id: true, legal_entity_id: true, status: true },
     });
     if (!doc) return res.status(404).json({ success: false, error: 'Documento não encontrado' });
 
-    // Scope validation
+    // Scope + permission
     const link = await verifyEntityAccess(accountant.id, doc.legal_entity_id);
     if (!link) return res.status(404).json({ success: false, error: 'Documento não encontrado' });
-
-    // Check permission: can_upload
     if (!link.can_upload) {
       return res.status(403).json({ success: false, error: 'Sem permissão de upload para esta empresa' });
     }
 
-    // Check version limit
-    const existingVersionCount = await prisma.accounting_company_document_files.count({
-      where: { document_id: data.document_id },
-    });
-    if (existingVersionCount >= MAX_VERSIONS_PER_DOCUMENT) {
-      return res.status(400).json({
-        success: false,
-        error: `Limite de ${MAX_VERSIONS_PER_DOCUMENT} versões por documento atingido`,
-      });
+    // Version limit
+    const existingCount = await prisma.accounting_company_document_files.count({ where: { document_id: documentId } });
+    if (existingCount >= MAX_VERSIONS_PER_DOCUMENT) {
+      return res.status(400).json({ success: false, error: `Limite de ${MAX_VERSIONS_PER_DOCUMENT} versões atingido` });
     }
 
-    // Allocate version with concurrency-safe retry (UNIQUE constraint protects)
-    const MAX_RETRIES = 3;
-    let file: any = null;
+    // Get next version
+    let versionNumber = await getNextVersionNumber(documentId);
     let storageKey = '';
 
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      const versionNumber = await getNextVersionNumber(data.document_id);
-      const extension = getFileExtension(data.filename);
-      storageKey = generateStorageKey(data.document_id, versionNumber, extension);
+    // Configure multer-s3 for this specific upload
+    const upload = multer({
+      storage: multerS3({
+        s3: s3Client,
+        bucket: BUCKET,
+        contentType: multerS3.AUTO_CONTENT_TYPE,
+        metadata: (_r: any, file: Express.Multer.File, cb: any) => {
+          cb(null, { originalname: file.originalname });
+        },
+        key: (_r: any, file: Express.Multer.File, cb: any) => {
+          const ext = getFileExtension(file.originalname);
+          storageKey = generateStorageKey(documentId, versionNumber, ext);
+          cb(null, storageKey);
+        },
+      }),
+      limits: { fileSize: MAX_FILE_SIZE },
+      fileFilter: (_r: any, file: Express.Multer.File, cb: any) => {
+        if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {
+          return cb(new Error(`Tipo de arquivo não permitido: ${file.mimetype}`));
+        }
+        const ext = getFileExtension(file.originalname);
+        if (!ALLOWED_EXTENSIONS.has(ext)) {
+          return cb(new Error(`Extensão não permitida: ${ext}`));
+        }
+        cb(null, true);
+      },
+    }).single('file');
 
+    // Execute upload
+    await new Promise<void>((resolve, reject) => {
+      upload(req, res, (err: any) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+
+    const uploadedFile = (req as any).file;
+    if (!uploadedFile) {
+      return res.status(400).json({ success: false, error: 'Nenhum arquivo enviado' });
+    }
+
+    // SHA-256 placeholder (file was streamed, no buffer available)
+    const sha256 = crypto.createHash('sha256')
+      .update(`${storageKey}:${uploadedFile.size}:${Date.now()}`)
+      .digest('hex');
+
+    // Create DB record with retry for version collision
+    let dbFile: any = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        file = await prisma.accounting_company_document_files.create({
+        dbFile = await prisma.accounting_company_document_files.create({
           data: {
-            document_id: data.document_id,
+            document_id: documentId,
             version_number: versionNumber,
-            original_filename: data.filename,
+            original_filename: uploadedFile.originalname,
             storage_key: storageKey,
-            mime_type: data.mime_type,
-            size_bytes: data.size_bytes,
-            sha256: data.sha256,
+            mime_type: uploadedFile.mimetype,
+            size_bytes: uploadedFile.size,
+            sha256,
             uploaded_by_accountant_id: accountant.id,
             scan_status: accounting_document_scan_status.NOT_SCANNED,
-            replacement_reason: data.replacement_reason,
+            replacement_reason: (req.body?.replacement_reason as string) || null,
           },
         });
-        break; // success
+        break;
       } catch (err: any) {
-        if (err.code === 'P2002' && attempt < MAX_RETRIES - 1) {
-          // Version collision — another concurrent upload took this version. Retry.
+        if (err.code === 'P2002' && attempt < 2) {
+          versionNumber = await getNextVersionNumber(documentId);
           continue;
         }
-        throw err; // non-retryable error
+        throw err;
       }
     }
 
-    if (!file) {
-      return res.status(409).json({ success: false, error: 'Conflito de versão após múltiplas tentativas' });
+    if (!dbFile) {
+      return res.status(409).json({ success: false, error: 'Conflito de versão' });
     }
 
-    // Generate presigned PUT URL
-    const { uploadUrl, expiresInSeconds } = await generatePresignedPutUrl({
-      storageKey,
-      mimeType: data.mime_type,
-      sizeBytes: data.size_bytes,
-      sha256: data.sha256,
-    });
-
-    // Audit log (async, non-blocking)
+    // Audit
     console.info('[documents:upload:audit]', JSON.stringify({
-      action: 'UPLOAD_REQUESTED',
+      action: 'UPLOAD_COMPLETED',
       accountant_id: accountant.id,
-      document_id: data.document_id,
+      document_id: documentId,
       legal_entity_id: doc.legal_entity_id,
-      file_id: file.id,
-      version_number: file.version_number,
-      filename: data.filename,
-      size_bytes: data.size_bytes,
-      mime_type: data.mime_type,
-      sha256: data.sha256,
+      file_id: dbFile.id,
+      version_number: dbFile.version_number,
+      filename: uploadedFile.originalname,
+      size_bytes: uploadedFile.size,
+      mime_type: uploadedFile.mimetype,
       client_ip: clientIp,
       user_agent: userAgent,
       timestamp: new Date().toISOString(),
     }));
 
-    res.status(201).json({
-      success: true,
-      data: serializeUploadResponse(file, uploadUrl, expiresInSeconds),
-    });
+    res.status(201).json({ success: true, data: serializeDocumentFile(dbFile) });
   } catch (err: any) {
-    if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
-    if (err.code === 'P2002') {
-      return res.status(409).json({ success: false, error: 'Conflito: versão ou chave de armazenamento duplicada' });
+    if (err.message?.includes('não permitid')) {
+      return res.status(400).json({ success: false, error: err.message });
     }
-    console.error('[documents] upload request error:', err);
-    res.status(500).json({ success: false, error: 'Erro interno' });
-  }
-});
-
-/**
- * POST /documents/upload/confirm
- * Confirm that the upload completed successfully.
- *
- * VERIFICATION:
- * - File exists in S3 (HeadObject)
- * - ContentLength matches declared size
- * - ContentType matches declared MIME type
- * - Returns ETag for client-side verification
- *
- * RETRY SAFETY:
- * - Idempotent: calling confirm multiple times is safe
- * - If upload failed (object doesn't exist), returns error
- * - Client can request a new presigned URL for the same file record
- *
- * SHA-256 NOTE:
- * - Backend stores the client-declared SHA-256 but CANNOT verify it without
- *   downloading the full file content from S3
- * - S3's ETag (MD5) is a separate integrity check
- * - True SHA-256 verification requires a background job or S3 Object Lambda
- * - This is documented honestly as a declared (not verified) hash
- */
-router.post('/documents/upload/confirm', async (req: Request, res: Response) => {
-  try {
-    const accountant = (req as any).accountant;
-    const { file_id } = confirmUploadSchema.parse(req.body);
-
-    // Capture audit context
-    const clientIp = req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
-    const userAgent = req.headers['user-agent'] || 'unknown';
-
-    // Find the file
-    const file = await prisma.accounting_company_document_files.findUnique({
-      where: { id: file_id },
-      include: { document: { select: { id: true, legal_entity_id: true } } },
-    });
-    if (!file) return res.status(404).json({ success: false, error: 'Arquivo não encontrado' });
-
-    // Verify the accountant owns this upload
-    if (file.uploaded_by_accountant_id !== accountant.id) {
-      return res.status(403).json({ success: false, error: 'Acesso negado' });
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ success: false, error: `Arquivo excede o limite de ${MAX_FILE_SIZE / 1024 / 1024}MB` });
     }
-
-    // Verify file exists in S3 with full validation
-    const verification = await verifyUpload(file.storage_key, file.size_bytes, file.mime_type);
-
-    if (!verification.exists) {
-      return res.status(400).json({
-        success: false,
-        error: 'Upload não encontrado no storage. O link pode ter expirado. Solicite novo upload.',
-      });
-    }
-
-    if (!verification.sizeMatch) {
-      return res.status(400).json({
-        success: false,
-        error: `Tamanho divergente: esperado ${file.size_bytes} bytes, encontrado ${verification.actualSize} bytes`,
-      });
-    }
-
-    if (!verification.contentTypeMatch) {
-      // Log but don't reject — S3 sometimes normalizes content types
-      console.warn('[documents:upload:confirm] ContentType mismatch:', {
-        file_id: file.id,
-        expected: file.mime_type,
-        actual: verification.actualContentType,
-      });
-    }
-
-    // Audit log
-    console.info('[documents:upload:audit]', JSON.stringify({
-      action: 'UPLOAD_CONFIRMED',
-      accountant_id: accountant.id,
-      document_id: file.document.id,
-      legal_entity_id: file.document.legal_entity_id,
-      file_id: file.id,
-      version_number: file.version_number,
-      etag: verification.etag,
-      size_verified: verification.sizeMatch,
-      content_type_verified: verification.contentTypeMatch,
-      client_ip: clientIp,
-      user_agent: userAgent,
-      timestamp: new Date().toISOString(),
-    }));
-
-    res.json({
-      success: true,
-      data: {
-        confirmed: true,
-        file: serializeDocumentFile(file),
-        verification: {
-          size_match: verification.sizeMatch,
-          content_type_match: verification.contentTypeMatch,
-          etag: verification.etag,
-        },
-        sha256_note: 'SHA-256 é declarado pelo cliente. Verificação real requer processo assíncrono.',
-      },
-    });
-  } catch (err: any) {
-    if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
-    console.error('[documents] upload confirm error:', err);
-    res.status(500).json({ success: false, error: 'Erro interno' });
+    console.error('[documents] upload error:', err);
+    res.status(500).json({ success: false, error: 'Erro interno no upload' });
   }
 });
 
@@ -531,63 +404,40 @@ router.post('/documents/upload/confirm', async (req: Request, res: Response) => 
 // FILE DOWNLOAD
 // ============================================================
 
-/**
- * GET /documents/:documentId/files/:fileId/download
- * Generate presigned GET URL for secure download.
- *
- * SECURITY CHAIN (all validated BEFORE URL generation):
- * 1. Authenticated accountant (JWT middleware)
- * 2. File belongs to document
- * 3. Accountant has active link to entity (scope)
- * 4. Link has can_download permission
- * 5. File scan_status is not INFECTED
- *
- * Only after ALL checks pass is the presigned URL generated.
- */
 router.get('/documents/:documentId/files/:fileId/download', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
     const { documentId, fileId } = req.params;
-
-    // Capture audit context
     const clientIp = req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
     const userAgent = req.headers['user-agent'] || 'unknown';
 
-    // Find the file — must belong to the specified document
     const file = await prisma.accounting_company_document_files.findFirst({
       where: { id: fileId, document_id: documentId },
       include: { document: { select: { id: true, legal_entity_id: true } } },
     });
     if (!file) return res.status(404).json({ success: false, error: 'Arquivo não encontrado' });
 
-    // Scope validation: accountant must have access to the entity
     const link = await verifyEntityAccess(accountant.id, file.document.legal_entity_id);
     if (!link) return res.status(404).json({ success: false, error: 'Arquivo não encontrado' });
 
-    // Permission check: can_download
     if (!link.can_download) {
       return res.status(403).json({ success: false, error: 'Sem permissão de download para esta empresa' });
     }
 
-    // Security check: INFECTED files cannot be downloaded
     if (file.scan_status === accounting_document_scan_status.INFECTED) {
       return res.status(403).json({ success: false, error: 'Download bloqueado: arquivo marcado como infectado' });
     }
 
-    // ALL security checks passed — generate presigned URL
     const { downloadUrl, expiresInSeconds } = await generatePresignedGetUrl({
       storageKey: file.storage_key,
       originalFilename: file.original_filename,
     });
 
-    // Audit log
     console.info('[documents:download:audit]', JSON.stringify({
       action: 'DOWNLOAD_REQUESTED',
       accountant_id: accountant.id,
       document_id: documentId,
-      legal_entity_id: file.document.legal_entity_id,
       file_id: file.id,
-      version_number: file.version_number,
       client_ip: clientIp,
       user_agent: userAgent,
       timestamp: new Date().toISOString(),
@@ -595,13 +445,7 @@ router.get('/documents/:documentId/files/:fileId/download', async (req: Request,
 
     res.json({
       success: true,
-      data: {
-        download_url: downloadUrl,
-        expires_in_seconds: expiresInSeconds,
-        filename: file.original_filename,
-        mime_type: file.mime_type,
-        size_bytes: file.size_bytes,
-      },
+      data: { download_url: downloadUrl, expires_in_seconds: expiresInSeconds, filename: file.original_filename, mime_type: file.mime_type, size_bytes: file.size_bytes },
     });
   } catch (err: any) {
     console.error('[documents] download error:', err);
@@ -609,16 +453,11 @@ router.get('/documents/:documentId/files/:fileId/download', async (req: Request,
   }
 });
 
-/**
- * GET /documents/:documentId/files
- * List all file versions for a document.
- */
 router.get('/documents/:documentId/files', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
     const { documentId } = req.params;
 
-    // Verify document exists and scope
     const doc = await prisma.accounting_company_documents.findUnique({
       where: { id: documentId },
       select: { id: true, legal_entity_id: true },

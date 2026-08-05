@@ -8,16 +8,6 @@ import accountantApi from '../../services/accountantApi';
 
 const MAX_SIZE = 20 * 1024 * 1024; // 20MB
 const ALLOWED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.docx', '.xlsx', '.xml'];
-const EXTENSION_MIME_MAP = {
-  '.pdf': 'application/pdf',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.png': 'image/png',
-  '.webp': 'image/webp',
-  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  '.xml': 'application/xml',
-};
 
 export default function DocumentUploadDialog({ open, onClose, documentId, onSuccess }) {
   const [file, setFile] = useState(null);
@@ -60,60 +50,31 @@ export default function DocumentUploadDialog({ open, onClose, documentId, onSucc
     setFile(selected);
   };
 
-  const computeSha256 = async (file) => {
-    const buffer = await file.arrayBuffer();
-    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  };
-
   const handleUpload = async () => {
     if (!file) return;
 
     try {
-      // Step 1: Compute SHA-256
+      // Step 1: Prepare
       setStep('hashing');
-      setProgress(10);
-      const sha256 = await computeSha256(file);
+      setProgress(20);
 
-      // Step 2: Request presigned URL from backend
+      // Step 2: Upload directly to backend via multipart form
       setStep('uploading');
-      setProgress(30);
+      setProgress(40);
 
-      const ext = '.' + file.name.split('.').pop()?.toLowerCase();
-      const mimeType = file.type || EXTENSION_MIME_MAP[ext] || 'application/octet-stream';
+      const formData = new FormData();
+      formData.append('file', file);
+      if (reason) formData.append('replacement_reason', reason);
 
-      const requestRes = await accountantApi.post('/api/accountant/portal/documents/upload', {
-        document_id: documentId,
-        filename: file.name,
-        mime_type: mimeType,
-        size_bytes: file.size,
-        sha256,
-        replacement_reason: reason || null,
-      });
+      const uploadRes = await accountantApi.post(
+        `/api/accountant/portal/documents/upload?document_id=${documentId}`,
+        formData,
+        { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 }
+      );
 
-      const { file_id, upload_url } = requestRes.data?.data || {};
-      if (!upload_url) throw new Error('Backend não retornou URL de upload');
-
-      // Step 3: Upload directly to S3 via presigned PUT
-      setProgress(50);
-      const putResponse = await fetch(upload_url, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': mimeType,
-          'Content-Length': String(file.size),
-        },
-        body: file,
-      });
-
-      if (!putResponse.ok) {
-        throw new Error(`Upload para S3 falhou: ${putResponse.status} ${putResponse.statusText}`);
+      if (!uploadRes.data?.success) {
+        throw new Error(uploadRes.data?.error || 'Falha no envio');
       }
-
-      // Step 4: Confirm upload with backend
-      setStep('confirming');
-      setProgress(80);
-      await accountantApi.post('/api/accountant/portal/documents/upload/confirm', { file_id });
 
       // Done
       setStep('done');
@@ -124,7 +85,7 @@ export default function DocumentUploadDialog({ open, onClose, documentId, onSucc
       }, 2000);
     } catch (err) {
       setStep('error');
-      setError(err.response?.data?.error || err.message || 'Erro no upload');
+      setError(err.response?.data?.error || err.message || 'Erro no envio do arquivo');
     }
   };
 
@@ -132,7 +93,6 @@ export default function DocumentUploadDialog({ open, onClose, documentId, onSucc
     select: 'Selecione o arquivo',
     hashing: 'Preparando arquivo...',
     uploading: 'Enviando arquivo...',
-    confirming: 'Confirmando envio...',
     done: 'Arquivo enviado com sucesso.',
     error: 'Erro',
   };
@@ -208,7 +168,7 @@ export default function DocumentUploadDialog({ open, onClose, documentId, onSucc
           </>
         )}
 
-        {(step === 'hashing' || step === 'uploading' || step === 'confirming') && (
+        {(step === 'hashing' || step === 'uploading') && (
           <Box sx={{ py: 4, textAlign: 'center' }}>
             <Typography sx={{ color: '#fff', mb: 2, fontSize: 14 }}>{stepLabels[step]}</Typography>
             <LinearProgress
