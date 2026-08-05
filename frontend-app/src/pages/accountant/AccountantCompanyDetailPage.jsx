@@ -257,37 +257,27 @@ export default function AccountantCompanyDetailPage() {
         <Grid item xs={12}>
           <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
             <Button
-              disabled
               variant="outlined"
               startIcon={<Description />}
-              sx={{
-                textTransform: 'none', color: 'rgba(255,255,255,0.3)', borderColor: 'rgba(255,255,255,0.1)',
-                '&.Mui-disabled': { color: 'rgba(255,255,255,0.3)', borderColor: 'rgba(255,255,255,0.08)' },
-              }}
+              onClick={() => navigate(`/contador/documentos?legal_entity_id=${id}`)}
+              sx={{ textTransform: 'none', color: '#D4AF37', borderColor: 'rgba(212,175,55,0.3)', '&:hover': { borderColor: '#D4AF37' } }}
             >
-              Ver documentos
+              Ver Documentos
             </Button>
             <Button
-              disabled
               variant="outlined"
               startIcon={<Warning />}
-              sx={{
-                textTransform: 'none', color: 'rgba(255,255,255,0.3)', borderColor: 'rgba(255,255,255,0.1)',
-                '&.Mui-disabled': { color: 'rgba(255,255,255,0.3)', borderColor: 'rgba(255,255,255,0.08)' },
-              }}
+              onClick={() => navigate('/contador/pendencias')}
+              sx={{ textTransform: 'none', color: '#D4AF37', borderColor: 'rgba(212,175,55,0.3)', '&:hover': { borderColor: '#D4AF37' } }}
             >
-              Ver pendências
+              Ver Pendências
             </Button>
             <Button
-              disabled
               variant="outlined"
-              startIcon={<CalendarMonth />}
-              sx={{
-                textTransform: 'none', color: 'rgba(255,255,255,0.3)', borderColor: 'rgba(255,255,255,0.1)',
-                '&.Mui-disabled': { color: 'rgba(255,255,255,0.3)', borderColor: 'rgba(255,255,255,0.08)' },
-              }}
+              onClick={() => navigate(`/contador/empresas/${id}/corridas`)}
+              sx={{ textTransform: 'none', color: '#D4AF37', borderColor: 'rgba(212,175,55,0.3)', '&:hover': { borderColor: '#D4AF37' } }}
             >
-              Ver competências
+              Financeiro de Corridas
             </Button>
           </Box>
         </Grid>
