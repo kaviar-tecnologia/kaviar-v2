@@ -55,12 +55,32 @@ const FROM_JOINS = `
 
 // ── Check if entity has ride operations ──────────────────────────────────
 
+/**
+ * Only entities that actually operate rides should see the rides report.
+ * Currently only KAVIAR (the platform operator) has rides.
+ * We check: entity CNPJ matches the operator CNPJ AND rides exist.
+ * 
+ * When a new operator entity is added, add its CNPJ to RIDES_OPERATOR_CNPJS
+ * or use an env var / DB flag in the future.
+ */
+const RIDES_OPERATOR_CNPJS = new Set([
+  '67783601000199', // KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA
+]);
+
 async function entityHasRides(entityId: string): Promise<boolean> {
-  // KAVIAR entities with ride operations: check if any rides exist associated with the territory
-  // For MVP, we check if ANY rides exist in the system (since KAVIAR is the only operator)
-  // Future: filter by territory linked to the entity
-  const result = await pool.query('SELECT EXISTS(SELECT 1 FROM rides_v2 LIMIT 1) as has_rides');
-  return result.rows[0]?.has_rides || false;
+  // Check if this entity is a rides operator
+  const entityResult = await pool.query(
+    'SELECT cnpj FROM legal_entities WHERE id = $1',
+    [entityId]
+  );
+  const cnpj = entityResult.rows[0]?.cnpj?.replace(/\D/g, '');
+  if (!cnpj || !RIDES_OPERATOR_CNPJS.has(cnpj)) {
+    return false;
+  }
+
+  // Verify there are actually rides in the system
+  const ridesResult = await pool.query('SELECT EXISTS(SELECT 1 FROM rides_v2 LIMIT 1) as has_rides');
+  return ridesResult.rows[0]?.has_rides || false;
 }
 
 // ── GET /rides-report ─────────────────────────────────────────────────────
