@@ -172,7 +172,10 @@ router.post('/obligations', async (req: Request, res: Response) => {
 
     res.status(201).json({ success: true, data: serialize(ob) });
   } catch (err: any) {
-    if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
+    if (err.name === 'ZodError') {
+      console.warn('[obligations:create] validation failed:', JSON.stringify({ body: req.body, errors: err.errors }));
+      return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
+    }
     console.error('[obligations] create error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }

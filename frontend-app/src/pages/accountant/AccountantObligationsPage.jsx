@@ -133,18 +133,31 @@ function NewObligationDialog({ open, onClose, entityId, onSuccess }) {
     try {
       const amountCents = Math.round(parseFloat(form.amount.replace(',', '.')) * 100);
       if (isNaN(amountCents) || amountCents <= 0) { setError('Valor inválido'); setLoading(false); return; }
+      
+      // Ensure due_date is YYYY-MM-DD
+      const dueDate = form.due_date; // HTML date input always returns YYYY-MM-DD
+      if (!dueDate || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) { setError('Data de vencimento inválida'); setLoading(false); return; }
+
       await accountantApi.post('/api/accountant/portal/obligations', {
         legal_entity_id: form.legal_entity_id,
         obligation_type: form.obligation_type,
         description: form.description,
         beneficiary: form.beneficiary || null,
         amount_cents: amountCents,
-        due_date: form.due_date,
+        due_date: dueDate,
         notes: form.notes || null,
       });
       onSuccess('Obrigação criada com sucesso.');
       setForm({ legal_entity_id: entityId || '', obligation_type: 'HONORARIOS', description: '', beneficiary: '', amount: '', due_date: '', notes: '' });
-    } catch (err) { setError(err.response?.data?.error || 'Erro ao criar'); }
+    } catch (err) { 
+      const details = err.response?.data?.details;
+      if (details && Array.isArray(details)) {
+        const msgs = details.map(d => `${d.path?.join('.') || 'campo'}: ${d.message}`).join('; ');
+        setError(msgs);
+      } else {
+        setError(err.response?.data?.error || 'Erro ao criar');
+      }
+    }
     finally { setLoading(false); }
   };
 
