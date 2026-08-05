@@ -86,35 +86,37 @@ export default function AccountantCompetencyDetailPage() {
       </Card>
 
       {/* Documents */}
-      {comp.documents?.length > 0 && (
-        <Card sx={{ bgcolor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 2, mb: 3 }}>
-          <CardContent>
-            <Typography sx={{ color: 'rgba(255,255,255,0.6)', fontWeight: 600, fontSize: 13, mb: 1 }}>Documentos vinculados ({comp.documents.length})</Typography>
-            {comp.documents.map(d => (
-              <Box key={d.id} sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 0.5 }}>
-                <Typography sx={{ color: '#fff', fontSize: 13 }}>{d.name || 'Documento'}</Typography>
-                {d.category && <Chip label={d.category} size="small" sx={{ bgcolor: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.4)', fontSize: 10, height: 18 }} />}
-              </Box>
-            ))}
-          </CardContent>
-        </Card>
-      )}
+      <Card sx={{ bgcolor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 2, mb: 3 }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+            <Typography sx={{ color: 'rgba(255,255,255,0.6)', fontWeight: 600, fontSize: 13 }}>Documentos vinculados ({comp.documents?.length || 0})</Typography>
+            {isOpen && <LinkDocButton competencyId={id} entityId={comp.legal_entity_id} onSuccess={() => { fetchData(); setSnackbar({ open: true, message: 'Documento vinculado.', severity: 'success' }); }} />}
+          </Box>
+          {comp.documents?.length > 0 ? comp.documents.map(d => (
+            <Box key={d.id} sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 0.5 }}>
+              <Typography sx={{ color: '#fff', fontSize: 13 }}>{d.name || 'Documento'}</Typography>
+              {d.category && <Chip label={d.category} size="small" sx={{ bgcolor: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.4)', fontSize: 10, height: 18 }} />}
+            </Box>
+          )) : <Typography sx={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>Nenhum documento vinculado</Typography>}
+        </CardContent>
+      </Card>
 
       {/* Obligations */}
-      {comp.obligations?.length > 0 && (
-        <Card sx={{ bgcolor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 2, mb: 3 }}>
-          <CardContent>
-            <Typography sx={{ color: 'rgba(255,255,255,0.6)', fontWeight: 600, fontSize: 13, mb: 1 }}>Obrigações vinculadas ({comp.obligations.length})</Typography>
-            {comp.obligations.map(o => (
-              <Box key={o.id} onClick={() => navigate(`/contador/obrigacoes/${o.id}`)} sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 0.5, cursor: 'pointer', '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' }, p: 0.5, borderRadius: 1 }}>
-                <Typography sx={{ color: '#fff', fontSize: 13 }}>{o.description}</Typography>
-                <Typography sx={{ color: '#D4AF37', fontSize: 13, fontWeight: 600 }}>{o.amount_display}</Typography>
-                <Chip label={o.status} size="small" sx={{ fontSize: 9, height: 18 }} />
-              </Box>
-            ))}
-          </CardContent>
-        </Card>
-      )}
+      <Card sx={{ bgcolor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 2, mb: 3 }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+            <Typography sx={{ color: 'rgba(255,255,255,0.6)', fontWeight: 600, fontSize: 13 }}>Obrigações vinculadas ({comp.obligations?.length || 0})</Typography>
+            {isOpen && <LinkObButton competencyId={id} entityId={comp.legal_entity_id} onSuccess={() => { fetchData(); setSnackbar({ open: true, message: 'Obrigação vinculada.', severity: 'success' }); }} />}
+          </Box>
+          {comp.obligations?.length > 0 ? comp.obligations.map(o => (
+            <Box key={o.id} onClick={() => navigate(`/contador/obrigacoes/${o.id}`)} sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 0.5, cursor: 'pointer', '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' }, p: 0.5, borderRadius: 1 }}>
+              <Typography sx={{ color: '#fff', fontSize: 13 }}>{o.description}</Typography>
+              <Typography sx={{ color: '#D4AF37', fontSize: 13, fontWeight: 600 }}>{o.amount_display}</Typography>
+              <Chip label={o.status} size="small" sx={{ fontSize: 9, height: 18 }} />
+            </Box>
+          )) : <Typography sx={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>Nenhuma obrigação vinculada</Typography>}
+        </CardContent>
+      </Card>
 
       {/* Reopen dialog */}
       {reopenOpen && (
@@ -134,5 +136,87 @@ export default function AccountantCompetencyDetailPage() {
         <Alert severity={snackbar.severity} onClose={() => setSnackbar(s => ({ ...s, open: false }))}>{snackbar.message}</Alert>
       </Snackbar>
     </AccountantPortalLayout>
+  );
+}
+
+function LinkDocButton({ competencyId, entityId, onSuccess }) {
+  const [open, setOpen] = useState(false);
+  const [docs, setDocs] = useState([]);
+
+  const handleOpen = () => {
+    setOpen(true);
+    accountantApi.get(`/api/accountant/portal/documents?legal_entity_id=${entityId}&limit=50`)
+      .then(r => setDocs(r.data?.data || [])).catch(() => {});
+  };
+
+  const handleLink = async (docId) => {
+    try {
+      await accountantApi.post(`/api/accountant/portal/competencies/${competencyId}/link-document`, { document_id: docId });
+      setOpen(false);
+      onSuccess();
+    } catch (err) { alert(err.response?.data?.error || 'Erro ao vincular'); }
+  };
+
+  return (
+    <>
+      <Button size="small" onClick={handleOpen} sx={{ color: '#D4AF37', textTransform: 'none', fontSize: 11 }}>+ Vincular</Button>
+      {open && (
+        <Box sx={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, bgcolor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1300 }}>
+          <Card sx={{ bgcolor: '#1E2433', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 2, maxWidth: 500, width: '100%', p: 3, maxHeight: '70vh', overflow: 'auto' }}>
+            <Typography sx={{ color: '#fff', fontSize: 16, fontWeight: 600, mb: 2 }}>Vincular documento</Typography>
+            {docs.length === 0 ? <Typography sx={{ color: 'rgba(255,255,255,0.4)', fontSize: 13 }}>Nenhum documento disponível</Typography> :
+              docs.map(d => (
+                <Box key={d.id} onClick={() => handleLink(d.id)} sx={{ p: 1, borderRadius: 1, cursor: 'pointer', mb: 0.5, '&:hover': { bgcolor: 'rgba(212,175,55,0.1)' } }}>
+                  <Typography sx={{ color: '#fff', fontSize: 13 }}>{d.document_type?.name || 'Documento'}</Typography>
+                  <Typography sx={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>{d.status} • {d.created_at ? new Date(d.created_at).toLocaleDateString('pt-BR') : ''}</Typography>
+                </Box>
+              ))
+            }
+            <Button onClick={() => setOpen(false)} sx={{ mt: 2, color: 'rgba(255,255,255,0.5)', textTransform: 'none' }}>Cancelar</Button>
+          </Card>
+        </Box>
+      )}
+    </>
+  );
+}
+
+function LinkObButton({ competencyId, entityId, onSuccess }) {
+  const [open, setOpen] = useState(false);
+  const [obs, setObs] = useState([]);
+
+  const handleOpen = () => {
+    setOpen(true);
+    accountantApi.get(`/api/accountant/portal/obligations?legal_entity_id=${entityId}`)
+      .then(r => setObs(r.data?.data || [])).catch(() => {});
+  };
+
+  const handleLink = async (obId) => {
+    try {
+      await accountantApi.post(`/api/accountant/portal/competencies/${competencyId}/link-obligation`, { obligation_id: obId });
+      setOpen(false);
+      onSuccess();
+    } catch (err) { alert(err.response?.data?.error || 'Erro ao vincular'); }
+  };
+
+  return (
+    <>
+      <Button size="small" onClick={handleOpen} sx={{ color: '#D4AF37', textTransform: 'none', fontSize: 11 }}>+ Vincular</Button>
+      {open && (
+        <Box sx={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, bgcolor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1300 }}>
+          <Card sx={{ bgcolor: '#1E2433', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 2, maxWidth: 500, width: '100%', p: 3, maxHeight: '70vh', overflow: 'auto' }}>
+            <Typography sx={{ color: '#fff', fontSize: 16, fontWeight: 600, mb: 2 }}>Vincular obrigação</Typography>
+            {obs.length === 0 ? <Typography sx={{ color: 'rgba(255,255,255,0.4)', fontSize: 13 }}>Nenhuma obrigação disponível</Typography> :
+              obs.map(o => (
+                <Box key={o.id} onClick={() => handleLink(o.id)} sx={{ p: 1, borderRadius: 1, cursor: 'pointer', mb: 0.5, '&:hover': { bgcolor: 'rgba(212,175,55,0.1)' } }}>
+                  <Typography sx={{ color: '#fff', fontSize: 13 }}>{o.description}</Typography>
+                  <Typography sx={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>{o.amount_display} • Venc: {o.due_date ? new Date(o.due_date + 'T12:00:00').toLocaleDateString('pt-BR') : '—'} • {o.status}</Typography>
+                </Box>
+              ))
+            }
+            <Button onClick={() => setOpen(false)} sx={{ mt: 2, color: 'rgba(255,255,255,0.5)', textTransform: 'none' }}>Cancelar</Button>
+          </Card>
+        </Box>
+      )}
+    </>
   );
 }
