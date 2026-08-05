@@ -4714,8 +4714,6 @@ model accounting_company_document_files {
   @@index([document_id])
   @@index([sha256])
   powers_of_attorney  accounting_powers_of_attorney[]
-  obligation_boletos  accounting_payment_obligations[] @relation("obligation_boleto")
-  obligation_proofs   accounting_payment_obligations[] @relation("obligation_proof")
   @@map("accounting_company_document_files")
 }
 
@@ -4897,8 +4895,14 @@ model accounting_payment_obligations {
   barcode                  String?
   pix_key                  String?
   notes                    String?
-  boleto_file_id           String?
-  proof_file_id            String?
+  boleto_storage_key       String?
+  boleto_filename          String?
+  boleto_mime_type         String?
+  boleto_size_bytes        Int?
+  proof_storage_key        String?
+  proof_filename           String?
+  proof_mime_type          String?
+  proof_size_bytes         Int?
   sent_at                  DateTime?
   viewed_at                DateTime?
   scheduled_at             DateTime?
@@ -4914,8 +4918,6 @@ model accounting_payment_obligations {
   updated_at               DateTime                             @updatedAt
 
   legal_entity             legal_entities                       @relation("entity_obligations", fields: [legal_entity_id], references: [id], onDelete: Restrict)
-  boleto_file              accounting_company_document_files?   @relation("obligation_boleto", fields: [boleto_file_id], references: [id], onDelete: SetNull)
-  proof_file               accounting_company_document_files?   @relation("obligation_proof", fields: [proof_file_id], references: [id], onDelete: SetNull)
   created_by_accountant    accountants?                         @relation("obligation_creator", fields: [created_by_accountant_id], references: [id], onDelete: SetNull)
   verified_by_accountant   accountants?                         @relation("obligation_verifier", fields: [verified_by_accountant_id], references: [id], onDelete: SetNull)
 

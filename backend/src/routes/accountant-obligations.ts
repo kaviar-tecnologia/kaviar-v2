@@ -83,7 +83,11 @@ function serialize(o: any) {
     issued_at: toDateStr(o.issued_at), due_date: toDateStr(o.due_date),
     due_status: computeDueStatus(o.due_date, o.status),
     barcode: o.barcode, pix_key: o.pix_key, notes: o.notes,
-    boleto_file_id: o.boleto_file_id, proof_file_id: o.proof_file_id,
+    boleto_file_id: o.boleto_storage_key ? true : null, // backwards compat field name for frontend
+    has_boleto: !!o.boleto_storage_key,
+    boleto_filename: o.boleto_filename,
+    has_proof: !!o.proof_storage_key,
+    proof_filename: o.proof_filename,
     sent_at: toIso(o.sent_at), viewed_at: toIso(o.viewed_at), scheduled_at: toIso(o.scheduled_at),
     paid_at: toIso(o.paid_at), proof_uploaded_at: toIso(o.proof_uploaded_at),
     verified_at: toIso(o.verified_at), reconciled_at: toIso(o.reconciled_at),
@@ -199,7 +203,7 @@ router.post('/obligations/:id/transition', async (req: Request, res: Response) =
     }
 
     // Business rule: cannot send to company without boleto attached
-    if (data.status === 'SENT_TO_COMPANY' && !ob.boleto_file_id) {
+    if (data.status === 'SENT_TO_COMPANY' && !ob.boleto_storage_key) {
       return res.status(400).json({ success: false, error: 'Anexe o boleto ou guia antes de enviar para a empresa' });
     }
 
@@ -285,24 +289,15 @@ router.post('/obligations/:id/upload-boleto', async (req: Request, res: Response
     const uploadedFile = (req as any).file;
     if (!uploadedFile) return res.status(400).json({ success: false, error: 'Nenhum arquivo enviado' });
 
-    const sha256 = crypto.createHash('sha256').update(`${storageKey}:${uploadedFile.size}:${Date.now()}`).digest('hex');
-    const fileRecord = await prisma.accounting_company_document_files.create({
-      data: {
-        document_id: ob.id, // Use obligation ID as pseudo-document
-        version_number: 1,
-        original_filename: uploadedFile.originalname,
-        storage_key: storageKey,
-        mime_type: uploadedFile.mimetype,
-        size_bytes: uploadedFile.size,
-        sha256,
-        uploaded_by_accountant_id: accountant.id,
-        scan_status: 'NOT_SCANNED',
-      },
-    });
-
+    // Store directly on obligation (no document_files FK needed)
     await prisma.accounting_payment_obligations.update({
       where: { id: ob.id },
-      data: { boleto_file_id: fileRecord.id },
+      data: {
+        boleto_storage_key: storageKey,
+        boleto_filename: uploadedFile.originalname,
+        boleto_mime_type: uploadedFile.mimetype,
+        boleto_size_bytes: uploadedFile.size,
+      },
     });
 
     await auditObligation({
@@ -313,13 +308,13 @@ router.post('/obligations/:id/upload-boleto', async (req: Request, res: Response
       details: { filename: uploadedFile.originalname, size: uploadedFile.size },
     });
 
-    res.json({ success: true, data: { file_id: fileRecord.id, filename: uploadedFile.originalname } });
+    res.json({ success: true, data: { filename: uploadedFile.originalname, size: uploadedFile.size } });
   } catch (err: any) {
     if (err.message?.includes('não permitid') || err.message?.includes('Tipo')) {
       return res.status(400).json({ success: false, error: err.message });
     }
     console.error('[obligations] upload-boleto error:', err);
-    res.status(500).json({ success: false, error: 'Erro interno' });
+    res.status(500).json({ success: false, error: 'Erro interno no upload' });
   }
 });
 

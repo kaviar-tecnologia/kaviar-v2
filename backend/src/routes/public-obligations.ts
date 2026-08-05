@@ -49,8 +49,8 @@ function serializeForCompany(ob: any) {
     pix_key: ob.pix_key,
     notes: ob.notes,
     reference_number: ob.reference_number,
-    has_boleto: !!ob.boleto_file_id,
-    has_proof: !!ob.proof_file_id,
+    has_boleto: !!ob.boleto_storage_key,
+    has_proof: !!ob.proof_storage_key,
     rejection_reason: ob.rejection_reason,
     paid_at: toIso(ob.paid_at),
     legal_entity: ob.legal_entity ? { razao_social: ob.legal_entity.razao_social } : undefined,
@@ -106,16 +106,11 @@ router.get('/:token/boleto', async (req: Request, res: Response) => {
     if (!result.valid) return res.status(403).json({ success: false, error: result.error });
 
     const ob = result.obligation;
-    if (!ob.boleto_file_id) return res.status(404).json({ success: false, error: 'Boleto não disponível' });
-
-    const file = await prisma.accounting_company_document_files.findUnique({
-      where: { id: ob.boleto_file_id },
-    });
-    if (!file) return res.status(404).json({ success: false, error: 'Arquivo não encontrado' });
+    if (!ob.boleto_storage_key) return res.status(404).json({ success: false, error: 'Boleto não disponível' });
 
     const { downloadUrl, expiresInSeconds } = await generatePresignedGetUrl({
-      storageKey: file.storage_key,
-      originalFilename: file.original_filename,
+      storageKey: ob.boleto_storage_key,
+      originalFilename: ob.boleto_filename || 'boleto.pdf',
     });
 
     await auditObligation({
@@ -126,7 +121,7 @@ router.get('/:token/boleto', async (req: Request, res: Response) => {
       userAgent: req.headers['user-agent'],
     });
 
-    res.json({ success: true, data: { download_url: downloadUrl, filename: file.original_filename, expires_in_seconds: expiresInSeconds } });
+    res.json({ success: true, data: { download_url: downloadUrl, filename: ob.boleto_filename, expires_in_seconds: expiresInSeconds } });
   } catch (err: any) {
     console.error('[public-obligations] boleto download error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
@@ -244,29 +239,14 @@ router.post('/:token/upload-proof', async (req: Request, res: Response) => {
     const uploadedFile = (req as any).file;
     if (!uploadedFile) return res.status(400).json({ success: false, error: 'Nenhum arquivo enviado' });
 
-    // Create file record
-    const sha256 = crypto.createHash('sha256').update(`${storageKey}:${uploadedFile.size}:${Date.now()}`).digest('hex');
-    const fileRecord = await prisma.accounting_company_document_files.create({
-      data: {
-        document_id: (await prisma.accounting_company_documents.findFirst({ where: { legal_entity_id: ob.legal_entity_id }, select: { id: true } }))?.id || ob.id,
-        version_number: 1,
-        original_filename: uploadedFile.originalname,
-        storage_key: storageKey,
-        mime_type: uploadedFile.mimetype,
-        size_bytes: uploadedFile.size,
-        sha256,
-        uploaded_by_accountant_id: null,
-        uploaded_by_admin_id: null,
-        scan_status: 'NOT_SCANNED',
-        replacement_reason: 'Comprovante de pagamento enviado pela empresa',
-      },
-    });
-
-    // Update obligation
+    // Store directly on obligation
     await prisma.accounting_payment_obligations.update({
       where: { id: ob.id },
       data: {
-        proof_file_id: fileRecord.id,
+        proof_storage_key: storageKey,
+        proof_filename: uploadedFile.originalname,
+        proof_mime_type: uploadedFile.mimetype,
+        proof_size_bytes: uploadedFile.size,
         proof_uploaded_at: new Date(),
         status: 'PROOF_UPLOADED',
         action_owner: 'ACCOUNTANT',
