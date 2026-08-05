@@ -155,8 +155,8 @@ const panelCards = [
 ];
 
 export default function KaviarLanding() {
-  React.useEffect(() => {
   const [loginAnchor, setLoginAnchor] = useState(null);
+  React.useEffect(() => {
     if (window.location.hash) {
       setTimeout(() => {
         const element = document.querySelector(window.location.hash);
