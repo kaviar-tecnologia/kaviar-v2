@@ -1,10 +1,20 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient, accounting_obligation_status } from '@prisma/client';
 import { z } from 'zod';
+import multer from 'multer';
+import multerS3 from 'multer-s3';
+import { S3Client } from '@aws-sdk/client-s3';
+import crypto from 'crypto';
 import { verifyEntityAccess, getAccessibleEntityIds } from '../services/accounting/accounting-documents.service';
+import { generateObligationToken, auditObligation } from '../services/accounting/accounting-obligation-tokens.service';
+import { getFileExtension, MAX_FILE_SIZE } from '../services/accounting/accounting-document-storage.service';
 
 const prisma = new PrismaClient();
 const router = Router();
+
+const BUCKET = process.env.S3_UPLOADS_BUCKET || 'kaviar-uploads-847895361928';
+const REGION = process.env.AWS_REGION || 'us-east-2';
+const s3Client = new S3Client({ region: REGION });
 
 // ── Validation ──────────────────────────────────────────────────────────
 
@@ -229,54 +239,133 @@ router.post('/obligations/:id/transition', async (req: Request, res: Response) =
   }
 });
 
-// Attach boleto file
-router.patch('/obligations/:id/boleto', async (req: Request, res: Response) => {
+// Attach boleto file (integrated upload)
+router.post('/obligations/:id/upload-boleto', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
-    const { file_id } = req.body;
-    if (!file_id) return res.status(400).json({ success: false, error: 'file_id é obrigatório' });
-
     const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
     if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
 
     const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
     if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
 
-    const updated = await prisma.accounting_payment_obligations.update({
-      where: { id: req.params.id },
-      data: { boleto_file_id: file_id },
-      include: INCLUDE,
+    let storageKey = '';
+    const upload = multer({
+      storage: multerS3({
+        s3: s3Client,
+        bucket: BUCKET,
+        contentType: multerS3.AUTO_CONTENT_TYPE,
+        key: (_r: any, file: Express.Multer.File, cb: any) => {
+          const ext = getFileExtension(file.originalname);
+          const nonce = crypto.randomBytes(8).toString('hex');
+          storageKey = `accounting-boletos/${ob.id}/${nonce}${ext}`;
+          cb(null, storageKey);
+        },
+      }),
+      limits: { fileSize: MAX_FILE_SIZE },
+      fileFilter: (_r: any, file: Express.Multer.File, cb: any) => {
+        const allowed = new Set(['application/pdf', 'image/jpeg', 'image/png']);
+        if (!allowed.has(file.mimetype)) return cb(new Error('Tipo não permitido. Use PDF, JPEG ou PNG.'));
+        cb(null, true);
+      },
+    }).single('file');
+
+    await new Promise<void>((resolve, reject) => {
+      upload(req, res, (err: any) => { if (err) reject(err); else resolve(); });
     });
 
-    res.json({ success: true, data: serialize(updated) });
+    const uploadedFile = (req as any).file;
+    if (!uploadedFile) return res.status(400).json({ success: false, error: 'Nenhum arquivo enviado' });
+
+    const sha256 = crypto.createHash('sha256').update(`${storageKey}:${uploadedFile.size}:${Date.now()}`).digest('hex');
+    const fileRecord = await prisma.accounting_company_document_files.create({
+      data: {
+        document_id: ob.id, // Use obligation ID as pseudo-document
+        version_number: 1,
+        original_filename: uploadedFile.originalname,
+        storage_key: storageKey,
+        mime_type: uploadedFile.mimetype,
+        size_bytes: uploadedFile.size,
+        sha256,
+        uploaded_by_accountant_id: accountant.id,
+        scan_status: 'NOT_SCANNED',
+      },
+    });
+
+    await prisma.accounting_payment_obligations.update({
+      where: { id: ob.id },
+      data: { boleto_file_id: fileRecord.id },
+    });
+
+    await auditObligation({
+      obligationId: ob.id,
+      action: 'BOLETO_ATTACHED',
+      actorType: 'ACCOUNTANT',
+      actorId: accountant.id,
+      details: { filename: uploadedFile.originalname, size: uploadedFile.size },
+    });
+
+    res.json({ success: true, data: { file_id: fileRecord.id, filename: uploadedFile.originalname } });
   } catch (err: any) {
-    console.error('[obligations] attach boleto error:', err);
+    if (err.message?.includes('não permitid') || err.message?.includes('Tipo')) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    console.error('[obligations] upload-boleto error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
 });
 
-// Attach proof file
-router.patch('/obligations/:id/proof', async (req: Request, res: Response) => {
+// Generate access token for company
+router.post('/obligations/:id/generate-link', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
-    const { file_id } = req.body;
-    if (!file_id) return res.status(400).json({ success: false, error: 'file_id é obrigatório' });
-
     const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
     if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
 
     const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
     if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
 
-    const updated = await prisma.accounting_payment_obligations.update({
-      where: { id: req.params.id },
-      data: { proof_file_id: file_id, proof_uploaded_at: new Date() },
-      include: INCLUDE,
+    const { token, expiresAt } = await generateObligationToken(ob.id, accountant.id);
+
+    const baseUrl = process.env.FRONTEND_URL || 'https://app.kaviar.com.br';
+    const publicLink = `${baseUrl}/pagar/${token}`;
+
+    await auditObligation({
+      obligationId: ob.id,
+      action: 'LINK_GENERATED',
+      actorType: 'ACCOUNTANT',
+      actorId: accountant.id,
+      details: { expires_at: expiresAt.toISOString() },
     });
 
-    res.json({ success: true, data: serialize(updated) });
+    res.json({
+      success: true,
+      data: { link: publicLink, expires_at: expiresAt.toISOString(), token },
+    });
   } catch (err: any) {
-    console.error('[obligations] attach proof error:', err);
+    console.error('[obligations] generate-link error:', err);
+    res.status(500).json({ success: false, error: 'Erro interno' });
+  }
+});
+
+// Get audit trail
+router.get('/obligations/:id/audit', async (req: Request, res: Response) => {
+  try {
+    const accountant = (req as any).accountant;
+    const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
+    if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    const accessLink = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
+    if (!accessLink) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    const audit = await prisma.accounting_obligation_audit.findMany({
+      where: { obligation_id: ob.id },
+      orderBy: { created_at: 'desc' },
+    });
+
+    res.json({ success: true, data: audit });
+  } catch (err: any) {
+    console.error('[obligations] audit error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
 });

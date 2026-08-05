@@ -4477,6 +4477,7 @@ model accountants {
   poa_responsible           accounting_powers_of_attorney[]    @relation("poa_responsible")
   obligations_created       accounting_payment_obligations[]   @relation("obligation_creator")
   obligations_verified      accounting_payment_obligations[]   @relation("obligation_verifier")
+  obligation_tokens_created accounting_obligation_access_tokens[] @relation("token_creator")
   @@map("accountants")
 }
 
@@ -4924,5 +4925,45 @@ model accounting_payment_obligations {
   @@index([action_owner, status])
   @@index([created_by_accountant_id])
   @@index([legal_entity_id, competence_year, competence_month])
+  access_tokens            accounting_obligation_access_tokens[]
+  audit_trail              accounting_obligation_audit[]
   @@map("accounting_payment_obligations")
+}
+
+model accounting_obligation_access_tokens {
+  id                       String   @id @default(uuid())
+  obligation_id            String
+  token_hash               String   @unique
+  expires_at               DateTime
+  is_active                Boolean  @default(true)
+  created_by_accountant_id String
+  accessed_count           Int      @default(0)
+  last_accessed_at         DateTime?
+  revoked_at               DateTime?
+  created_at               DateTime @default(now())
+
+  obligation               accounting_payment_obligations @relation(fields: [obligation_id], references: [id], onDelete: Cascade)
+  created_by_accountant    accountants                    @relation("token_creator", fields: [created_by_accountant_id], references: [id], onDelete: Cascade)
+
+  @@index([obligation_id])
+  @@index([is_active, expires_at])
+  @@map("accounting_obligation_access_tokens")
+}
+
+model accounting_obligation_audit {
+  id             String   @id @default(uuid())
+  obligation_id  String
+  action         String
+  actor_type     String
+  actor_id       String?
+  details        Json?
+  ip_address     String?
+  user_agent     String?
+  created_at     DateTime @default(now())
+
+  obligation     accounting_payment_obligations @relation(fields: [obligation_id], references: [id], onDelete: Cascade)
+
+  @@index([obligation_id, created_at])
+  @@index([action, created_at])
+  @@map("accounting_obligation_audit")
 }

@@ -134,6 +134,7 @@ import { accountantDocumentRoutes } from './routes/accountant-documents';
 import { accountantRepresentationRoutes } from './routes/accountant-representation';
 import { accountantRidesReportRoutes } from './routes/accountant-rides-report';
 import { accountantObligationsRoutes } from './routes/accountant-obligations';
+import { publicObligationsRoutes } from './routes/public-obligations';
 import { adminDocumentTypesRoutes } from './routes/admin-document-types';
 import { authenticateAccountant } from './middlewares/accountant-auth';
 import webhooksAsaasRoutes from './routes/webhooks-asaas';
@@ -449,6 +450,7 @@ app.use('/api/accountant/portal', authenticateAccountant, accountantDocumentRout
 app.use('/api/accountant/portal', authenticateAccountant, accountantRepresentationRoutes);
 app.use('/api/accountant/portal', authenticateAccountant, accountantRidesReportRoutes);
 app.use('/api/accountant/portal', authenticateAccountant, accountantObligationsRoutes);
+app.use('/api/public/obligations', publicObligationsRoutes);
 app.use('/api/manager/finance', managerFinanceRoutes);
 app.use('/api/webhooks/asaas', webhooksAsaasRoutes);
 app.use('/api/driver/annual-incentive', driverAnnualIncentiveRoutes);

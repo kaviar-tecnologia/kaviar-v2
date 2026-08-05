@@ -69,6 +69,7 @@ import AccountantPowersOfAttorneyPage from "./pages/accountant/AccountantPowersO
 import AccountantPendenciasPage from "./pages/accountant/AccountantPendenciasPage";
 import AccountantRidesReportPage from "./pages/accountant/AccountantRidesReportPage";
 import AccountantObligationsPage from "./pages/accountant/AccountantObligationsPage";
+import PublicPaymentPage from "./pages/public/PublicPaymentPage";
 import AccountantCompanyDetailPage from "./pages/accountant/AccountantCompanyDetailPage";
 
 function ConsultorForm() {
@@ -502,6 +503,7 @@ export default function App() {
 
           {/* Portal do Contador (public pages) */}
           <Route path="/contador/login" element={<AccountantAuthProvider><AccountantLoginPage /></AccountantAuthProvider>} />
+          <Route path="/pagar/:token" element={<PublicPaymentPage />} />
           <Route path="/contador/ativar" element={<ActivateAccountPage />} />
           <Route path="/contador/esqueci-senha" element={<ForgotPasswordPage />} />
           <Route path="/contador/redefinir-senha" element={<ResetPasswordPage />} />
