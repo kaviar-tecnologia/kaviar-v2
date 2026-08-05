@@ -4414,6 +4414,8 @@ model legal_entities {
   @@index([entity_type])
   @@index([is_active])
   company_documents   accounting_company_documents[]
+  certificates        accounting_certificates[]          @relation("entity_certificates")
+  powers_of_attorney  accounting_powers_of_attorney[]    @relation("entity_powers_of_attorney")
   @@map("legal_entities")
 }
 
@@ -4470,6 +4472,8 @@ model accountants {
   @@index([status])
   @@index([is_active])
   doc_files_uploaded  accounting_company_document_files[] @relation("doc_file_uploader_accountant")
+  certificates_responsible  accounting_certificates[]          @relation("cert_responsible")
+  poa_responsible           accounting_powers_of_attorney[]    @relation("poa_responsible")
   @@map("accountants")
 }
 
@@ -4705,5 +4709,133 @@ model accounting_company_document_files {
   @@unique([document_id, version_number])
   @@index([document_id])
   @@index([sha256])
+  powers_of_attorney  accounting_powers_of_attorney[]
   @@map("accounting_company_document_files")
+}
+
+// ========================
+// Frente 3D: Certificates & Powers of Attorney
+// ========================
+
+enum accounting_certificate_type {
+  E_CNPJ_A1
+  E_CNPJ_A3
+  E_CPF_A1
+  E_CPF_A3
+  NF_E
+  OTHER
+}
+
+enum accounting_certificate_status {
+  ACTIVE
+  REVOKED
+  REPLACED
+}
+
+enum accounting_certificate_mode {
+  EXTERNAL
+  METADATA_ONLY
+  KAVIAR_MANAGED
+}
+
+enum accounting_power_of_attorney_status {
+  ACTIVE
+  REVOKED
+  REPLACED
+  SUSPENDED
+}
+
+enum accounting_power_of_attorney_scope {
+  ECAC
+  PREFEITURA
+  SEFAZ
+  JUNTA_COMERCIAL
+  INSS
+  FGTS
+  OUTRO
+}
+
+model accounting_certificates {
+  id                        String                          @id @default(uuid())
+  legal_entity_id           String
+  certificate_type          accounting_certificate_type
+  mode                      accounting_certificate_mode     @default(METADATA_ONLY)
+  status                    accounting_certificate_status   @default(ACTIVE)
+  holder_name               String
+  holder_document           String?
+  serial_number             String?
+  issuer                    String?
+  issued_at                 DateTime?
+  expires_at                DateTime
+  storage_location          String?
+  notes                     String?
+  responsible_accountant_id String?
+  replaced_by_id            String?
+  created_by_id             String?
+  created_by_type           String?                         @db.VarChar(20)
+  created_at                DateTime                        @default(now())
+  updated_at                DateTime                        @updatedAt
+
+  legal_entity              legal_entities                  @relation("entity_certificates", fields: [legal_entity_id], references: [id], onDelete: Restrict)
+  responsible_accountant    accountants?                    @relation("cert_responsible", fields: [responsible_accountant_id], references: [id], onDelete: SetNull)
+  replaced_by               accounting_certificates?        @relation("cert_replacement", fields: [replaced_by_id], references: [id], onDelete: SetNull)
+  replaces                  accounting_certificates[]       @relation("cert_replacement")
+
+  @@index([legal_entity_id])
+  @@index([legal_entity_id, status])
+  @@index([expires_at])
+  @@index([responsible_accountant_id])
+  @@index([certificate_type, status])
+  @@map("accounting_certificates")
+}
+
+model accounting_powers_of_attorney {
+  id                        String                              @id @default(uuid())
+  legal_entity_id           String
+  scope                     accounting_power_of_attorney_scope
+  scope_detail              String?
+  status                    accounting_power_of_attorney_status @default(ACTIVE)
+  grantor_name              String
+  grantor_document          String?
+  grantee_name              String
+  grantee_document          String?
+  issued_at                 DateTime?
+  expires_at                DateTime?
+  protocol_number           String?
+  notes                     String?
+  responsible_accountant_id String?
+  document_file_id          String?
+  replaced_by_id            String?
+  created_by_id             String?
+  created_by_type           String?                             @db.VarChar(20)
+  created_at                DateTime                            @default(now())
+  updated_at                DateTime                            @updatedAt
+
+  legal_entity              legal_entities                      @relation("entity_powers_of_attorney", fields: [legal_entity_id], references: [id], onDelete: Restrict)
+  responsible_accountant    accountants?                        @relation("poa_responsible", fields: [responsible_accountant_id], references: [id], onDelete: SetNull)
+  document_file             accounting_company_document_files?  @relation(fields: [document_file_id], references: [id], onDelete: SetNull)
+  replaced_by               accounting_powers_of_attorney?      @relation("poa_replacement", fields: [replaced_by_id], references: [id], onDelete: SetNull)
+  replaces                  accounting_powers_of_attorney[]     @relation("poa_replacement")
+
+  @@index([legal_entity_id])
+  @@index([legal_entity_id, scope])
+  @@index([legal_entity_id, status])
+  @@index([expires_at])
+  @@index([responsible_accountant_id])
+  @@map("accounting_powers_of_attorney")
+}
+
+model accounting_fiscal_health_rules {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  description String?
+  rule_type   String
+  is_required Boolean  @default(true)
+  severity    String   @default("CRITICAL")
+  sort_order  Int      @default(0)
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+
+  @@map("accounting_fiscal_health_rules")
 }
