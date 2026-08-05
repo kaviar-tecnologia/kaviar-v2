@@ -21,13 +21,12 @@ export interface Pendencia {
 
 /**
  * Compute all pending actions for an accountant across all accessible companies.
- * NO TABLE — derived in real-time from:
- * - Certificates expiring/expired
- * - Powers of Attorney expiring/expired/missing
- * - Documents with actionable status (REJECTED, DRAFT with no file, etc.)
- * - Fiscal health check failures
+ * 
+ * SINGLE SOURCE OF TRUTH: derived from fiscal health checks.
+ * Every check that is not OK generates a corresponding pendência.
+ * This guarantees consistency: if health says CRITICAL, pendências shows it.
  *
- * Single source of truth: same data feeds dashboard, pendências page, alerts, timeline.
+ * Additional pendências from document workflow (rejected, draft without file).
  */
 export async function computePendencias(accountantId: string): Promise<Pendencia[]> {
   const now = new Date();
@@ -65,92 +64,46 @@ export async function computePendencias(accountantId: string): Promise<Pendencia
   });
   const entityMap = new Map(entities.map(e => [e.id, e]));
 
-  // 1. CERTIFICATES — expiring or expired
-  const certificates = await prisma.accounting_certificates.findMany({
-    where: { legal_entity_id: { in: [...entityIds] }, status: 'ACTIVE' },
-  });
-
-  for (const cert of certificates) {
-    const daysUntil = Math.floor((new Date(cert.expires_at).getTime() - now.getTime()) / 86400000);
-    const entity = entityMap.get(cert.legal_entity_id);
+  // 1. FISCAL HEALTH CHECKS → Pendências (single source of truth)
+  for (const entityId of entityIds) {
+    const entity = entityMap.get(entityId);
     if (!entity) continue;
 
-    if (daysUntil < 0) {
+    const health = await computeFiscalHealth(entityId);
+    for (const check of health.checks) {
+      if (check.status === 'OK' || check.status === 'NOT_APPLICABLE') continue;
+
+      const priority = check.status === 'CRITICAL' ? 'URGENT' as const : 'MEDIUM' as const;
+      const actionMap: Record<string, { action: string; path: string; type: Pendencia['type'] }> = {
+        CERT_DIGITAL_VALID: { action: 'Cadastrar certificado', path: '/contador/certificados', type: 'CERTIFICATE' },
+        PROC_ECAC_VALID: { action: 'Cadastrar procuração e-CAC', path: '/contador/procuracoes', type: 'POWER_OF_ATTORNEY' },
+        PROC_PREFEITURA_VALID: { action: 'Cadastrar procuração Prefeitura', path: '/contador/procuracoes', type: 'POWER_OF_ATTORNEY' },
+        PROC_SEFAZ_VALID: { action: 'Cadastrar procuração SEFAZ', path: '/contador/procuracoes', type: 'POWER_OF_ATTORNEY' },
+        DOC_CONTRATO_SOCIAL: { action: 'Enviar Contrato Social', path: '/contador/documentos', type: 'DOCUMENT' },
+        DOC_CARTAO_CNPJ: { action: 'Enviar Cartão CNPJ', path: '/contador/documentos', type: 'DOCUMENT' },
+      };
+
+      const mapping = actionMap[check.code] || { action: 'Resolver', path: '/contador/pendencias', type: 'FISCAL_HEALTH' as const };
+
       pendencias.push({
-        id: `cert-expired-${cert.id}`,
-        type: 'CERTIFICATE',
-        priority: 'URGENT',
-        title: 'Certificado digital vencido',
-        description: `${cert.holder_name} — venceu há ${Math.abs(daysUntil)} dia${Math.abs(daysUntil) !== 1 ? 's' : ''}`,
-        entity_id: entity.id, entity_name: entity.razao_social, entity_cnpj: entity.cnpj,
-        action: 'Renovar certificado',
-        action_path: '/contador/certificados',
-        expires_at: cert.expires_at.toISOString(),
-        days_until_expiry: daysUntil,
-        created_source: 'certificate_expiry',
-      });
-    } else if (daysUntil <= 30) {
-      pendencias.push({
-        id: `cert-expiring-${cert.id}`,
-        type: 'CERTIFICATE',
-        priority: daysUntil <= 7 ? 'HIGH' : 'MEDIUM',
-        title: 'Certificado digital vencendo',
-        description: `${cert.holder_name} — vence em ${daysUntil} dia${daysUntil !== 1 ? 's' : ''}`,
-        entity_id: entity.id, entity_name: entity.razao_social, entity_cnpj: entity.cnpj,
-        action: 'Providenciar renovação',
-        action_path: '/contador/certificados',
-        expires_at: cert.expires_at.toISOString(),
-        days_until_expiry: daysUntil,
-        created_source: 'certificate_expiry',
+        id: `health-${entityId}-${check.code}`,
+        type: mapping.type,
+        priority: check.severity === 'CRITICAL' ? priority : 'MEDIUM',
+        title: check.name,
+        description: check.message,
+        entity_id: entity.id,
+        entity_name: entity.razao_social,
+        entity_cnpj: entity.cnpj,
+        action: mapping.action,
+        action_path: mapping.path,
+        expires_at: check.expires_at || null,
+        days_until_expiry: check.days_until_expiry || null,
+        created_source: `health_check_${check.code}`,
       });
     }
   }
 
-  // 2. POWERS OF ATTORNEY — expiring, expired, or missing critical ones
-  const poas = await prisma.accounting_powers_of_attorney.findMany({
-    where: { legal_entity_id: { in: [...entityIds] }, status: 'ACTIVE' },
-  });
-
-  for (const poa of poas) {
-    if (!poa.expires_at) continue;
-    const daysUntil = Math.floor((new Date(poa.expires_at).getTime() - now.getTime()) / 86400000);
-    const entity = entityMap.get(poa.legal_entity_id);
-    if (!entity) continue;
-
-    const scopeLabel = { ECAC: 'e-CAC', PREFEITURA: 'Prefeitura', SEFAZ: 'SEFAZ', JUNTA_COMERCIAL: 'Junta Comercial', INSS: 'INSS', FGTS: 'FGTS', OUTRO: 'Outro' }[poa.scope] || poa.scope;
-
-    if (daysUntil < 0) {
-      pendencias.push({
-        id: `poa-expired-${poa.id}`,
-        type: 'POWER_OF_ATTORNEY',
-        priority: 'URGENT',
-        title: `Procuração ${scopeLabel} vencida`,
-        description: `Outorgado: ${poa.grantee_name} — venceu há ${Math.abs(daysUntil)} dias`,
-        entity_id: entity.id, entity_name: entity.razao_social, entity_cnpj: entity.cnpj,
-        action: 'Renovar procuração',
-        action_path: '/contador/procuracoes',
-        expires_at: poa.expires_at.toISOString(),
-        days_until_expiry: daysUntil,
-        created_source: 'poa_expiry',
-      });
-    } else if (daysUntil <= 30) {
-      pendencias.push({
-        id: `poa-expiring-${poa.id}`,
-        type: 'POWER_OF_ATTORNEY',
-        priority: daysUntil <= 7 ? 'HIGH' : 'MEDIUM',
-        title: `Procuração ${scopeLabel} vencendo`,
-        description: `Outorgado: ${poa.grantee_name} — vence em ${daysUntil} dias`,
-        entity_id: entity.id, entity_name: entity.razao_social, entity_cnpj: entity.cnpj,
-        action: 'Providenciar renovação',
-        action_path: '/contador/procuracoes',
-        expires_at: poa.expires_at.toISOString(),
-        days_until_expiry: daysUntil,
-        created_source: 'poa_expiry',
-      });
-    }
-  }
-
-  // 3. DOCUMENTS — actionable status
+  // 2. DOCUMENT WORKFLOW — rejected or draft without file
   const documents = await prisma.accounting_company_documents.findMany({
     where: {
       legal_entity_id: { in: [...entityIds] },
@@ -191,37 +144,6 @@ export async function computePendencias(accountantId: string): Promise<Pendencia
         created_source: 'document_no_file',
       });
     }
-  }
-
-  // 4. DOCUMENTS — expiring
-  const expiringDocs = await prisma.accounting_company_documents.findMany({
-    where: {
-      legal_entity_id: { in: [...entityIds] },
-      status: { in: ['ACTIVE', 'APPROVED'] },
-      expires_at: { not: null, lte: new Date(now.getTime() + 30 * 86400000) },
-    },
-    include: { document_type: { select: { name: true } } },
-  });
-
-  for (const doc of expiringDocs) {
-    if (!doc.expires_at) continue;
-    const daysUntil = Math.floor((new Date(doc.expires_at).getTime() - now.getTime()) / 86400000);
-    const entity = entityMap.get(doc.legal_entity_id);
-    if (!entity) continue;
-
-    pendencias.push({
-      id: `doc-expiring-${doc.id}`,
-      type: 'DOCUMENT',
-      priority: daysUntil < 0 ? 'URGENT' : daysUntil <= 7 ? 'HIGH' : 'MEDIUM',
-      title: daysUntil < 0 ? 'Documento vencido' : 'Documento vencendo',
-      description: `${doc.document_type?.name || 'Documento'} — ${daysUntil < 0 ? `venceu há ${Math.abs(daysUntil)} dias` : `vence em ${daysUntil} dias`}`,
-      entity_id: entity.id, entity_name: entity.razao_social, entity_cnpj: entity.cnpj,
-      action: daysUntil < 0 ? 'Renovar documento' : 'Providenciar renovação',
-      action_path: `/contador/documentos/${doc.id}`,
-      expires_at: doc.expires_at.toISOString(),
-      days_until_expiry: daysUntil,
-      created_source: 'document_expiry',
-    });
   }
 
   // Sort by priority: URGENT > HIGH > MEDIUM > LOW
