@@ -223,6 +223,7 @@ model admins {
   accountant_invites_created                 accountant_invites[]               @relation("invite_creator")
   accountant_invites_revoked                 accountant_invites[]               @relation("invite_revoker")
   accountant_links_created                   accountant_entity_links[]          @relation("link_creator")
+  doc_files_uploaded                        accounting_company_document_files[] @relation("doc_file_uploader_admin")
 }
 
 model communities {
@@ -4412,6 +4413,7 @@ model legal_entities {
   @@index([parent_entity_id])
   @@index([entity_type])
   @@index([is_active])
+  company_documents   accounting_company_documents[]
   @@map("legal_entities")
 }
 
@@ -4467,6 +4469,7 @@ model accountants {
   @@index([accounting_firm_id])
   @@index([status])
   @@index([is_active])
+  doc_files_uploaded  accounting_company_document_files[] @relation("doc_file_uploader_accountant")
   @@map("accountants")
 }
 
@@ -4594,4 +4597,105 @@ model accountant_password_resets {
   @@index([accountant_id, status])
   @@index([token_hash])
   @@map("accountant_password_resets")
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Portal do Contador — Frente 3C: Documentos
+// ═══════════════════════════════════════════════════════════════════
+
+enum accounting_document_category {
+  SOCIETARIO
+  FISCAL
+  TRABALHISTA
+  CERTIFICADO
+  PROCURACAO
+  LICENCA
+  INSCRICAO
+  OUTRO
+}
+
+enum accounting_document_status {
+  DRAFT
+  SENT
+  UNDER_REVIEW
+  APPROVED
+  ACTIVE
+  REJECTED
+  REPLACED
+  REVOKED
+}
+
+model accounting_document_types {
+  id                  String                        @id @default(uuid())
+  code                String                        @unique
+  name                String
+  description         String?
+  category            accounting_document_category
+  requires_validity   Boolean                       @default(false)
+  renewal_alert_days  Int?
+  sort_order          Int                           @default(0)
+  is_active           Boolean                       @default(true)
+  created_at          DateTime                      @default(now())
+  updated_at          DateTime                      @updatedAt
+
+  documents           accounting_company_documents[]
+
+  @@index([category])
+  @@index([is_active, sort_order])
+  @@map("accounting_document_types")
+}
+
+model accounting_company_documents {
+  id                  String                        @id @default(uuid())
+  legal_entity_id     String
+  document_type_id    String
+  status              accounting_document_status    @default(DRAFT)
+  issued_at           DateTime?
+  valid_from          DateTime?
+  expires_at          DateTime?
+  reference_number    String?
+  notes               String?
+  created_by_id       String?
+  created_by_type     String?                       @db.VarChar(20)
+  updated_by_id       String?
+  created_at          DateTime                      @default(now())
+  updated_at          DateTime                      @updatedAt
+
+  legal_entity        legal_entities                @relation(fields: [legal_entity_id], references: [id], onDelete: Restrict)
+  document_type       accounting_document_types     @relation(fields: [document_type_id], references: [id], onDelete: Restrict)
+  files               accounting_company_document_files[]
+
+  @@index([legal_entity_id])
+  @@index([document_type_id])
+  @@index([legal_entity_id, document_type_id])
+  @@index([status])
+  @@index([expires_at])
+  @@index([legal_entity_id, status])
+  @@map("accounting_company_documents")
+}
+
+model accounting_company_document_files {
+  id                      String   @id @default(uuid())
+  document_id             String
+  version_number          Int
+  original_filename       String
+  storage_key             String   @unique
+  mime_type               String   @db.VarChar(100)
+  size_bytes              Int
+  sha256                  String   @db.VarChar(64)
+  uploaded_by_admin_id    String?
+  uploaded_by_accountant_id String?
+  scan_status             String   @default("NOT_SCANNED") @db.VarChar(20)
+  replacement_reason      String?
+  created_at              DateTime @default(now())
+
+  document                accounting_company_documents @relation(fields: [document_id], references: [id], onDelete: Restrict)
+  uploaded_by_admin       admins?      @relation("doc_file_uploader_admin", fields: [uploaded_by_admin_id], references: [id], onDelete: SetNull)
+  uploaded_by_accountant  accountants? @relation("doc_file_uploader_accountant", fields: [uploaded_by_accountant_id], references: [id], onDelete: SetNull)
+
+  @@unique([document_id, version_number])
+  @@index([document_id])
+  @@index([sha256])
+  @@map("accounting_company_document_files")
 }
