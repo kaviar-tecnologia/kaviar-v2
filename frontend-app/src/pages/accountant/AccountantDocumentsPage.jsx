@@ -46,6 +46,7 @@ export default function AccountantDocumentsPage() {
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState({ page: 1, total: 0, totalPages: 0 });
   const [filters, setFilters] = useState({
+    search: '',
     status: '',
     category: '',
     temporal_status: '',
@@ -88,9 +89,19 @@ export default function AccountantDocumentsPage() {
 
   const hasActiveFilters = Object.values(filters).some(v => v !== '');
 
+  const filteredDocs = documents.filter(doc => {
+    if (!filters.search) return true;
+    const q = filters.search.toLowerCase();
+    return (
+      doc.document_type?.name?.toLowerCase().includes(q) ||
+      doc.reference_number?.toLowerCase().includes(q) ||
+      doc.legal_entity?.razao_social?.toLowerCase().includes(q)
+    );
+  });
+
   return (
     <AccountantPortalLayout>
-      <Box sx={{ p: 3 }}>
+      <Box>
         {/* Header */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Box>
@@ -112,7 +123,22 @@ export default function AccountantDocumentsPage() {
         </Box>
 
         {/* Filters */}
-        <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+        <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
+          <TextField
+            size="small"
+            placeholder="Buscar documento..."
+            value={filters.search || ''}
+            onChange={e => handleFilterChange('search', e.target.value)}
+            InputProps={{
+              startAdornment: <InputAdornment position="start"><Search sx={{ color: 'rgba(255,255,255,0.3)', fontSize: 18 }} /></InputAdornment>,
+            }}
+            sx={{
+              minWidth: 200,
+              '& .MuiOutlinedInput-root': { color: '#fff', '& fieldset': { borderColor: 'rgba(255,255,255,0.2)' } },
+              '& input::placeholder': { color: 'rgba(255,255,255,0.4)' },
+            }}
+          />
+
           <FormControl size="small" sx={{ minWidth: 160 }}>
             <InputLabel sx={{ color: 'rgba(255,255,255,0.5)' }}>Empresa</InputLabel>
             <Select
@@ -176,7 +202,7 @@ export default function AccountantDocumentsPage() {
           {hasActiveFilters && (
             <Button
               size="small"
-              onClick={() => setFilters({ status: '', category: '', temporal_status: '', legal_entity_id: '' })}
+              onClick={() => setFilters({ search: '', status: '', category: '', temporal_status: '', legal_entity_id: '' })}
               sx={{ color: '#D4AF37', textTransform: 'none' }}
             >
               Limpar filtros
@@ -193,7 +219,7 @@ export default function AccountantDocumentsPage() {
               </Grid>
             ))}
           </Grid>
-        ) : documents.length === 0 ? (
+        ) : filteredDocs.length === 0 ? (
           <Box sx={{ textAlign: 'center', py: 8 }}>
             <Description sx={{ fontSize: 64, color: 'rgba(255,255,255,0.15)', mb: 2 }} />
             <Typography sx={{ color: 'rgba(255,255,255,0.5)', fontSize: 16 }}>
@@ -207,7 +233,7 @@ export default function AccountantDocumentsPage() {
           </Box>
         ) : (
           <>
-            {documents.map(doc => (
+            {filteredDocs.map(doc => (
               <DocumentCard key={doc.id} doc={doc} onClick={() => navigate(`/contador/documentos/${doc.id}`)} />
             ))}
 

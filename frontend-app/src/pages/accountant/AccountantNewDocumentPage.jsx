@@ -1,12 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box, Typography, Button, TextField, Select, MenuItem, FormControl, InputLabel,
-  Card, CardContent, IconButton, Alert,
+  Card, CardContent, IconButton, Alert, Snackbar,
 } from '@mui/material';
 import { ArrowBack, Add } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import AccountantPortalLayout from '../../components/accountant/AccountantPortalLayout';
 import accountantApi from '../../services/accountantApi';
+
+const CATEGORY_LABELS = {
+  SOCIETARIO: 'Societário', FISCAL: 'Fiscal', TRABALHISTA: 'Trabalhista',
+  CERTIFICADO: 'Certificado', PROCURACAO: 'Procuração', LICENCA: 'Licença',
+  INSCRICAO: 'Inscrição', OUTRO: 'Outro',
+};
 
 export default function AccountantNewDocumentPage() {
   const navigate = useNavigate();
@@ -14,6 +20,7 @@ export default function AccountantNewDocumentPage() {
   const [docTypes, setDocTypes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
 
   const [form, setForm] = useState({
     legal_entity_id: '',
@@ -55,7 +62,8 @@ export default function AccountantNewDocumentPage() {
       const res = await accountantApi.post('/api/accountant/portal/documents', payload);
       const newDoc = res.data?.data;
       if (newDoc?.id) {
-        navigate(`/contador/documentos/${newDoc.id}`);
+        setSuccessMsg('Documento criado com sucesso.');
+        setTimeout(() => navigate(`/contador/documentos/${newDoc.id}`), 1200);
       }
     } catch (err) {
       setError(err.response?.data?.error || 'Erro ao criar documento');
@@ -81,11 +89,11 @@ export default function AccountantNewDocumentPage() {
             <form onSubmit={handleSubmit}>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
                 <FormControl fullWidth required>
-                  <InputLabel sx={{ color: 'rgba(255,255,255,0.5)' }}>Empresa</InputLabel>
+                  <InputLabel sx={{ color: 'rgba(255,255,255,0.5)' }}>Empresa *</InputLabel>
                   <Select
                     value={form.legal_entity_id}
                     onChange={e => handleChange('legal_entity_id', e.target.value)}
-                    label="Empresa"
+                    label="Empresa *"
                     sx={{ color: '#fff', '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.2)' } }}
                   >
                     {companies.map(c => (
@@ -95,15 +103,15 @@ export default function AccountantNewDocumentPage() {
                 </FormControl>
 
                 <FormControl fullWidth required>
-                  <InputLabel sx={{ color: 'rgba(255,255,255,0.5)' }}>Tipo de Documento</InputLabel>
+                  <InputLabel sx={{ color: 'rgba(255,255,255,0.5)' }}>Tipo de Documento *</InputLabel>
                   <Select
                     value={form.document_type_id}
                     onChange={e => handleChange('document_type_id', e.target.value)}
-                    label="Tipo de Documento"
+                    label="Tipo de Documento *"
                     sx={{ color: '#fff', '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.2)' } }}
                   >
                     {docTypes.map(dt => (
-                      <MenuItem key={dt.id} value={dt.id}>{dt.name} ({dt.category})</MenuItem>
+                      <MenuItem key={dt.id} value={dt.id}>{dt.name} ({CATEGORY_LABELS[dt.category] || dt.category})</MenuItem>
                     ))}
                   </Select>
                 </FormControl>
@@ -169,6 +177,10 @@ export default function AccountantNewDocumentPage() {
           </CardContent>
         </Card>
       </Box>
+
+      <Snackbar open={!!successMsg} autoHideDuration={3000} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+        <Alert severity="success" sx={{ width: '100%' }}>{successMsg}</Alert>
+      </Snackbar>
     </AccountantPortalLayout>
   );
 }

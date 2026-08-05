@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box, Typography, Button, Chip, Card, CardContent, Skeleton, Divider,
-  Table, TableBody, TableRow, TableCell, TableHead, IconButton, Tooltip, Alert,
+  Table, TableBody, TableRow, TableCell, TableHead, IconButton, Tooltip, Alert, Snackbar,
 } from '@mui/material';
 import {
   ArrowBack, CloudUpload, CloudDownload, Description, Warning,
@@ -46,6 +46,7 @@ export default function AccountantDocumentDetailPage() {
   const [error, setError] = useState(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [downloading, setDownloading] = useState(null);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'error' });
 
   const fetchDocument = () => {
     setLoading(true);
@@ -66,7 +67,7 @@ export default function AccountantDocumentDetailPage() {
         window.open(download_url, '_blank', 'noopener,noreferrer');
       }
     } catch (err) {
-      alert(err.response?.data?.error || 'Erro ao gerar link de download');
+      setSnackbar({ open: true, message: err.response?.data?.error || 'Erro ao gerar link de download', severity: 'error' });
     } finally {
       setDownloading(null);
     }
@@ -75,9 +76,10 @@ export default function AccountantDocumentDetailPage() {
   const handleSend = async () => {
     try {
       await accountantApi.patch(`/api/accountant/portal/documents/${id}`, { status: 'SENT' });
+      setSnackbar({ open: true, message: 'Documento enviado para revisão.', severity: 'success' });
       fetchDocument();
     } catch (err) {
-      alert(err.response?.data?.error || 'Erro ao enviar documento');
+      setSnackbar({ open: true, message: err.response?.data?.error || 'Erro ao enviar documento', severity: 'error' });
     }
   };
 
@@ -158,7 +160,11 @@ export default function AccountantDocumentDetailPage() {
                 <Chip label={temporalInfo.label} sx={{ bgcolor: `${temporalInfo.color}20`, color: temporalInfo.color }} />
               )}
               {doc.document_type?.category && (
-                <Chip label={doc.document_type.category} variant="outlined" size="small"
+                <Chip label={({
+                  SOCIETARIO: 'Societário', FISCAL: 'Fiscal', TRABALHISTA: 'Trabalhista',
+                  CERTIFICADO: 'Certificado', PROCURACAO: 'Procuração', LICENCA: 'Licença',
+                  INSCRICAO: 'Inscrição', OUTRO: 'Outro',
+                })[doc.document_type.category] || doc.document_type.category} variant="outlined" size="small"
                   sx={{ borderColor: 'rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.5)' }} />
               )}
             </Box>
@@ -179,8 +185,8 @@ export default function AccountantDocumentDetailPage() {
           </CardContent>
         </Card>
 
-        {/* Current File */}
-        {doc.current_file && (
+        {/* Current File — only show separately when multiple versions exist */}
+        {doc.current_file && doc.files?.length > 1 && (
           <Card sx={{ bgcolor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 2, mb: 3 }}>
             <CardContent>
               <Typography sx={{ color: '#D4AF37', fontSize: 13, fontWeight: 600, mb: 1.5 }}>
@@ -226,7 +232,7 @@ export default function AccountantDocumentDetailPage() {
                     <TableCell sx={{ color: 'rgba(255,255,255,0.4)', borderColor: 'rgba(255,255,255,0.08)' }}>Versão</TableCell>
                     <TableCell sx={{ color: 'rgba(255,255,255,0.4)', borderColor: 'rgba(255,255,255,0.08)' }}>Arquivo</TableCell>
                     <TableCell sx={{ color: 'rgba(255,255,255,0.4)', borderColor: 'rgba(255,255,255,0.08)' }}>Tamanho</TableCell>
-                    <TableCell sx={{ color: 'rgba(255,255,255,0.4)', borderColor: 'rgba(255,255,255,0.08)' }}>Verificação</TableCell>
+                    <TableCell sx={{ color: 'rgba(255,255,255,0.4)', borderColor: 'rgba(255,255,255,0.08)' }}>Segurança</TableCell>
                     <TableCell sx={{ color: 'rgba(255,255,255,0.4)', borderColor: 'rgba(255,255,255,0.08)' }}>Data</TableCell>
                     <TableCell sx={{ color: 'rgba(255,255,255,0.4)', borderColor: 'rgba(255,255,255,0.08)' }} align="right">Ação</TableCell>
                   </TableRow>
@@ -300,6 +306,18 @@ export default function AccountantDocumentDetailPage() {
         documentId={id}
         onSuccess={() => { setUploadOpen(false); fetchDocument(); }}
       />
+
+      {/* Snackbar */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar(s => ({ ...s, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity={snackbar.severity} onClose={() => setSnackbar(s => ({ ...s, open: false }))} sx={{ width: '100%' }}>
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </AccountantPortalLayout>
   );
 }

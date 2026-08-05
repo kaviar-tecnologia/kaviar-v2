@@ -121,7 +121,7 @@ export default function DocumentUploadDialog({ open, onClose, documentId, onSucc
 
       setTimeout(() => {
         onSuccess();
-      }, 1000);
+      }, 2000);
     } catch (err) {
       setStep('error');
       setError(err.response?.data?.error || err.message || 'Erro no upload');
@@ -130,10 +130,10 @@ export default function DocumentUploadDialog({ open, onClose, documentId, onSucc
 
   const stepLabels = {
     select: 'Selecione o arquivo',
-    hashing: 'Calculando integridade...',
+    hashing: 'Preparando arquivo...',
     uploading: 'Enviando arquivo...',
-    confirming: 'Confirmando...',
-    done: 'Upload concluído!',
+    confirming: 'Confirmando envio...',
+    done: 'Arquivo enviado com sucesso.',
     error: 'Erro',
   };
 
@@ -146,7 +146,7 @@ export default function DocumentUploadDialog({ open, onClose, documentId, onSucc
       PaperProps={{ sx: { bgcolor: '#1E2433', border: '1px solid rgba(255,255,255,0.1)' } }}
     >
       <DialogTitle sx={{ color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        Upload de Arquivo
+        Enviar Arquivo
         <IconButton onClick={handleClose} sx={{ color: 'rgba(255,255,255,0.4)' }}><Close /></IconButton>
       </DialogTitle>
 
@@ -226,7 +226,7 @@ export default function DocumentUploadDialog({ open, onClose, documentId, onSucc
           <Box sx={{ py: 4, textAlign: 'center' }}>
             <CheckCircle sx={{ fontSize: 48, color: '#22C55E', mb: 1 }} />
             <Typography sx={{ color: '#22C55E', fontSize: 16, fontWeight: 600 }}>
-              Upload concluído!
+              Arquivo enviado com sucesso.
             </Typography>
           </Box>
         )}
