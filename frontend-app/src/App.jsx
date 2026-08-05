@@ -69,6 +69,7 @@ import AccountantPowersOfAttorneyPage from "./pages/accountant/AccountantPowersO
 import AccountantPendenciasPage from "./pages/accountant/AccountantPendenciasPage";
 import AccountantRidesReportPage from "./pages/accountant/AccountantRidesReportPage";
 import AccountantObligationsPage from "./pages/accountant/AccountantObligationsPage";
+import AccountantObligationDetailPage from "./pages/accountant/AccountantObligationDetailPage";
 import PublicPaymentPage from "./pages/public/PublicPaymentPage";
 import AccountantCompanyDetailPage from "./pages/accountant/AccountantCompanyDetailPage";
 
@@ -526,6 +527,7 @@ export default function App() {
           <Route path="/contador/empresas/:entityId/corridas" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantRidesReportPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/empresas/:entityId/obrigacoes" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantObligationsPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/obrigacoes" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantObligationsPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
+          <Route path="/contador/obrigacoes/:id" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantObligationDetailPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/competencias" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPlaceholderPage title="Competências" /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/pendencias" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPendenciasPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/relatorios" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPlaceholderPage title="Relatórios" /></AccountantProtectedRoute></AccountantAuthProvider>} />

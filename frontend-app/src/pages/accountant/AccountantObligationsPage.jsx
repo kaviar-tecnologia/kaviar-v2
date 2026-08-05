@@ -86,7 +86,7 @@ export default function AccountantObligationsPage() {
           const statusColor = STATUS_COLORS[ob.status] || '#6B7280';
           const dueColor = DUE_COLORS[ob.due_status] || '#6B7280';
           return (
-            <Card key={ob.id} sx={{ mb: 1.5, bgcolor: 'rgba(255,255,255,0.03)', border: `1px solid ${ob.due_status === 'OVERDUE' ? '#EF444430' : 'rgba(255,255,255,0.08)'}`, borderRadius: 2 }}>
+            <Card key={ob.id} onClick={() => navigate(`/contador/obrigacoes/${ob.id}`)} sx={{ mb: 1.5, bgcolor: 'rgba(255,255,255,0.03)', border: `1px solid ${ob.due_status === 'OVERDUE' ? '#EF444430' : 'rgba(255,255,255,0.08)'}`, borderRadius: 2, cursor: 'pointer', transition: 'all 0.15s', '&:hover': { bgcolor: 'rgba(255,255,255,0.05)', borderColor: 'rgba(212,175,55,0.3)' } }}>
               <CardContent sx={{ py: 2, px: 3, '&:last-child': { pb: 2 } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <Box sx={{ flex: 1 }}>

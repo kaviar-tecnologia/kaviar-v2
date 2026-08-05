@@ -8,6 +8,7 @@ import crypto from 'crypto';
 import { verifyEntityAccess, getAccessibleEntityIds } from '../services/accounting/accounting-documents.service';
 import { generateObligationToken, auditObligation } from '../services/accounting/accounting-obligation-tokens.service';
 import { getFileExtension, MAX_FILE_SIZE } from '../services/accounting/accounting-document-storage.service';
+import { emailService } from '../services/email/email.service';
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -348,6 +349,138 @@ router.post('/obligations/:id/generate-link', async (req: Request, res: Response
   } catch (err: any) {
     console.error('[obligations] generate-link error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
+  }
+});
+
+// Get link status
+router.get('/obligations/:id/link-status', async (req: Request, res: Response) => {
+  try {
+    const accountant = (req as any).accountant;
+    const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
+    if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
+    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    const activeToken = await prisma.accounting_obligation_access_tokens.findFirst({
+      where: { obligation_id: ob.id, is_active: true, expires_at: { gt: new Date() } },
+      select: { id: true, expires_at: true, accessed_count: true, last_accessed_at: true, created_at: true },
+    });
+
+    const baseUrl = process.env.FRONTEND_URL || 'https://app.kaviar.com.br';
+
+    res.json({
+      success: true,
+      data: {
+        has_active_link: !!activeToken,
+        expires_at: activeToken?.expires_at?.toISOString() || null,
+        accessed_count: activeToken?.accessed_count || 0,
+        last_accessed_at: activeToken?.last_accessed_at?.toISOString() || null,
+        created_at: activeToken?.created_at?.toISOString() || null,
+      },
+    });
+  } catch (err: any) {
+    console.error('[obligations] link-status error:', err);
+    res.status(500).json({ success: false, error: 'Erro interno' });
+  }
+});
+
+// Send email notification to company
+router.post('/obligations/:id/send-email', async (req: Request, res: Response) => {
+  try {
+    const accountant = (req as any).accountant;
+    const { recipient_email } = req.body;
+    if (!recipient_email || typeof recipient_email !== 'string' || !recipient_email.includes('@')) {
+      return res.status(400).json({ success: false, error: 'E-mail do destinatário é obrigatório' });
+    }
+
+    const ob = await prisma.accounting_payment_obligations.findUnique({
+      where: { id: req.params.id },
+      include: { legal_entity: { select: { razao_social: true } } },
+    });
+    if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    const accessLink = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
+    if (!accessLink) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    // Ensure there's an active token
+    let activeToken = await prisma.accounting_obligation_access_tokens.findFirst({
+      where: { obligation_id: ob.id, is_active: true, expires_at: { gt: new Date() } },
+    });
+
+    let paymentLink = '';
+    if (!activeToken) {
+      // Generate token first
+      const { token } = await generateObligationToken(ob.id, accountant.id);
+      const baseUrl = process.env.FRONTEND_URL || 'https://app.kaviar.com.br';
+      paymentLink = `${baseUrl}/pagar/${token}`;
+    } else {
+      // Can't recover raw token from hash, generate a new one
+      const { token } = await generateObligationToken(ob.id, accountant.id);
+      const baseUrl = process.env.FRONTEND_URL || 'https://app.kaviar.com.br';
+      paymentLink = `${baseUrl}/pagar/${token}`;
+    }
+
+    const amountDisplay = `R$ ${(ob.amount_cents / 100).toFixed(2).replace('.', ',')}`;
+    const dueDateStr = ob.due_date ? new Date(ob.due_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '—';
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #D4AF37; margin-bottom: 4px;">KAVIAR</h2>
+        <p style="color: #666; font-size: 12px; margin-top: 0;">Portal Contábil</p>
+        <hr style="border: 1px solid #eee;" />
+        <h3>Nova obrigação de pagamento</h3>
+        <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
+          <tr><td style="padding: 8px 0; color: #666;">Empresa</td><td style="padding: 8px 0; font-weight: bold;">${ob.legal_entity?.razao_social || ''}</td></tr>
+          <tr><td style="padding: 8px 0; color: #666;">Descrição</td><td style="padding: 8px 0;">${ob.description}</td></tr>
+          ${ob.beneficiary ? `<tr><td style="padding: 8px 0; color: #666;">Beneficiário</td><td style="padding: 8px 0;">${ob.beneficiary}</td></tr>` : ''}
+          <tr><td style="padding: 8px 0; color: #666;">Valor</td><td style="padding: 8px 0; font-weight: bold; font-size: 18px; color: #D4AF37;">${amountDisplay}</td></tr>
+          <tr><td style="padding: 8px 0; color: #666;">Vencimento</td><td style="padding: 8px 0; font-weight: bold;">${dueDateStr}</td></tr>
+        </table>
+        <a href="${paymentLink}" style="display: inline-block; background: #D4AF37; color: #1A1F2E; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px; margin: 16px 0;">
+          Acessar cobrança
+        </a>
+        <p style="color: #999; font-size: 11px; margin-top: 24px;">
+          Este link é pessoal e intransferível. Não encaminhe este e-mail.<br/>
+          Enviado pelo Portal Contábil KAVIAR.
+        </p>
+      </div>
+    `;
+
+    const text = `Nova obrigação de pagamento\n\nEmpresa: ${ob.legal_entity?.razao_social}\nDescrição: ${ob.description}\nValor: ${amountDisplay}\nVencimento: ${dueDateStr}\n\nAcessar: ${paymentLink}\n\nNão encaminhe este link.`;
+
+    const result = await emailService.sendMail({
+      to: recipient_email.trim(),
+      subject: `Nova obrigação de pagamento — ${ob.description}`,
+      html,
+      text,
+      from: 'KAVIAR Financeiro <financeiro@kaviar.com.br>',
+    });
+
+    if (!result.ok) {
+      return res.status(500).json({ success: false, error: `Falha no envio: ${result.error}` });
+    }
+
+    // Transition to SENT_TO_COMPANY if still DRAFT
+    if (ob.status === 'DRAFT' && ob.boleto_storage_key) {
+      await prisma.accounting_payment_obligations.update({
+        where: { id: ob.id },
+        data: { status: 'SENT_TO_COMPANY', sent_at: new Date(), action_owner: 'COMPANY' },
+      });
+    }
+
+    await auditObligation({
+      obligationId: ob.id,
+      action: 'EMAIL_SENT',
+      actorType: 'ACCOUNTANT',
+      actorId: accountant.id,
+      details: { recipient: recipient_email.trim(), subject: `Nova obrigação de pagamento — ${ob.description}` },
+    });
+
+    res.json({ success: true, data: { message: 'E-mail enviado com sucesso.', recipient: recipient_email.trim(), link: paymentLink } });
+  } catch (err: any) {
+    console.error('[obligations] send-email error:', err);
+    res.status(500).json({ success: false, error: 'Erro interno no envio' });
   }
 });
 
