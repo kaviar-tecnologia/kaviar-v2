@@ -59,7 +59,7 @@ export default function AccountantObligationDetailPage() {
     try {
       const res = await accountantApi.post(`/api/accountant/portal/obligations/${id}/send-email`, { recipient_email: email });
       setGeneratedLink(res.data?.data?.link || generatedLink);
-      setSnackbar({ open: true, message: `E-mail enviado para ${email}`, severity: 'success' });
+      setSnackbar({ open: true, message: res.data?.data?.message || `E-mail aceito para envio (${email})`, severity: 'success' });
       fetchAll();
     } catch (err) { setSnackbar({ open: true, message: err.response?.data?.error || 'Erro no envio', severity: 'error' }); }
     finally { setSendingEmail(false); }
@@ -147,7 +147,7 @@ export default function AccountantObligationDetailPage() {
                   {sendingEmail ? 'Enviando...' : 'Enviar por e-mail'}
                 </Button>
               </Box>
-              <Typography sx={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, mt: 0.5 }}>Remetente: financeiro@kaviar.com.br</Typography>
+              <Typography sx={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, mt: 0.5 }}>Remetente: no-reply@kaviar.com.br • Responder para: financeiro@kaviar.com.br</Typography>
             </Box>
           )}
 

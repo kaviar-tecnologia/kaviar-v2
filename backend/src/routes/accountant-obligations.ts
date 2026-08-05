@@ -454,7 +454,8 @@ router.post('/obligations/:id/send-email', async (req: Request, res: Response) =
       subject: `Nova obrigação de pagamento — ${ob.description}`,
       html,
       text,
-      from: 'KAVIAR Financeiro <financeiro@kaviar.com.br>',
+      from: 'KAVIAR <no-reply@kaviar.com.br>',
+      replyTo: ['financeiro@kaviar.com.br'],
     });
 
     if (!result.ok) {
@@ -477,7 +478,7 @@ router.post('/obligations/:id/send-email', async (req: Request, res: Response) =
       details: { recipient: recipient_email.trim(), subject: `Nova obrigação de pagamento — ${ob.description}` },
     });
 
-    res.json({ success: true, data: { message: 'E-mail enviado com sucesso.', recipient: recipient_email.trim(), link: paymentLink } });
+    res.json({ success: true, data: { message: 'E-mail aceito para envio.', recipient: recipient_email.trim(), link: paymentLink } });
   } catch (err: any) {
     console.error('[obligations] send-email error:', err);
     res.status(500).json({ success: false, error: 'Erro interno no envio' });
