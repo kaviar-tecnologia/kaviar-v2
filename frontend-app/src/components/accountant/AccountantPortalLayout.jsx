@@ -1,5 +1,5 @@
 import { Box, Drawer, List, ListItemButton, ListItemIcon, ListItemText, Typography, Divider, Button, Avatar } from '@mui/material';
-import { Dashboard, Business, Description, CalendarMonth, Assignment, Assessment, Person, Logout, VpnKey, Gavel } from '@mui/icons-material';
+import { Dashboard, Business, Description, CalendarMonth, Assignment, Assessment, Person, Logout, VpnKey, Gavel, Receipt } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAccountantAuth } from '../../auth/AccountantAuthContext';
 
@@ -11,8 +11,9 @@ const menuItems = [
   { label: 'Documentos', icon: <Description />, path: '/contador/documentos' },
   { label: 'Certificados', icon: <VpnKey />, path: '/contador/certificados' },
   { label: 'Procurações', icon: <Gavel />, path: '/contador/procuracoes' },
-  { label: 'Competências', icon: <CalendarMonth />, path: '/contador/competencias' },
+  { label: 'Contas a Pagar', icon: <Receipt />, path: '/contador/obrigacoes' },
   { label: 'Pendências', icon: <Assignment />, path: '/contador/pendencias' },
+  { label: 'Competências', icon: <CalendarMonth />, path: '/contador/competencias' },
   { label: 'Relatórios', icon: <Assessment />, path: '/contador/relatorios' },
   { label: 'Meu Perfil', icon: <Person />, path: '/contador/perfil' },
 ];

@@ -4416,6 +4416,7 @@ model legal_entities {
   company_documents   accounting_company_documents[]
   certificates        accounting_certificates[]          @relation("entity_certificates")
   powers_of_attorney  accounting_powers_of_attorney[]    @relation("entity_powers_of_attorney")
+  payment_obligations accounting_payment_obligations[]   @relation("entity_obligations")
   @@map("legal_entities")
 }
 
@@ -4474,6 +4475,8 @@ model accountants {
   doc_files_uploaded  accounting_company_document_files[] @relation("doc_file_uploader_accountant")
   certificates_responsible  accounting_certificates[]          @relation("cert_responsible")
   poa_responsible           accounting_powers_of_attorney[]    @relation("poa_responsible")
+  obligations_created       accounting_payment_obligations[]   @relation("obligation_creator")
+  obligations_verified      accounting_payment_obligations[]   @relation("obligation_verifier")
   @@map("accountants")
 }
 
@@ -4710,6 +4713,8 @@ model accounting_company_document_files {
   @@index([document_id])
   @@index([sha256])
   powers_of_attorney  accounting_powers_of_attorney[]
+  obligation_boletos  accounting_payment_obligations[] @relation("obligation_boleto")
+  obligation_proofs   accounting_payment_obligations[] @relation("obligation_proof")
   @@map("accounting_company_document_files")
 }
 
@@ -4838,4 +4843,86 @@ model accounting_fiscal_health_rules {
   created_at  DateTime @default(now())
 
   @@map("accounting_fiscal_health_rules")
+}
+
+// ========================
+// Frente 3F: Contas a Pagar
+// ========================
+
+enum accounting_obligation_status {
+  DRAFT
+  SENT_TO_COMPANY
+  VIEWED
+  SCHEDULED
+  PAID
+  PROOF_UPLOADED
+  UNDER_VERIFICATION
+  VERIFIED
+  RECONCILED
+  REJECTED
+  CANCELED
+}
+
+enum accounting_obligation_type {
+  HONORARIOS
+  DAS_SIMPLES
+  GUIA_IMPOSTO
+  FGTS
+  INSS
+  TAXA_MUNICIPAL
+  BOLETO_FORNECEDOR
+  OUTRO
+}
+
+enum accounting_obligation_action_owner {
+  ACCOUNTANT
+  COMPANY
+}
+
+model accounting_payment_obligations {
+  id                       String                               @id @default(uuid())
+  legal_entity_id          String
+  obligation_type          accounting_obligation_type
+  status                   accounting_obligation_status          @default(DRAFT)
+  action_owner             accounting_obligation_action_owner    @default(ACCOUNTANT)
+  description              String
+  beneficiary              String?
+  reference_number         String?
+  competence_month         Int?
+  competence_year          Int?
+  amount_cents             Int
+  issued_at                DateTime?                            @db.Date
+  due_date                 DateTime                             @db.Date
+  barcode                  String?
+  pix_key                  String?
+  notes                    String?
+  boleto_file_id           String?
+  proof_file_id            String?
+  sent_at                  DateTime?
+  viewed_at                DateTime?
+  scheduled_at             DateTime?
+  paid_at                  DateTime?
+  proof_uploaded_at        DateTime?
+  verified_at              DateTime?
+  reconciled_at            DateTime?
+  rejected_at              DateTime?
+  rejection_reason         String?
+  created_by_accountant_id String?
+  verified_by_accountant_id String?
+  created_at               DateTime                             @default(now())
+  updated_at               DateTime                             @updatedAt
+
+  legal_entity             legal_entities                       @relation("entity_obligations", fields: [legal_entity_id], references: [id], onDelete: Restrict)
+  boleto_file              accounting_company_document_files?   @relation("obligation_boleto", fields: [boleto_file_id], references: [id], onDelete: SetNull)
+  proof_file               accounting_company_document_files?   @relation("obligation_proof", fields: [proof_file_id], references: [id], onDelete: SetNull)
+  created_by_accountant    accountants?                         @relation("obligation_creator", fields: [created_by_accountant_id], references: [id], onDelete: SetNull)
+  verified_by_accountant   accountants?                         @relation("obligation_verifier", fields: [verified_by_accountant_id], references: [id], onDelete: SetNull)
+
+  @@index([legal_entity_id])
+  @@index([legal_entity_id, status])
+  @@index([due_date])
+  @@index([action_owner, status])
+  @@index([created_by_accountant_id])
+  @@index([legal_entity_id, competence_year, competence_month])
+  @@map("accounting_payment_obligations")
 }

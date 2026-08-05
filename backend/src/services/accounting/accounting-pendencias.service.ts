@@ -103,7 +103,87 @@ export async function computePendencias(accountantId: string): Promise<Pendencia
     }
   }
 
-  // 2. DOCUMENT WORKFLOW — rejected or draft without file
+  // 2. PAYMENT OBLIGATIONS — overdue, awaiting company, awaiting verification
+  const obligations = await prisma.accounting_payment_obligations.findMany({
+    where: {
+      legal_entity_id: { in: [...entityIds] },
+      status: { notIn: ['RECONCILED', 'CANCELED'] },
+    },
+  });
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+
+  for (const ob of obligations) {
+    const entity = entityMap.get(ob.legal_entity_id);
+    if (!entity) continue;
+
+    const dueDate = new Date(ob.due_date);
+    const diffDays = Math.floor((dueDate.getTime() - today.getTime()) / 86400000);
+    const amountStr = `R$ ${(ob.amount_cents / 100).toFixed(2).replace('.', ',')}`;
+
+    // Overdue and not yet paid
+    if (diffDays < 0 && ['DRAFT', 'SENT_TO_COMPANY', 'VIEWED', 'SCHEDULED'].includes(ob.status)) {
+      pendencias.push({
+        id: `ob-overdue-${ob.id}`,
+        type: 'DOCUMENT',
+        priority: 'URGENT',
+        title: 'Pagamento vencido',
+        description: `${ob.description} — ${amountStr} — venceu há ${Math.abs(diffDays)} dias`,
+        entity_id: entity.id, entity_name: entity.razao_social, entity_cnpj: entity.cnpj,
+        action: ob.action_owner === 'COMPANY' ? 'Aguardando empresa' : 'Enviar para pagamento',
+        action_path: `/contador/empresas/${entity.id}/obrigacoes`,
+        expires_at: ob.due_date.toISOString(),
+        days_until_expiry: diffDays,
+        created_source: 'obligation_overdue',
+      });
+    }
+    // Due soon (within 7 days)
+    else if (diffDays >= 0 && diffDays <= 7 && ['SENT_TO_COMPANY', 'VIEWED', 'SCHEDULED'].includes(ob.status)) {
+      pendencias.push({
+        id: `ob-due-soon-${ob.id}`,
+        type: 'DOCUMENT',
+        priority: diffDays === 0 ? 'HIGH' : 'MEDIUM',
+        title: diffDays === 0 ? 'Pagamento vence hoje' : `Pagamento vence em ${diffDays} dias`,
+        description: `${ob.description} — ${amountStr}`,
+        entity_id: entity.id, entity_name: entity.razao_social, entity_cnpj: entity.cnpj,
+        action: 'Aguardando empresa',
+        action_path: `/contador/empresas/${entity.id}/obrigacoes`,
+        expires_at: ob.due_date.toISOString(),
+        days_until_expiry: diffDays,
+        created_source: 'obligation_due_soon',
+      });
+    }
+    // Proof uploaded, awaiting verification (accountant action)
+    else if (['PROOF_UPLOADED', 'UNDER_VERIFICATION'].includes(ob.status)) {
+      pendencias.push({
+        id: `ob-verify-${ob.id}`,
+        type: 'DOCUMENT',
+        priority: 'MEDIUM',
+        title: 'Comprovante aguardando conferência',
+        description: `${ob.description} — ${amountStr}`,
+        entity_id: entity.id, entity_name: entity.razao_social, entity_cnpj: entity.cnpj,
+        action: 'Verificar comprovante',
+        action_path: `/contador/empresas/${entity.id}/obrigacoes`,
+        created_source: 'obligation_verify',
+      });
+    }
+    // Draft not sent yet
+    else if (ob.status === 'DRAFT') {
+      pendencias.push({
+        id: `ob-draft-${ob.id}`,
+        type: 'DOCUMENT',
+        priority: diffDays <= 3 ? 'HIGH' : 'LOW',
+        title: 'Obrigação não enviada',
+        description: `${ob.description} — ${amountStr} — vence ${diffDays <= 0 ? 'hoje' : `em ${diffDays}d`}`,
+        entity_id: entity.id, entity_name: entity.razao_social, entity_cnpj: entity.cnpj,
+        action: 'Enviar para empresa',
+        action_path: `/contador/empresas/${entity.id}/obrigacoes`,
+        created_source: 'obligation_draft',
+      });
+    }
+  }
+
+  // 3. DOCUMENT WORKFLOW — rejected or draft without file
   const documents = await prisma.accounting_company_documents.findMany({
     where: {
       legal_entity_id: { in: [...entityIds] },
