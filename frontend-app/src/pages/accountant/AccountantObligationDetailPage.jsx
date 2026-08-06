@@ -102,6 +102,18 @@ export default function AccountantObligationDetailPage() {
     } catch (err) { setSnackbar({ open: true, message: err.response?.data?.error || 'Erro ao baixar boleto', severity: 'error' }); }
   };
 
+  const handleUploadBoleto = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      await accountantApi.post(`/api/accountant/portal/obligations/${id}/upload-boleto`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 });
+      setSnackbar({ open: true, message: 'Boleto anexado com sucesso.', severity: 'success' });
+      fetchAll();
+    } catch (err) { setSnackbar({ open: true, message: err.response?.data?.error || 'Erro ao anexar boleto', severity: 'error' }); }
+  };
+
   if (loading) return <AccountantPortalLayout><Skeleton variant="rectangular" height={300} sx={{ borderRadius: 2, bgcolor: 'rgba(255,255,255,0.05)' }} /></AccountantPortalLayout>;
   if (!ob) return <AccountantPortalLayout><Alert severity="error">Obrigação não encontrada</Alert></AccountantPortalLayout>;
 
@@ -145,12 +157,47 @@ export default function AccountantObligationDetailPage() {
         <CardContent>
           <Typography sx={{ color: '#D4AF37', fontWeight: 600, fontSize: 14, mb: 2 }}>Ações</Typography>
 
-          {/* Generate/manage link */}
-          {ob.status !== 'RECONCILED' && ob.status !== 'CANCELED' && (
+          {/* DRAFT without boleto: show upload */}
+          {ob.status === 'DRAFT' && !ob.boleto_filename && (
+            <Box sx={{ mb: 2 }}>
+              <Alert severity="info" sx={{ bgcolor: 'rgba(59,130,246,0.1)', color: '#3B82F6', mb: 1.5, fontSize: 12 }}>
+                Anexe o boleto ou guia antes de enviar para a empresa.
+              </Alert>
+              <Button size="small" variant="outlined" component="label" sx={{ borderColor: '#D4AF37', color: '#D4AF37', textTransform: 'none' }}>
+                📎 Anexar boleto
+                <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => handleUploadBoleto(e)} />
+              </Button>
+            </Box>
+          )}
+
+          {/* DRAFT with boleto: show file + send button */}
+          {ob.status === 'DRAFT' && ob.boleto_filename && (
+            <Box sx={{ mb: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                <Typography sx={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>📎 {ob.boleto_filename}</Typography>
+                <Button size="small" onClick={handleDownloadBoleto} sx={{ color: '#D4AF37', textTransform: 'none', fontSize: 11 }}>Baixar</Button>
+                <Button size="small" component="label" sx={{ color: 'rgba(255,255,255,0.4)', textTransform: 'none', fontSize: 11 }}>
+                  Substituir
+                  <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => handleUploadBoleto(e)} />
+                </Button>
+              </Box>
+              {/* Email send (transitions to SENT_TO_COMPANY) */}
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                <TextField size="small" placeholder="E-mail da empresa" value={email} onChange={e => setEmail(e.target.value)} sx={{ flex: 1, '& .MuiInputBase-root': { color: '#fff', fontSize: 13 }, '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.15)' } }} />
+                <Button size="small" variant="contained" startIcon={<Email />} onClick={handleSendEmail} disabled={sendingEmail || !email} sx={{ bgcolor: '#D4AF37', color: '#1A1F2E', textTransform: 'none', fontSize: 12, whiteSpace: 'nowrap', '&:hover': { bgcolor: '#B8960C' } }}>
+                  {sendingEmail ? 'Enviando...' : 'Enviar para empresa'}
+                </Button>
+              </Box>
+              <Typography sx={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, mt: 0.5 }}>Remetente: no-reply@kaviar.com.br • Responder para: financeiro@kaviar.com.br</Typography>
+            </Box>
+          )}
+
+          {/* Already sent: show link management + resend */}
+          {!['DRAFT', 'RECONCILED', 'CANCELED'].includes(ob.status) && (
             <Box sx={{ mb: 2 }}>
               <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1 }}>
                 <Button size="small" startIcon={<LinkIcon />} onClick={handleGenerateLink} sx={{ color: '#D4AF37', textTransform: 'none' }}>
-                  {linkStatus?.has_active_link ? 'Gerar novo link' : 'Gerar link para empresa'}
+                  {linkStatus?.has_active_link ? 'Gerar novo link' : 'Gerar link'}
                 </Button>
                 {linkStatus?.has_active_link && (
                   <Chip label={`Acessado ${linkStatus.accessed_count}x`} size="small" sx={{ bgcolor: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', fontSize: 10 }} />
@@ -169,11 +216,11 @@ export default function AccountantObligationDetailPage() {
                 </Box>
               )}
 
-              {/* Email */}
+              {/* Resend email */}
               <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                 <TextField size="small" placeholder="E-mail da empresa" value={email} onChange={e => setEmail(e.target.value)} sx={{ flex: 1, '& .MuiInputBase-root': { color: '#fff', fontSize: 13 }, '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.15)' } }} />
                 <Button size="small" startIcon={<Email />} onClick={handleSendEmail} disabled={sendingEmail || !email} sx={{ color: '#D4AF37', textTransform: 'none', fontSize: 12, whiteSpace: 'nowrap' }}>
-                  {sendingEmail ? 'Enviando...' : 'Enviar por e-mail'}
+                  {sendingEmail ? 'Enviando...' : 'Reenviar e-mail'}
                 </Button>
               </Box>
               <Typography sx={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, mt: 0.5 }}>Remetente: no-reply@kaviar.com.br • Responder para: financeiro@kaviar.com.br</Typography>
