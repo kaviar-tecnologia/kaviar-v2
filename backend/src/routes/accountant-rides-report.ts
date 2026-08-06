@@ -142,7 +142,7 @@ router.get('/rides-report', async (req: Request, res: Response) => {
     else if (status === 'UNAVAILABLE') { conditions.push('s.id IS NULL'); }
 
     if (search) {
-      conditions.push(`(d.name ILIKE $${paramIdx} OR p.first_name ILIKE $${paramIdx} OR r.id::text ILIKE $${paramIdx})`);
+      conditions.push(`(d.name ILIKE $${paramIdx} OR p.name ILIKE $${paramIdx} OR r.id::text ILIKE $${paramIdx})`);
       params.push(`%${search}%`);
       paramIdx++;
     }
@@ -166,7 +166,7 @@ router.get('/rides-report', async (req: Request, res: Response) => {
     const dataSQL = `
       SELECT 
         r.id, r.status, r.created_at, r.completed_at, r.canceled_at,
-        r.driver_id, d.name as driver_name, p.first_name as passenger_first_name,
+        r.driver_id, d.name as driver_name, NULLIF(split_part(btrim(p.name), ' ', 1), '') as passenger_first_name,
         s.id IS NOT NULL as has_settlement, s.settled_at,
         s.final_price, s.fee_percent, s.fee_amount, s.driver_earnings, s.credit_cost,
         s.settlement_territory
@@ -252,7 +252,7 @@ router.get('/rides-report/csv', async (req: Request, res: Response) => {
     const sql = `
       SELECT 
         r.id, r.status, r.created_at, r.completed_at,
-        d.name as driver_name, p.first_name as passenger_first_name,
+        d.name as driver_name, NULLIF(split_part(btrim(p.name), ' ', 1), '') as passenger_first_name,
         s.id IS NOT NULL as has_settlement, s.settled_at,
         s.final_price, s.fee_percent, s.fee_amount, s.driver_earnings, s.settlement_territory
       ${FROM_JOINS}

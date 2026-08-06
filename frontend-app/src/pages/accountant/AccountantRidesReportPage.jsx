@@ -12,6 +12,7 @@ export default function AccountantRidesReportPage() {
   const navigate = useNavigate();
   const { entityId } = useParams();
   const [data, setData] = useState(null);
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ start_date: '', end_date: '', status: '' });
   const [entityName, setEntityName] = useState('');
@@ -25,8 +26,8 @@ export default function AccountantRidesReportPage() {
     if (f.status) params.set('status', f.status);
 
     accountantApi.get(`/api/accountant/portal/rides-report?${params}`)
-      .then(r => setData(r.data?.data))
-      .catch(() => setData(null))
+      .then(r => { setData(r.data?.data); setError(''); })
+      .catch(err => { setData(null); setError(err.response?.data?.error || 'Erro ao carregar o relatório'); })
       .finally(() => setLoading(false));
   };
 
@@ -80,6 +81,13 @@ export default function AccountantRidesReportPage() {
 
       {loading ? (
         <Skeleton variant="rectangular" height={300} sx={{ borderRadius: 2, bgcolor: 'rgba(255,255,255,0.05)' }} />
+      ) : error ? (
+        <Box sx={{ textAlign: 'center', py: 8 }}>
+          <DirectionsCar sx={{ fontSize: 64, color: 'rgba(239,68,68,0.3)', mb: 2 }} />
+          <Typography sx={{ color: '#EF4444', fontSize: 16 }}>Erro ao carregar o relatório</Typography>
+          <Typography sx={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, mt: 0.5 }}>{error}</Typography>
+          <Button onClick={() => fetchData()} sx={{ mt: 2, color: '#D4AF37', textTransform: 'none' }}>Tentar novamente</Button>
+        </Box>
       ) : !data ? (
         <Box sx={{ textAlign: 'center', py: 8 }}>
           <DirectionsCar sx={{ fontSize: 64, color: 'rgba(255,255,255,0.15)', mb: 2 }} />
