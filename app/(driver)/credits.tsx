@@ -18,11 +18,32 @@ type Package = {
   family_return_cents: number;
 };
 type FamilyReturn = { percent: number; message: string } | null;
-type FamilyReturnData = { enabled: boolean; percent?: number; accrued_cents: number; available_for_request?: boolean; message?: string } | null;
+type FamilyReturnData = {
+  enabled: boolean;
+  available_cents: string;
+  accrued_cents: string;
+  reserved_cents: string;
+  paid_cents: string;
+  reversed_cents: string;
+  available_for_request?: boolean;
+  message?: string;
+} | null;
 type LedgerEntry = { id: string; entry_type: string; balance_delta_cents: number; balance_after_cents: number; reason: string; created_at: string };
 
 const formatCentsToBRL = (cents: number): string => `R$ ${(Math.max(0, cents) / 100).toFixed(2).replace('.', ',')}`;
 
+/** Format monetary string cents to BRL without Number conversion for bigint safety */
+const formatStringCentsToBRL = (centsStr: string): string => {
+  const raw = centsStr || '0';
+  const n = raw.length;
+  if (n <= 2) {
+    const padded = raw.padStart(2, '0');
+    return `R$ 0,${padded}`;
+  }
+  const reais = raw.slice(0, n - 2);
+  const centavos = raw.slice(n - 2);
+  return `R$ ${reais},${centavos}`;
+};
 export default function DriverCredits() {
   const router = useRouter();
   const [balance, setBalance] = useState<{ balance_cents: number; reserved_cents: number; available_cents: number; balance_display: string } | null>(null);
@@ -279,11 +300,11 @@ export default function DriverCredits() {
         {familyReturnData?.enabled && (
           <View style={[s.infoCard, { marginBottom: 16, borderLeftWidth: 3, borderLeftColor: COLORS.success }]}>
             <Text style={[s.infoTitle, { color: COLORS.success }]}>Gratificação Anual KAVIAR</Text>
-            <Text style={[s.infoText, { marginTop: 0 }]}>Valor acumulado no ciclo atual</Text>
+            <Text style={[s.infoText, { marginTop: 0 }]}>Valor disponível acumulado</Text>
             <Text style={{ fontSize: 30, fontWeight: '800', color: COLORS.success, marginTop: 4 }}>
-              {formatCentsToBRL(familyReturnData.accrued_cents || 0)}
+              {formatStringCentsToBRL(familyReturnData.available_cents)}
             </Text>
-            {familyReturnData.accrued_cents > 0 ? (
+            {familyReturnData.available_cents !== '0' ? (
               <>
                 <Text style={[s.infoText, { marginTop: 8 }]}>Sua gratificação é acumulada após a conclusão e liquidação de operações elegíveis. O cálculo utiliza o percentual vigente sobre a taxa efetivamente reconhecida pela KAVIAR, e não sobre recargas ou sobre o valor total da corrida.</Text>
                 {familyReturnData.available_for_request && (
@@ -291,8 +312,10 @@ export default function DriverCredits() {
                 )}
                 <Text style={[s.infoText, { fontSize: 11, marginTop: 6 }]}>Valores não solicitados permanecem acumulados para o ciclo seguinte.</Text>
               </>
+            ) : familyReturnData.reserved_cents !== '0' ? (
+              <Text style={[s.infoText, { marginTop: 8 }]}>Sua gratificação possui uma solicitação em processamento.</Text>
             ) : (
-              <Text style={[s.infoText, { marginTop: 8 }]}>Nenhuma gratificação foi gerada até o momento. O valor será atualizado após a liquidação de operações elegíveis.</Text>
+              <Text style={[s.infoText, { marginTop: 8 }]}>Nenhuma gratificação disponível no momento. O valor será atualizado após a liquidação de operações elegíveis.</Text>
             )}
             <Text style={[s.infoText, { fontSize: 11, marginTop: 8, color: COLORS.textMuted }]}>Não constitui salário, 13º, comissão sobre o valor total da corrida ou vínculo empregatício.</Text>
           </View>

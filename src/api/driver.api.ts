@@ -330,7 +330,18 @@ export const driverApi = {
     return data.data;
   },
 
-  getFamilyReturn: async (): Promise<{ enabled: boolean; percent?: number; accrued_cents: number; available_for_request?: boolean; message?: string; policy_version?: string }> => {
+  getFamilyReturn: async (): Promise<{
+    enabled: boolean;
+    available_cents: string;
+    accrued_cents: string;
+    reserved_cents: string;
+    paid_cents: string;
+    reversed_cents: string;
+    available_for_request?: boolean;
+    request_start?: string | null;
+    request_end?: string | null;
+    message?: string;
+  }> => {
     const { data } = await apiClient.get('/api/v2/drivers/me/family-return');
     return data.data;
   },

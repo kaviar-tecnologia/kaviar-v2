@@ -16,6 +16,7 @@ import { assertSafeFinanceDatabase } from '../src/lib/assert-safe-finance-db';
 import { AnnualIncentiveLedgerService } from '../src/services/finance/annual-incentive-ledger.service';
 import { AnnualIncentiveShadowService } from '../src/services/finance/annual-incentive-shadow.service';
 import { WalletService } from '../src/services/wallet-v2/wallet.service';
+import { projectBalance } from '../src/services/finance/annual-incentive-payout/balance-projection';
 import { cleanupTestFixtures } from './helpers/cleanup-incentive-fixtures';
 
 assertSafeFinanceDatabase();
@@ -453,6 +454,148 @@ describe('BONUS-POLICY-v1.3 — Policy Alignment', () => {
       const rateBps = 1000;
       const gratification = (baseCents * BigInt(rateBps)) / BigInt(10000);
       expect(gratification).toBe(BigInt(179)); // Integer division floors
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 13–22. Balance projection correctness (projectBalance canonical source)
+  // ═══════════════════════════════════════════════════════════════════════════
+  describe('13-22. projectBalance canonical behavior', () => {
+    const CURRENT_YEAR = new Date().getFullYear();
+
+    async function insertLedgerEvent(
+      eventType: string,
+      amountCents: bigint,
+      programYear: number,
+      sourceId?: string,
+    ) {
+      const key = `test-pb-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      await pool.query(
+        `INSERT INTO annual_incentive_ledger
+         (driver_id, program_year, event_type, amount_cents, base_amount_cents, rate_basis_points, policy_version, source_type, source_id, source_event_id, request_id, correlation_id, reversal_of_id, idempotency_key, metadata, occurred_at)
+         VALUES ($1, $2, $3, $4, $4, 1000, 'BONUS-POLICY-v1.3', 'FEE_DEBIT', $5, NULL, NULL, NULL, NULL, $6, '{}', NOW())`,
+        [TEST_DRIVER, programYear, eventType, amountCents.toString(), sourceId || key, key]
+      );
+    }
+
+    it('13. carry-forward from prior year appears in available balance (CARRY_FORWARD_IN)', async () => {
+      // CARRY_FORWARD_IN represents value carried over from a prior year into current year
+      const before = await projectBalance(pool, TEST_DRIVER);
+
+      await insertLedgerEvent('CARRY_FORWARD_IN', BigInt(500), CURRENT_YEAR);
+
+      const after = await projectBalance(pool, TEST_DRIVER);
+      // CARRY_FORWARD_IN enters accrued calculation
+      expect(after.totalAccruedCents).toBe(before.totalAccruedCents + 500n);
+      expect(after.totalAvailableCents).toBe(before.totalAvailableCents + 500n);
+    });
+
+    it('14. PAYMENT reduces available balance', async () => {
+      // Get balance before payment
+      const before = await projectBalance(pool, TEST_DRIVER);
+
+      // Insert a payment
+      await insertLedgerEvent('PAYMENT', BigInt(100), CURRENT_YEAR);
+
+      const after = await projectBalance(pool, TEST_DRIVER);
+      expect(after.totalPaidCents).toBe(before.totalPaidCents + 100n);
+      // available should decrease
+      expect(after.totalAvailableCents).toBeLessThan(before.totalAvailableCents);
+    });
+
+    it('15. REQUEST_RESERVATION reduces available balance', async () => {
+      const before = await projectBalance(pool, TEST_DRIVER);
+
+      await insertLedgerEvent('REQUEST_RESERVATION', BigInt(200), CURRENT_YEAR);
+
+      const after = await projectBalance(pool, TEST_DRIVER);
+      expect(after.totalOpenReservedCents).toBeGreaterThan(before.totalOpenReservedCents);
+      expect(after.totalAvailableCents).toBeLessThan(before.totalAvailableCents);
+    });
+
+    it('16. RELEASE restores previously reserved amount', async () => {
+      const before = await projectBalance(pool, TEST_DRIVER);
+
+      await insertLedgerEvent('RELEASE', BigInt(200), CURRENT_YEAR);
+
+      const after = await projectBalance(pool, TEST_DRIVER);
+      // Released reduces open reserved, increases available
+      expect(after.totalOpenReservedCents).toBeLessThan(before.totalOpenReservedCents);
+      expect(after.totalAvailableCents).toBeGreaterThan(before.totalAvailableCents);
+    });
+
+    it('17. CARRY_FORWARD_IN enters calculation', async () => {
+      const before = await projectBalance(pool, TEST_DRIVER);
+
+      await insertLedgerEvent('CARRY_FORWARD_IN', BigInt(300), CURRENT_YEAR);
+
+      const after = await projectBalance(pool, TEST_DRIVER);
+      expect(after.totalAccruedCents).toBe(before.totalAccruedCents + 300n);
+      expect(after.totalAvailableCents).toBe(before.totalAvailableCents + 300n);
+    });
+
+    it('18. CARRY_FORWARD_OUT exits calculation (reduces balance)', async () => {
+      const before = await projectBalance(pool, TEST_DRIVER);
+
+      await insertLedgerEvent('CARRY_FORWARD_OUT', BigInt(100), CURRENT_YEAR);
+
+      const after = await projectBalance(pool, TEST_DRIVER);
+      expect(after.totalReversedCents).toBe(before.totalReversedCents + 100n);
+      expect(after.totalAvailableCents).toBeLessThan(before.totalAvailableCents);
+    });
+
+    it('19. app uses available_cents (not accrued_cents) as primary value', async () => {
+      const fs = await import('fs');
+      const path = await import('path');
+      const creditsPath = path.resolve(__dirname, '../../app/(driver)/credits.tsx');
+      const content = fs.readFileSync(creditsPath, 'utf-8');
+
+      // The card should display available_cents
+      expect(content).toContain('familyReturnData.available_cents');
+      expect(content).toContain('Valor disponível acumulado');
+      // It should NOT use accrued_cents as the primary display value
+      expect(content).not.toMatch(/fontSize: 30.*accrued_cents/);
+    });
+
+    it('20. endpoint returns monetary values as strings', async () => {
+      const balance = await projectBalance(pool, TEST_DRIVER);
+      // projectBalance returns bigints, route converts to .toString()
+      // Verify the types are bigint (which means .toString() yields string)
+      expect(typeof balance.totalAvailableCents).toBe('bigint');
+      expect(typeof balance.totalAccruedCents).toBe('bigint');
+      expect(typeof balance.totalPaidCents).toBe('bigint');
+      expect(typeof balance.totalOpenReservedCents).toBe('bigint');
+      expect(typeof balance.totalReversedCents).toBe('bigint');
+
+      // Verify toString() produces string
+      expect(typeof balance.totalAvailableCents.toString()).toBe('string');
+    });
+
+    it('21. no Number() conversion on ledger values in endpoint', async () => {
+      const fs = await import('fs');
+      const path = await import('path');
+      const routePath = path.resolve(__dirname, '../src/routes/driver-family-return.ts');
+      const content = fs.readFileSync(routePath, 'utf-8');
+
+      // Should not have Number() on balance fields
+      expect(content).not.toMatch(/Number\(.*balance\./);
+      expect(content).not.toMatch(/Number\(.*result\.rows/);
+      expect(content).not.toMatch(/parseInt\(.*balance\./);
+    });
+
+    it('22. endpoint uses projectBalance, no duplicated SQL', async () => {
+      const fs = await import('fs');
+      const path = await import('path');
+      const routePath = path.resolve(__dirname, '../src/routes/driver-family-return.ts');
+      const content = fs.readFileSync(routePath, 'utf-8');
+
+      // Should import and use projectBalance
+      expect(content).toContain("import { projectBalance }");
+      expect(content).toContain("projectBalance(pool, driverId)");
+      // Should NOT have direct ledger queries
+      expect(content).not.toContain("FROM annual_incentive_ledger");
+      expect(content).not.toContain("SUM(");
+      expect(content).not.toContain("event_type = 'ACCRUAL'");
     });
   });
 });

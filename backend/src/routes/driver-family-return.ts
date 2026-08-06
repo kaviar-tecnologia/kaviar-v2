@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../db';
 import { authenticateDriver } from '../middlewares/auth';
 import { getWindowInfo } from '../services/finance/annual-incentive-payout/request-window';
+import { projectBalance } from '../services/finance/annual-incentive-payout/balance-projection';
 
 const router = Router();
 router.use(authenticateDriver);
@@ -10,10 +11,11 @@ router.use(authenticateDriver);
  * GET /api/v2/drivers/me/family-return
  *
  * Endpoint canônico consumido pelo app para exibir a Gratificação Anual KAVIAR.
- * Lê exclusivamente do annual_incentive_ledger (fonte oficial).
+ * Usa projectBalance() como única projeção financeira.
  * Não consulta family_return_accruals nem driver_credit_purchases.
+ * Não possui SQL financeiro duplicado.
  *
- * Compatibilidade: mantém o mesmo contrato que o app já consome.
+ * Valores monetários retornados como strings (bigint safety).
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -30,26 +32,18 @@ router.get('/', async (req: Request, res: Response) => {
         success: true,
         data: {
           enabled: false,
-          accrued_cents: 0,
+          available_cents: '0',
+          accrued_cents: '0',
+          reserved_cents: '0',
+          paid_cents: '0',
+          reversed_cents: '0',
           message: 'Programa não ativo no momento.',
         },
       });
     }
 
-    const programYear = new Date().getFullYear();
-
-    // Sum ACCRUAL minus REVERSAL from the official ledger
-    const result = await pool.query(
-      `SELECT COALESCE(SUM(
-        CASE WHEN event_type = 'ACCRUAL' THEN amount_cents
-             WHEN event_type = 'REVERSAL' THEN -amount_cents
-             ELSE 0 END
-      ), 0)::bigint AS total
-       FROM annual_incentive_ledger
-       WHERE driver_id = $1 AND program_year = $2`,
-      [driverId, programYear]
-    );
-    const accruedCents = Number(result.rows[0].total);
+    // Canonical balance projection (handles all event types, all years, carry-over)
+    const balance = await projectBalance(pool, driverId);
 
     // Request window info from the payout system
     const windowInfo = getWindowInfo();
@@ -64,11 +58,14 @@ router.get('/', async (req: Request, res: Response) => {
       success: true,
       data: {
         enabled: true,
-        accrued_cents: accruedCents,
+        available_cents: balance.totalAvailableCents.toString(),
+        accrued_cents: balance.totalAccruedCents.toString(),
+        reserved_cents: balance.totalOpenReservedCents.toString(),
+        paid_cents: balance.totalPaidCents.toString(),
+        reversed_cents: balance.totalReversedCents.toString(),
         available_for_request: availableForRequest,
         request_start: requestStart,
         request_end: requestEnd,
-        policy_version: 'BONUS-POLICY-v1.3',
         message: 'Sua gratificação é acumulada após a conclusão e liquidação de operações elegíveis.',
       },
     });
