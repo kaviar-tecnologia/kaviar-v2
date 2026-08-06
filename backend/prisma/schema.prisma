@@ -4418,6 +4418,9 @@ model legal_entities {
   powers_of_attorney  accounting_powers_of_attorney[]    @relation("entity_powers_of_attorney")
   payment_obligations accounting_payment_obligations[]   @relation("entity_obligations")
   competencies        accounting_competencies[]           @relation("entity_competencies")
+  recurring_templates accounting_recurring_templates[]    @relation("entity_recurring_templates")
+  automation_config   accounting_automation_config?       @relation("entity_automation_config")
+  automation_log      accounting_automation_log[]         @relation("entity_automation_log")
   @@map("legal_entities")
 }
 
@@ -4483,6 +4486,7 @@ model accountants {
   competencies_completed    accounting_competencies[]              @relation("comp_completed_by")
   competencies_created      accounting_competencies[]              @relation("comp_created_by")
   competency_doc_links      accounting_competency_documents[]      @relation("comp_doc_linker")
+  recurring_templates       accounting_recurring_templates[]       @relation("rt_creator")
   @@map("accountants")
 }
 
@@ -5039,4 +5043,68 @@ model accounting_competency_documents {
   @@unique([competency_id, document_id])
   @@index([competency_id])
   @@map("accounting_competency_documents")
+}
+
+// ========================
+// Frente 3H: Recurring Automation
+// ========================
+
+model accounting_recurring_templates {
+  id                       String   @id @default(uuid())
+  legal_entity_id          String
+  obligation_type          accounting_obligation_type
+  description              String
+  beneficiary              String?
+  amount_cents             Int
+  day_of_month_due         Int
+  days_before_due_to_create Int    @default(15)
+  is_active                Boolean  @default(true)
+  notes                    String?
+  created_by_accountant_id String?
+  created_at               DateTime @default(now())
+  updated_at               DateTime @updatedAt
+
+  legal_entity             legal_entities @relation("entity_recurring_templates", fields: [legal_entity_id], references: [id], onDelete: Restrict)
+  created_by_accountant    accountants?   @relation("rt_creator", fields: [created_by_accountant_id], references: [id], onDelete: SetNull)
+
+  @@index([legal_entity_id])
+  @@index([is_active])
+  @@map("accounting_recurring_templates")
+}
+
+model accounting_automation_config {
+  id                       String   @id @default(uuid())
+  legal_entity_id          String   @unique
+  auto_create_competency   Boolean  @default(false)
+  competency_deadline_day  Int?     @default(20)
+  auto_create_obligations  Boolean  @default(false)
+  send_reminder_d7         Boolean  @default(true)
+  send_reminder_d1         Boolean  @default(true)
+  send_reminder_due        Boolean  @default(true)
+  send_reminder_overdue    Boolean  @default(true)
+  notify_accountant_proof  Boolean  @default(true)
+  notify_company_pending   Boolean  @default(true)
+  is_active                Boolean  @default(false)
+  activated_at             DateTime?
+  created_at               DateTime @default(now())
+  updated_at               DateTime @updatedAt
+
+  legal_entity             legal_entities @relation("entity_automation_config", fields: [legal_entity_id], references: [id], onDelete: Restrict)
+
+  @@map("accounting_automation_config")
+}
+
+model accounting_automation_log {
+  id              String   @id @default(uuid())
+  legal_entity_id String
+  action          String
+  details         Json?
+  success         Boolean  @default(true)
+  error_message   String?
+  created_at      DateTime @default(now())
+
+  legal_entity    legal_entities @relation("entity_automation_log", fields: [legal_entity_id], references: [id], onDelete: Cascade)
+
+  @@index([legal_entity_id, action, created_at])
+  @@map("accounting_automation_log")
 }
