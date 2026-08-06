@@ -275,16 +275,26 @@ export default function DriverCredits() {
         {/* Packages */}
         <Text style={s.sectionTitle}>Adicionar saldo</Text>
 
-        {/* Bônus Anual KAVIAR */}
+        {/* Gratificação Anual KAVIAR */}
         {familyReturnData?.enabled && (
           <View style={[s.infoCard, { marginBottom: 16, borderLeftWidth: 3, borderLeftColor: COLORS.success }]}>
-            <Text style={[s.infoTitle, { color: COLORS.success }]}>Bônus Anual KAVIAR</Text>
-            <Text style={[s.infoText, { marginTop: 0 }]}>Bônus anual acumulado</Text>
+            <Text style={[s.infoTitle, { color: COLORS.success }]}>Gratificação Anual KAVIAR</Text>
+            <Text style={[s.infoText, { marginTop: 0 }]}>Valor acumulado no ciclo atual</Text>
             <Text style={{ fontSize: 30, fontWeight: '800', color: COLORS.success, marginTop: 4 }}>
               {formatCentsToBRL(familyReturnData.accrued_cents || 0)}
             </Text>
-            <Text style={[s.infoText, { marginTop: 8 }]}>Disponível para solicitação entre outubro e dezembro, conforme regras vigentes.</Text>
-            <Text style={[s.infoText, { fontSize: 11, marginTop: 6 }]}>O valor é apurado somente para recargas confirmadas.</Text>
+            {familyReturnData.accrued_cents > 0 ? (
+              <>
+                <Text style={[s.infoText, { marginTop: 8 }]}>Sua gratificação é acumulada após a conclusão e liquidação de operações elegíveis. O cálculo utiliza o percentual vigente sobre a taxa efetivamente reconhecida pela KAVIAR, e não sobre recargas ou sobre o valor total da corrida.</Text>
+                {familyReturnData.available_for_request && (
+                  <Text style={[s.infoText, { marginTop: 6, fontWeight: '600', color: COLORS.success }]}>Período de solicitação aberto.</Text>
+                )}
+                <Text style={[s.infoText, { fontSize: 11, marginTop: 6 }]}>Valores não solicitados permanecem acumulados para o ciclo seguinte.</Text>
+              </>
+            ) : (
+              <Text style={[s.infoText, { marginTop: 8 }]}>Nenhuma gratificação foi gerada até o momento. O valor será atualizado após a liquidação de operações elegíveis.</Text>
+            )}
+            <Text style={[s.infoText, { fontSize: 11, marginTop: 8, color: COLORS.textMuted }]}>Não constitui salário, 13º, comissão sobre o valor total da corrida ou vínculo empregatício.</Text>
           </View>
         )}
 
@@ -305,7 +315,6 @@ export default function DriverCredits() {
         {/* How it works */}
         <View style={s.infoCard}>
           <Text style={s.infoTitle}>Como funciona</Text>
-          {familyReturn && <Text style={[s.infoText, { color: COLORS.success, fontWeight: '600' }]}>Bônus anual calculado sobre a recarga confirmada.</Text>}
           <Text style={s.infoText}>Pix sem taxa adicional.</Text>
           <Text style={s.infoText}>Valor pago = saldo creditado.</Text>
           <Text style={s.infoText}>Você recebe do passageiro. A taxa KAVIAR é debitada do saldo apenas após corrida concluída.</Text>

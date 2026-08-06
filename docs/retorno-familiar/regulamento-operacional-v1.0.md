@@ -1,3 +1,10 @@
+> **DOCUMENTO SUPERADO.** As regras deste documento foram substituídas pela política BONUS-POLICY-v1.3
+> (docs/finance/phase-3c-2d-2b-bonus-policy.md). Não utilizar compras ou recargas como evento gerador.
+> A gratificação anual é calculada sobre a taxa de intermediação efetivamente reconhecida em operações
+> elegíveis, não sobre valores de recarga. Este documento permanece apenas como histórico.
+
+---
+
 # REGULAMENTO OPERACIONAL DO RETORNO FAMILIAR KAVIAR
 
 **Versão 1.0 — Junho 2026**
