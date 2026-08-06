@@ -73,6 +73,7 @@ import AccountantObligationDetailPage from "./pages/accountant/AccountantObligat
 import AccountantReportsPage from "./pages/accountant/AccountantReportsPage";
 import AccountantCompetenciesPage from "./pages/accountant/AccountantCompetenciesPage";
 import AccountantCompetencyDetailPage from "./pages/accountant/AccountantCompetencyDetailPage";
+import AccountantAutomationPage from "./pages/accountant/AccountantAutomationPage";
 import PublicPaymentPage from "./pages/public/PublicPaymentPage";
 import AccountantCompanyDetailPage from "./pages/accountant/AccountantCompanyDetailPage";
 
@@ -529,6 +530,7 @@ export default function App() {
           <Route path="/contador/procuracoes" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantPowersOfAttorneyPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/empresas/:entityId/corridas" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantRidesReportPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/empresas/:entityId/obrigacoes" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantObligationsPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
+          <Route path="/contador/empresas/:entityId/automacoes" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantAutomationPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/obrigacoes" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantObligationsPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/obrigacoes/:id" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantObligationDetailPage /></AccountantProtectedRoute></AccountantAuthProvider>} />
           <Route path="/contador/competencias" element={<AccountantAuthProvider><AccountantProtectedRoute><AccountantCompetenciesPage /></AccountantProtectedRoute></AccountantAuthProvider>} />

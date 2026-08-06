@@ -279,6 +279,13 @@ export default function AccountantCompanyDetailPage() {
             >
               Financeiro de Corridas
             </Button>
+            <Button
+              variant="outlined"
+              onClick={() => navigate(`/contador/empresas/${id}/automacoes`)}
+              sx={{ textTransform: 'none', color: '#D4AF37', borderColor: 'rgba(212,175,55,0.3)', '&:hover': { borderColor: '#D4AF37' } }}
+            >
+              Automações
+            </Button>
           </Box>
         </Grid>
       </Grid>

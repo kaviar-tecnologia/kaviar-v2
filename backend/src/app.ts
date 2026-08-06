@@ -137,6 +137,7 @@ import { accountantObligationsRoutes } from './routes/accountant-obligations';
 import { accountantCompetenciesRoutes } from './routes/accountant-competencies';
 import { accountantAutomationRoutes } from './routes/accountant-automation';
 import { publicObligationsRoutes } from './routes/public-obligations';
+import { startScheduler } from './services/accounting/accounting-scheduler.service';
 import { adminDocumentTypesRoutes } from './routes/admin-document-types';
 import { authenticateAccountant } from './middlewares/accountant-auth';
 import webhooksAsaasRoutes from './routes/webhooks-asaas';
@@ -578,6 +579,9 @@ app.use(notFound);
 app.use(handleFeatureDisabledError);
 app.use(handleStatusTransitionError);
 app.use(errorHandler);
+
+// Start daily automation scheduler
+startScheduler();
 
 export default app;
 
