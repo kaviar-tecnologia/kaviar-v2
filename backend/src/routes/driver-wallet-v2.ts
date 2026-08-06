@@ -88,14 +88,6 @@ router.get('/packages', async (_req: Request, res: Response) => {
   try {
     const r = await pool.query('SELECT id, label, amount_cents, sort_order FROM recharge_packages WHERE is_active = true ORDER BY sort_order');
 
-    let familyReturnPercent = 0;
-    try {
-      const flag = await pool.query("SELECT enabled FROM feature_flags WHERE key = 'FAMILY_RETURN_ENABLED' LIMIT 1");
-      if (flag.rows[0]?.enabled) {
-        familyReturnPercent = parseInt(process.env.FAMILY_RETURN_PERCENT || '0');
-      }
-    } catch {}
-
     res.json({
       success: true,
       data: r.rows.map(p => ({
@@ -106,10 +98,10 @@ router.get('/packages', async (_req: Request, res: Response) => {
         charged_amount_cents: Number(p.amount_cents),
         provider_fee_estimated_cents: 0,
         fee_label: 'Pix sem taxa adicional',
-        family_return_percent: familyReturnPercent,
-        family_return_cents: familyReturnPercent > 0 ? Math.floor(Number(p.amount_cents) * familyReturnPercent / 100) : 0,
+        family_return_percent: 0,
+        family_return_cents: 0,
       })),
-      family_return: familyReturnPercent > 0 ? { percent: familyReturnPercent, message: 'Acumule no Retorno Familiar KAVIAR' } : null,
+      family_return: null,
     });
   } catch (err) {
     console.error('[wallet-v2] GET /packages error:', (err as Error).message);

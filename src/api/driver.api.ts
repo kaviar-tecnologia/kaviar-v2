@@ -304,7 +304,7 @@ export const driverApi = {
       family_return_percent: number;
       family_return_cents: number;
     }[];
-    family_return: { percent: number; message: string } | null;
+    family_return: { percent: number; message: string; policy_version?: string } | null;
   }> => {
     const { data } = await apiClient.get('/api/v2/drivers/me/wallet/packages');
     return { packages: data.data || [], family_return: data.family_return || null };
@@ -330,7 +330,18 @@ export const driverApi = {
     return data.data;
   },
 
-  getFamilyReturn: async (): Promise<{ enabled: boolean; percent?: number; accrued_cents: number; available_for_request?: boolean; message?: string }> => {
+  getFamilyReturn: async (): Promise<{
+    enabled: boolean;
+    available_cents: string;
+    accrued_cents: string;
+    reserved_cents: string;
+    paid_cents: string;
+    reversed_cents: string;
+    available_for_request?: boolean;
+    request_start?: string | null;
+    request_end?: string | null;
+    message?: string;
+  }> => {
     const { data } = await apiClient.get('/api/v2/drivers/me/family-return');
     return data.data;
   },
