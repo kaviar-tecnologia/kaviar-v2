@@ -69,10 +69,10 @@ export async function validateObligationToken(rawToken: string): Promise<{
   if (!tokenRecord.is_active) return { valid: false, error: 'Token revogado' };
   if (new Date() > tokenRecord.expires_at) return { valid: false, error: 'Token expirado' };
 
-  // Check if obligation is still actionable
-  const closedStatuses = ['RECONCILED', 'CANCELED'];
-  if (closedStatuses.includes(tokenRecord.obligation.status)) {
-    return { valid: false, error: 'Obrigação já encerrada' };
+  // Check if obligation is accessible publicly
+  const blockedStatuses = ['RECONCILED', 'CANCELED', 'DRAFT'];
+  if (blockedStatuses.includes(tokenRecord.obligation.status)) {
+    return { valid: false, error: 'Obrigação não disponível para acesso público' };
   }
 
   // Update access stats

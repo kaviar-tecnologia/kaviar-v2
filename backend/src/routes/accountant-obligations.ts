@@ -329,6 +329,14 @@ router.post('/obligations/:id/generate-link', async (req: Request, res: Response
     const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
     if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
 
+    // Block link generation for DRAFT or without boleto
+    if (ob.status === 'DRAFT') {
+      return res.status(400).json({ success: false, error: 'Envie a obrigação para a empresa antes de gerar o link' });
+    }
+    if (!ob.boleto_storage_key) {
+      return res.status(400).json({ success: false, error: 'Anexe o boleto antes de gerar o link' });
+    }
+
     const { token, expiresAt } = await generateObligationToken(ob.id, accountant.id);
 
     const baseUrl = process.env.FRONTEND_URL || 'https://app.kaviar.com.br';
