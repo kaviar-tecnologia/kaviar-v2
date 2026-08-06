@@ -475,8 +475,8 @@ router.post('/obligations/:id/send-email', async (req: Request, res: Response) =
   try {
     const accountant = (req as any).accountant;
     const { recipient_email } = req.body;
-    if (!recipient_email || typeof recipient_email !== 'string' || !recipient_email.includes('@')) {
-      return res.status(400).json({ success: false, error: 'E-mail do destinatário é obrigatório' });
+    if (!recipient_email || typeof recipient_email !== 'string' || !recipient_email.includes('@') || recipient_email.trim().length < 5) {
+      return res.status(400).json({ success: false, error: 'E-mail do destinatário inválido' });
     }
 
     const ob = await prisma.accounting_payment_obligations.findUnique({
@@ -487,6 +487,16 @@ router.post('/obligations/:id/send-email', async (req: Request, res: Response) =
 
     const accessLink = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
     if (!accessLink) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    // Guard: DRAFT requires boleto attached
+    if (ob.status === 'DRAFT' && !ob.boleto_storage_key) {
+      return res.status(400).json({ success: false, error: 'Anexe o boleto ou guia antes de enviar para a empresa' });
+    }
+
+    // Guard: blocked statuses
+    if (['RECONCILED', 'CANCELED'].includes(ob.status)) {
+      return res.status(400).json({ success: false, error: 'Obrigação já encerrada' });
+    }
 
     // Ensure there's an active token
     let activeToken = await prisma.accounting_obligation_access_tokens.findFirst({
@@ -544,6 +554,11 @@ router.post('/obligations/:id/send-email', async (req: Request, res: Response) =
     });
 
     if (!result.ok) {
+      // Rollback: revoke token created for this send attempt
+      await prisma.accounting_obligation_access_tokens.updateMany({
+        where: { obligation_id: ob.id, is_active: true },
+        data: { is_active: false, revoked_at: new Date() },
+      });
       return res.status(500).json({ success: false, error: `Falha no envio: ${result.error}` });
     }
 
