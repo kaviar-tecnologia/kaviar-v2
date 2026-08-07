@@ -63,6 +63,7 @@ import FinanceiroPage from "../../pages/admin/FinanceiroPage";
 import FinanceRecognitionPoliciesPage from "../../pages/admin/FinanceRecognitionPoliciesPage";
 import AccountantReportPage from "../../pages/admin/AccountantReportPage";
 import FinanceTransactionsPage from "../../pages/admin/FinanceTransactionsPage";
+import FinancePayablesPage from "../../pages/admin/FinancePayablesPage";
 import TerritoriesPage from "../../pages/admin/TerritoriesPage";
 import TerritoryDetailPage from "../../pages/admin/TerritoryDetailPage";
 import RegionalAdminsPage from "../../pages/admin/RegionalAdminsPage";
@@ -495,6 +496,7 @@ function AdminHome() {
                 { Icon: Description, title: 'Políticas financeiras', desc: 'Classificação, escopo, vigência e estado das regras de reconhecimento.', to: '/admin/financeiro/politicas' },
                 { Icon: Assessment, title: 'Área do Contador', desc: 'Relatório de corridas, receita e exportação CSV — somente leitura.', to: '/admin/financeiro/contador' },
                 { Icon: Paid, title: 'Lançamentos Manuais', desc: 'Despesas, receitas e obrigações cadastradas manualmente.', to: '/admin/financeiro/lancamentos' },
+                { Icon: Paid, title: 'Contas a Pagar', desc: 'Gratificação anual e repasses de gestores.', to: '/admin/financeiro/contas-a-pagar' },
               ] : []),
               ...(isSuperAdmin ? [
                 { Icon: Business, title: 'Portal do Contador', desc: 'Empresas, escritórios, contadores e vínculos.', to: '/admin/portal-contador' },
@@ -749,6 +751,11 @@ export default function AdminApp() {
           <Route path="/financeiro/lancamentos" element={
             <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
               <FinanceTransactionsPage />
+            </ProtectedAdminRoute>
+          } />
+          <Route path="/financeiro/contas-a-pagar" element={
+            <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
+              <FinancePayablesPage />
             </ProtectedAdminRoute>
           } />
           <Route path="/portal-contador" element={
