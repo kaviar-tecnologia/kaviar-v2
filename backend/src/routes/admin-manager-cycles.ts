@@ -62,14 +62,14 @@ router.get('/', async (req: Request, res: Response) => {
          WHERE fp.reference_id = c.manager_id AND fp.payee_type = 'MANAGER'
          ORDER BY
            CASE fp.status WHEN 'ACTIVE' THEN 0 ELSE 1 END,
-           fp.created_at DESC
+           fp.created_at DESC, fp.id DESC
          LIMIT 1
        ) payee_info ON true
        LEFT JOIN LATERAL (
          SELECT fo.id AS obligation_id
          FROM financial_obligations fo
          WHERE fo.source_type = 'territory_payout_cycle' AND fo.source_id = c.id
-         ORDER BY fo.created_at DESC
+         ORDER BY fo.created_at DESC, fo.id DESC
          LIMIT 1
        ) obl ON true
        ${where}
@@ -80,11 +80,12 @@ router.get('/', async (req: Request, res: Response) => {
     let payoutMap = new Map<string, any>();
     if (obligationIds.length > 0) {
       const { rows: payoutRows } = await pool.query(
-        `SELECT DISTINCT ON (obligation_id) obligation_id, provider_payout_id, external_reference,
+        `SELECT DISTINCT ON (obligation_id) obligation_id, amount_cents::text AS amount_cents,
+                provider_payout_id, external_reference,
                 provider_status, status, confirmed_at, submitted_at, failed_at
          FROM financial_payouts
          WHERE obligation_id = ANY($1)
-         ORDER BY obligation_id, created_at DESC`, [obligationIds]);
+         ORDER BY obligation_id, created_at DESC, id DESC`, [obligationIds]);
       payoutMap = new Map(payoutRows.map((p: any) => [p.obligation_id, p]));
     }
 
@@ -112,6 +113,7 @@ router.get('/', async (req: Request, res: Response) => {
         displayStatus,
         confirmedAt: payout?.confirmed_at || null,
         evidence: payout ? {
+          amount_cents: payout.amount_cents,
           provider_payout_id: payout.provider_payout_id,
           external_reference: payout.external_reference,
           provider_status: payout.provider_status,

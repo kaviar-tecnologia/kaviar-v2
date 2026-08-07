@@ -321,7 +321,11 @@ router.get('/provision', async (_req: Request, res: Response) => {
     }
 
     // Sort by accrued descending, limit 200
-    byDriver.sort((a, b) => Number(BigInt(b.accrued_cents) - BigInt(a.accrued_cents)));
+    byDriver.sort((a, b) => {
+      const ba = BigInt(b.accrued_cents);
+      const aa = BigInt(a.accrued_cents);
+      return ba > aa ? 1 : ba < aa ? -1 : 0;
+    });
     const topDrivers = byDriver.slice(0, 200);
 
     // By year (aggregate across all drivers)
@@ -401,7 +405,7 @@ router.get('/provision/drivers', async (req: Request, res: Response) => {
         });
       }
     }
-    projections.sort((a, b) => Number(b.accrued_cents - a.accrued_cents));
+    projections.sort((a, b) => a.accrued_cents < b.accrued_cents ? 1 : a.accrued_cents > b.accrued_cents ? -1 : 0);
     const page = projections.slice(offset, offset + limit);
     if (page.length === 0) {
       return res.json({ success: true, data: { drivers: [], total: projections.length } });
@@ -424,15 +428,16 @@ router.get('/provision/drivers', async (req: Request, res: Response) => {
 
     // 4. Latest payout per driver (for payment evidence)
     const { rows: payouts } = await pool.query<{
-      driver_id: string; provider_payout_id: string | null; external_reference: string | null;
+      driver_id: string; amount_cents: string; provider_payout_id: string | null; external_reference: string | null;
       provider_status: string | null; status: string; confirmed_at: string | null;
       submitted_at: string | null; failed_at: string | null;
     }>(`
-      SELECT DISTINCT ON (driver_id) driver_id, provider_payout_id, external_reference,
+      SELECT DISTINCT ON (driver_id) driver_id, amount_cents::text AS amount_cents,
+             provider_payout_id, external_reference,
              provider_status, status, confirmed_at, submitted_at, failed_at
       FROM annual_incentive_payouts
       WHERE driver_id = ANY($1)
-      ORDER BY driver_id, created_at DESC
+      ORDER BY driver_id, created_at DESC, id DESC
     `, [driverIds]);
     const payoutMap = new Map(payouts.map(p => [p.driver_id, p]));
 
@@ -443,7 +448,7 @@ router.get('/provision/drivers', async (req: Request, res: Response) => {
       SELECT DISTINCT ON (driver_id) driver_id, status, destination_masked
       FROM annual_incentive_requests
       WHERE driver_id = ANY($1)
-      ORDER BY driver_id, created_at DESC
+      ORDER BY driver_id, created_at DESC, id DESC
     `, [driverIds]);
     const requestMap = new Map(requests.map(r => [r.driver_id, r]));
 
@@ -475,6 +480,7 @@ router.get('/provision/drivers', async (req: Request, res: Response) => {
         display_status: displayStatus,
         confirmed_at: payout?.confirmed_at || null,
         evidence: payout ? {
+          amount_cents: payout.amount_cents,
           provider_payout_id: payout.provider_payout_id,
           external_reference: payout.external_reference,
           provider_status: payout.provider_status,

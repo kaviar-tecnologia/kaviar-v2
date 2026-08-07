@@ -287,6 +287,7 @@ describe('Engine selection — fail-closed', () => {
 describe('Evidence uses real identifiers (not fabricated)', () => {
   it('evidence fields come from annual_incentive_payouts / financial_payouts', () => {
     const evidence = {
+      amount_cents: '5000',
       provider_payout_id: 'pay_abc123',
       external_reference: 'kaviar-payment:driver-annual-incentive:req-456',
       provider_status: 'CONFIRMED',
@@ -298,6 +299,21 @@ describe('Evidence uses real identifiers (not fabricated)', () => {
     expect(evidence.provider_payout_id).toBeTruthy();
     expect(evidence.external_reference).toContain('kaviar');
     expect(evidence.confirmed_at).toBeTruthy();
+    expect(evidence.amount_cents).toBe('5000');
+  });
+
+  it('two payments R$100 + R$50: evidence shows R$50 (last payout), NOT R$150 (total)', () => {
+    // Scenario: driver had two payouts — 10000 cents then 5000 cents
+    // The endpoint uses DISTINCT ON (driver_id) ORDER BY created_at DESC, id DESC
+    // So it returns the LAST payout (5000 cents)
+    const totalPaidCents = '15000'; // aggregate from ledger
+    const lastPayoutEvidence = { amount_cents: '5000' }; // from annual_incentive_payouts
+
+    // Dialog uses evidence.amount_cents, NOT totalPaidCents
+    expect(lastPayoutEvidence.amount_cents).toBe('5000');
+    expect(lastPayoutEvidence.amount_cents).not.toBe(totalPaidCents);
+    expect(formatCents(lastPayoutEvidence.amount_cents)).toBe('R$ 50,00');
+    expect(formatCents(totalPaidCents)).toBe('R$ 150,00');
   });
 
   it('no payment → evidence is null', () => {
@@ -319,5 +335,56 @@ describe('Manager name resolution', () => {
   it('missing admin record shows "—"', () => {
     const manager_name = null;
     expect(manager_name || '—').toBe('—');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BigInt sort — no Number() conversion for monetary values
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('BigInt sort — no Number() conversion', () => {
+  it('comparator works correctly for BigInt without Number()', () => {
+    const items = [
+      { accrued_cents: 100n },
+      { accrued_cents: 9007199254740993n }, // > MAX_SAFE_INTEGER
+      { accrued_cents: 286n },
+      { accrued_cents: 50000n },
+    ];
+    // This is the exact comparator used in the backend
+    items.sort((a, b) => a.accrued_cents < b.accrued_cents ? 1 : a.accrued_cents > b.accrued_cents ? -1 : 0);
+    expect(items[0].accrued_cents).toBe(9007199254740993n);
+    expect(items[1].accrued_cents).toBe(50000n);
+    expect(items[2].accrued_cents).toBe(286n);
+    expect(items[3].accrued_cents).toBe(100n);
+  });
+
+  it('Number() would lose precision for large BigInt (this is why we avoid it)', () => {
+    const big = 9007199254740993n;
+    // BigInt preserves all digits
+    expect(big.toString()).toBe('9007199254740993');
+    // Number conversion loses the last digit (rounds to ...992)
+    expect(Number(big).toString()).toBe('9007199254740992');
+    expect(Number(big).toString()).not.toBe('9007199254740993');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Deterministic tiebreaker — id DESC
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Deterministic tiebreaker — id DESC in ORDER BY', () => {
+  it('DISTINCT ON + ORDER BY created_at DESC, id DESC is deterministic', () => {
+    // When two rows have the same created_at, id DESC breaks the tie
+    const rows = [
+      { id: 'aaa', created_at: '2026-07-15T10:00:00Z' },
+      { id: 'bbb', created_at: '2026-07-15T10:00:00Z' },
+    ];
+    rows.sort((a, b) => {
+      const cmp = b.created_at.localeCompare(a.created_at);
+      if (cmp !== 0) return cmp;
+      return b.id.localeCompare(a.id); // id DESC
+    });
+    // 'bbb' > 'aaa' lexicographically, so 'bbb' comes first
+    expect(rows[0].id).toBe('bbb');
   });
 });

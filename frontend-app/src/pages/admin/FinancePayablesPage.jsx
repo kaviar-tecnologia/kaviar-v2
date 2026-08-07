@@ -39,14 +39,13 @@ const statusColor = (status) => {
   }
 };
 
-function EvidenceDialog({ open, onClose, evidence, name, pixMasked, amount, type }) {
+function EvidenceDialog({ open, onClose, evidence, name, pixMasked, type }) {
   if (!evidence) return null;
-  const hasOfficialReceipt = false; // No official receipt URL available from provider today
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        {hasOfficialReceipt ? 'Comprovante' : 'Evidência da transação'}
+        Evidência da transação
         <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
       </DialogTitle>
       <DialogContent dividers>
@@ -54,7 +53,7 @@ function EvidenceDialog({ open, onClose, evidence, name, pixMasked, amount, type
           <Typography variant="body2"><strong>Beneficiário:</strong> {name}</Typography>
           <Typography variant="body2"><strong>Tipo:</strong> {type}</Typography>
           <Typography variant="body2"><strong>Pix (mascarado):</strong> {pixMasked || 'Não cadastrado'}</Typography>
-          {amount && <Typography variant="body2"><strong>Valor:</strong> {formatCents(amount)}</Typography>}
+          {evidence.amount_cents && <Typography variant="body2"><strong>Valor da transferência:</strong> {formatCents(evidence.amount_cents)}</Typography>}
           <Divider sx={{ my: 1 }} />
           <Typography variant="body2"><strong>Data/hora confirmação:</strong> {formatDate(evidence.confirmed_at)}</Typography>
           <Typography variant="body2"><strong>Enviado ao provedor:</strong> {formatDate(evidence.submitted_at)}</Typography>
@@ -81,7 +80,7 @@ export default function FinancePayablesPage() {
   const [cyclesData, setCyclesData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [evidenceDialog, setEvidenceDialog] = useState({ open: false, evidence: null, name: '', pixMasked: '', amount: null, type: '' });
+  const [evidenceDialog, setEvidenceDialog] = useState({ open: false, evidence: null, name: '', pixMasked: '', type: '' });
 
   useEffect(() => {
     Promise.all([
@@ -95,8 +94,8 @@ export default function FinancePayablesPage() {
     }).catch(e => setError(e.message || 'Erro ao carregar dados')).finally(() => setLoading(false));
   }, []);
 
-  const openEvidence = (evidence, name, pixMasked, amount, type) => {
-    setEvidenceDialog({ open: true, evidence, name, pixMasked, amount, type });
+  const openEvidence = (evidence, name, pixMasked, type) => {
+    setEvidenceDialog({ open: true, evidence, name, pixMasked, type });
   };
 
   if (loading) return <Box display="flex" justifyContent="center" p={4}><CircularProgress /></Box>;
@@ -197,7 +196,7 @@ export default function FinancePayablesPage() {
                   <TableCell align="center">
                     {d.evidence ? (
                       <Tooltip title="Ver evidência">
-                        <IconButton size="small" onClick={() => openEvidence(d.evidence, d.name, d.pix_masked, d.paid_cents, 'MOTORISTA')}>
+                        <IconButton size="small" onClick={() => openEvidence(d.evidence, d.name, d.pix_masked, 'MOTORISTA')}>
                           <ReceiptLongIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
@@ -254,7 +253,7 @@ export default function FinancePayablesPage() {
                   <TableCell align="center">
                     {c.evidence ? (
                       <Tooltip title="Ver evidência">
-                        <IconButton size="small" onClick={() => openEvidence(c.evidence, c.managerName, c.managerPixMasked, c.approvedAmountCents, 'GESTOR')}>
+                        <IconButton size="small" onClick={() => openEvidence(c.evidence, c.managerName, c.managerPixMasked, 'GESTOR')}>
                           <ReceiptLongIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
@@ -276,7 +275,6 @@ export default function FinancePayablesPage() {
         evidence={evidenceDialog.evidence}
         name={evidenceDialog.name}
         pixMasked={evidenceDialog.pixMasked}
-        amount={evidenceDialog.amount}
         type={evidenceDialog.type}
       />
     </Box>
