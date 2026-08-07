@@ -34,12 +34,9 @@ function serializeCycle(c: TerritoryPayoutCycle) {
   };
 }
 
-// GET /manager-cycles
+// GET /manager-cycles (read-only — works even with MANAGER_PAYOUT_ENGINE=disabled)
 router.get('/', async (req: Request, res: Response) => {
   try {
-    if (getManagerPayoutEngine() === 'disabled') {
-      return res.status(409).json({ success: false, error: 'MANAGER_PAYOUT_ENGINE_DISABLED' });
-    }
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
     const offset = parseInt(req.query.offset as string) || 0;
     let where = 'WHERE 1=1';

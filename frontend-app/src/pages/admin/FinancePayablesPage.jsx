@@ -18,8 +18,8 @@ export default function FinancePayablesPage() {
 
   useEffect(() => {
     Promise.all([
-      adminApi.get('/admin/finance/annual-incentive/provision').then(r => r.data.data).catch(() => null),
-      adminApi.get('/admin/finance/manager-cycles?limit=50').then(r => r.data.data).catch(() => null),
+      adminApi.get('/admin/finance/annual-incentive/provision').then(r => r.data),
+      adminApi.get('/admin/finance/manager-cycles?limit=50').then(r => r.data),
     ]).then(([inc, cyc]) => {
       setIncentiveData(inc);
       setCyclesData(cyc);
