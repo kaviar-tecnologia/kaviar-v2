@@ -10,9 +10,13 @@ import { adminApi } from '../../services/adminApi';
 
 const formatCents = (cents) => {
   if (!cents || cents === '0') return 'R$ 0,00';
-  const n = parseInt(cents, 10);
-  if (isNaN(n)) return 'R$ 0,00';
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n / 100);
+  const str = String(cents).replace(/\D/g, '');
+  if (!str || str === '0') return 'R$ 0,00';
+  const padded = str.padStart(3, '0');
+  const intPart = padded.slice(0, padded.length - 2).replace(/^0+/, '') || '0';
+  const decPart = padded.slice(padded.length - 2);
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `R$ ${grouped},${decPart}`;
 };
 
 const formatDate = (iso) => {
@@ -23,6 +27,7 @@ const formatDate = (iso) => {
 const statusColor = (status) => {
   switch (status) {
     case 'PAGO': return 'success';
+    case 'PAGO PARCIAL': return 'success';
     case 'PROCESSANDO': return 'info';
     case 'RESERVADO': case 'SOLICITADO': return 'warning';
     case 'FALHOU': return 'error';
@@ -191,7 +196,7 @@ export default function FinancePayablesPage() {
                   <TableCell>{formatDate(d.confirmed_at)}</TableCell>
                   <TableCell align="center">
                     {d.evidence ? (
-                      <Tooltip title="Ver comprovante">
+                      <Tooltip title="Ver evidência">
                         <IconButton size="small" onClick={() => openEvidence(d.evidence, d.name, d.pix_masked, d.paid_cents, 'MOTORISTA')}>
                           <ReceiptLongIcon fontSize="small" />
                         </IconButton>
@@ -248,7 +253,7 @@ export default function FinancePayablesPage() {
                   <TableCell>{formatDate(c.confirmedAt)}</TableCell>
                   <TableCell align="center">
                     {c.evidence ? (
-                      <Tooltip title="Ver comprovante">
+                      <Tooltip title="Ver evidência">
                         <IconButton size="small" onClick={() => openEvidence(c.evidence, c.managerName, c.managerPixMasked, c.approvedAmountCents, 'GESTOR')}>
                           <ReceiptLongIcon fontSize="small" />
                         </IconButton>

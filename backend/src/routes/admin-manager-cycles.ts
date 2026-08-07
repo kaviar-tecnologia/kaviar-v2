@@ -49,14 +49,29 @@ router.get('/', async (req: Request, res: Response) => {
     const { rows } = await pool.query(
       `SELECT c.*,
               a.name AS manager_name,
-              fp.cpf_cnpj_masked AS manager_cpf_cnpj_masked,
-              fpd.key_masked AS manager_pix_masked,
-              fo.id AS obligation_id
+              payee_info.cpf_cnpj_masked AS manager_cpf_cnpj_masked,
+              payee_info.key_masked AS manager_pix_masked,
+              obl.obligation_id
        FROM territory_payout_cycles c
        LEFT JOIN admins a ON a.id = c.manager_id
-       LEFT JOIN financial_payees fp ON fp.reference_id = c.manager_id AND fp.payee_type = 'MANAGER'
-       LEFT JOIN financial_payee_destinations fpd ON fpd.payee_id = fp.id AND fpd.status = 'active' AND fpd.superseded_at IS NULL
-       LEFT JOIN financial_obligations fo ON fo.source_type = 'territory_payout_cycle' AND fo.source_id = c.id
+       LEFT JOIN LATERAL (
+         SELECT fp.cpf_cnpj_masked, fpd.key_masked
+         FROM financial_payees fp
+         LEFT JOIN financial_payee_destinations fpd
+           ON fpd.payee_id = fp.id AND fpd.status = 'active' AND fpd.superseded_at IS NULL
+         WHERE fp.reference_id = c.manager_id AND fp.payee_type = 'MANAGER'
+         ORDER BY
+           CASE fp.status WHEN 'ACTIVE' THEN 0 ELSE 1 END,
+           fp.created_at DESC
+         LIMIT 1
+       ) payee_info ON true
+       LEFT JOIN LATERAL (
+         SELECT fo.id AS obligation_id
+         FROM financial_obligations fo
+         WHERE fo.source_type = 'territory_payout_cycle' AND fo.source_id = c.id
+         ORDER BY fo.created_at DESC
+         LIMIT 1
+       ) obl ON true
        ${where}
        ORDER BY c.reference_month DESC, c.created_at DESC LIMIT $${idx++} OFFSET $${idx}`, params);
 

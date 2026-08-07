@@ -454,7 +454,8 @@ router.get('/provision/drivers', async (req: Request, res: Response) => {
 
       // Determine display status
       let displayStatus = 'DISPONÍVEL';
-      if (p.paid_cents > 0n && payout?.confirmed_at) displayStatus = 'PAGO';
+      if (p.paid_cents > 0n && payout?.confirmed_at && p.available_cents === 0n && p.reserved_cents === 0n) displayStatus = 'PAGO';
+      else if (p.paid_cents > 0n && payout?.confirmed_at && p.available_cents > 0n) displayStatus = 'PAGO PARCIAL';
       else if (payout?.failed_at) displayStatus = 'FALHOU';
       else if (payout?.submitted_at) displayStatus = 'PROCESSANDO';
       else if (p.reserved_cents > 0n) displayStatus = 'RESERVADO';
