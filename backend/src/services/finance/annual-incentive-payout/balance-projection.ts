@@ -47,6 +47,19 @@ export async function projectBalance(
     [driverId]
   );
 
+  return projectFromAggregateRows(driverId, rows);
+}
+
+/**
+ * Pure projection function. Given pre-aggregated rows (program_year, event_type, total_cents),
+ * produces a BalanceProjection. Reusable for single-driver and multi-driver aggregation
+ * without N+1 queries.
+ */
+export function projectFromAggregateRows(
+  driverId: string,
+  rows: Array<{ program_year: number; event_type: string; total_cents: string }>,
+): BalanceProjection {
+
   // Group by year
   const yearMap = new Map<number, {
     accrued: bigint;

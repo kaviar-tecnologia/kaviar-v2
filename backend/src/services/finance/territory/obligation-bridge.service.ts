@@ -64,7 +64,10 @@ export async function createObligationFromCycle(
         `SELECT id FROM financial_obligations WHERE source_type = 'territory_payout_cycle' AND source_id = $1 LIMIT 1`,
         [cycleId]
       );
-      return { obligationId: existing.rows[0]?.id ?? '', cycleId, alreadyExists: true };
+      if (!existing.rows[0]?.id) {
+        throw makeError('TERRITORY_CYCLE_INCONSISTENCY', `Cycle ${cycleId} is ${cycle.status} but no corresponding financial_obligation found`);
+      }
+      return { obligationId: existing.rows[0].id, cycleId, alreadyExists: true };
     }
 
     if (cycle.status !== 'APPROVED') {
@@ -126,6 +129,14 @@ export async function createObligationFromCycle(
        SET status = 'OBLIGATION_CREATED', updated_at = NOW()
        WHERE id = $1`,
       [cycleId]
+    );
+
+    // Create outbox entry for async payment processing
+    await client.query(
+      `INSERT INTO financial_payout_outbox (obligation_id, payee_id, purpose, status, created_at, updated_at)
+       VALUES ($1, $2, 'MANAGER_TERRITORIAL_COMMISSION', 'PENDING', NOW(), NOW())
+       ON CONFLICT (obligation_id) DO NOTHING`,
+      [obligation.id, payeeId]
     );
 
     await client.query('COMMIT');
