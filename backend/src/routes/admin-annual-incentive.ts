@@ -321,7 +321,11 @@ router.get('/provision', async (_req: Request, res: Response) => {
     }
 
     // Sort by accrued descending, limit 200
-    byDriver.sort((a, b) => Number(BigInt(b.accrued_cents) - BigInt(a.accrued_cents)));
+    byDriver.sort((a, b) => {
+      const ba = BigInt(b.accrued_cents);
+      const aa = BigInt(a.accrued_cents);
+      return ba > aa ? 1 : ba < aa ? -1 : 0;
+    });
     const topDrivers = byDriver.slice(0, 200);
 
     // By year (aggregate across all drivers)
@@ -356,6 +360,141 @@ router.get('/provision', async (_req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error('[ADMIN_ANNUAL_INCENTIVE_PROVISION_ERROR]', err.message);
+    res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
+  }
+});
+
+// GET /provision/drivers — operational table: per-driver detail with name, Pix, status, payment evidence
+router.get('/provision/drivers', async (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const offset = parseInt(req.query.offset as string) || 0;
+
+    // 1. Ledger aggregates per driver
+    const { rows: ledgerRows } = await pool.query<{
+      driver_id: string; program_year: number; event_type: string; total_cents: string;
+    }>(`
+      SELECT driver_id, program_year, event_type, SUM(ABS(amount_cents))::text AS total_cents
+      FROM annual_incentive_ledger
+      GROUP BY driver_id, program_year, event_type
+      ORDER BY driver_id, program_year
+    `);
+
+    // Group by driver
+    const driverAgg = new Map<string, Array<{ program_year: number; event_type: string; total_cents: string }>>();
+    for (const r of ledgerRows) {
+      if (!driverAgg.has(r.driver_id)) driverAgg.set(r.driver_id, []);
+      driverAgg.get(r.driver_id)!.push({ program_year: r.program_year, event_type: r.event_type, total_cents: r.total_cents });
+    }
+
+    // Project each driver, filter those with balance > 0, sort by accrued desc
+    const projections: Array<{
+      driver_id: string; accrued_cents: bigint; available_cents: bigint;
+      reserved_cents: bigint; paid_cents: bigint; reversed_cents: bigint;
+    }> = [];
+    for (const [driverId, rows] of driverAgg) {
+      const p = projectFromAggregateRows(driverId, rows);
+      if (p.totalAccruedCents > 0n) {
+        projections.push({
+          driver_id: driverId,
+          accrued_cents: p.totalAccruedCents,
+          available_cents: p.totalAvailableCents,
+          reserved_cents: p.totalOpenReservedCents,
+          paid_cents: p.totalPaidCents,
+          reversed_cents: p.totalReversedCents,
+        });
+      }
+    }
+    projections.sort((a, b) => a.accrued_cents < b.accrued_cents ? 1 : a.accrued_cents > b.accrued_cents ? -1 : 0);
+    const page = projections.slice(offset, offset + limit);
+    if (page.length === 0) {
+      return res.json({ success: true, data: { drivers: [], total: projections.length } });
+    }
+
+    const driverIds = page.map(p => p.driver_id);
+
+    // 2. Driver names
+    const { rows: drivers } = await pool.query<{ id: string; name: string }>(
+      `SELECT id, name FROM drivers WHERE id = ANY($1)`, [driverIds]
+    );
+    const driverNameMap = new Map(drivers.map(d => [d.id, d.name]));
+
+    // 3. Masked Pix destinations (active, not superseded)
+    const { rows: pixDests } = await pool.query<{ driver_id: string; pix_key_masked: string }>(
+      `SELECT driver_id, pix_key_masked FROM driver_payout_destinations
+       WHERE driver_id = ANY($1) AND status = 'active' AND superseded_at IS NULL`, [driverIds]
+    );
+    const pixMap = new Map(pixDests.map(d => [d.driver_id, d.pix_key_masked]));
+
+    // 4. Latest payout per driver (for payment evidence)
+    const { rows: payouts } = await pool.query<{
+      driver_id: string; amount_cents: string; provider_payout_id: string | null; external_reference: string | null;
+      provider_status: string | null; status: string; confirmed_at: string | null;
+      submitted_at: string | null; failed_at: string | null;
+    }>(`
+      SELECT DISTINCT ON (driver_id) driver_id, amount_cents::text AS amount_cents,
+             provider_payout_id, external_reference,
+             provider_status, status, confirmed_at, submitted_at, failed_at
+      FROM annual_incentive_payouts
+      WHERE driver_id = ANY($1)
+      ORDER BY driver_id, created_at DESC, id DESC
+    `, [driverIds]);
+    const payoutMap = new Map(payouts.map(p => [p.driver_id, p]));
+
+    // 5. Latest request status per driver
+    const { rows: requests } = await pool.query<{
+      driver_id: string; status: string; destination_masked: string | null;
+    }>(`
+      SELECT DISTINCT ON (driver_id) driver_id, status, destination_masked
+      FROM annual_incentive_requests
+      WHERE driver_id = ANY($1)
+      ORDER BY driver_id, created_at DESC, id DESC
+    `, [driverIds]);
+    const requestMap = new Map(requests.map(r => [r.driver_id, r]));
+
+    // 6. Build response
+    const driversResult = page.map(p => {
+      const payout = payoutMap.get(p.driver_id);
+      const request = requestMap.get(p.driver_id);
+
+      // Determine display status
+      let displayStatus = 'DISPONÍVEL';
+      if (p.paid_cents > 0n && payout?.confirmed_at && p.available_cents === 0n && p.reserved_cents === 0n) displayStatus = 'PAGO';
+      else if (p.paid_cents > 0n && payout?.confirmed_at && p.available_cents > 0n) displayStatus = 'PAGO PARCIAL';
+      else if (payout?.failed_at) displayStatus = 'FALHOU';
+      else if (payout?.submitted_at) displayStatus = 'PROCESSANDO';
+      else if (p.reserved_cents > 0n) displayStatus = 'RESERVADO';
+      else if (request?.status === 'RESERVED') displayStatus = 'SOLICITADO';
+      else if (p.available_cents > 0n) displayStatus = 'DISPONÍVEL';
+
+      return {
+        driver_id: p.driver_id,
+        name: driverNameMap.get(p.driver_id) || '—',
+        type: 'MOTORISTA',
+        pix_masked: pixMap.get(p.driver_id) || null,
+        accrued_cents: p.accrued_cents.toString(),
+        available_cents: p.available_cents.toString(),
+        reserved_cents: p.reserved_cents.toString(),
+        paid_cents: p.paid_cents.toString(),
+        reversed_cents: p.reversed_cents.toString(),
+        display_status: displayStatus,
+        confirmed_at: payout?.confirmed_at || null,
+        evidence: payout ? {
+          amount_cents: payout.amount_cents,
+          provider_payout_id: payout.provider_payout_id,
+          external_reference: payout.external_reference,
+          provider_status: payout.provider_status,
+          internal_status: payout.status,
+          submitted_at: payout.submitted_at,
+          confirmed_at: payout.confirmed_at,
+          failed_at: payout.failed_at,
+        } : null,
+      };
+    });
+
+    res.json({ success: true, data: { drivers: driversResult, total: projections.length } });
+  } catch (err: any) {
+    console.error('[ADMIN_ANNUAL_INCENTIVE_PROVISION_DRIVERS_ERROR]', err.message);
     res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
   }
 });
