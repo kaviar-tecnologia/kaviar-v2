@@ -14,6 +14,7 @@
 import { Router, Request, Response } from 'express';
 import { authenticateAdmin, allowFinanceAccess } from '../middlewares/auth';
 import { pool } from '../db';
+import { projectFromAggregateRows } from '../services/finance/annual-incentive-payout/balance-projection';
 
 const router = Router();
 router.use(authenticateAdmin, allowFinanceAccess);
@@ -263,6 +264,98 @@ router.get('/health', async (_req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error('[ADMIN_ANNUAL_INCENTIVE_HEALTH_ERROR]', err.message);
+    res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
+  }
+});
+
+// GET /provision — aggregate provisioning view for Contas a Pagar
+router.get('/provision', async (_req: Request, res: Response) => {
+  try {
+    // Single query: fetch all events grouped by driver + program_year + event_type
+    const { rows } = await pool.query<{
+      driver_id: string;
+      program_year: number;
+      event_type: string;
+      total_cents: string;
+    }>(`
+      SELECT driver_id, program_year, event_type, SUM(ABS(amount_cents))::text AS total_cents
+      FROM annual_incentive_ledger
+      GROUP BY driver_id, program_year, event_type
+      ORDER BY driver_id, program_year
+    `);
+
+    // Group rows by driver_id
+    const driverRows = new Map<string, Array<{ program_year: number; event_type: string; total_cents: string }>>();
+    for (const row of rows) {
+      if (!driverRows.has(row.driver_id)) driverRows.set(row.driver_id, []);
+      driverRows.get(row.driver_id)!.push({ program_year: row.program_year, event_type: row.event_type, total_cents: row.total_cents });
+    }
+
+    // Project each driver using the canonical function
+    let totalAccrued = 0n;
+    let totalReversed = 0n;
+    let totalPaid = 0n;
+    let totalOpenReserved = 0n;
+    let totalAvailable = 0n;
+    const byDriver: Array<{ driver_id: string; accrued_cents: string; available_cents: string; reserved_cents: string; paid_cents: string; reversed_cents: string }> = [];
+    let driversWithBalance = 0;
+
+    for (const [driverId, driverRowSet] of driverRows) {
+      const projection = projectFromAggregateRows(driverId, driverRowSet);
+      totalAccrued += projection.totalAccruedCents;
+      totalReversed += projection.totalReversedCents;
+      totalPaid += projection.totalPaidCents;
+      totalOpenReserved += projection.totalOpenReservedCents;
+      totalAvailable += projection.totalAvailableCents;
+
+      if (projection.totalAvailableCents > 0n) driversWithBalance++;
+
+      byDriver.push({
+        driver_id: driverId,
+        accrued_cents: projection.totalAccruedCents.toString(),
+        available_cents: projection.totalAvailableCents.toString(),
+        reserved_cents: projection.totalOpenReservedCents.toString(),
+        paid_cents: projection.totalPaidCents.toString(),
+        reversed_cents: projection.totalReversedCents.toString(),
+      });
+    }
+
+    // Sort by accrued descending, limit 200
+    byDriver.sort((a, b) => Number(BigInt(b.accrued_cents) - BigInt(a.accrued_cents)));
+    const topDrivers = byDriver.slice(0, 200);
+
+    // By year (aggregate across all drivers)
+    const yearAgg = new Map<number, { accrued: bigint; paid: bigint }>();
+    for (const row of rows) {
+      const y = row.program_year;
+      if (!yearAgg.has(y)) yearAgg.set(y, { accrued: 0n, paid: 0n });
+      const e = yearAgg.get(y)!;
+      const cents = BigInt(row.total_cents);
+      if (row.event_type === 'ACCRUAL' || row.event_type === 'CARRY_FORWARD_IN') e.accrued += cents;
+      if (row.event_type === 'PAYMENT') e.paid += cents;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        summary: {
+          total_accrued_cents: totalAccrued.toString(),
+          total_available_cents: totalAvailable.toString(),
+          total_reserved_cents: totalOpenReserved.toString(),
+          total_paid_cents: totalPaid.toString(),
+          total_reversed_cents: totalReversed.toString(),
+          drivers_with_balance: driversWithBalance,
+        },
+        by_year: [...yearAgg.entries()].sort((a, b) => a[0] - b[0]).map(([year, d]) => ({
+          program_year: year,
+          accrued_cents: d.accrued.toString(),
+          paid_cents: d.paid.toString(),
+        })),
+        by_driver: topDrivers,
+      },
+    });
+  } catch (err: any) {
+    console.error('[ADMIN_ANNUAL_INCENTIVE_PROVISION_ERROR]', err.message);
     res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
   }
 });

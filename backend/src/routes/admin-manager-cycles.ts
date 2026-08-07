@@ -19,6 +19,7 @@ import {
   TerritoryPayoutCycle,
 } from '../services/finance/territory/cycle.service';
 import { getManagerPayoutEngine, assertOutboundEngine } from '../services/finance/territory/engine-selection';
+import { createObligationFromCycle } from '../services/finance/territory/obligation-bridge.service';
 
 const router = Router();
 router.use(authenticateAdmin, allowFinanceAccess);
@@ -142,6 +143,23 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
     if (err.code === 'MANAGER_PAYOUT_ENGINE_NOT_OUTBOUND') return res.status(409).json({ success: false, error: err.code });
     if (err.code === 'TERRITORY_CYCLE_INVALID_TRANSITION') return res.status(409).json({ success: false, error: err.code });
     if (err.code === 'TERRITORY_CYCLE_FISCAL_DOCUMENT_NOT_VALIDATED') return res.status(409).json({ success: false, error: err.code });
+    res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
+  }
+});
+
+// POST /manager-cycles/:id/create-obligation
+router.post('/:id/create-obligation', async (req: Request, res: Response) => {
+  try {
+    const adminId = (req as any).admin?.id ?? 'unknown';
+    const result = await createObligationFromCycle(pool, req.params.id, adminId);
+    const status = result.alreadyExists ? 200 : 201;
+    res.status(status).json({ success: true, data: result });
+  } catch (err: any) {
+    if (err.code === 'MANAGER_PAYOUT_ENGINE_NOT_OUTBOUND') return res.status(409).json({ success: false, error: err.code });
+    if (err.code === 'TERRITORY_CYCLE_INVALID_TRANSITION') return res.status(409).json({ success: false, error: err.code, message: err.message });
+    if (err.code === 'TERRITORY_CYCLE_NOT_FOUND') return res.status(404).json({ success: false, error: err.code });
+    if (err.code === 'TERRITORY_CYCLE_NO_MANAGER') return res.status(400).json({ success: false, error: err.code });
+    console.error('[ADMIN_MANAGER_CYCLES_OBLIGATION_ERROR]', err.message);
     res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
   }
 });
