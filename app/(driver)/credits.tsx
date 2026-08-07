@@ -308,7 +308,18 @@ export default function DriverCredits() {
               <>
                 <Text style={[s.infoText, { marginTop: 8 }]}>Sua gratificação é acumulada após a conclusão e liquidação de operações elegíveis. O cálculo utiliza o percentual vigente sobre a taxa efetivamente reconhecida pela KAVIAR, e não sobre recargas ou sobre o valor total da corrida.</Text>
                 {familyReturnData.available_for_request && (
-                  <Text style={[s.infoText, { marginTop: 6, fontWeight: '600', color: COLORS.success }]}>Período de solicitação aberto.</Text>
+                  <>
+                    <Text style={[s.infoText, { marginTop: 6, fontWeight: '600', color: COLORS.success }]}>Período de solicitação aberto.</Text>
+                    <TouchableOpacity
+                      style={{ backgroundColor: COLORS.success, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 20, marginTop: 12, alignItems: 'center' }}
+                      onPress={() => router.push('/(driver)/annual-incentive-request' as any)}
+                    >
+                      <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Solicitar gratificação</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+                {!familyReturnData.available_for_request && (
+                  <Text style={[s.infoText, { marginTop: 6 }]}>Próxima janela de solicitação: outubro a dezembro.</Text>
                 )}
                 <Text style={[s.infoText, { fontSize: 11, marginTop: 6 }]}>Valores não solicitados permanecem acumulados para o ciclo seguinte.</Text>
               </>

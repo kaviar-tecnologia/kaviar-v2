@@ -267,4 +267,80 @@ router.get('/health', async (_req: Request, res: Response) => {
   }
 });
 
+// GET /provision — aggregate provisioning view for Contas a Pagar
+router.get('/provision', async (_req: Request, res: Response) => {
+  try {
+    const [totals, byDriver, byYear] = await Promise.all([
+      pool.query(`
+        SELECT
+          COALESCE(SUM(CASE WHEN event_type IN ('ACCRUAL','CARRY_FORWARD_IN') THEN ABS(amount_cents) ELSE 0 END), 0)::text AS total_accrued_cents,
+          COALESCE(SUM(CASE WHEN event_type IN ('REVERSAL','CARRY_FORWARD_OUT') THEN ABS(amount_cents) ELSE 0 END), 0)::text AS total_reversed_cents,
+          COALESCE(SUM(CASE WHEN event_type = 'PAYMENT' THEN ABS(amount_cents) ELSE 0 END), 0)::text AS total_paid_cents,
+          COALESCE(SUM(CASE WHEN event_type = 'REQUEST_RESERVATION' THEN ABS(amount_cents) ELSE 0 END), 0)::text AS total_reserved_cents,
+          COALESCE(SUM(CASE WHEN event_type = 'RELEASE' THEN ABS(amount_cents) ELSE 0 END), 0)::text AS total_released_cents
+        FROM annual_incentive_ledger
+      `),
+      pool.query(`
+        SELECT driver_id,
+          COALESCE(SUM(CASE WHEN event_type IN ('ACCRUAL','CARRY_FORWARD_IN') THEN ABS(amount_cents) ELSE 0 END), 0)::text AS accrued_cents,
+          COALESCE(SUM(CASE WHEN event_type IN ('REVERSAL','CARRY_FORWARD_OUT') THEN ABS(amount_cents) ELSE 0 END), 0)::text AS reversed_cents,
+          COALESCE(SUM(CASE WHEN event_type = 'PAYMENT' THEN ABS(amount_cents) ELSE 0 END), 0)::text AS paid_cents,
+          COALESCE(SUM(CASE WHEN event_type = 'REQUEST_RESERVATION' THEN ABS(amount_cents) ELSE 0 END), 0)::text AS reserved_cents,
+          COALESCE(SUM(CASE WHEN event_type = 'RELEASE' THEN ABS(amount_cents) ELSE 0 END), 0)::text AS released_cents
+        FROM annual_incentive_ledger
+        GROUP BY driver_id
+        HAVING SUM(CASE WHEN event_type IN ('ACCRUAL','CARRY_FORWARD_IN') THEN ABS(amount_cents) ELSE 0 END) > 0
+        ORDER BY accrued_cents DESC
+        LIMIT 200
+      `),
+      pool.query(`
+        SELECT program_year,
+          COALESCE(SUM(CASE WHEN event_type IN ('ACCRUAL','CARRY_FORWARD_IN') THEN ABS(amount_cents) ELSE 0 END), 0)::text AS accrued_cents,
+          COALESCE(SUM(CASE WHEN event_type = 'PAYMENT' THEN ABS(amount_cents) ELSE 0 END), 0)::text AS paid_cents
+        FROM annual_incentive_ledger
+        GROUP BY program_year
+        ORDER BY program_year
+      `),
+    ]);
+
+    const t = totals.rows[0];
+    const accrued = BigInt(t.total_accrued_cents);
+    const reversed = BigInt(t.total_reversed_cents);
+    const paid = BigInt(t.total_paid_cents);
+    const reserved = BigInt(t.total_reserved_cents) - BigInt(t.total_released_cents);
+    const effectiveReserved = reserved > 0n ? reserved : 0n;
+    const available = accrued - reversed - paid - effectiveReserved;
+
+    res.json({
+      success: true,
+      data: {
+        summary: {
+          total_accrued_cents: accrued.toString(),
+          total_available_cents: (available > 0n ? available : 0n).toString(),
+          total_reserved_cents: effectiveReserved.toString(),
+          total_paid_cents: paid.toString(),
+          total_reversed_cents: reversed.toString(),
+          drivers_with_balance: byDriver.rows.length,
+        },
+        by_year: byYear.rows.map(r => ({
+          program_year: r.program_year,
+          accrued_cents: r.accrued_cents,
+          paid_cents: r.paid_cents,
+        })),
+        by_driver: byDriver.rows.map(r => ({
+          driver_id: r.driver_id,
+          accrued_cents: r.accrued_cents,
+          reversed_cents: r.reversed_cents,
+          paid_cents: r.paid_cents,
+          reserved_cents: r.reserved_cents,
+          released_cents: r.released_cents,
+        })),
+      },
+    });
+  } catch (err: any) {
+    console.error('[ADMIN_ANNUAL_INCENTIVE_PROVISION_ERROR]', err.message);
+    res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
+  }
+});
+
 export default router;

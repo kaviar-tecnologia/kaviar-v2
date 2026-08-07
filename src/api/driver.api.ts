@@ -369,6 +369,56 @@ export const driverApi = {
     return data;
   },
 
+  // ─── Annual Incentive Payout ─────────────────────────────────────────
+  getAnnualIncentiveSummary: async (): Promise<{
+    totalAccruedCents: string;
+    totalAvailableCents: string;
+    totalReservedCents: string;
+    totalPaidCents: string;
+    totalReversedCents: string;
+    requestWindow: { isOpen: boolean; currentMonth: number; currentYear: number; nextOpenDate: string | null; windowCloseDate: string | null };
+    hasOpenRequest: boolean;
+    openRequestId: string | null;
+  }> => {
+    const { data } = await apiClient.get('/api/driver/annual-incentive/summary');
+    return data.data;
+  },
+
+  getPayoutDestination: async (): Promise<{ pixKeyType: string; pixKeyMasked: string; verifiedAt: string } | null> => {
+    const { data } = await apiClient.get('/api/driver/annual-incentive/payout-destination');
+    return data.data;
+  },
+
+  setPayoutDestination: async (pixKeyCpf: string): Promise<{ pixKeyType: string; pixKeyMasked: string; verifiedAt: string }> => {
+    const { data } = await apiClient.put('/api/driver/annual-incentive/payout-destination', { pixKeyType: 'CPF', pixKeyCpf });
+    return data.data;
+  },
+
+  getAnnualIncentiveRequests: async (): Promise<Array<{
+    id: string;
+    requestedAmountCents: string;
+    status: string;
+    destinationMasked: string;
+    requestedAt: string;
+    paidAt: string | null;
+    deadlineAt: string | null;
+  }>> => {
+    const { data } = await apiClient.get('/api/driver/annual-incentive/requests');
+    return data.data;
+  },
+
+  createAnnualIncentiveRequest: async (amountCents: string, idempotencyKey: string): Promise<{
+    id: string;
+    requestedAmountCents: string;
+    status: string;
+    destinationMasked: string;
+    requestedAt: string;
+    deadlineAt: string | null;
+  }> => {
+    const { data } = await apiClient.post('/api/driver/annual-incentive/requests', { amountCents, idempotencyKey });
+    return data.data;
+  },
+
   triggerEmergency: async (rideId: string): Promise<{ event_id: string }> => {
     const { data } = await apiClient.post(`/api/v2/rides/${rideId}/emergency`);
     return data;
