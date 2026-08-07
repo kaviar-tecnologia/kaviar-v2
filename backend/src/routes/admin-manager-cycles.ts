@@ -42,13 +42,73 @@ router.get('/', async (req: Request, res: Response) => {
     let where = 'WHERE 1=1';
     const params: any[] = [];
     let idx = 1;
-    if (req.query.territoryId) { where += ` AND territory_id=$${idx++}`; params.push(req.query.territoryId); }
-    if (req.query.managerId) { where += ` AND manager_id=$${idx++}`; params.push(req.query.managerId); }
-    if (req.query.status) { where += ` AND status=$${idx++}`; params.push(req.query.status); }
+    if (req.query.territoryId) { where += ` AND c.territory_id=$${idx++}`; params.push(req.query.territoryId); }
+    if (req.query.managerId) { where += ` AND c.manager_id=$${idx++}`; params.push(req.query.managerId); }
+    if (req.query.status) { where += ` AND c.status=$${idx++}`; params.push(req.query.status); }
     params.push(limit, offset);
     const { rows } = await pool.query(
-      `SELECT * FROM territory_payout_cycles ${where} ORDER BY reference_month DESC, created_at DESC LIMIT $${idx++} OFFSET $${idx}`, params);
-    res.json({ success: true, data: rows.map((r: any) => serializeCycle(mapRow(r))) });
+      `SELECT c.*,
+              a.name AS manager_name,
+              fp.cpf_cnpj_masked AS manager_cpf_cnpj_masked,
+              fpd.key_masked AS manager_pix_masked,
+              fo.id AS obligation_id
+       FROM territory_payout_cycles c
+       LEFT JOIN admins a ON a.id = c.manager_id
+       LEFT JOIN financial_payees fp ON fp.reference_id = c.manager_id AND fp.payee_type = 'MANAGER'
+       LEFT JOIN financial_payee_destinations fpd ON fpd.payee_id = fp.id AND fpd.status = 'active' AND fpd.superseded_at IS NULL
+       LEFT JOIN financial_obligations fo ON fo.source_type = 'territory_payout_cycle' AND fo.source_id = c.id
+       ${where}
+       ORDER BY c.reference_month DESC, c.created_at DESC LIMIT $${idx++} OFFSET $${idx}`, params);
+
+    // Fetch payment evidence for cycles that have obligations
+    const obligationIds = rows.filter((r: any) => r.obligation_id).map((r: any) => r.obligation_id);
+    let payoutMap = new Map<string, any>();
+    if (obligationIds.length > 0) {
+      const { rows: payoutRows } = await pool.query(
+        `SELECT DISTINCT ON (obligation_id) obligation_id, provider_payout_id, external_reference,
+                provider_status, status, confirmed_at, submitted_at, failed_at
+         FROM financial_payouts
+         WHERE obligation_id = ANY($1)
+         ORDER BY obligation_id, created_at DESC`, [obligationIds]);
+      payoutMap = new Map(payoutRows.map((p: any) => [p.obligation_id, p]));
+    }
+
+    const result = rows.map((r: any) => {
+      const cycle = serializeCycle(mapRow(r));
+      const payout = payoutMap.get(r.obligation_id);
+
+      // Determine display status
+      let displayStatus: string = cycle.status;
+      if (payout?.confirmed_at) displayStatus = 'PAGO';
+      else if (payout?.failed_at) displayStatus = 'FALHOU';
+      else if (payout?.submitted_at) displayStatus = 'PROCESSANDO';
+      else if (cycle.status === 'OBLIGATION_CREATED') displayStatus = 'RESERVADO';
+      else if (cycle.status === 'APPROVED') displayStatus = 'APROVADO';
+      else if (cycle.status === 'UNDER_REVIEW') displayStatus = 'EM_REVISÃO';
+      else if (cycle.status === 'CALCULATED') displayStatus = 'CALCULADO';
+      else if (cycle.status === 'CANCELLED') displayStatus = 'CANCELADO';
+
+      return {
+        ...cycle,
+        type: 'GESTOR',
+        managerName: r.manager_name || '—',
+        managerCpfCnpjMasked: r.manager_cpf_cnpj_masked || null,
+        managerPixMasked: r.manager_pix_masked || null,
+        displayStatus,
+        confirmedAt: payout?.confirmed_at || null,
+        evidence: payout ? {
+          provider_payout_id: payout.provider_payout_id,
+          external_reference: payout.external_reference,
+          provider_status: payout.provider_status,
+          internal_status: payout.status,
+          submitted_at: payout.submitted_at,
+          confirmed_at: payout.confirmed_at,
+          failed_at: payout.failed_at,
+        } : null,
+      };
+    });
+
+    res.json({ success: true, data: result });
   } catch (err: any) {
     res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
   }
