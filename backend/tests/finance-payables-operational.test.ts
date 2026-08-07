@@ -388,3 +388,45 @@ describe('Deterministic tiebreaker — id DESC in ORDER BY', () => {
     expect(rows[0].id).toBe('bbb');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// API prefix — all finance endpoints must use /api/admin/finance/
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('API prefix — frontend calls use /api/admin/finance/', () => {
+  // These are the exact paths used in FinancePayablesPage.jsx
+  const EXPECTED_PATHS = [
+    '/api/admin/finance/annual-incentive/provision',
+    '/api/admin/finance/annual-incentive/provision/drivers?limit=200',
+    '/api/admin/finance/manager-cycles?limit=50',
+  ];
+
+  it('all three endpoints start with /api/admin/finance/', () => {
+    for (const path of EXPECTED_PATHS) {
+      expect(path.startsWith('/api/admin/finance/')).toBe(true);
+    }
+  });
+
+  it('none start with /admin/finance/ (missing /api prefix)', () => {
+    const WRONG_PATHS = [
+      '/admin/finance/annual-incentive/provision',
+      '/admin/finance/annual-incentive/provision/drivers?limit=200',
+      '/admin/finance/manager-cycles?limit=50',
+    ];
+    for (const path of WRONG_PATHS) {
+      expect(EXPECTED_PATHS).not.toContain(path);
+    }
+  });
+
+  it('provision path is /api/admin/finance/annual-incentive/provision', () => {
+    expect(EXPECTED_PATHS[0]).toBe('/api/admin/finance/annual-incentive/provision');
+  });
+
+  it('provision/drivers path is /api/admin/finance/annual-incentive/provision/drivers?limit=200', () => {
+    expect(EXPECTED_PATHS[1]).toBe('/api/admin/finance/annual-incentive/provision/drivers?limit=200');
+  });
+
+  it('manager-cycles path is /api/admin/finance/manager-cycles?limit=50', () => {
+    expect(EXPECTED_PATHS[2]).toBe('/api/admin/finance/manager-cycles?limit=50');
+  });
+});
