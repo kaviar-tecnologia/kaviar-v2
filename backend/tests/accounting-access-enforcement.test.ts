@@ -17,7 +17,7 @@ const { prismaMock, authState, linkState } = vi.hoisted(() => {
   const prismaMock: any = {
     accountants: { findUnique: vi.fn() },
     accountant_sessions: { findFirst: vi.fn() },
-    accountant_entity_links: { findFirst: vi.fn() },
+    accountant_entity_links: { findFirst: vi.fn(), findMany: vi.fn() },
     legal_entities: { findUnique: vi.fn(), findMany: vi.fn() },
     accounting_company_documents: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), count: vi.fn() },
     accounting_document_types: { findUnique: vi.fn(), findMany: vi.fn(), count: vi.fn() },
@@ -557,5 +557,222 @@ describe('No active link → 404', () => {
     prismaMock.accounting_certificates.findUnique.mockResolvedValue(mockCertificate);
     const res = await request(app).get(`${BASE_URL}/certificates/cert-1`);
     expect(res.status).toBe(404);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// LISTING SCOPE ENFORCEMENT
+// ════════════════════════════════════════════════════════════════════════
+
+function mockLinksForScope(scope: string) {
+  prismaMock.accountant_entity_links.findMany.mockResolvedValue([
+    {
+      legal_entity_id: ENTITY_ID,
+      scope,
+      can_view: true,
+      inherits_children: false,
+    },
+  ]);
+  prismaMock.legal_entities.findMany.mockResolvedValue([]);
+}
+
+describe('Listing: document scope filtering', () => {
+  it('FISCAL scope does NOT receive SOCIETARIO documents', async () => {
+    mockLinksForScope('FISCAL');
+    linkState.current = makeLink({ scope: 'FISCAL' });
+
+    prismaMock.accounting_company_documents.findMany.mockResolvedValue([]);
+    prismaMock.accounting_company_documents.count.mockResolvedValue(0);
+
+    const res = await request(app).get(`${BASE_URL}/documents`);
+    expect(res.status).toBe(200);
+
+    // Verify the where clause used category filter
+    const call = prismaMock.accounting_company_documents.findMany.mock.calls[0]?.[0];
+    expect(call.where.document_type).toBeDefined();
+    expect(call.where.document_type.category.in).toContain('FISCAL');
+    expect(call.where.document_type.category.in).not.toContain('SOCIETARIO');
+  });
+
+  it('SOCIETARIO scope does NOT receive FISCAL documents', async () => {
+    mockLinksForScope('SOCIETARIO');
+    linkState.current = makeLink({ scope: 'SOCIETARIO' });
+
+    prismaMock.accounting_company_documents.findMany.mockResolvedValue([]);
+    prismaMock.accounting_company_documents.count.mockResolvedValue(0);
+
+    const res = await request(app).get(`${BASE_URL}/documents`);
+    expect(res.status).toBe(200);
+
+    const call = prismaMock.accounting_company_documents.findMany.mock.calls[0]?.[0];
+    expect(call.where.document_type.category.in).toContain('SOCIETARIO');
+    expect(call.where.document_type.category.in).not.toContain('FISCAL');
+  });
+
+  it('COMPLETO scope receives all documents (no category filter)', async () => {
+    mockLinksForScope('COMPLETO');
+    linkState.current = makeLink({ scope: 'COMPLETO' });
+
+    prismaMock.accounting_company_documents.findMany.mockResolvedValue([]);
+    prismaMock.accounting_company_documents.count.mockResolvedValue(0);
+
+    const res = await request(app).get(`${BASE_URL}/documents`);
+    expect(res.status).toBe(200);
+
+    const call = prismaMock.accounting_company_documents.findMany.mock.calls[0]?.[0];
+    // No category restriction for COMPLETO
+    expect(call.where.document_type).toBeUndefined();
+  });
+
+  it('pagination total does NOT include hidden scope records', async () => {
+    mockLinksForScope('FISCAL');
+    linkState.current = makeLink({ scope: 'FISCAL' });
+
+    prismaMock.accounting_company_documents.findMany.mockResolvedValue([]);
+    prismaMock.accounting_company_documents.count.mockResolvedValue(3);
+
+    const res = await request(app).get(`${BASE_URL}/documents`);
+    expect(res.status).toBe(200);
+    // count uses same where as findMany (including category filter)
+    const countCall = prismaMock.accounting_company_documents.count.mock.calls[0]?.[0];
+    expect(countCall.where.document_type).toBeDefined();
+    expect(countCall.where.document_type.category.in).not.toContain('SOCIETARIO');
+  });
+});
+
+describe('Listing: obligations scope filtering', () => {
+  it('FINANCEIRO scope receives obligations', async () => {
+    mockLinksForScope('FINANCEIRO');
+    linkState.current = makeLink({ scope: 'FINANCEIRO' });
+
+    prismaMock.accounting_payment_obligations.findMany.mockResolvedValue([]);
+
+    const res = await request(app).get(`${BASE_URL}/obligations`);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+  });
+
+  it('FISCAL scope does NOT receive obligations (empty list)', async () => {
+    mockLinksForScope('FISCAL');
+    linkState.current = makeLink({ scope: 'FISCAL' });
+
+    const res = await request(app).get(`${BASE_URL}/obligations`);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([]);
+    // findMany should NOT have been called since entityIds is empty
+    expect(prismaMock.accounting_payment_obligations.findMany).not.toHaveBeenCalled();
+  });
+
+  it('COMPLETO scope receives obligations', async () => {
+    mockLinksForScope('COMPLETO');
+    linkState.current = makeLink({ scope: 'COMPLETO' });
+
+    prismaMock.accounting_payment_obligations.findMany.mockResolvedValue([]);
+
+    const res = await request(app).get(`${BASE_URL}/obligations`);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+  });
+});
+
+describe('Listing: competencies scope filtering', () => {
+  it('CONTABIL scope receives competencies', async () => {
+    mockLinksForScope('CONTABIL');
+    linkState.current = makeLink({ scope: 'CONTABIL' });
+
+    prismaMock.accounting_competencies.findMany.mockResolvedValue([]);
+
+    const res = await request(app).get(`${BASE_URL}/competencies`);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+  });
+
+  it('FINANCEIRO scope does NOT receive competencies (empty list)', async () => {
+    mockLinksForScope('FINANCEIRO');
+    linkState.current = makeLink({ scope: 'FINANCEIRO' });
+
+    const res = await request(app).get(`${BASE_URL}/competencies`);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([]);
+    expect(prismaMock.accounting_competencies.findMany).not.toHaveBeenCalled();
+  });
+
+  it('COMPLETO scope receives competencies', async () => {
+    mockLinksForScope('COMPLETO');
+    linkState.current = makeLink({ scope: 'COMPLETO' });
+
+    prismaMock.accounting_competencies.findMany.mockResolvedValue([]);
+
+    const res = await request(app).get(`${BASE_URL}/competencies`);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+  });
+});
+
+describe('Fiscal Health / Pendências: COMPLETO only', () => {
+  it('COMPLETO scope can access fiscal-health per-entity', async () => {
+    mockLinksForScope('COMPLETO');
+    linkState.current = makeLink({ scope: 'COMPLETO' });
+
+    const res = await request(app).get(`${BASE_URL}/fiscal-health/${ENTITY_ID}`);
+    expect(res.status).toBe(200);
+  });
+
+  it('FINANCEIRO scope receives 403 for fiscal-health per-entity', async () => {
+    mockLinksForScope('FINANCEIRO');
+    linkState.current = makeLink({ scope: 'FINANCEIRO' });
+
+    const res = await request(app).get(`${BASE_URL}/fiscal-health/${ENTITY_ID}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('COMPLETO scope can access fiscal-health summary', async () => {
+    mockLinksForScope('COMPLETO');
+    linkState.current = makeLink({ scope: 'COMPLETO' });
+
+    prismaMock.legal_entities.findUnique.mockResolvedValue({ id: ENTITY_ID, razao_social: 'Corp', cnpj: '123' });
+
+    const res = await request(app).get(`${BASE_URL}/fiscal-health`);
+    expect(res.status).toBe(200);
+  });
+
+  it('FISCAL scope receives 403 for fiscal-health summary', async () => {
+    mockLinksForScope('FISCAL');
+    linkState.current = makeLink({ scope: 'FISCAL' });
+
+    const res = await request(app).get(`${BASE_URL}/fiscal-health`);
+    expect(res.status).toBe(403);
+  });
+
+  it('COMPLETO scope can access pendencias', async () => {
+    mockLinksForScope('COMPLETO');
+    linkState.current = makeLink({ scope: 'COMPLETO' });
+
+    const res = await request(app).get(`${BASE_URL}/pendencias`);
+    expect(res.status).toBe(200);
+  });
+
+  it('CONTABIL scope receives 403 for pendencias', async () => {
+    mockLinksForScope('CONTABIL');
+    linkState.current = makeLink({ scope: 'CONTABIL' });
+
+    const res = await request(app).get(`${BASE_URL}/pendencias`);
+    expect(res.status).toBe(403);
+  });
+
+  it('COMPLETO scope can access pendencias/summary', async () => {
+    mockLinksForScope('COMPLETO');
+    linkState.current = makeLink({ scope: 'COMPLETO' });
+
+    const res = await request(app).get(`${BASE_URL}/pendencias/summary`);
+    expect(res.status).toBe(200);
+  });
+
+  it('SOCIETARIO scope receives 403 for pendencias/summary', async () => {
+    mockLinksForScope('SOCIETARIO');
+    linkState.current = makeLink({ scope: 'SOCIETARIO' });
+
+    const res = await request(app).get(`${BASE_URL}/pendencias/summary`);
+    expect(res.status).toBe(403);
   });
 });

@@ -144,3 +144,94 @@ export function handleAccessError(err: unknown, res: any): boolean {
   }
   return false;
 }
+
+// ── Scoped listing helpers ───────────────────────────────────────────────
+
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+export interface AccountantLink {
+  legal_entity_id: string;
+  scope: string;
+  can_view: boolean;
+  inherits_children: boolean;
+}
+
+/**
+ * Get all active links for an accountant (with scope info).
+ * Used for building scoped entity lists.
+ */
+export async function getActiveLinksForAccountant(accountantId: string): Promise<AccountantLink[]> {
+  const now = new Date();
+  const links = await prisma.accountant_entity_links.findMany({
+    where: {
+      accountant_id: accountantId,
+      status: 'ACTIVE',
+      starts_at: { lte: now },
+      OR: [{ ends_at: null }, { ends_at: { gt: now } }],
+    },
+    select: { legal_entity_id: true, scope: true, can_view: true, inherits_children: true },
+  });
+  return links as AccountantLink[];
+}
+
+/**
+ * Get entity IDs accessible to an accountant, filtered by required scope.
+ * COMPLETO satisfies any scope. Returns only entities where scope matches.
+ * Also checks can_view=true.
+ */
+export async function getAccessibleEntityIdsForScope(
+  accountantId: string,
+  requiredScope: AccountingScope,
+): Promise<string[]> {
+  const links = await getActiveLinksForAccountant(accountantId);
+
+  const entityIds = new Set<string>();
+  for (const link of links) {
+    if (!link.can_view) continue;
+    if (link.scope !== 'COMPLETO' && link.scope !== requiredScope) continue;
+
+    entityIds.add(link.legal_entity_id);
+    if (link.inherits_children) {
+      const children = await prisma.legal_entities.findMany({
+        where: { parent_entity_id: link.legal_entity_id, is_active: true },
+        select: { id: true },
+      });
+      for (const child of children) {
+        entityIds.add(child.id);
+      }
+    }
+  }
+
+  return [...entityIds];
+}
+
+/**
+ * Check if accountant has COMPLETO scope for at least one link.
+ * Used for deny-by-default on cross-cutting endpoints.
+ */
+export async function hasCompletoScope(accountantId: string): Promise<boolean> {
+  const links = await getActiveLinksForAccountant(accountantId);
+  return links.some(l => l.scope === 'COMPLETO' && l.can_view);
+}
+
+/**
+ * Get the document categories accessible for a given scope.
+ * COMPLETO returns null (meaning all categories allowed).
+ * Used for filtering document listings.
+ */
+export function getAllowedDocumentCategories(scope: string): string[] | null {
+  if (scope === 'COMPLETO') return null; // all
+
+  const SCOPE_TO_CATEGORIES: Record<string, string[]> = {
+    FISCAL: ['FISCAL', 'INSCRICAO'],
+    SOCIETARIO: ['SOCIETARIO', 'CERTIFICADO', 'PROCURACAO'],
+    FOLHA: ['TRABALHISTA'],
+    MUNICIPAL: ['LICENCA'],
+    CONTABIL: ['OUTRO'],
+    FINANCEIRO: [], // documents aren't financial; obligations are separate
+  };
+
+  return SCOPE_TO_CATEGORIES[scope] || [];
+}

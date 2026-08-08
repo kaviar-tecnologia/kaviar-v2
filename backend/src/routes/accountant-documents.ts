@@ -20,6 +20,8 @@ import {
   requireAccountingAccess,
   handleAccessError,
   scopeForDocumentCategory,
+  getActiveLinksForAccountant,
+  getAllowedDocumentCategories,
 } from '../services/accounting/accounting-access.service';
 import {
   validateFileMetadata,
@@ -88,6 +90,13 @@ router.get('/documents', async (req: Request, res: Response) => {
     const accountant = (req as any).accountant;
     const query = listCompanyDocumentsQuerySchema.parse(req.query);
 
+    // Get links with scope info to build scoped filter
+    const links = await getActiveLinksForAccountant(accountant.id);
+    if (links.length === 0 || !links.some(l => l.can_view)) {
+      return res.json({ success: true, data: [], pagination: { page: 1, limit: query.limit, total: 0, totalPages: 0 } });
+    }
+
+    // Build accessible entity IDs (with children inheritance)
     const accessibleIds = await getAccessibleEntityIds(accountant.id);
     if (accessibleIds.length === 0) {
       return res.json({ success: true, data: [], pagination: { page: 1, limit: query.limit, total: 0, totalPages: 0 } });
@@ -101,10 +110,38 @@ router.get('/documents', async (req: Request, res: Response) => {
       entityFilter = [query.legal_entity_id];
     }
 
+    // Determine allowed categories based on scope
+    // If any link is COMPLETO, all categories are allowed
+    const hasCompleto = links.some(l => l.scope === 'COMPLETO' && l.can_view);
+    let allowedCategories: string[] | null = null;
+    if (!hasCompleto) {
+      const categorySet = new Set<string>();
+      for (const link of links) {
+        if (!link.can_view) continue;
+        const cats = getAllowedDocumentCategories(link.scope);
+        if (cats) cats.forEach(c => categorySet.add(c));
+      }
+      allowedCategories = [...categorySet];
+      if (allowedCategories.length === 0) {
+        return res.json({ success: true, data: [], pagination: { page: 1, limit: query.limit, total: 0, totalPages: 0 } });
+      }
+    }
+
     const where: any = { legal_entity_id: { in: entityFilter } };
     if (query.document_type_id) where.document_type_id = query.document_type_id;
     if (query.status) where.status = query.status;
-    if (query.category) where.document_type = { category: query.category };
+
+    // Apply category filter: user-requested category intersected with allowed
+    if (query.category && allowedCategories) {
+      if (!allowedCategories.includes(query.category)) {
+        return res.json({ success: true, data: [], pagination: { page: 1, limit: query.limit, total: 0, totalPages: 0 } });
+      }
+      where.document_type = { category: query.category };
+    } else if (query.category) {
+      where.document_type = { category: query.category };
+    } else if (allowedCategories) {
+      where.document_type = { category: { in: allowedCategories } };
+    }
 
     const [docs, total] = await Promise.all([
       prisma.accounting_company_documents.findMany({

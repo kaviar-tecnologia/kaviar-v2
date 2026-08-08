@@ -11,6 +11,7 @@ import {
   handleAccessError,
   AccessDeniedError,
   EntityNotFoundError,
+  getAccessibleEntityIdsForScope,
 } from '../services/accounting/accounting-access.service';
 import { generateObligationToken, auditObligation } from '../services/accounting/accounting-obligation-tokens.service';
 import { getFileExtension, MAX_FILE_SIZE } from '../services/accounting/accounting-document-storage.service';
@@ -127,7 +128,7 @@ const INCLUDE = {
 router.get('/obligations', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
-    const entityIds = await getAccessibleEntityIds(accountant.id);
+    const entityIds = await getAccessibleEntityIdsForScope(accountant.id, 'FINANCEIRO');
     if (entityIds.length === 0) return res.json({ success: true, data: [] });
 
     const entityId = req.query.legal_entity_id as string;
@@ -395,7 +396,7 @@ router.post('/obligations/:id/generate-link', async (req: Request, res: Response
 router.get('/obligations/reports/summary', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
-    const entityIds = await getAccessibleEntityIds(accountant.id);
+    const entityIds = await getAccessibleEntityIdsForScope(accountant.id, 'FINANCEIRO');
     if (entityIds.length === 0) return res.json({ success: true, data: { cards: {}, obligations: [] } });
 
     const entityId = req.query.legal_entity_id as string;
@@ -429,7 +430,7 @@ router.get('/obligations/reports/summary', async (req: Request, res: Response) =
 router.get('/obligations/reports/csv', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
-    const entityIds = await getAccessibleEntityIds(accountant.id);
+    const entityIds = await getAccessibleEntityIdsForScope(accountant.id, 'FINANCEIRO');
     if (entityIds.length === 0) { res.setHeader('Content-Type', 'text/csv'); return res.send(''); }
 
     const entityId = req.query.legal_entity_id as string;

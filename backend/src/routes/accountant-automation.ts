@@ -5,6 +5,7 @@ import { verifyEntityAccess, getAccessibleEntityIds } from '../services/accounti
 import {
   requireAccountingAccess,
   handleAccessError,
+  getAccessibleEntityIdsForScope,
 } from '../services/accounting/accounting-access.service';
 import { runRecurringAutomation } from '../services/accounting/accounting-automation.service';
 
@@ -27,7 +28,7 @@ const createTemplateSchema = z.object({
 router.get('/recurring-templates', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
-    const entityIds = await getAccessibleEntityIds(accountant.id);
+    const entityIds = await getAccessibleEntityIdsForScope(accountant.id, 'FINANCEIRO');
     if (entityIds.length === 0) return res.json({ success: true, data: [] });
 
     const entityId = req.query.legal_entity_id as string;
@@ -106,7 +107,7 @@ router.patch('/recurring-templates/:id', async (req: Request, res: Response) => 
 router.get('/automation-config', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
-    const entityIds = await getAccessibleEntityIds(accountant.id);
+    const entityIds = await getAccessibleEntityIdsForScope(accountant.id, 'FINANCEIRO');
 
     const configs = await prisma.accounting_automation_config.findMany({
       where: { legal_entity_id: { in: entityIds } },
@@ -177,7 +178,7 @@ router.post('/automation/run', async (req: Request, res: Response) => {
 router.get('/automation-log', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
-    const entityIds = await getAccessibleEntityIds(accountant.id);
+    const entityIds = await getAccessibleEntityIdsForScope(accountant.id, 'FINANCEIRO');
 
     const logs = await prisma.accounting_automation_log.findMany({
       where: { legal_entity_id: { in: entityIds } },

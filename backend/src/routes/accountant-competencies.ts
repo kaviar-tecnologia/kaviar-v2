@@ -5,6 +5,7 @@ import { verifyEntityAccess, getAccessibleEntityIds } from '../services/accounti
 import {
   requireAccountingAccess,
   handleAccessError,
+  getAccessibleEntityIdsForScope,
 } from '../services/accounting/accounting-access.service';
 
 const prisma = new PrismaClient();
@@ -70,7 +71,7 @@ const INCLUDE = {
 router.get('/competencies', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
-    const entityIds = await getAccessibleEntityIds(accountant.id);
+    const entityIds = await getAccessibleEntityIdsForScope(accountant.id, 'CONTABIL');
     if (entityIds.length === 0) return res.json({ success: true, data: [] });
 
     const entityId = req.query.legal_entity_id as string;

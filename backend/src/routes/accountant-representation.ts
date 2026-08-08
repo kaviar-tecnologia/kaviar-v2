@@ -5,6 +5,8 @@ import { verifyEntityAccess, getAccessibleEntityIds } from '../services/accounti
 import {
   requireAccountingAccess,
   handleAccessError,
+  getAccessibleEntityIdsForScope,
+  hasCompletoScope,
 } from '../services/accounting/accounting-access.service';
 import { computeFiscalHealth } from '../services/accounting/accounting-fiscal-health.service';
 import { computePendencias, getPendenciasSummary } from '../services/accounting/accounting-pendencias.service';
@@ -119,7 +121,7 @@ function serializePOA(p: any) {
 router.get('/certificates', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
-    const entityIds = await getAccessibleEntityIds(accountant.id);
+    const entityIds = await getAccessibleEntityIdsForScope(accountant.id, 'SOCIETARIO');
     if (entityIds.length === 0) return res.json({ success: true, data: [] });
 
     const entityId = req.query.legal_entity_id as string;
@@ -237,7 +239,7 @@ router.patch('/certificates/:id', async (req: Request, res: Response) => {
 router.get('/powers-of-attorney', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
-    const entityIds = await getAccessibleEntityIds(accountant.id);
+    const entityIds = await getAccessibleEntityIdsForScope(accountant.id, 'SOCIETARIO');
     if (entityIds.length === 0) return res.json({ success: true, data: [] });
 
     const entityId = req.query.legal_entity_id as string;
@@ -356,7 +358,9 @@ router.get('/fiscal-health/:entityId', async (req: Request, res: Response) => {
     const accountant = (req as any).accountant;
     const { entityId } = req.params;
 
+    // Deny-by-default: only COMPLETO scope can access fiscal health
     await requireAccountingAccess(accountant.id, entityId, {
+      scope: 'COMPLETO',
       permission: 'can_view',
     });
 
@@ -373,6 +377,13 @@ router.get('/fiscal-health/:entityId', async (req: Request, res: Response) => {
 router.get('/fiscal-health', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
+
+    // Deny-by-default: only COMPLETO scope can access fiscal health summary
+    const isCompleto = await hasCompletoScope(accountant.id);
+    if (!isCompleto) {
+      return res.status(403).json({ success: false, error: 'Escopo insuficiente para esta operação' });
+    }
+
     const entityIds = await getAccessibleEntityIds(accountant.id);
     if (entityIds.length === 0) return res.json({ success: true, data: { companies: [], overall: 'HEALTHY' } });
 
@@ -406,6 +417,13 @@ router.get('/fiscal-health', async (req: Request, res: Response) => {
 router.get('/pendencias', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
+
+    // Deny-by-default: only COMPLETO scope can access pendências
+    const isCompleto = await hasCompletoScope(accountant.id);
+    if (!isCompleto) {
+      return res.status(403).json({ success: false, error: 'Escopo insuficiente para esta operação' });
+    }
+
     const pendencias = await computePendencias(accountant.id);
     res.json({ success: true, data: pendencias });
   } catch (err: any) {
@@ -421,6 +439,13 @@ router.get('/pendencias', async (req: Request, res: Response) => {
 router.get('/pendencias/summary', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
+
+    // Deny-by-default: only COMPLETO scope can access pendências
+    const isCompleto = await hasCompletoScope(accountant.id);
+    if (!isCompleto) {
+      return res.status(403).json({ success: false, error: 'Escopo insuficiente para esta operação' });
+    }
+
     const summary = await getPendenciasSummary(accountant.id);
     res.json({ success: true, data: summary });
   } catch (err: any) {
