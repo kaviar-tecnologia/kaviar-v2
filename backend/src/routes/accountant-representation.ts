@@ -2,6 +2,10 @@ import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { verifyEntityAccess, getAccessibleEntityIds } from '../services/accounting/accounting-documents.service';
+import {
+  requireAccountingAccess,
+  handleAccessError,
+} from '../services/accounting/accounting-access.service';
 import { computeFiscalHealth } from '../services/accounting/accounting-fiscal-health.service';
 import { computePendencias, getPendenciasSummary } from '../services/accounting/accounting-pendencias.service';
 
@@ -149,11 +153,14 @@ router.get('/certificates/:id', async (req: Request, res: Response) => {
     });
     if (!cert) return res.status(404).json({ success: false, error: 'Certificado não encontrado' });
 
-    const link = await verifyEntityAccess(accountant.id, cert.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Certificado não encontrado' });
+    await requireAccountingAccess(accountant.id, cert.legal_entity_id, {
+      scope: 'SOCIETARIO',
+      permission: 'can_view',
+    });
 
     res.json({ success: true, data: serializeCertificate(cert) });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     console.error('[certificates] detail error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
@@ -164,8 +171,10 @@ router.post('/certificates', async (req: Request, res: Response) => {
     const accountant = (req as any).accountant;
     const data = createCertificateSchema.parse(req.body);
 
-    const link = await verifyEntityAccess(accountant.id, data.legal_entity_id);
-    if (!link) return res.status(403).json({ success: false, error: 'Acesso negado à empresa' });
+    await requireAccountingAccess(accountant.id, data.legal_entity_id, {
+      scope: 'SOCIETARIO',
+      permission: 'can_upload',
+    });
 
     const cert = await prisma.accounting_certificates.create({
       data: {
@@ -183,6 +192,7 @@ router.post('/certificates', async (req: Request, res: Response) => {
 
     res.status(201).json({ success: true, data: serializeCertificate(cert) });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
     console.error('[certificates] create error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
@@ -197,8 +207,10 @@ router.patch('/certificates/:id', async (req: Request, res: Response) => {
     const cert = await prisma.accounting_certificates.findUnique({ where: { id: req.params.id } });
     if (!cert) return res.status(404).json({ success: false, error: 'Certificado não encontrado' });
 
-    const link = await verifyEntityAccess(accountant.id, cert.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Certificado não encontrado' });
+    await requireAccountingAccess(accountant.id, cert.legal_entity_id, {
+      scope: 'SOCIETARIO',
+      permission: 'can_upload',
+    });
 
     const updated = await prisma.accounting_certificates.update({
       where: { id: req.params.id },
@@ -211,6 +223,7 @@ router.patch('/certificates/:id', async (req: Request, res: Response) => {
 
     res.json({ success: true, data: serializeCertificate(updated) });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
     console.error('[certificates] update error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
@@ -258,11 +271,14 @@ router.get('/powers-of-attorney/:id', async (req: Request, res: Response) => {
     });
     if (!poa) return res.status(404).json({ success: false, error: 'Procuração não encontrada' });
 
-    const link = await verifyEntityAccess(accountant.id, poa.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Procuração não encontrada' });
+    await requireAccountingAccess(accountant.id, poa.legal_entity_id, {
+      scope: 'SOCIETARIO',
+      permission: 'can_view',
+    });
 
     res.json({ success: true, data: serializePOA(poa) });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     console.error('[poa] detail error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
@@ -273,8 +289,10 @@ router.post('/powers-of-attorney', async (req: Request, res: Response) => {
     const accountant = (req as any).accountant;
     const data = createPOASchema.parse(req.body);
 
-    const link = await verifyEntityAccess(accountant.id, data.legal_entity_id);
-    if (!link) return res.status(403).json({ success: false, error: 'Acesso negado à empresa' });
+    await requireAccountingAccess(accountant.id, data.legal_entity_id, {
+      scope: 'SOCIETARIO',
+      permission: 'can_upload',
+    });
 
     const poa = await prisma.accounting_powers_of_attorney.create({
       data: {
@@ -291,6 +309,7 @@ router.post('/powers-of-attorney', async (req: Request, res: Response) => {
 
     res.status(201).json({ success: true, data: serializePOA(poa) });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
     console.error('[poa] create error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
@@ -305,8 +324,10 @@ router.patch('/powers-of-attorney/:id', async (req: Request, res: Response) => {
     const poa = await prisma.accounting_powers_of_attorney.findUnique({ where: { id: req.params.id } });
     if (!poa) return res.status(404).json({ success: false, error: 'Procuração não encontrada' });
 
-    const link = await verifyEntityAccess(accountant.id, poa.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Procuração não encontrada' });
+    await requireAccountingAccess(accountant.id, poa.legal_entity_id, {
+      scope: 'SOCIETARIO',
+      permission: 'can_upload',
+    });
 
     const updated = await prisma.accounting_powers_of_attorney.update({
       where: { id: req.params.id },
@@ -319,6 +340,7 @@ router.patch('/powers-of-attorney/:id', async (req: Request, res: Response) => {
 
     res.json({ success: true, data: serializePOA(updated) });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
     console.error('[poa] update error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
@@ -334,12 +356,14 @@ router.get('/fiscal-health/:entityId', async (req: Request, res: Response) => {
     const accountant = (req as any).accountant;
     const { entityId } = req.params;
 
-    const link = await verifyEntityAccess(accountant.id, entityId);
-    if (!link) return res.status(404).json({ success: false, error: 'Empresa não encontrada' });
+    await requireAccountingAccess(accountant.id, entityId, {
+      permission: 'can_view',
+    });
 
     const health = await computeFiscalHealth(entityId);
     res.json({ success: true, data: health });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     console.error('[fiscal-health] error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }

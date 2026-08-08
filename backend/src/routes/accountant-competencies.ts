@@ -2,6 +2,10 @@ import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { verifyEntityAccess, getAccessibleEntityIds } from '../services/accounting/accounting-documents.service';
+import {
+  requireAccountingAccess,
+  handleAccessError,
+} from '../services/accounting/accounting-access.service';
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -102,8 +106,10 @@ router.get('/competencies/:id', async (req: Request, res: Response) => {
     });
     if (!comp) return res.status(404).json({ success: false, error: 'Competência não encontrada' });
 
-    const link = await verifyEntityAccess(accountant.id, comp.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Competência não encontrada' });
+    await requireAccountingAccess(accountant.id, comp.legal_entity_id, {
+      scope: 'CONTABIL',
+      permission: 'can_view',
+    });
 
     const data = {
       ...serialize(comp),
@@ -113,6 +119,7 @@ router.get('/competencies/:id', async (req: Request, res: Response) => {
 
     res.json({ success: true, data });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     console.error('[competencies] detail error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
@@ -123,8 +130,10 @@ router.post('/competencies', async (req: Request, res: Response) => {
     const accountant = (req as any).accountant;
     const data = createCompetencySchema.parse(req.body);
 
-    const link = await verifyEntityAccess(accountant.id, data.legal_entity_id);
-    if (!link) return res.status(403).json({ success: false, error: 'Acesso negado à empresa' });
+    await requireAccountingAccess(accountant.id, data.legal_entity_id, {
+      scope: 'CONTABIL',
+      permission: 'can_close_period',
+    });
 
     const comp = await prisma.accounting_competencies.create({
       data: {
@@ -141,6 +150,7 @@ router.post('/competencies', async (req: Request, res: Response) => {
 
     res.status(201).json({ success: true, data: serialize(comp) });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
     if (err.code === 'P2002') return res.status(409).json({ success: false, error: 'Competência já existe para este período e empresa' });
     console.error('[competencies] create error:', err);
@@ -157,8 +167,10 @@ router.post('/competencies/:id/transition', async (req: Request, res: Response) 
     const comp = await prisma.accounting_competencies.findUnique({ where: { id: req.params.id } });
     if (!comp) return res.status(404).json({ success: false, error: 'Competência não encontrada' });
 
-    const link = await verifyEntityAccess(accountant.id, comp.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Competência não encontrada' });
+    await requireAccountingAccess(accountant.id, comp.legal_entity_id, {
+      scope: 'CONTABIL',
+      permission: 'can_close_period',
+    });
 
     const allowed = VALID_TRANSITIONS[comp.status] || [];
     if (!allowed.includes(data.status)) {
@@ -195,6 +207,7 @@ router.post('/competencies/:id/transition', async (req: Request, res: Response) 
 
     res.json({ success: true, data: serialize(updated) });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
     console.error('[competencies] transition error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
@@ -211,8 +224,10 @@ router.post('/competencies/:id/link-document', async (req: Request, res: Respons
     const comp = await prisma.accounting_competencies.findUnique({ where: { id: req.params.id } });
     if (!comp) return res.status(404).json({ success: false, error: 'Competência não encontrada' });
 
-    const link = await verifyEntityAccess(accountant.id, comp.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Competência não encontrada' });
+    await requireAccountingAccess(accountant.id, comp.legal_entity_id, {
+      scope: 'CONTABIL',
+      permission: 'can_close_period',
+    });
 
     await prisma.accounting_competency_documents.create({
       data: { competency_id: req.params.id, document_id, linked_by_accountant_id: accountant.id },
@@ -220,6 +235,7 @@ router.post('/competencies/:id/link-document', async (req: Request, res: Respons
 
     res.json({ success: true, data: { message: 'Documento vinculado à competência.' } });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     if (err.code === 'P2002') return res.status(409).json({ success: false, error: 'Documento já vinculado' });
     console.error('[competencies] link-document error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });

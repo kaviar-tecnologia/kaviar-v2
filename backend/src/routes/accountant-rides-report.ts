@@ -14,6 +14,10 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db';
 import { verifyEntityAccess } from '../services/accounting/accounting-documents.service';
+import {
+  requireAccountingAccess,
+  handleAccessError,
+} from '../services/accounting/accounting-access.service';
 
 const router = Router();
 
@@ -95,8 +99,10 @@ router.get('/rides-report', async (req: Request, res: Response) => {
     }
 
     // Scope validation
-    const link = await verifyEntityAccess(accountant.id, entityId);
-    if (!link) return res.status(404).json({ success: false, error: 'Empresa não encontrada' });
+    await requireAccountingAccess(accountant.id, entityId, {
+      scope: 'FINANCEIRO',
+      permission: 'can_view',
+    });
 
     // Check if entity has rides
     const hasRides = await entityHasRides(entityId);
@@ -219,6 +225,7 @@ router.get('/rides-report', async (req: Request, res: Response) => {
       },
     });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     console.error('[rides-report] error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
@@ -233,8 +240,10 @@ router.get('/rides-report/csv', async (req: Request, res: Response) => {
 
     if (!entityId) return res.status(400).json({ success: false, error: 'legal_entity_id é obrigatório' });
 
-    const link = await verifyEntityAccess(accountant.id, entityId);
-    if (!link) return res.status(404).json({ success: false, error: 'Empresa não encontrada' });
+    await requireAccountingAccess(accountant.id, entityId, {
+      scope: 'FINANCEIRO',
+      permission: 'can_download',
+    });
 
     // Parse dates
     const startStr = req.query.start_date as string;
@@ -286,6 +295,7 @@ router.get('/rides-report/csv', async (req: Request, res: Response) => {
     res.setHeader('Content-Disposition', `attachment; filename=corridas_${new Date().toISOString().slice(0, 10)}.csv`);
     res.send(BOM + header + rows);
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     console.error('[rides-report] csv error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
@@ -303,8 +313,14 @@ router.get('/rides-report/available', async (req: Request, res: Response) => {
     const entityId = req.query.legal_entity_id as string;
     if (!entityId) return res.json({ success: true, data: { available: false } });
 
-    const link = await verifyEntityAccess(accountant.id, entityId);
-    if (!link) return res.json({ success: true, data: { available: false } });
+    try {
+      await requireAccountingAccess(accountant.id, entityId, {
+        scope: 'FINANCEIRO',
+        permission: 'can_view',
+      });
+    } catch {
+      return res.json({ success: true, data: { available: false } });
+    }
 
     const hasRides = await entityHasRides(entityId);
     res.json({ success: true, data: { available: hasRides } });

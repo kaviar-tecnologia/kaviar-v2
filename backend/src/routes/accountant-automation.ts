@@ -2,6 +2,10 @@ import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { verifyEntityAccess, getAccessibleEntityIds } from '../services/accounting/accounting-documents.service';
+import {
+  requireAccountingAccess,
+  handleAccessError,
+} from '../services/accounting/accounting-access.service';
 import { runRecurringAutomation } from '../services/accounting/accounting-automation.service';
 
 const prisma = new PrismaClient();
@@ -52,8 +56,10 @@ router.post('/recurring-templates', async (req: Request, res: Response) => {
     const accountant = (req as any).accountant;
     const data = createTemplateSchema.parse(req.body);
 
-    const link = await verifyEntityAccess(accountant.id, data.legal_entity_id);
-    if (!link) return res.status(403).json({ success: false, error: 'Acesso negado à empresa' });
+    await requireAccountingAccess(accountant.id, data.legal_entity_id, {
+      scope: 'FINANCEIRO',
+      permission: 'can_upload',
+    });
 
     const template = await prisma.accounting_recurring_templates.create({
       data: { ...data, created_by_accountant_id: accountant.id },
@@ -62,6 +68,7 @@ router.post('/recurring-templates', async (req: Request, res: Response) => {
 
     res.status(201).json({ success: true, data: { ...template, amount_display: `R$ ${(template.amount_cents / 100).toFixed(2).replace('.', ',')}` } });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
     console.error('[recurring-templates] create error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
@@ -76,8 +83,10 @@ router.patch('/recurring-templates/:id', async (req: Request, res: Response) => 
     const template = await prisma.accounting_recurring_templates.findUnique({ where: { id: req.params.id } });
     if (!template) return res.status(404).json({ success: false, error: 'Modelo não encontrado' });
 
-    const link = await verifyEntityAccess(accountant.id, template.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Modelo não encontrado' });
+    await requireAccountingAccess(accountant.id, template.legal_entity_id, {
+      scope: 'FINANCEIRO',
+      permission: 'can_upload',
+    });
 
     const updated = await prisma.accounting_recurring_templates.update({
       where: { id: req.params.id },
@@ -86,6 +95,7 @@ router.patch('/recurring-templates/:id', async (req: Request, res: Response) => 
 
     res.json({ success: true, data: updated });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     console.error('[recurring-templates] update error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
@@ -115,8 +125,10 @@ router.patch('/automation-config/:entityId', async (req: Request, res: Response)
     const accountant = (req as any).accountant;
     const { entityId } = req.params;
 
-    const link = await verifyEntityAccess(accountant.id, entityId);
-    if (!link) return res.status(404).json({ success: false, error: 'Empresa não encontrada' });
+    await requireAccountingAccess(accountant.id, entityId, {
+      scope: 'FINANCEIRO',
+      permission: 'can_upload',
+    });
 
     const { is_active, auto_create_competency, auto_create_obligations, send_reminder_d7, send_reminder_d1 } = req.body;
 
@@ -141,6 +153,7 @@ router.patch('/automation-config/:entityId', async (req: Request, res: Response)
 
     res.json({ success: true, data: config });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     console.error('[automation-config] update error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
