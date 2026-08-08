@@ -8,7 +8,7 @@ import accountantApi from '../../services/accountantApi';
 const STATUS_LABELS = { DRAFT: 'Rascunho', SENT_TO_COMPANY: 'Enviado', VIEWED: 'Visualizado', SCHEDULED: 'Programado', PAID: 'Pago', PROOF_UPLOADED: 'Comprovante Enviado', UNDER_VERIFICATION: 'Em Verificação', VERIFIED: 'Verificado', RECONCILED: 'Conciliado', REJECTED: 'Rejeitado', CANCELED: 'Cancelado' };
 const STATUS_COLORS = { DRAFT: '#6B7280', SENT_TO_COMPANY: '#3B82F6', VIEWED: '#8B5CF6', SCHEDULED: '#6366F1', PAID: '#10B981', PROOF_UPLOADED: '#F59E0B', UNDER_VERIFICATION: '#F59E0B', VERIFIED: '#22C55E', RECONCILED: '#22C55E', REJECTED: '#EF4444', CANCELED: '#6B7280' };
 const OWNER_LABELS = { ACCOUNTANT: 'Contador', COMPANY: 'Empresa' };
-const AUDIT_LABELS = { BOLETO_ATTACHED: 'Boleto anexado', LINK_GENERATED: 'Link gerado', EMAIL_SENT: 'E-mail enviado', VIEWED_BY_COMPANY: 'Visualizado pela empresa', BOLETO_DOWNLOADED: 'Boleto baixado', PAYMENT_SCHEDULED: 'Pagamento programado', PAYMENT_INFORMED: 'Pagamento informado', PROOF_UPLOADED: 'Comprovante enviado', STATUS_TRANSITION: 'Status alterado' };
+const AUDIT_LABELS = { BOLETO_ATTACHED: 'Boleto anexado', LINK_GENERATED: 'Link gerado', EMAIL_SENT: 'E-mail enviado', VIEWED_BY_COMPANY: 'Visualizado pela empresa', BOLETO_DOWNLOADED: 'Boleto baixado', PAYMENT_SCHEDULED: 'Pagamento programado', PAYMENT_INFORMED: 'Pagamento informado', PROOF_UPLOADED: 'Comprovante enviado', STATUS_TRANSITION: 'Status alterado', INVOICE_PDF_ATTACHED: 'NF PDF anexado', INVOICE_XML_ATTACHED: 'NF XML anexado', INVOICE_METADATA_UPDATED: 'Metadados NF atualizados', INVOICE_REMOVED: 'Nota fiscal removida' };
 
 export default function AccountantObligationDetailPage() {
   const navigate = useNavigate();
@@ -23,6 +23,10 @@ export default function AccountantObligationDetailPage() {
   const [generatedLink, setGeneratedLink] = useState('');
   const [rejectReason, setRejectReason] = useState('');
   const [rejectOpen, setRejectOpen] = useState(false);
+  const [invoiceMetaOpen, setInvoiceMetaOpen] = useState(false);
+  const [invoiceMeta, setInvoiceMeta] = useState({ invoice_number: '', invoice_series: '', invoice_access_key: '', invoice_verification_code: '', invoice_issued_at: '' });
+  const [removeInvoiceOpen, setRemoveInvoiceOpen] = useState(false);
+  const [reconcileWarnOpen, setReconcileWarnOpen] = useState(false);
 
   const fetchAll = () => {
     Promise.all([
@@ -112,6 +116,82 @@ export default function AccountantObligationDetailPage() {
       setSnackbar({ open: true, message: 'Boleto anexado com sucesso.', severity: 'success' });
       fetchAll();
     } catch (err) { setSnackbar({ open: true, message: err.response?.data?.error || 'Erro ao anexar boleto', severity: 'error' }); }
+  };
+
+  // ── Invoice (Nota Fiscal) handlers ──
+
+  const handleUploadInvoicePdf = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      await accountantApi.post(`/api/accountant/portal/obligations/${id}/upload-invoice-pdf`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 });
+      setSnackbar({ open: true, message: 'PDF da nota fiscal anexado.', severity: 'success' });
+      fetchAll();
+    } catch (err) { setSnackbar({ open: true, message: err.response?.data?.error || 'Erro ao anexar PDF da NF', severity: 'error' }); }
+  };
+
+  const handleUploadInvoiceXml = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      await accountantApi.post(`/api/accountant/portal/obligations/${id}/upload-invoice-xml`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 });
+      setSnackbar({ open: true, message: 'XML da nota fiscal anexado.', severity: 'success' });
+      fetchAll();
+    } catch (err) { setSnackbar({ open: true, message: err.response?.data?.error || 'Erro ao anexar XML da NF', severity: 'error' }); }
+  };
+
+  const handleDownloadInvoicePdf = async () => {
+    try {
+      const res = await accountantApi.get(`/api/accountant/portal/obligations/${id}/download-invoice-pdf`);
+      const url = res.data?.data?.download_url;
+      if (url) window.open(url, '_blank', 'noopener');
+    } catch (err) { setSnackbar({ open: true, message: err.response?.data?.error || 'Erro ao baixar PDF da NF', severity: 'error' }); }
+  };
+
+  const handleDownloadInvoiceXml = async () => {
+    try {
+      const res = await accountantApi.get(`/api/accountant/portal/obligations/${id}/download-invoice-xml`);
+      const url = res.data?.data?.download_url;
+      if (url) window.open(url, '_blank', 'noopener');
+    } catch (err) { setSnackbar({ open: true, message: err.response?.data?.error || 'Erro ao baixar XML da NF', severity: 'error' }); }
+  };
+
+  const handleSaveInvoiceMeta = async () => {
+    const payload = {};
+    if (invoiceMeta.invoice_number) payload.invoice_number = invoiceMeta.invoice_number;
+    if (invoiceMeta.invoice_series) payload.invoice_series = invoiceMeta.invoice_series;
+    if (invoiceMeta.invoice_access_key) payload.invoice_access_key = invoiceMeta.invoice_access_key;
+    if (invoiceMeta.invoice_verification_code) payload.invoice_verification_code = invoiceMeta.invoice_verification_code;
+    if (invoiceMeta.invoice_issued_at) payload.invoice_issued_at = invoiceMeta.invoice_issued_at;
+    if (Object.keys(payload).length === 0) { setSnackbar({ open: true, message: 'Informe ao menos um campo', severity: 'error' }); return; }
+    try {
+      await accountantApi.patch(`/api/accountant/portal/obligations/${id}/invoice-metadata`, payload);
+      setSnackbar({ open: true, message: 'Metadados da NF salvos.', severity: 'success' });
+      setInvoiceMetaOpen(false);
+      fetchAll();
+    } catch (err) { setSnackbar({ open: true, message: err.response?.data?.error || 'Erro ao salvar metadados', severity: 'error' }); }
+  };
+
+  const handleRemoveInvoice = async () => {
+    try {
+      await accountantApi.delete(`/api/accountant/portal/obligations/${id}/invoice`);
+      setSnackbar({ open: true, message: 'Nota fiscal removida.', severity: 'success' });
+      setRemoveInvoiceOpen(false);
+      fetchAll();
+    } catch (err) { setSnackbar({ open: true, message: err.response?.data?.error || 'Erro ao remover NF', severity: 'error' }); }
+  };
+
+  const handleReconcileClick = () => {
+    const warnTypes = ['HONORARIOS', 'BOLETO_FORNECEDOR'];
+    if (warnTypes.includes(ob?.obligation_type) && !ob?.has_invoice) {
+      setReconcileWarnOpen(true);
+    } else {
+      handleTransition('RECONCILED');
+    }
   };
 
   if (loading) return <AccountantPortalLayout><Skeleton variant="rectangular" height={300} sx={{ borderRadius: 2, bgcolor: 'rgba(255,255,255,0.05)' }} /></AccountantPortalLayout>;
@@ -248,12 +328,121 @@ export default function AccountantObligationDetailPage() {
             </Box>
           )}
 
+          <Divider sx={{ borderColor: 'rgba(255,255,255,0.08)', my: 1.5 }} />
+
+          {/* ── Nota Fiscal section ── */}
+          <Box sx={{ mb: 2 }}>
+            <Typography sx={{ color: '#D4AF37', fontWeight: 600, fontSize: 13, mb: 1 }}>🧾 Nota Fiscal</Typography>
+
+            {/* State: has invoice with files */}
+            {ob.has_invoice && (ob.invoice_pdf_filename || ob.invoice_xml_filename) && (
+              <Box sx={{ p: 1.5, bgcolor: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 1, mb: 1 }}>
+                {ob.invoice_pdf_filename && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                    <Typography sx={{ color: '#fff', fontSize: 12 }}>📄 {ob.invoice_pdf_filename}</Typography>
+                    <Button size="small" onClick={handleDownloadInvoicePdf} sx={{ color: '#D4AF37', textTransform: 'none', fontSize: 10 }}>Baixar</Button>
+                    <Button size="small" component="label" sx={{ color: 'rgba(255,255,255,0.4)', textTransform: 'none', fontSize: 10 }}>
+                      Substituir
+                      <input type="file" hidden accept=".pdf" onChange={handleUploadInvoicePdf} />
+                    </Button>
+                  </Box>
+                )}
+                {ob.invoice_xml_filename && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                    <Typography sx={{ color: '#fff', fontSize: 12 }}>📋 {ob.invoice_xml_filename}</Typography>
+                    <Button size="small" onClick={handleDownloadInvoiceXml} sx={{ color: '#D4AF37', textTransform: 'none', fontSize: 10 }}>Baixar</Button>
+                    <Button size="small" component="label" sx={{ color: 'rgba(255,255,255,0.4)', textTransform: 'none', fontSize: 10 }}>
+                      Substituir
+                      <input type="file" hidden accept=".xml" onChange={handleUploadInvoiceXml} />
+                    </Button>
+                  </Box>
+                )}
+                {/* Missing file indicator */}
+                {!ob.invoice_pdf_filename && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                    <Typography sx={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>PDF não anexado</Typography>
+                    <Button size="small" component="label" sx={{ color: '#D4AF37', textTransform: 'none', fontSize: 10 }}>
+                      Anexar PDF
+                      <input type="file" hidden accept=".pdf" onChange={handleUploadInvoicePdf} />
+                    </Button>
+                  </Box>
+                )}
+                {!ob.invoice_xml_filename && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                    <Typography sx={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>XML não anexado</Typography>
+                    <Button size="small" component="label" sx={{ color: '#D4AF37', textTransform: 'none', fontSize: 10 }}>
+                      Anexar XML
+                      <input type="file" hidden accept=".xml" onChange={handleUploadInvoiceXml} />
+                    </Button>
+                  </Box>
+                )}
+                {/* Metadata display */}
+                <Box sx={{ mt: 1, display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
+                  {ob.invoice_number && <Typography sx={{ color: 'rgba(255,255,255,0.6)', fontSize: 11 }}>Nº {ob.invoice_number}{ob.invoice_series ? ` — Série ${ob.invoice_series}` : ''}</Typography>}
+                  {ob.invoice_issued_at && <Typography sx={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>Emissão: {new Date(ob.invoice_issued_at + 'T12:00:00').toLocaleDateString('pt-BR')}</Typography>}
+                </Box>
+                {ob.invoice_access_key && <Typography sx={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, mt: 0.5, fontFamily: 'monospace', wordBreak: 'break-all' }}>Chave: {ob.invoice_access_key}</Typography>}
+                {ob.invoice_verification_code && <Typography sx={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, mt: 0.3, fontFamily: 'monospace' }}>Cód. Verificação: {ob.invoice_verification_code}</Typography>}
+                {ob.invoice_uploaded_at && <Typography sx={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, mt: 0.5 }}>Anexado em: {new Date(ob.invoice_uploaded_at).toLocaleString('pt-BR')}</Typography>}
+                <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                  <Button size="small" onClick={() => { setInvoiceMeta({ invoice_number: ob.invoice_number || '', invoice_series: ob.invoice_series || '', invoice_access_key: ob.invoice_access_key || '', invoice_verification_code: ob.invoice_verification_code || '', invoice_issued_at: ob.invoice_issued_at || '' }); setInvoiceMetaOpen(true); }} sx={{ color: 'rgba(255,255,255,0.5)', textTransform: 'none', fontSize: 10 }}>Editar metadados</Button>
+                  <Button size="small" onClick={() => setRemoveInvoiceOpen(true)} sx={{ color: '#EF4444', textTransform: 'none', fontSize: 10 }}>Remover NF</Button>
+                </Box>
+              </Box>
+            )}
+
+            {/* State: has invoice metadata only (no files) */}
+            {ob.has_invoice && !ob.invoice_pdf_filename && !ob.invoice_xml_filename && (
+              <Box sx={{ p: 1.5, bgcolor: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 1, mb: 1 }}>
+                <Typography sx={{ color: '#F59E0B', fontSize: 11, mb: 0.5 }}>Metadados informados — sem arquivo anexado</Typography>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
+                  {ob.invoice_number && <Typography sx={{ color: 'rgba(255,255,255,0.6)', fontSize: 11 }}>Nº {ob.invoice_number}{ob.invoice_series ? ` — Série ${ob.invoice_series}` : ''}</Typography>}
+                  {ob.invoice_issued_at && <Typography sx={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>Emissão: {new Date(ob.invoice_issued_at + 'T12:00:00').toLocaleDateString('pt-BR')}</Typography>}
+                </Box>
+                {ob.invoice_access_key && <Typography sx={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, mt: 0.5, fontFamily: 'monospace', wordBreak: 'break-all' }}>Chave: {ob.invoice_access_key}</Typography>}
+                {ob.invoice_verification_code && <Typography sx={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, mt: 0.3, fontFamily: 'monospace' }}>Cód. Verificação: {ob.invoice_verification_code}</Typography>}
+                <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                  <Button size="small" component="label" sx={{ color: '#D4AF37', textTransform: 'none', fontSize: 10 }}>
+                    📎 Anexar PDF
+                    <input type="file" hidden accept=".pdf" onChange={handleUploadInvoicePdf} />
+                  </Button>
+                  <Button size="small" component="label" sx={{ color: '#D4AF37', textTransform: 'none', fontSize: 10 }}>
+                    📎 Anexar XML
+                    <input type="file" hidden accept=".xml" onChange={handleUploadInvoiceXml} />
+                  </Button>
+                  <Button size="small" onClick={() => { setInvoiceMeta({ invoice_number: ob.invoice_number || '', invoice_series: ob.invoice_series || '', invoice_access_key: ob.invoice_access_key || '', invoice_verification_code: ob.invoice_verification_code || '', invoice_issued_at: ob.invoice_issued_at || '' }); setInvoiceMetaOpen(true); }} sx={{ color: 'rgba(255,255,255,0.5)', textTransform: 'none', fontSize: 10 }}>Editar metadados</Button>
+                  <Button size="small" onClick={() => setRemoveInvoiceOpen(true)} sx={{ color: '#EF4444', textTransform: 'none', fontSize: 10 }}>Remover NF</Button>
+                </Box>
+              </Box>
+            )}
+
+            {/* State: no invoice at all */}
+            {!ob.has_invoice && (
+              <Box sx={{ p: 1.5, bgcolor: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: 1 }}>
+                <Typography sx={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, mb: 1 }}>Nenhuma nota fiscal vinculada</Typography>
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                  <Button size="small" component="label" variant="outlined" sx={{ borderColor: 'rgba(212,175,55,0.4)', color: '#D4AF37', textTransform: 'none', fontSize: 11 }}>
+                    📎 Anexar PDF
+                    <input type="file" hidden accept=".pdf" onChange={handleUploadInvoicePdf} />
+                  </Button>
+                  <Button size="small" component="label" variant="outlined" sx={{ borderColor: 'rgba(212,175,55,0.4)', color: '#D4AF37', textTransform: 'none', fontSize: 11 }}>
+                    📎 Anexar XML
+                    <input type="file" hidden accept=".xml" onChange={handleUploadInvoiceXml} />
+                  </Button>
+                  <Button size="small" onClick={() => { setInvoiceMeta({ invoice_number: '', invoice_series: '', invoice_access_key: '', invoice_verification_code: '', invoice_issued_at: '' }); setInvoiceMetaOpen(true); }} sx={{ color: 'rgba(255,255,255,0.5)', textTransform: 'none', fontSize: 11 }}>Informar metadados</Button>
+                </Box>
+              </Box>
+            )}
+          </Box>
+
+          <Divider sx={{ borderColor: 'rgba(255,255,255,0.08)', my: 1.5 }} />
+
           {/* Status actions */}
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             {canSend && <Button size="small" variant="contained" startIcon={<Send />} onClick={() => handleTransition('SENT_TO_COMPANY')} sx={{ bgcolor: '#3B82F6', textTransform: 'none', fontSize: 12 }}>Enviar para empresa</Button>}
             {canVerify && <Button size="small" variant="contained" startIcon={<CheckCircle />} onClick={() => handleTransition('VERIFIED')} sx={{ bgcolor: '#22C55E', textTransform: 'none', fontSize: 12 }}>Verificar comprovante</Button>}
             {canVerify && <Button size="small" variant="outlined" onClick={() => setRejectOpen(true)} sx={{ borderColor: '#EF4444', color: '#EF4444', textTransform: 'none', fontSize: 12 }}>Rejeitar</Button>}
-            {canReconcile && <Button size="small" variant="contained" startIcon={<CheckCircle />} onClick={() => handleTransition('RECONCILED')} sx={{ bgcolor: '#22C55E', textTransform: 'none', fontSize: 12 }}>Conciliar</Button>}
+            {canReconcile && <Button size="small" variant="contained" startIcon={<CheckCircle />} onClick={handleReconcileClick} sx={{ bgcolor: '#22C55E', textTransform: 'none', fontSize: 12 }}>Conciliar</Button>}
           </Box>
         </CardContent>
       </Card>
@@ -294,6 +483,55 @@ export default function AccountantObligationDetailPage() {
             <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
               <Button onClick={() => setRejectOpen(false)} sx={{ color: 'rgba(255,255,255,0.5)', textTransform: 'none' }}>Cancelar</Button>
               <Button variant="contained" onClick={handleReject} disabled={!rejectReason.trim()} sx={{ bgcolor: '#EF4444', textTransform: 'none', '&:hover': { bgcolor: '#DC2626' } }}>Rejeitar</Button>
+            </Box>
+          </Card>
+        </Box>
+      )}
+
+      {/* Invoice Metadata Dialog */}
+      {invoiceMetaOpen && (
+        <Box sx={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, bgcolor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1300 }}>
+          <Card sx={{ bgcolor: '#1E2433', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 2, maxWidth: 440, width: '100%', p: 3 }}>
+            <Typography sx={{ color: '#fff', fontSize: 16, fontWeight: 600, mb: 2 }}>Metadados da Nota Fiscal</Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+              <TextField label="Número da nota" value={invoiceMeta.invoice_number} onChange={e => setInvoiceMeta(m => ({ ...m, invoice_number: e.target.value }))} size="small" fullWidth sx={{ '& .MuiInputBase-root': { color: '#fff', fontSize: 13 }, '& .MuiInputLabel-root': { color: 'rgba(255,255,255,0.4)' }, '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.15)' } }} />
+              <TextField label="Série" value={invoiceMeta.invoice_series} onChange={e => setInvoiceMeta(m => ({ ...m, invoice_series: e.target.value }))} size="small" fullWidth sx={{ '& .MuiInputBase-root': { color: '#fff', fontSize: 13 }, '& .MuiInputLabel-root': { color: 'rgba(255,255,255,0.4)' }, '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.15)' } }} />
+              <TextField label="Chave de acesso" value={invoiceMeta.invoice_access_key} onChange={e => setInvoiceMeta(m => ({ ...m, invoice_access_key: e.target.value }))} size="small" fullWidth sx={{ '& .MuiInputBase-root': { color: '#fff', fontSize: 13 }, '& .MuiInputLabel-root': { color: 'rgba(255,255,255,0.4)' }, '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.15)' } }} />
+              <TextField label="Código de verificação" value={invoiceMeta.invoice_verification_code} onChange={e => setInvoiceMeta(m => ({ ...m, invoice_verification_code: e.target.value }))} size="small" fullWidth sx={{ '& .MuiInputBase-root': { color: '#fff', fontSize: 13 }, '& .MuiInputLabel-root': { color: 'rgba(255,255,255,0.4)' }, '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.15)' } }} />
+              <TextField label="Data de emissão" type="date" value={invoiceMeta.invoice_issued_at} onChange={e => setInvoiceMeta(m => ({ ...m, invoice_issued_at: e.target.value }))} size="small" fullWidth InputLabelProps={{ shrink: true }} sx={{ '& .MuiInputBase-root': { color: '#fff', fontSize: 13 }, '& .MuiInputLabel-root': { color: 'rgba(255,255,255,0.4)' }, '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.15)' } }} />
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', mt: 2 }}>
+              <Button onClick={() => setInvoiceMetaOpen(false)} sx={{ color: 'rgba(255,255,255,0.5)', textTransform: 'none' }}>Cancelar</Button>
+              <Button variant="contained" onClick={handleSaveInvoiceMeta} sx={{ bgcolor: '#D4AF37', color: '#1A1F2E', textTransform: 'none', '&:hover': { bgcolor: '#B8960C' } }}>Salvar</Button>
+            </Box>
+          </Card>
+        </Box>
+      )}
+
+      {/* Remove Invoice Confirmation */}
+      {removeInvoiceOpen && (
+        <Box sx={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, bgcolor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1300 }}>
+          <Card sx={{ bgcolor: '#1E2433', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 2, maxWidth: 400, width: '100%', p: 3 }}>
+            <Typography sx={{ color: '#fff', fontSize: 16, fontWeight: 600, mb: 1 }}>Remover nota fiscal</Typography>
+            <Typography sx={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, mb: 1 }}>Tem certeza que deseja remover a nota fiscal vinculada a esta obrigação?</Typography>
+            <Typography sx={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, mb: 2 }}>Os arquivos (PDF/XML) e metadados serão desvinculados. Esta ação será registrada na auditoria.</Typography>
+            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+              <Button onClick={() => setRemoveInvoiceOpen(false)} sx={{ color: 'rgba(255,255,255,0.5)', textTransform: 'none' }}>Cancelar</Button>
+              <Button variant="contained" onClick={handleRemoveInvoice} sx={{ bgcolor: '#EF4444', textTransform: 'none', '&:hover': { bgcolor: '#DC2626' } }}>Confirmar remoção</Button>
+            </Box>
+          </Card>
+        </Box>
+      )}
+
+      {/* Reconcile without Invoice Warning */}
+      {reconcileWarnOpen && (
+        <Box sx={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, bgcolor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1300 }}>
+          <Card sx={{ bgcolor: '#1E2433', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 2, maxWidth: 400, width: '100%', p: 3 }}>
+            <Typography sx={{ color: '#F59E0B', fontSize: 16, fontWeight: 600, mb: 1 }}>⚠️ Nota fiscal não anexada</Typography>
+            <Typography sx={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, mb: 2 }}>Essa obrigação ({ob?.obligation_type === 'HONORARIOS' ? 'Honorários' : 'Boleto Fornecedor'}) não possui nota fiscal vinculada. Deseja conciliar mesmo assim?</Typography>
+            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+              <Button onClick={() => setReconcileWarnOpen(false)} sx={{ color: 'rgba(255,255,255,0.5)', textTransform: 'none' }}>Cancelar</Button>
+              <Button variant="contained" onClick={() => { setReconcileWarnOpen(false); handleTransition('RECONCILED'); }} sx={{ bgcolor: '#F59E0B', color: '#1A1F2E', textTransform: 'none', '&:hover': { bgcolor: '#D97706' } }}>Conciliar sem NF</Button>
             </Box>
           </Card>
         </Box>

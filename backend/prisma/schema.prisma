@@ -4925,6 +4925,25 @@ model accounting_payment_obligations {
   created_by_accountant_id String?
   verified_by_accountant_id String?
   competency_id            String?
+
+  // ── Nota Fiscal: arquivos ──
+  invoice_pdf_storage_key    String?
+  invoice_pdf_filename       String?
+  invoice_pdf_mime_type      String?
+  invoice_pdf_size_bytes     Int?
+  invoice_xml_storage_key    String?
+  invoice_xml_filename       String?
+  invoice_xml_mime_type      String?
+  invoice_xml_size_bytes     Int?
+
+  // ── Nota Fiscal: metadados ──
+  invoice_number             String?
+  invoice_series             String?
+  invoice_access_key         String?
+  invoice_verification_code  String?
+  invoice_issued_at          DateTime?                          @db.Date
+  invoice_uploaded_at        DateTime?
+
   created_at               DateTime                             @default(now())
   updated_at               DateTime                             @updatedAt
 
