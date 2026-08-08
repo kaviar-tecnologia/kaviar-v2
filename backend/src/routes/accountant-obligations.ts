@@ -89,6 +89,16 @@ function serialize(o: any) {
     boleto_filename: o.boleto_filename,
     has_proof: !!o.proof_storage_key,
     proof_filename: o.proof_filename,
+    // Nota Fiscal
+    has_invoice: !!(o.invoice_pdf_storage_key || o.invoice_xml_storage_key || o.invoice_number),
+    invoice_pdf_filename: o.invoice_pdf_filename || null,
+    invoice_xml_filename: o.invoice_xml_filename || null,
+    invoice_number: o.invoice_number || null,
+    invoice_series: o.invoice_series || null,
+    invoice_access_key: o.invoice_access_key || null,
+    invoice_verification_code: o.invoice_verification_code || null,
+    invoice_issued_at: toDateStr(o.invoice_issued_at),
+    invoice_uploaded_at: toIso(o.invoice_uploaded_at),
     sent_at: toIso(o.sent_at), viewed_at: toIso(o.viewed_at), scheduled_at: toIso(o.scheduled_at),
     paid_at: toIso(o.paid_at), proof_uploaded_at: toIso(o.proof_uploaded_at),
     verified_at: toIso(o.verified_at), reconciled_at: toIso(o.reconciled_at),
@@ -653,6 +663,304 @@ router.get('/obligations/:id/audit', async (req: Request, res: Response) => {
     res.json({ success: true, data: audit });
   } catch (err: any) {
     console.error('[obligations] audit error:', err);
+    res.status(500).json({ success: false, error: 'Erro interno' });
+  }
+});
+
+// ── Invoice (Nota Fiscal) endpoints ─────────────────────────────────────
+
+const invoiceMetadataSchema = z.object({
+  invoice_number: z.string().trim().max(50).nullish().transform(v => v || null),
+  invoice_series: z.string().trim().max(10).nullish().transform(v => v || null),
+  invoice_access_key: z.string().trim().max(100).nullish().transform(v => v || null),
+  invoice_verification_code: z.string().trim().max(100).nullish().transform(v => v || null),
+  invoice_issued_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish().transform(v => v || null),
+}).strict().refine(
+  data => Object.values(data).some(v => v != null),
+  { message: 'Informe ao menos um campo' }
+);
+
+// Upload invoice PDF
+router.post('/obligations/:id/upload-invoice-pdf', async (req: Request, res: Response) => {
+  try {
+    const accountant = (req as any).accountant;
+    const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
+    if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
+    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    let storageKey = '';
+    const upload = multer({
+      storage: multerS3({
+        s3: s3Client,
+        bucket: BUCKET,
+        contentType: multerS3.AUTO_CONTENT_TYPE,
+        key: (_r: any, file: Express.Multer.File, cb: any) => {
+          const ext = getFileExtension(file.originalname);
+          const nonce = crypto.randomBytes(8).toString('hex');
+          storageKey = `accounting-invoices/${ob.id}/${nonce}${ext}`;
+          cb(null, storageKey);
+        },
+      }),
+      limits: { fileSize: MAX_FILE_SIZE },
+      fileFilter: (_r: any, file: Express.Multer.File, cb: any) => {
+        if (file.mimetype !== 'application/pdf') return cb(new Error('Tipo não permitido. Use PDF.'));
+        cb(null, true);
+      },
+    }).single('file');
+
+    await new Promise<void>((resolve, reject) => {
+      upload(req, res, (err: any) => { if (err) reject(err); else resolve(); });
+    });
+
+    const uploadedFile = (req as any).file;
+    if (!uploadedFile) return res.status(400).json({ success: false, error: 'Nenhum arquivo enviado' });
+
+    await prisma.accounting_payment_obligations.update({
+      where: { id: ob.id },
+      data: {
+        invoice_pdf_storage_key: storageKey,
+        invoice_pdf_filename: uploadedFile.originalname,
+        invoice_pdf_mime_type: uploadedFile.mimetype,
+        invoice_pdf_size_bytes: uploadedFile.size,
+        invoice_uploaded_at: new Date(),
+      },
+    });
+
+    await auditObligation({
+      obligationId: ob.id,
+      action: 'INVOICE_PDF_ATTACHED',
+      actorType: 'ACCOUNTANT',
+      actorId: accountant.id,
+      details: { filename: uploadedFile.originalname, size: uploadedFile.size },
+    });
+
+    res.json({ success: true, data: { filename: uploadedFile.originalname, size: uploadedFile.size } });
+  } catch (err: any) {
+    if (err.message?.includes('não permitid') || err.message?.includes('Tipo')) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    console.error('[obligations] upload-invoice-pdf error:', err);
+    res.status(500).json({ success: false, error: 'Erro interno no upload' });
+  }
+});
+
+// Upload invoice XML
+router.post('/obligations/:id/upload-invoice-xml', async (req: Request, res: Response) => {
+  try {
+    const accountant = (req as any).accountant;
+    const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
+    if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
+    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    let storageKey = '';
+    const upload = multer({
+      storage: multerS3({
+        s3: s3Client,
+        bucket: BUCKET,
+        contentType: multerS3.AUTO_CONTENT_TYPE,
+        key: (_r: any, file: Express.Multer.File, cb: any) => {
+          const ext = getFileExtension(file.originalname);
+          const nonce = crypto.randomBytes(8).toString('hex');
+          storageKey = `accounting-invoices/${ob.id}/${nonce}${ext}`;
+          cb(null, storageKey);
+        },
+      }),
+      limits: { fileSize: MAX_FILE_SIZE },
+      fileFilter: (_r: any, file: Express.Multer.File, cb: any) => {
+        const allowedXml = new Set(['application/xml', 'text/xml']);
+        if (!allowedXml.has(file.mimetype)) return cb(new Error('Tipo não permitido. Use XML.'));
+        cb(null, true);
+      },
+    }).single('file');
+
+    await new Promise<void>((resolve, reject) => {
+      upload(req, res, (err: any) => { if (err) reject(err); else resolve(); });
+    });
+
+    const uploadedFile = (req as any).file;
+    if (!uploadedFile) return res.status(400).json({ success: false, error: 'Nenhum arquivo enviado' });
+
+    await prisma.accounting_payment_obligations.update({
+      where: { id: ob.id },
+      data: {
+        invoice_xml_storage_key: storageKey,
+        invoice_xml_filename: uploadedFile.originalname,
+        invoice_xml_mime_type: uploadedFile.mimetype,
+        invoice_xml_size_bytes: uploadedFile.size,
+        invoice_uploaded_at: new Date(),
+      },
+    });
+
+    await auditObligation({
+      obligationId: ob.id,
+      action: 'INVOICE_XML_ATTACHED',
+      actorType: 'ACCOUNTANT',
+      actorId: accountant.id,
+      details: { filename: uploadedFile.originalname, size: uploadedFile.size },
+    });
+
+    res.json({ success: true, data: { filename: uploadedFile.originalname, size: uploadedFile.size } });
+  } catch (err: any) {
+    if (err.message?.includes('não permitid') || err.message?.includes('Tipo')) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    console.error('[obligations] upload-invoice-xml error:', err);
+    res.status(500).json({ success: false, error: 'Erro interno no upload' });
+  }
+});
+
+// Update invoice metadata
+router.patch('/obligations/:id/invoice-metadata', async (req: Request, res: Response) => {
+  try {
+    const accountant = (req as any).accountant;
+    const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
+    if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
+    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    const data = invoiceMetadataSchema.parse(req.body);
+
+    const updateData: any = {};
+    if (data.invoice_number !== undefined) updateData.invoice_number = data.invoice_number;
+    if (data.invoice_series !== undefined) updateData.invoice_series = data.invoice_series;
+    if (data.invoice_access_key !== undefined) updateData.invoice_access_key = data.invoice_access_key;
+    if (data.invoice_verification_code !== undefined) updateData.invoice_verification_code = data.invoice_verification_code;
+    if (data.invoice_issued_at !== undefined) updateData.invoice_issued_at = data.invoice_issued_at ? new Date(data.invoice_issued_at + 'T12:00:00Z') : null;
+
+    const updated = await prisma.accounting_payment_obligations.update({
+      where: { id: ob.id },
+      data: updateData,
+      include: INCLUDE,
+    });
+
+    await auditObligation({
+      obligationId: ob.id,
+      action: 'INVOICE_METADATA_UPDATED',
+      actorType: 'ACCOUNTANT',
+      actorId: accountant.id,
+      details: { fields_updated: Object.keys(updateData) },
+    });
+
+    res.json({ success: true, data: serialize(updated) });
+  } catch (err: any) {
+    if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
+    console.error('[obligations] invoice-metadata error:', err);
+    res.status(500).json({ success: false, error: 'Erro interno' });
+  }
+});
+
+// Download invoice PDF
+router.get('/obligations/:id/download-invoice-pdf', async (req: Request, res: Response) => {
+  try {
+    const accountant = (req as any).accountant;
+    const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
+    if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
+    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    if (!ob.invoice_pdf_storage_key) return res.status(404).json({ success: false, error: 'PDF da nota fiscal não disponível' });
+
+    const { generatePresignedGetUrl } = require('../services/accounting/accounting-document-storage.service');
+    const { downloadUrl, expiresInSeconds } = await generatePresignedGetUrl({
+      storageKey: ob.invoice_pdf_storage_key,
+      originalFilename: ob.invoice_pdf_filename || 'nota-fiscal.pdf',
+    });
+
+    res.json({ success: true, data: { download_url: downloadUrl, filename: ob.invoice_pdf_filename, expires_in_seconds: expiresInSeconds } });
+  } catch (err: any) {
+    console.error('[obligations] download-invoice-pdf error:', err);
+    res.status(500).json({ success: false, error: 'Erro interno' });
+  }
+});
+
+// Download invoice XML
+router.get('/obligations/:id/download-invoice-xml', async (req: Request, res: Response) => {
+  try {
+    const accountant = (req as any).accountant;
+    const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
+    if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
+    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    if (!ob.invoice_xml_storage_key) return res.status(404).json({ success: false, error: 'XML da nota fiscal não disponível' });
+
+    const { generatePresignedGetUrl } = require('../services/accounting/accounting-document-storage.service');
+    const { downloadUrl, expiresInSeconds } = await generatePresignedGetUrl({
+      storageKey: ob.invoice_xml_storage_key,
+      originalFilename: ob.invoice_xml_filename || 'nota-fiscal.xml',
+    });
+
+    res.json({ success: true, data: { download_url: downloadUrl, filename: ob.invoice_xml_filename, expires_in_seconds: expiresInSeconds } });
+  } catch (err: any) {
+    console.error('[obligations] download-invoice-xml error:', err);
+    res.status(500).json({ success: false, error: 'Erro interno' });
+  }
+});
+
+// Delete invoice (soft — does NOT remove from S3, only clears DB references)
+router.delete('/obligations/:id/invoice', async (req: Request, res: Response) => {
+  try {
+    const accountant = (req as any).accountant;
+    const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
+    if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
+    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    // Check there's something to remove
+    const hasInvoice = ob.invoice_pdf_storage_key || ob.invoice_xml_storage_key || ob.invoice_number;
+    if (!hasInvoice) return res.status(400).json({ success: false, error: 'Nenhuma nota fiscal vinculada' });
+
+    // Capture what was removed for audit
+    const removedDetails: any = {};
+    if (ob.invoice_pdf_filename) removedDetails.pdf_filename = ob.invoice_pdf_filename;
+    if (ob.invoice_xml_filename) removedDetails.xml_filename = ob.invoice_xml_filename;
+    if (ob.invoice_number) removedDetails.invoice_number = ob.invoice_number;
+    if (ob.invoice_series) removedDetails.invoice_series = ob.invoice_series;
+    if (ob.invoice_access_key) removedDetails.invoice_access_key = ob.invoice_access_key;
+    if (ob.invoice_verification_code) removedDetails.invoice_verification_code = ob.invoice_verification_code;
+    if (ob.invoice_pdf_storage_key) removedDetails.pdf_storage_key = ob.invoice_pdf_storage_key;
+    if (ob.invoice_xml_storage_key) removedDetails.xml_storage_key = ob.invoice_xml_storage_key;
+
+    // Clear all invoice fields (files remain in S3 — retention policy applies)
+    await prisma.accounting_payment_obligations.update({
+      where: { id: ob.id },
+      data: {
+        invoice_pdf_storage_key: null,
+        invoice_pdf_filename: null,
+        invoice_pdf_mime_type: null,
+        invoice_pdf_size_bytes: null,
+        invoice_xml_storage_key: null,
+        invoice_xml_filename: null,
+        invoice_xml_mime_type: null,
+        invoice_xml_size_bytes: null,
+        invoice_number: null,
+        invoice_series: null,
+        invoice_access_key: null,
+        invoice_verification_code: null,
+        invoice_issued_at: null,
+        invoice_uploaded_at: null,
+      },
+    });
+
+    await auditObligation({
+      obligationId: ob.id,
+      action: 'INVOICE_REMOVED',
+      actorType: 'ACCOUNTANT',
+      actorId: accountant.id,
+      details: removedDetails,
+    });
+
+    res.json({ success: true, data: { message: 'Nota fiscal removida da obrigação.' } });
+  } catch (err: any) {
+    console.error('[obligations] delete-invoice error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
 });
