@@ -80,7 +80,10 @@ const { default: localSupportRouter } = await import('../src/routes/admin-local-
 
 const app = express();
 app.use(express.json());
-app.use('/api/admin/presign', presignRouter);
+// Mount presignRouter on /api/admin just like the real app.ts
+app.use('/api/admin', presignRouter);
+// Dummy route mounted AFTER presignRouter on the same prefix to verify no leakage
+app.use('/api/admin/finance/categories', (_req, res) => res.json({ success: true, data: [] }));
 app.use('/api/admin/community-leaders', communityLeadersRouter);
 app.use('/api/admin/local-support', localSupportRouter);
 
@@ -97,18 +100,25 @@ describe('admin-presign role enforcement', () => {
   for (const role of ALLOWED_ROLES) {
     it(`allows ${role}`, async () => {
       authState.admin.role = role;
-      const res = await request(app).get('/api/admin/presign/presign?key=certidoes/test.pdf');
+      const res = await request(app).get('/api/admin/presign?key=certidoes/test.pdf');
       expect(res.status).not.toBe(403);
     });
   }
 
   for (const role of DENIED_ROLES) {
-    it(`denies ${role} with 403`, async () => {
+    it(`denies ${role} with 403 on /presign`, async () => {
       authState.admin.role = role;
-      const res = await request(app).get('/api/admin/presign/presign?key=certidoes/test.pdf');
+      const res = await request(app).get('/api/admin/presign?key=certidoes/test.pdf');
       expect(res.status).toBe(403);
     });
   }
+
+  it('FINANCE can still access /api/admin/finance/categories (no leakage)', async () => {
+    authState.admin.role = 'FINANCE';
+    const res = await request(app).get('/api/admin/finance/categories');
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+  });
 });
 
 // ─── community-leaders ───────────────────────────────────────────────────────

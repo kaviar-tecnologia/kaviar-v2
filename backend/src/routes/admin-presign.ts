@@ -10,9 +10,10 @@ const BUCKET = process.env.S3_UPLOADS_BUCKET || 'kaviar-uploads-847895361928';
 const REGION = 'us-east-2';
 
 router.use(authenticateAdmin);
-router.use(requireRole(['SUPER_ADMIN', 'TERRITORIAL_OPERATOR', 'TERRITORIAL_MANAGER']));
 
-router.get('/presign', async (req, res) => {
+const PRESIGN_ROLES = ['SUPER_ADMIN', 'TERRITORIAL_OPERATOR', 'TERRITORIAL_MANAGER'];
+
+router.get('/presign', requireRole(PRESIGN_ROLES), async (req, res) => {
   if (!FEATURE_ENABLED) {
     return res.status(404).json({ success: false, error: 'Feature disabled' });
   }
