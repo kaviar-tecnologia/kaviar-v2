@@ -1,0 +1,12 @@
+name = "kaviar-email-inbound-worker"
+main = "src/index.js"
+compatibility_date = "2026-07-11"
+
+# Preserva bindings/variáveis existentes configurados no Cloudflare.
+keep_vars = true
+
+[vars]
+INBOUND_WEBHOOK_URL = "https://api.kaviar.com.br/api/inbound/email/cloudflare"
+
+[secrets]
+required = ["INBOUND_EMAIL_WEBHOOK_SECRET"]
