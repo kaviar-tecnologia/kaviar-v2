@@ -124,12 +124,13 @@ test.describe('Accounting Portal — Links (Vínculos)', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
 
-    // Permission checkboxes (labels are the permission string values)
-    await expect(dialog.getByLabel('VIEW_TRANSACTIONS')).toBeVisible();
-    await expect(dialog.getByLabel('VIEW_REPORTS')).toBeVisible();
-    await expect(dialog.getByLabel('EXPORT_DATA')).toBeVisible();
-    await expect(dialog.getByLabel('MANAGE_DOCUMENTS')).toBeVisible();
-    await expect(dialog.getByLabel('SUBMIT_DECLARATIONS')).toBeVisible();
+    // Permission checkboxes use the actual PT-BR labels
+    await expect(dialog.getByLabel('Visualizar')).toBeVisible();
+    await expect(dialog.getByLabel('Enviar documentos')).toBeVisible();
+    await expect(dialog.getByLabel('Baixar documentos')).toBeVisible();
+    await expect(dialog.getByLabel('Solicitar correção')).toBeVisible();
+    await expect(dialog.getByLabel('Marcar processado')).toBeVisible();
+    await expect(dialog.getByLabel('Concluir competência')).toBeVisible();
   });
 
   test('inherits_children checkbox is present in dialog', async ({ page }) => {
@@ -191,14 +192,12 @@ test.describe('Accounting Portal — Links (Vínculos)', () => {
     await dialog.getByLabel('Empresa').click();
     await page.getByRole('option', { name: /KAVIAR TECNOLOGIA/i }).click();
 
-    // Set scope
+    // Set scope (default is COMPLETO, change to FISCAL)
     await dialog.getByLabel('Escopo').click();
-    await page.getByRole('option', { name: 'FULL' }).click();
+    await page.getByRole('option', { name: 'FISCAL' }).click();
 
-    // Check permissions
-    await dialog.getByLabel('VIEW_TRANSACTIONS').check();
-    await dialog.getByLabel('VIEW_REPORTS').check();
-    await dialog.getByLabel('EXPORT_DATA').check();
+    // Toggle permissions — can_view is true by default, enable can_upload
+    await dialog.getByLabel('Enviar documentos').check();
 
     await dialog.getByRole('button', { name: /Salvar vínculo/i }).click();
 
@@ -206,8 +205,9 @@ test.describe('Accounting Portal — Links (Vínculos)', () => {
     expect(postBody).not.toBeNull();
     expect((postBody as Record<string, unknown>).accountant_id).toBe('acc-1');
     expect((postBody as Record<string, unknown>).legal_entity_id).toBe('ent-1');
-    expect((postBody as Record<string, unknown>).scope).toBe('FULL');
-    expect((postBody as Record<string, unknown>).permissions).toContain('VIEW_TRANSACTIONS');
+    expect((postBody as Record<string, unknown>).scope).toBe('FISCAL');
+    expect((postBody as Record<string, unknown>).can_view).toBe(true);
+    expect((postBody as Record<string, unknown>).can_upload).toBe(true);
   });
 
   test('Status chip shows ACTIVE/SUSPENDED/REVOKED', async ({ page }) => {

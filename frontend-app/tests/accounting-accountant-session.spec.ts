@@ -21,13 +21,17 @@ test.describe('Accountant Session & Protected Route', () => {
     await page.route('**/api/accountant/auth/me', (route) =>
       route.fulfill({
         status: 200,
-        body: JSON.stringify({ success: true, data: { id: 1, name: 'Maria CPA', email: 'maria@firma.com' } }),
+        body: JSON.stringify({ success: true, data: { id: 1, nome_completo: 'Maria CPA', email: 'maria@firma.com' } }),
         contentType: 'application/json',
       })
     );
+    await page.route('**/api/accountant/portal/**', (route) =>
+      route.fulfill({ status: 200, body: JSON.stringify({ success: true, data: null }), contentType: 'application/json' })
+    );
 
     await page.goto('/contador');
-    await expect(page.getByText('Portal do Contador KAVIAR')).toBeVisible();
+    await expect(page.getByText('KAVIAR')).toBeVisible();
+    await expect(page.getByText('Portal do Contador')).toBeVisible();
     await expect(page.getByText('Maria CPA')).toBeVisible();
     await expect(page.getByText('maria@firma.com')).toBeVisible();
   });
@@ -43,13 +47,16 @@ test.describe('Accountant Session & Protected Route', () => {
     await page.route('**/api/accountant/auth/me', (route) =>
       route.fulfill({
         status: 200,
-        body: JSON.stringify({ success: true, data: { id: 1, name: 'Maria CPA', email: 'maria@firma.com' } }),
+        body: JSON.stringify({ success: true, data: { id: 1, nome_completo: 'Maria CPA', email: 'maria@firma.com' } }),
         contentType: 'application/json',
       })
     );
+    await page.route('**/api/accountant/portal/**', (route) =>
+      route.fulfill({ status: 200, body: JSON.stringify({ success: true, data: null }), contentType: 'application/json' })
+    );
 
     await page.goto('/contador');
-    await expect(page.getByText('Portal do Contador KAVIAR')).toBeVisible();
+    await expect(page.getByText('Portal do Contador')).toBeVisible();
 
     // Mock logout endpoint
     await page.route('**/api/accountant/auth/logout', (route) =>
@@ -103,13 +110,16 @@ test.describe('Accountant Session & Protected Route', () => {
     await page.route('**/api/accountant/auth/me', (route) =>
       route.fulfill({
         status: 200,
-        body: JSON.stringify({ success: true, data: { id: 1, name: 'Test', email: 'test@test.com' } }),
+        body: JSON.stringify({ success: true, data: { id: 1, nome_completo: 'Test', email: 'test@test.com' } }),
         contentType: 'application/json',
       })
     );
+    await page.route('**/api/accountant/portal/**', (route) =>
+      route.fulfill({ status: 200, body: JSON.stringify({ success: true, data: null }), contentType: 'application/json' })
+    );
 
     await page.goto('/contador');
-    await expect(page.getByText('Portal do Contador KAVIAR')).toBeVisible();
+    await expect(page.getByText('Portal do Contador')).toBeVisible();
 
     const localStorage = await page.evaluate(() => JSON.stringify(window.localStorage));
     const sessionStorage = await page.evaluate(() => JSON.stringify(window.sessionStorage));
@@ -131,17 +141,20 @@ test.describe('Accountant Session & Protected Route', () => {
     await page.route('**/api/accountant/auth/me', (route) =>
       route.fulfill({
         status: 200,
-        body: JSON.stringify({ success: true, data: { id: 1, name: 'Maria CPA', email: 'maria@firma.com' } }),
+        body: JSON.stringify({ success: true, data: { id: 1, nome_completo: 'Maria CPA', email: 'maria@firma.com' } }),
         contentType: 'application/json',
       })
     );
+    await page.route('**/api/accountant/portal/**', (route) =>
+      route.fulfill({ status: 200, body: JSON.stringify({ success: true, data: null }), contentType: 'application/json' })
+    );
 
     await page.goto('/contador');
-    await expect(page.getByText('Portal do Contador KAVIAR')).toBeVisible();
+    await expect(page.getByText('Portal do Contador')).toBeVisible();
 
     // Reload page — routes persist, session should recover via refresh cookie
     await page.reload();
-    await expect(page.getByText('Portal do Contador KAVIAR')).toBeVisible();
+    await expect(page.getByText('Portal do Contador')).toBeVisible();
   });
 
   test('admin token does not work for /contador', async ({ page }) => {
