@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { authenticateAdmin } from '../middlewares/auth';
+import { authenticateAdmin, requireRole } from '../middlewares/auth';
 
 const router = Router();
 
@@ -11,7 +11,9 @@ const REGION = 'us-east-2';
 
 router.use(authenticateAdmin);
 
-router.get('/presign', async (req, res) => {
+const PRESIGN_ROLES = ['SUPER_ADMIN', 'TERRITORIAL_OPERATOR', 'TERRITORIAL_MANAGER'];
+
+router.get('/presign', requireRole(PRESIGN_ROLES), async (req, res) => {
   if (!FEATURE_ENABLED) {
     return res.status(404).json({ success: false, error: 'Feature disabled' });
   }

@@ -1,10 +1,11 @@
 import { Router, Request, Response } from 'express';
-import { authenticateAdmin } from '../middlewares/auth';
+import { authenticateAdmin, requireRole } from '../middlewares/auth';
 import { requireLocalSupportEnabled } from '../middlewares/local-support-flag';
 import { localSupportService } from '../services/local-support.service';
 
 const router = Router();
 router.use(authenticateAdmin);
+router.use(requireRole(['SUPER_ADMIN', 'OPERATOR', 'TERRITORIAL_MANAGER', 'TERRITORIAL_OPERATOR']));
 router.use(requireLocalSupportEnabled);
 
 // GET /api/admin/local-support/drivers

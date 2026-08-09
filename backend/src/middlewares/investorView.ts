@@ -47,7 +47,8 @@ const investorView = (req: Request, res: Response, next: NextFunction) => {
     '/api/drivers/documents', // PII
   ];
 
-  const isBlocked = blockedPaths.some(path => req.path.startsWith(path));
+  const fullPath = `${req.baseUrl}${req.path}`;
+  const isBlocked = blockedPaths.some(path => fullPath.startsWith(path));
   
   if (isBlocked) {
     return res.status(403).json({
