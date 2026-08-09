@@ -24,6 +24,16 @@ async function interceptAccountingAPIs(page: Page) {
       body: JSON.stringify({ success: true, data: [], pagination: { total: 0, page: 1, limit: 25 } }),
     });
   });
+  await page.route('**/api/admin/accounting/setup-progress**', async (route) => {
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: { percentage: 100, steps: { entity: true, firm: true, accountant: true, link: true, invite: true, activation: true }, nextStep: 'COMPLETE' },
+      }),
+    });
+  });
 }
 
 test.describe('Accounting Portal — Navigation', () => {
@@ -71,13 +81,13 @@ test.describe('Accounting Portal — Navigation', () => {
     await expect(page).not.toHaveURL(/portal-contador/);
   });
 
-  test('Page shows 4 tabs: Empresas, Escritórios, Contadores, Vínculos', async ({ page }) => {
+  test('Page shows 4 tabs: Empresas, Escritórios, Equipe, Vínculos', async ({ page }) => {
     await setupAuth(page, SA_DATA);
     await interceptAccountingAPIs(page);
     await page.goto('/admin/portal-contador');
     await expect(page.getByRole('tab', { name: /Empresas/i })).toBeVisible();
     await expect(page.getByRole('tab', { name: /Escritórios/i })).toBeVisible();
-    await expect(page.getByRole('tab', { name: /Contadores/i })).toBeVisible();
+    await expect(page.getByRole('tab', { name: /Equipe/i })).toBeVisible();
     await expect(page.getByRole('tab', { name: /Vínculos/i })).toBeVisible();
   });
 
