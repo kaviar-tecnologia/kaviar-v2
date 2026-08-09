@@ -1,4 +1,4 @@
-FROM node:20-slim AS builder
+FROM node:24-slim AS builder
 
 ARG GIT_COMMIT=unknown
 ENV GIT_COMMIT=${GIT_COMMIT}
@@ -22,7 +22,7 @@ RUN npx prisma generate
 RUN rm -rf dist
 RUN npm run build
 
-FROM node:20-slim
+FROM node:24-slim
 
 ARG GIT_COMMIT=unknown
 
