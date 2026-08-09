@@ -127,7 +127,7 @@ async function interceptAPI(page: Page, accountants: unknown[], options: { invit
 
 async function navigateToAccountantsTab(page: Page) {
   await page.goto('/admin/portal-contador');
-  await page.getByRole('tab', { name: /Contadores/i }).click();
+  await page.getByRole('tab', { name: /Equipe/i }).click();
   // Wait for table to render
   await page.waitForTimeout(500);
 }

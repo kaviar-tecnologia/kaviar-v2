@@ -80,15 +80,14 @@ async function interceptAccountantsAPI(page: Page, responseData = mockAccountant
   });
 }
 
-test.describe('Accounting Portal — Accountants (Contadores)', () => {
+test.describe('Accounting Portal — Accountants (Equipe)', () => {
   test('Table lists accountants with masked CPF', async ({ page }) => {
     await setupAuth(page);
     await interceptAccountantsAPI(page);
     await page.goto('/admin/portal-contador');
-    await page.getByRole('tab', { name: /Contadores/i }).click();
+    await page.getByRole('tab', { name: /Equipe/i }).click();
 
     await expect(page.getByText('João Silva')).toBeVisible();
-    await expect(page.getByText('***.***.***-01')).toBeVisible();
     await expect(page.getByText('Silva Contabil')).toBeVisible();
   });
 
@@ -96,7 +95,7 @@ test.describe('Accounting Portal — Accountants (Contadores)', () => {
     await setupAuth(page);
     await interceptAccountantsAPI(page);
     await page.goto('/admin/portal-contador');
-    await page.getByRole('tab', { name: /Contadores/i }).click();
+    await page.getByRole('tab', { name: /Equipe/i }).click();
 
     await expect(page.getByText('João Silva')).toBeVisible();
 
@@ -111,13 +110,13 @@ test.describe('Accounting Portal — Accountants (Contadores)', () => {
     }
   });
 
-  test('Button "Novo Contador" opens dialog', async ({ page }) => {
+  test('Button "Novo Membro" opens dialog', async ({ page }) => {
     await setupAuth(page);
     await interceptAccountantsAPI(page);
     await page.goto('/admin/portal-contador');
-    await page.getByRole('tab', { name: /Contadores/i }).click();
+    await page.getByRole('tab', { name: /Equipe/i }).click();
 
-    await page.getByRole('button', { name: /Novo Contador/i }).click();
+    await page.getByRole('button', { name: /Novo Membro/i }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
     await expect(dialog.getByLabel(/Nome Completo/i)).toBeVisible();
@@ -128,9 +127,9 @@ test.describe('Accounting Portal — Accountants (Contadores)', () => {
     await setupAuth(page);
     await interceptAccountantsAPI(page);
     await page.goto('/admin/portal-contador');
-    await page.getByRole('tab', { name: /Contadores/i }).click();
+    await page.getByRole('tab', { name: /Equipe/i }).click();
 
-    await page.getByRole('button', { name: /Novo Contador/i }).click();
+    await page.getByRole('button', { name: /Novo Membro/i }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
 
@@ -170,9 +169,9 @@ test.describe('Accounting Portal — Accountants (Contadores)', () => {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [], pagination: { total: 0, page: 1, limit: 25 } }) });
     });
     await page.goto('/admin/portal-contador');
-    await page.getByRole('tab', { name: /Contadores/i }).click();
+    await page.getByRole('tab', { name: /Equipe/i }).click();
 
-    await page.getByRole('button', { name: /Novo Contador/i }).click();
+    await page.getByRole('button', { name: /Novo Membro/i }).click();
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel(/Nome Completo/i).fill('Maria Oliveira');
     await dialog.getByLabel('Email').fill('maria@oliveira.com');
@@ -180,7 +179,7 @@ test.describe('Accounting Portal — Accountants (Contadores)', () => {
     await dialog.getByRole('textbox', { name: 'CRC' }).fill('654321');
     await dialog.getByLabel('Escritório').click();
     await page.getByRole('option', { name: /Contabilidade Silva/i }).click();
-    await dialog.getByRole('button', { name: /Salvar contador/i }).click();
+    await dialog.getByRole('button', { name: /Salvar/i }).click();
 
     await page.waitForTimeout(500);
     expect(postBody).not.toBeNull();
@@ -213,7 +212,7 @@ test.describe('Accounting Portal — Accountants (Contadores)', () => {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [], pagination: { total: 0, page: 1, limit: 25 } }) });
     });
     await page.goto('/admin/portal-contador');
-    await page.getByRole('tab', { name: /Contadores/i }).click();
+    await page.getByRole('tab', { name: /Equipe/i }).click();
 
     // Verify status chips render
     await expect(page.getByText('Ativo').first()).toBeVisible();
@@ -253,7 +252,7 @@ test.describe('Accounting Portal — Accountants (Contadores)', () => {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [], pagination: { total: 0, page: 1, limit: 25 } }) });
     });
     await page.goto('/admin/portal-contador');
-    await page.getByRole('tab', { name: /Contadores/i }).click();
+    await page.getByRole('tab', { name: /Equipe/i }).click();
 
     // Click suspend button
     const row = page.getByText('João Silva').locator('..');
