@@ -7,7 +7,7 @@ import AccountantsTab from './AccountantsTab';
 import LinksTab from './LinksTab';
 import SetupProgressCard from '../../../components/admin/accounting/SetupProgressCard';
 
-const TAB_KEYS = ['empresas', 'escritorios', 'contadores', 'vinculos'];
+const TAB_KEYS = ['empresas', 'escritorios', 'equipe', 'vinculos'];
 
 export default function AccountingPortalPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -28,7 +28,7 @@ export default function AccountingPortalPage() {
             Portal do Contador — Administração
           </Typography>
           <Typography sx={{ color: '#4B5563', fontSize: 13, mt: 0.5 }}>
-            Empresas, escritórios, contadores e vínculos contábeis.
+            Empresas, escritórios, equipe e vínculos contábeis.
           </Typography>
           <Typography sx={{ color: '#6B7280', fontSize: 12, mt: 1, fontStyle: 'italic' }}>
             Sequência: Cadastre uma Empresa → Escritório → Contador → Vínculo → Convide o contador.
@@ -45,7 +45,7 @@ export default function AccountingPortalPage() {
         >
         <Tab label="Empresas" />
         <Tab label="Escritórios" />
-        <Tab label="Contadores" />
+        <Tab label="Equipe" />
         <Tab label="Vínculos" />
       </Tabs>
 
