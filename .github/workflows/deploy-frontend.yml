@@ -43,7 +43,7 @@ jobs:
           fi
 
       # ── 3. Checkout exact SHA ──────────────────────────────────────────────
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.commit_sha }}
 
@@ -65,7 +65,7 @@ jobs:
 
       # ── 5. Setup Node ──────────────────────────────────────────────────────
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '20'
           cache: 'npm'
@@ -133,7 +133,7 @@ jobs:
 
       # ── 8. Configure AWS ───────────────────────────────────────────────────
       - name: Configure AWS
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
