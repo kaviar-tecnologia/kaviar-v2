@@ -21,7 +21,8 @@ env:
   ECR_REGISTRY: 847895361928.dkr.ecr.us-east-2.amazonaws.com
   ECR_REPOSITORY: kaviar-backend
   MIGRATION_FAMILY: kaviar-prisma-migration
-  MIGRATION_DATABASE_URL_SSM_PARAMETER: /kaviar/prod/migration_database_url
+  RDS_INSTANCE_ID: kaviar-prod-db
+  RDS_DATABASE: kaviar
 
 jobs:
   migrate:
@@ -59,6 +60,44 @@ jobs:
 
           echo "image=${MIGRATION_IMAGE}" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve RDS managed secret and endpoint
+        id: rds
+        run: |
+          set -euo pipefail
+
+          RDS_JSON=$(aws rds describe-db-instances \
+            --db-instance-identifier "$RDS_INSTANCE_ID" \
+            --region "$AWS_REGION" \
+            --query 'DBInstances[0].{SecretArn:MasterUserSecret.SecretArn,SecretStatus:MasterUserSecret.SecretStatus,Host:Endpoint.Address,Port:Endpoint.Port}' \
+            --output json)
+
+          SECRET_ARN=$(echo "$RDS_JSON" | jq -r '.SecretArn // empty')
+          SECRET_STATUS=$(echo "$RDS_JSON" | jq -r '.SecretStatus // empty')
+          DB_HOST=$(echo "$RDS_JSON" | jq -r '.Host // empty')
+          DB_PORT=$(echo "$RDS_JSON" | jq -r '.Port // empty')
+
+          if [ -z "$SECRET_ARN" ]; then
+            echo "ABORT: RDS instance $RDS_INSTANCE_ID has no MasterUserSecret.SecretArn" >&2
+            exit 1
+          fi
+
+          if [ "$SECRET_STATUS" != "active" ]; then
+            echo "ABORT: RDS MasterUserSecret status is '$SECRET_STATUS', expected 'active'" >&2
+            exit 1
+          fi
+
+          if [ -z "$DB_HOST" ] || [ -z "$DB_PORT" ]; then
+            echo "ABORT: Could not resolve RDS endpoint" >&2
+            exit 1
+          fi
+
+          echo "secret_arn=$SECRET_ARN" >> "$GITHUB_OUTPUT"
+          echo "db_host=$DB_HOST" >> "$GITHUB_OUTPUT"
+          echo "db_port=$DB_PORT" >> "$GITHUB_OUTPUT"
+
+          echo "RDS secret ARN resolved (status: $SECRET_STATUS)"
+          echo "RDS endpoint: $DB_HOST:$DB_PORT"
+
       - name: Resolve backend ECS runtime config
         id: ecs
         run: |
@@ -91,48 +130,59 @@ jobs:
 
           BACKEND_TASK_DEFINITION='${{ steps.ecs.outputs.task_definition }}'
           MIGRATION_IMAGE='${{ steps.migration-image.outputs.image }}'
+          SECRET_ARN='${{ steps.rds.outputs.secret_arn }}'
+          DB_HOST='${{ steps.rds.outputs.db_host }}'
+          DB_PORT='${{ steps.rds.outputs.db_port }}'
 
           echo "Workflow SHA: ${GITHUB_SHA}"
           echo "Migration image (expected): ${MIGRATION_IMAGE}"
           echo "Base runtime task definition: ${BACKEND_TASK_DEFINITION}"
 
-          MIGRATION_DATABASE_URL_ARN=$(aws ssm get-parameter \
-            --name "$MIGRATION_DATABASE_URL_SSM_PARAMETER" \
-            --region "$AWS_REGION" \
-            --query 'Parameter.ARN' \
-            --output text)
-
-          if [ -z "$MIGRATION_DATABASE_URL_ARN" ] || [ "$MIGRATION_DATABASE_URL_ARN" = "None" ]; then
-            echo "Missing migration database URL parameter ARN" >&2
-            exit 1
-          fi
-
           TASK_DEF=$(aws ecs describe-task-definition \
             --task-definition "$BACKEND_TASK_DEFINITION" \
             --region "$AWS_REGION")
 
-          HAS_DATABASE_URL_SECRET=$(echo "$TASK_DEF" | jq -r '
-            [.taskDefinition.containerDefinitions[0].secrets[]? | select(.name == "DATABASE_URL")] | length
-          ')
-
-          if [ "$HAS_DATABASE_URL_SECRET" != "1" ]; then
-            echo "Expected exactly one DATABASE_URL secret in backend task definition" >&2
-            exit 1
-          fi
+          # Build the migration command: assemble DATABASE_URL in-memory from secrets, run prisma
+          MIGRATE_CMD='node -e "
+            const u = encodeURIComponent(process.env.MIGRATION_DB_USER);
+            const p = encodeURIComponent(process.env.MIGRATION_DB_PASSWORD);
+            const h = process.env.MIGRATION_DB_HOST;
+            const port = process.env.MIGRATION_DB_PORT;
+            const db = process.env.MIGRATION_DB_NAME;
+            const url = \"postgresql://\" + u + \":\" + p + \"@\" + h + \":\" + port + \"/\" + db;
+            const {execSync} = require(\"child_process\");
+            execSync(\"npx prisma migrate deploy\", {
+              stdio: \"inherit\",
+              env: {...process.env, DATABASE_URL: url, MIGRATION_DB_USER: undefined, MIGRATION_DB_PASSWORD: undefined}
+            });
+          "'
 
           NEW_TASK_DEF=$(echo "$TASK_DEF" | jq \
             --arg family "$MIGRATION_FAMILY" \
             --arg container "$BACKEND_CONTAINER_NAME" \
             --arg migrationImage "$MIGRATION_IMAGE" \
-            --arg migrationDatabaseUrlArn "$MIGRATION_DATABASE_URL_ARN" '
+            --arg secretArn "$SECRET_ARN" \
+            --arg dbHost "$DB_HOST" \
+            --arg dbPort "$DB_PORT" \
+            --arg dbName "$RDS_DATABASE" \
+            --arg migrateCmd "$MIGRATE_CMD" '
               .taskDefinition
               | .family = $family
               | .containerDefinitions[0].name = $container
               | .containerDefinitions[0].image = $migrationImage
-              | .containerDefinitions[0].command = ["sh", "-lc", "npx --yes prisma migrate deploy"]
-              | .containerDefinitions[0].secrets = (
-                  .containerDefinitions[0].secrets
-                  | map(if .name == "DATABASE_URL" then .valueFrom = $migrationDatabaseUrlArn else . end)
+              | .containerDefinitions[0].command = ["sh", "-lc", $migrateCmd]
+              | .containerDefinitions[0].secrets = [
+                  { "name": "MIGRATION_DB_USER", "valueFrom": ($secretArn + ":username::") },
+                  { "name": "MIGRATION_DB_PASSWORD", "valueFrom": ($secretArn + ":password::") }
+                ]
+              | .containerDefinitions[0].environment = (
+                  (.containerDefinitions[0].environment // [])
+                  | map(select(.name != "DATABASE_URL"))
+                  | . + [
+                      { "name": "MIGRATION_DB_HOST", "value": $dbHost },
+                      { "name": "MIGRATION_DB_PORT", "value": $dbPort },
+                      { "name": "MIGRATION_DB_NAME", "value": $dbName }
+                    ]
                 )
               | del(
                   .taskDefinitionArn,
@@ -145,9 +195,14 @@ jobs:
                 )
             ')
 
-          LEAKED=$(echo "$NEW_TASK_DEF" | jq -r '[.containerDefinitions[0].environment[]?.name] | map(select(. == "DATABASE_URL" or . == "MIGRATION_DATABASE_URL")) | join(",")')
+          # Safety: ensure no DATABASE_URL or password in plaintext environment
+          LEAKED=$(echo "$NEW_TASK_DEF" | jq -r '
+            [.containerDefinitions[0].environment[]?.name]
+            | map(select(. == "DATABASE_URL" or . == "MIGRATION_DB_PASSWORD" or . == "MIGRATION_DATABASE_URL"))
+            | join(",")
+          ')
           if [ -n "$LEAKED" ]; then
-            echo "ABORT: database URL found in plaintext environment: $LEAKED" >&2
+            echo "ABORT: sensitive variable found in plaintext environment: $LEAKED" >&2
             exit 1
           fi
 

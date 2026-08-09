@@ -110,7 +110,7 @@ test.describe('Accounting Portal — Links (Vínculos)', () => {
     await page.getByRole('button', { name: /Novo Vínculo/i }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByLabel('Contador')).toBeVisible();
+    await expect(dialog.getByLabel('Membro da equipe')).toBeVisible();
     await expect(dialog.getByLabel('Empresa')).toBeVisible();
   });
 
@@ -184,7 +184,7 @@ test.describe('Accounting Portal — Links (Vínculos)', () => {
     const dialog = page.getByRole('dialog');
 
     // Select accountant
-    await dialog.getByLabel('Contador').click();
+    await dialog.getByLabel('Membro da equipe').click();
     await page.getByRole('option', { name: /João Silva/i }).click();
 
     // Select entity

@@ -110,7 +110,7 @@ export default function LinksTab() {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>Contador</TableCell>
+                <TableCell>Membro da equipe</TableCell>
                 <TableCell>Empresa</TableCell>
                 <TableCell>Escopo</TableCell>
                 <TableCell>Permissões</TableCell>
