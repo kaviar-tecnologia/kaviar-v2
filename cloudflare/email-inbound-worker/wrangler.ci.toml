@@ -1,6 +1,7 @@
 name = "kaviar-email-inbound-worker"
 main = "src/index.js"
 compatibility_date = "2026-07-11"
+tsconfig = "tsconfig.json"
 
 # Preserva bindings/variáveis existentes configurados no Cloudflare.
 keep_vars = true
