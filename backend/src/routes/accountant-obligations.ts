@@ -6,6 +6,13 @@ import multerS3 from 'multer-s3';
 import { S3Client } from '@aws-sdk/client-s3';
 import crypto from 'crypto';
 import { verifyEntityAccess, getAccessibleEntityIds } from '../services/accounting/accounting-documents.service';
+import {
+  requireAccountingAccess,
+  handleAccessError,
+  AccessDeniedError,
+  EntityNotFoundError,
+  getAccessibleEntityIdsForScope,
+} from '../services/accounting/accounting-access.service';
 import { generateObligationToken, auditObligation } from '../services/accounting/accounting-obligation-tokens.service';
 import { getFileExtension, MAX_FILE_SIZE } from '../services/accounting/accounting-document-storage.service';
 import { emailService } from '../services/email/email.service';
@@ -121,7 +128,7 @@ const INCLUDE = {
 router.get('/obligations', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
-    const entityIds = await getAccessibleEntityIds(accountant.id);
+    const entityIds = await getAccessibleEntityIdsForScope(accountant.id, 'FINANCEIRO');
     if (entityIds.length === 0) return res.json({ success: true, data: [] });
 
     const entityId = req.query.legal_entity_id as string;
@@ -155,11 +162,14 @@ router.get('/obligations/:id', async (req: Request, res: Response) => {
     });
     if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
 
-    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+    await requireAccountingAccess(accountant.id, ob.legal_entity_id, {
+      scope: 'FINANCEIRO',
+      permission: 'can_view',
+    });
 
     res.json({ success: true, data: serialize(ob) });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     console.error('[obligations] detail error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
@@ -170,8 +180,10 @@ router.post('/obligations', async (req: Request, res: Response) => {
     const accountant = (req as any).accountant;
     const data = createObligationSchema.parse(req.body);
 
-    const link = await verifyEntityAccess(accountant.id, data.legal_entity_id);
-    if (!link) return res.status(403).json({ success: false, error: 'Acesso negado à empresa' });
+    await requireAccountingAccess(accountant.id, data.legal_entity_id, {
+      scope: 'FINANCEIRO',
+      permission: 'can_upload',
+    });
 
     const ob = await prisma.accounting_payment_obligations.create({
       data: {
@@ -187,6 +199,7 @@ router.post('/obligations', async (req: Request, res: Response) => {
 
     res.status(201).json({ success: true, data: serialize(ob) });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     if (err.name === 'ZodError') {
       console.warn('[obligations:create] validation failed:', JSON.stringify({ body: req.body, errors: err.errors }));
       return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
@@ -205,8 +218,10 @@ router.post('/obligations/:id/transition', async (req: Request, res: Response) =
     const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
     if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
 
-    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+    await requireAccountingAccess(accountant.id, ob.legal_entity_id, {
+      scope: 'FINANCEIRO',
+      permission: 'can_mark_processed',
+    });
 
     const machine = VALID_TRANSITIONS[ob.status];
     if (!machine || !machine.targets.includes(data.status)) {
@@ -256,6 +271,7 @@ router.post('/obligations/:id/transition', async (req: Request, res: Response) =
 
     res.json({ success: true, data: serialize(updated) });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
     console.error('[obligations] transition error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
@@ -269,8 +285,10 @@ router.post('/obligations/:id/upload-boleto', async (req: Request, res: Response
     const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
     if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
 
-    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+    await requireAccountingAccess(accountant.id, ob.legal_entity_id, {
+      scope: 'FINANCEIRO',
+      permission: 'can_upload',
+    });
 
     let storageKey = '';
     const upload = multer({
@@ -321,6 +339,7 @@ router.post('/obligations/:id/upload-boleto', async (req: Request, res: Response
 
     res.json({ success: true, data: { filename: uploadedFile.originalname, size: uploadedFile.size } });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     if (err.message?.includes('não permitid') || err.message?.includes('Tipo')) {
       return res.status(400).json({ success: false, error: err.message });
     }
@@ -336,8 +355,10 @@ router.post('/obligations/:id/generate-link', async (req: Request, res: Response
     const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
     if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
 
-    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+    await requireAccountingAccess(accountant.id, ob.legal_entity_id, {
+      scope: 'FINANCEIRO',
+      permission: 'can_view',
+    });
 
     // Block link generation for DRAFT or without boleto
     if (ob.status === 'DRAFT') {
@@ -365,6 +386,7 @@ router.post('/obligations/:id/generate-link', async (req: Request, res: Response
       data: { link: publicLink, expires_at: expiresAt.toISOString(), token },
     });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     console.error('[obligations] generate-link error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
@@ -374,7 +396,7 @@ router.post('/obligations/:id/generate-link', async (req: Request, res: Response
 router.get('/obligations/reports/summary', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
-    const entityIds = await getAccessibleEntityIds(accountant.id);
+    const entityIds = await getAccessibleEntityIdsForScope(accountant.id, 'FINANCEIRO');
     if (entityIds.length === 0) return res.json({ success: true, data: { cards: {}, obligations: [] } });
 
     const entityId = req.query.legal_entity_id as string;
@@ -408,7 +430,7 @@ router.get('/obligations/reports/summary', async (req: Request, res: Response) =
 router.get('/obligations/reports/csv', async (req: Request, res: Response) => {
   try {
     const accountant = (req as any).accountant;
-    const entityIds = await getAccessibleEntityIds(accountant.id);
+    const entityIds = await getAccessibleEntityIdsForScope(accountant.id, 'FINANCEIRO');
     if (entityIds.length === 0) { res.setHeader('Content-Type', 'text/csv'); return res.send(''); }
 
     const entityId = req.query.legal_entity_id as string;
@@ -454,8 +476,10 @@ router.get('/obligations/:id/link-status', async (req: Request, res: Response) =
     const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
     if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
 
-    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+    await requireAccountingAccess(accountant.id, ob.legal_entity_id, {
+      scope: 'FINANCEIRO',
+      permission: 'can_view',
+    });
 
     const activeToken = await prisma.accounting_obligation_access_tokens.findFirst({
       where: { obligation_id: ob.id, is_active: true, expires_at: { gt: new Date() } },
@@ -475,6 +499,7 @@ router.get('/obligations/:id/link-status', async (req: Request, res: Response) =
       },
     });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     console.error('[obligations] link-status error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
@@ -495,8 +520,10 @@ router.post('/obligations/:id/send-email', async (req: Request, res: Response) =
     });
     if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
 
-    const accessLink = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
-    if (!accessLink) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+    await requireAccountingAccess(accountant.id, ob.legal_entity_id, {
+      scope: 'FINANCEIRO',
+      permission: 'can_view',
+    });
 
     // Guard: DRAFT requires boleto attached
     if (ob.status === 'DRAFT' && !ob.boleto_storage_key) {
@@ -590,6 +617,7 @@ router.post('/obligations/:id/send-email', async (req: Request, res: Response) =
 
     res.json({ success: true, data: { message: 'E-mail aceito para envio.', recipient: recipient_email.trim(), link: paymentLink } });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     console.error('[obligations] send-email error:', err);
     res.status(500).json({ success: false, error: 'Erro interno no envio' });
   }
@@ -602,8 +630,10 @@ router.get('/obligations/:id/download-proof', async (req: Request, res: Response
     const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
     if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
 
-    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+    await requireAccountingAccess(accountant.id, ob.legal_entity_id, {
+      scope: 'FINANCEIRO',
+      permission: 'can_download',
+    });
 
     if (!ob.proof_storage_key) return res.status(404).json({ success: false, error: 'Comprovante não disponível' });
 
@@ -615,6 +645,7 @@ router.get('/obligations/:id/download-proof', async (req: Request, res: Response
 
     res.json({ success: true, data: { download_url: downloadUrl, filename: ob.proof_filename, expires_in_seconds: expiresInSeconds } });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     console.error('[obligations] download-proof error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
@@ -627,8 +658,10 @@ router.get('/obligations/:id/download-boleto', async (req: Request, res: Respons
     const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
     if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
 
-    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+    await requireAccountingAccess(accountant.id, ob.legal_entity_id, {
+      scope: 'FINANCEIRO',
+      permission: 'can_download',
+    });
 
     if (!ob.boleto_storage_key) return res.status(404).json({ success: false, error: 'Boleto não disponível' });
 
@@ -640,6 +673,7 @@ router.get('/obligations/:id/download-boleto', async (req: Request, res: Respons
 
     res.json({ success: true, data: { download_url: downloadUrl, filename: ob.boleto_filename, expires_in_seconds: expiresInSeconds } });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     console.error('[obligations] download-boleto error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
@@ -652,8 +686,10 @@ router.get('/obligations/:id/audit', async (req: Request, res: Response) => {
     const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
     if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
 
-    const accessLink = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
-    if (!accessLink) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+    await requireAccountingAccess(accountant.id, ob.legal_entity_id, {
+      scope: 'FINANCEIRO',
+      permission: 'can_view',
+    });
 
     const audit = await prisma.accounting_obligation_audit.findMany({
       where: { obligation_id: ob.id },
@@ -662,6 +698,7 @@ router.get('/obligations/:id/audit', async (req: Request, res: Response) => {
 
     res.json({ success: true, data: audit });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     console.error('[obligations] audit error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
@@ -687,8 +724,10 @@ router.post('/obligations/:id/upload-invoice-pdf', async (req: Request, res: Res
     const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
     if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
 
-    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+    await requireAccountingAccess(accountant.id, ob.legal_entity_id, {
+      scope: 'FINANCEIRO',
+      permission: 'can_upload',
+    });
 
     let storageKey = '';
     const upload = multer({
@@ -738,6 +777,7 @@ router.post('/obligations/:id/upload-invoice-pdf', async (req: Request, res: Res
 
     res.json({ success: true, data: { filename: uploadedFile.originalname, size: uploadedFile.size } });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     if (err.message?.includes('não permitid') || err.message?.includes('Tipo')) {
       return res.status(400).json({ success: false, error: err.message });
     }
@@ -753,8 +793,10 @@ router.post('/obligations/:id/upload-invoice-xml', async (req: Request, res: Res
     const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
     if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
 
-    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+    await requireAccountingAccess(accountant.id, ob.legal_entity_id, {
+      scope: 'FINANCEIRO',
+      permission: 'can_upload',
+    });
 
     let storageKey = '';
     const upload = multer({
@@ -805,6 +847,7 @@ router.post('/obligations/:id/upload-invoice-xml', async (req: Request, res: Res
 
     res.json({ success: true, data: { filename: uploadedFile.originalname, size: uploadedFile.size } });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     if (err.message?.includes('não permitid') || err.message?.includes('Tipo')) {
       return res.status(400).json({ success: false, error: err.message });
     }
@@ -820,8 +863,10 @@ router.patch('/obligations/:id/invoice-metadata', async (req: Request, res: Resp
     const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
     if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
 
-    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+    await requireAccountingAccess(accountant.id, ob.legal_entity_id, {
+      scope: 'FINANCEIRO',
+      permission: 'can_upload',
+    });
 
     const data = invoiceMetadataSchema.parse(req.body);
 
@@ -861,8 +906,10 @@ router.get('/obligations/:id/download-invoice-pdf', async (req: Request, res: Re
     const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
     if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
 
-    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+    await requireAccountingAccess(accountant.id, ob.legal_entity_id, {
+      scope: 'FINANCEIRO',
+      permission: 'can_download',
+    });
 
     if (!ob.invoice_pdf_storage_key) return res.status(404).json({ success: false, error: 'PDF da nota fiscal não disponível' });
 
@@ -874,6 +921,7 @@ router.get('/obligations/:id/download-invoice-pdf', async (req: Request, res: Re
 
     res.json({ success: true, data: { download_url: downloadUrl, filename: ob.invoice_pdf_filename, expires_in_seconds: expiresInSeconds } });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     console.error('[obligations] download-invoice-pdf error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
@@ -886,8 +934,10 @@ router.get('/obligations/:id/download-invoice-xml', async (req: Request, res: Re
     const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
     if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
 
-    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+    await requireAccountingAccess(accountant.id, ob.legal_entity_id, {
+      scope: 'FINANCEIRO',
+      permission: 'can_download',
+    });
 
     if (!ob.invoice_xml_storage_key) return res.status(404).json({ success: false, error: 'XML da nota fiscal não disponível' });
 
@@ -899,6 +949,7 @@ router.get('/obligations/:id/download-invoice-xml', async (req: Request, res: Re
 
     res.json({ success: true, data: { download_url: downloadUrl, filename: ob.invoice_xml_filename, expires_in_seconds: expiresInSeconds } });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     console.error('[obligations] download-invoice-xml error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
@@ -911,8 +962,10 @@ router.delete('/obligations/:id/invoice', async (req: Request, res: Response) =>
     const ob = await prisma.accounting_payment_obligations.findUnique({ where: { id: req.params.id } });
     if (!ob) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
 
-    const link = await verifyEntityAccess(accountant.id, ob.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+    await requireAccountingAccess(accountant.id, ob.legal_entity_id, {
+      scope: 'FINANCEIRO',
+      permission: 'can_upload',
+    });
 
     // Check there's something to remove
     const hasInvoice = ob.invoice_pdf_storage_key || ob.invoice_xml_storage_key || ob.invoice_number;
@@ -960,6 +1013,7 @@ router.delete('/obligations/:id/invoice', async (req: Request, res: Response) =>
 
     res.json({ success: true, data: { message: 'Nota fiscal removida da obrigação.' } });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     console.error('[obligations] delete-invoice error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }

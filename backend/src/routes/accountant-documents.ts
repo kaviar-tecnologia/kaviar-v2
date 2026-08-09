@@ -17,6 +17,13 @@ import {
   getNextVersionNumber,
 } from '../services/accounting/accounting-documents.service';
 import {
+  requireAccountingAccess,
+  handleAccessError,
+  scopeForDocumentCategory,
+  getActiveLinksForAccountant,
+  getAllowedDocumentCategories,
+} from '../services/accounting/accounting-access.service';
+import {
   validateFileMetadata,
   generateStorageKey,
   generatePresignedGetUrl,
@@ -83,6 +90,13 @@ router.get('/documents', async (req: Request, res: Response) => {
     const accountant = (req as any).accountant;
     const query = listCompanyDocumentsQuerySchema.parse(req.query);
 
+    // Get links with scope info to build scoped filter
+    const links = await getActiveLinksForAccountant(accountant.id);
+    if (links.length === 0 || !links.some(l => l.can_view)) {
+      return res.json({ success: true, data: [], pagination: { page: 1, limit: query.limit, total: 0, totalPages: 0 } });
+    }
+
+    // Build accessible entity IDs (with children inheritance)
     const accessibleIds = await getAccessibleEntityIds(accountant.id);
     if (accessibleIds.length === 0) {
       return res.json({ success: true, data: [], pagination: { page: 1, limit: query.limit, total: 0, totalPages: 0 } });
@@ -96,10 +110,38 @@ router.get('/documents', async (req: Request, res: Response) => {
       entityFilter = [query.legal_entity_id];
     }
 
+    // Determine allowed categories based on scope
+    // If any link is COMPLETO, all categories are allowed
+    const hasCompleto = links.some(l => l.scope === 'COMPLETO' && l.can_view);
+    let allowedCategories: string[] | null = null;
+    if (!hasCompleto) {
+      const categorySet = new Set<string>();
+      for (const link of links) {
+        if (!link.can_view) continue;
+        const cats = getAllowedDocumentCategories(link.scope);
+        if (cats) cats.forEach(c => categorySet.add(c));
+      }
+      allowedCategories = [...categorySet];
+      if (allowedCategories.length === 0) {
+        return res.json({ success: true, data: [], pagination: { page: 1, limit: query.limit, total: 0, totalPages: 0 } });
+      }
+    }
+
     const where: any = { legal_entity_id: { in: entityFilter } };
     if (query.document_type_id) where.document_type_id = query.document_type_id;
     if (query.status) where.status = query.status;
-    if (query.category) where.document_type = { category: query.category };
+
+    // Apply category filter: user-requested category intersected with allowed
+    if (query.category && allowedCategories) {
+      if (!allowedCategories.includes(query.category)) {
+        return res.json({ success: true, data: [], pagination: { page: 1, limit: query.limit, total: 0, totalPages: 0 } });
+      }
+      where.document_type = { category: query.category };
+    } else if (query.category) {
+      where.document_type = { category: query.category };
+    } else if (allowedCategories) {
+      where.document_type = { category: { in: allowedCategories } };
+    }
 
     const [docs, total] = await Promise.all([
       prisma.accounting_company_documents.findMany({
@@ -148,8 +190,11 @@ router.get('/documents/:id', async (req: Request, res: Response) => {
 
     if (!doc) return res.status(404).json({ success: false, error: 'Documento não encontrado' });
 
-    const link = await verifyEntityAccess(accountant.id, doc.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Documento não encontrado' });
+    const requiredScope = scopeForDocumentCategory(doc.document_type?.category);
+    await requireAccountingAccess(accountant.id, doc.legal_entity_id, {
+      scope: requiredScope,
+      permission: 'can_view',
+    });
 
     const currentFile = doc.files.find(f => f.scan_status !== accounting_document_scan_status.INFECTED);
 
@@ -160,6 +205,7 @@ router.get('/documents/:id', async (req: Request, res: Response) => {
 
     res.json({ success: true, data: result });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     console.error('[documents] detail error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
@@ -170,16 +216,20 @@ router.post('/documents', async (req: Request, res: Response) => {
     const accountant = (req as any).accountant;
     const data = createCompanyDocumentSchema.parse(req.body);
 
-    const link = await verifyEntityAccess(accountant.id, data.legal_entity_id);
-    if (!link) return res.status(403).json({ success: false, error: 'Acesso negado à empresa' });
-
+    // Look up document type to determine scope
     const docType = await prisma.accounting_document_types.findUnique({
       where: { id: data.document_type_id },
-      select: { id: true, is_active: true },
+      select: { id: true, is_active: true, category: true },
     });
     if (!docType || !docType.is_active) {
       return res.status(400).json({ success: false, error: 'Tipo de documento inválido ou inativo' });
     }
+
+    const requiredScope = scopeForDocumentCategory(docType.category);
+    await requireAccountingAccess(accountant.id, data.legal_entity_id, {
+      scope: requiredScope,
+      permission: 'can_upload',
+    });
 
     const doc = await prisma.accounting_company_documents.create({
       data: {
@@ -202,6 +252,7 @@ router.post('/documents', async (req: Request, res: Response) => {
 
     res.status(201).json({ success: true, data: serializeCompanyDocument(doc) });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
     console.error('[documents] create error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
@@ -215,12 +266,15 @@ router.patch('/documents/:id', async (req: Request, res: Response) => {
 
     const doc = await prisma.accounting_company_documents.findUnique({
       where: { id: req.params.id },
-      select: { id: true, legal_entity_id: true, status: true },
+      include: { document_type: { select: { category: true } } },
     });
     if (!doc) return res.status(404).json({ success: false, error: 'Documento não encontrado' });
 
-    const link = await verifyEntityAccess(accountant.id, doc.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Documento não encontrado' });
+    const requiredScope = scopeForDocumentCategory(doc.document_type?.category);
+    await requireAccountingAccess(accountant.id, doc.legal_entity_id, {
+      scope: requiredScope,
+      permission: 'can_upload',
+    });
 
     if (data.status && data.status !== doc.status) {
       const allowed = VALID_STATUS_TRANSITIONS[doc.status] || [];
@@ -243,6 +297,7 @@ router.patch('/documents/:id', async (req: Request, res: Response) => {
 
     res.json({ success: true, data: serializeCompanyDocument(updated) });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
     console.error('[documents] update error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
@@ -272,16 +327,16 @@ router.post('/documents/upload', async (req: Request, res: Response) => {
     // Verify document
     const doc = await prisma.accounting_company_documents.findUnique({
       where: { id: documentId },
-      select: { id: true, legal_entity_id: true, status: true },
+      include: { document_type: { select: { category: true } } },
     });
     if (!doc) return res.status(404).json({ success: false, error: 'Documento não encontrado' });
 
     // Scope + permission
-    const link = await verifyEntityAccess(accountant.id, doc.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Documento não encontrado' });
-    if (!link.can_upload) {
-      return res.status(403).json({ success: false, error: 'Sem permissão de upload para esta empresa' });
-    }
+    const requiredScope = scopeForDocumentCategory(doc.document_type?.category);
+    await requireAccountingAccess(accountant.id, doc.legal_entity_id, {
+      scope: requiredScope,
+      permission: 'can_upload',
+    });
 
     // Version limit
     const existingCount = await prisma.accounting_company_document_files.count({ where: { document_id: documentId } });
@@ -389,6 +444,7 @@ router.post('/documents/upload', async (req: Request, res: Response) => {
 
     res.status(201).json({ success: true, data: serializeDocumentFile(dbFile) });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     if (err.message?.includes('não permitid')) {
       return res.status(400).json({ success: false, error: err.message });
     }
@@ -413,16 +469,19 @@ router.get('/documents/:documentId/files/:fileId/download', async (req: Request,
 
     const file = await prisma.accounting_company_document_files.findFirst({
       where: { id: fileId, document_id: documentId },
-      include: { document: { select: { id: true, legal_entity_id: true } } },
+      include: {
+        document: {
+          include: { document_type: { select: { category: true } } },
+        },
+      },
     });
     if (!file) return res.status(404).json({ success: false, error: 'Arquivo não encontrado' });
 
-    const link = await verifyEntityAccess(accountant.id, file.document.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Arquivo não encontrado' });
-
-    if (!link.can_download) {
-      return res.status(403).json({ success: false, error: 'Sem permissão de download para esta empresa' });
-    }
+    const requiredScope = scopeForDocumentCategory(file.document?.document_type?.category);
+    await requireAccountingAccess(accountant.id, file.document.legal_entity_id, {
+      scope: requiredScope,
+      permission: 'can_download',
+    });
 
     if (file.scan_status === accounting_document_scan_status.INFECTED) {
       return res.status(403).json({ success: false, error: 'Download bloqueado: arquivo marcado como infectado' });
@@ -448,6 +507,7 @@ router.get('/documents/:documentId/files/:fileId/download', async (req: Request,
       data: { download_url: downloadUrl, expires_in_seconds: expiresInSeconds, filename: file.original_filename, mime_type: file.mime_type, size_bytes: file.size_bytes },
     });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     console.error('[documents] download error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
@@ -460,12 +520,15 @@ router.get('/documents/:documentId/files', async (req: Request, res: Response) =
 
     const doc = await prisma.accounting_company_documents.findUnique({
       where: { id: documentId },
-      select: { id: true, legal_entity_id: true },
+      include: { document_type: { select: { category: true } } },
     });
     if (!doc) return res.status(404).json({ success: false, error: 'Documento não encontrado' });
 
-    const link = await verifyEntityAccess(accountant.id, doc.legal_entity_id);
-    if (!link) return res.status(404).json({ success: false, error: 'Documento não encontrado' });
+    const requiredScope = scopeForDocumentCategory(doc.document_type?.category);
+    await requireAccountingAccess(accountant.id, doc.legal_entity_id, {
+      scope: requiredScope,
+      permission: 'can_view',
+    });
 
     const files = await prisma.accounting_company_document_files.findMany({
       where: { document_id: documentId },
@@ -474,6 +537,7 @@ router.get('/documents/:documentId/files', async (req: Request, res: Response) =
 
     res.json({ success: true, data: files.map(serializeDocumentFile) });
   } catch (err: any) {
+    if (handleAccessError(err, res)) return;
     console.error('[documents] list files error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
