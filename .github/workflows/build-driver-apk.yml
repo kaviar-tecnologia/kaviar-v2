@@ -10,14 +10,14 @@ jobs:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
@@ -72,7 +72,7 @@ jobs:
         run: eas build --profile driver-apk --platform android --local --non-interactive --output ./driver.apk
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: kaviar-driver-1.11.27-fix-register-labels
           path: ./driver.apk
