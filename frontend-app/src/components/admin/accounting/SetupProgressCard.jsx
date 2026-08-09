@@ -6,7 +6,7 @@ import { getSetupProgress } from '../../../services/adminAccountingService';
 const STEP_LABELS = [
   { key: 'entity', label: 'Empresa cadastrada', tab: 0 },
   { key: 'firm', label: 'Escritório cadastrado', tab: 1 },
-  { key: 'accountant', label: 'Contador cadastrado', tab: 2 },
+  { key: 'accountant', label: 'Membro da equipe cadastrado', tab: 2 },
   { key: 'link', label: 'Vínculo criado', tab: 3 },
   { key: 'invite', label: 'Convite enviado', tab: 2 },
   { key: 'activation', label: 'Conta ativada', tab: null },
@@ -15,10 +15,10 @@ const STEP_LABELS = [
 const NEXT_MESSAGES = {
   CREATE_ENTITY: { text: 'Cadastrar uma empresa', tab: 0, tabName: 'Empresas' },
   CREATE_FIRM: { text: 'Cadastrar um escritório', tab: 1, tabName: 'Escritórios' },
-  CREATE_ACCOUNTANT: { text: 'Cadastrar um contador', tab: 2, tabName: 'Contadores' },
-  CREATE_LINK: { text: 'Criar vínculo entre contador e empresa', tab: 3, tabName: 'Vínculos' },
-  SEND_INVITE: { text: 'Enviar convite ao contador', tab: 2, tabName: 'Contadores' },
-  AWAIT_ACTIVATION: { text: 'Aguardar ativação da conta pelo contador', tab: null, tabName: null },
+  CREATE_ACCOUNTANT: { text: 'Cadastrar um membro da equipe', tab: 2, tabName: 'Equipe' },
+  CREATE_LINK: { text: 'Criar vínculo entre membro da equipe e empresa', tab: 3, tabName: 'Vínculos' },
+  SEND_INVITE: { text: 'Enviar convite ao membro', tab: 2, tabName: 'Equipe' },
+  AWAIT_ACTIVATION: { text: 'Aguardar ativação da conta pelo membro', tab: null, tabName: null },
   COMPLETE: { text: 'Configuração concluída!', tab: null, tabName: null },
 };
 

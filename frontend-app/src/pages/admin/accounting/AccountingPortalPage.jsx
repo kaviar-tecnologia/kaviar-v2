@@ -31,7 +31,7 @@ export default function AccountingPortalPage() {
             Empresas, escritórios, equipe e vínculos contábeis.
           </Typography>
           <Typography sx={{ color: '#6B7280', fontSize: 12, mt: 1, fontStyle: 'italic' }}>
-            Sequência: Cadastre uma Empresa → Escritório → Contador → Vínculo → Convide o contador.
+            Sequência: Cadastre uma Empresa → Escritório → Membro da Equipe → Vínculo → Convide o membro.
           </Typography>
         </Box>
 

@@ -94,7 +94,7 @@ export default function LinkFormDialog({ open, mode, linkId, onClose, onSuccess 
   };
 
   const validate = () => {
-    if (!form.accountant_id) return 'Selecione um contador.';
+    if (!form.accountant_id) return 'Selecione um membro da equipe.';
     if (!form.legal_entity_id) return 'Selecione uma empresa.';
     if (!form.scope) return 'Escopo é obrigatório.';
     return null;
@@ -153,8 +153,8 @@ export default function LinkFormDialog({ open, mode, linkId, onClose, onSuccess 
           <>
             {error && <Alert severity="error">{error}</Alert>}
             <FormControl size="small" required>
-              <InputLabel id="link-accountant-label">Contador</InputLabel>
-              <Select id="link-accountant" labelId="link-accountant-label" value={form.accountant_id} label="Contador" onChange={handleChange('accountant_id')}>
+              <InputLabel id="link-accountant-label">Membro da equipe</InputLabel>
+              <Select id="link-accountant" labelId="link-accountant-label" value={form.accountant_id} label="Membro da equipe" onChange={handleChange('accountant_id')}>
                 <MenuItem value="">— Selecionar —</MenuItem>
                 {accountants.map((a) => (
                   <MenuItem key={a.id} value={a.id}>{a.nome_completo}</MenuItem>
