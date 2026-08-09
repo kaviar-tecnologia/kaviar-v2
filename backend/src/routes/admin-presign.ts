@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { authenticateAdmin } from '../middlewares/auth';
+import { authenticateAdmin, requireRole } from '../middlewares/auth';
 
 const router = Router();
 
@@ -10,6 +10,7 @@ const BUCKET = process.env.S3_UPLOADS_BUCKET || 'kaviar-uploads-847895361928';
 const REGION = 'us-east-2';
 
 router.use(authenticateAdmin);
+router.use(requireRole(['SUPER_ADMIN', 'TERRITORIAL_OPERATOR', 'TERRITORIAL_MANAGER']));
 
 router.get('/presign', async (req, res) => {
   if (!FEATURE_ENABLED) {

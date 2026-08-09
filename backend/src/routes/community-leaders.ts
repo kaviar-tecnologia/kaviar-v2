@@ -1,13 +1,14 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { authenticateAdmin } from '../middlewares/auth';
+import { authenticateAdmin, requireRole } from '../middlewares/auth';
 import { auditWrite } from '../middlewares/audit-write';
 
 const router = Router();
 const prisma = new PrismaClient();
 
-// Apply authentication to all routes
+// Apply authentication and role authorization to all routes
 router.use(authenticateAdmin);
+router.use(requireRole(['SUPER_ADMIN', 'OPERATOR', 'TERRITORIAL_MANAGER', 'TERRITORIAL_OPERATOR']));
 
 // Extend Request type to include admin
 interface AuthRequest extends Request {
