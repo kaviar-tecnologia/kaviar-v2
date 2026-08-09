@@ -112,6 +112,9 @@ export const createAccountantSchema = z.object({
   cpf: z.string().regex(cpfRegex, 'CPF deve conter exatamente 11 dígitos'),
   crc: optionalNullableTrimmedString(30),
   crc_uf: z.string().regex(ufRegex).optional().nullable(),
+  job_title: optionalNullableTrimmedString(100),
+  department: optionalNullableTrimmedString(100),
+  is_responsible_accountant: z.boolean().optional(),
 }).strict();
 
 export const updateAccountantSchema = z.object({
@@ -119,6 +122,9 @@ export const updateAccountantSchema = z.object({
   email: z.string().email().max(255).optional(),
   crc: optionalNullableTrimmedString(30),
   crc_uf: z.string().regex(ufRegex).optional().nullable(),
+  job_title: optionalNullableTrimmedString(100),
+  department: optionalNullableTrimmedString(100),
+  is_responsible_accountant: z.boolean().optional(),
   status: z.enum(['INVITED', 'ACTIVE', 'SUSPENDED', 'BLOCKED', 'REVOKED']).optional(),
   is_active: z.boolean().optional(),
 }).strict();

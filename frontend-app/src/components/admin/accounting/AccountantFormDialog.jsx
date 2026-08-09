@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Button,
+  Checkbox,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   FormControl,
+  FormControlLabel,
   InputLabel,
   MenuItem,
   Select,
@@ -33,6 +35,9 @@ function emptyForm() {
     crc: '',
     crc_uf: '',
     accounting_firm_id: '',
+    job_title: '',
+    department: '',
+    is_responsible_accountant: false,
   };
 }
 
@@ -62,6 +67,9 @@ export default function AccountantFormDialog({ open, mode, accountantId, onClose
             crc: acc.crc || '',
             crc_uf: acc.crc_uf || '',
             accounting_firm_id: acc.accounting_firm_id || '',
+            job_title: acc.job_title || '',
+            department: acc.department || '',
+            is_responsible_accountant: acc.is_responsible_accountant || false,
           });
         })
         .catch((err) => setError(err.message))
@@ -99,16 +107,19 @@ export default function AccountantFormDialog({ open, mode, accountantId, onClose
         crc: form.crc || null,
         crc_uf: form.crc_uf || null,
         accounting_firm_id: form.accounting_firm_id || null,
+        job_title: form.job_title || null,
+        department: form.department || null,
+        is_responsible_accountant: form.is_responsible_accountant,
       };
       if (mode === 'create') {
         payload.cpf = form.cpf.replace(/\D/g, '');
       }
       if (mode === 'edit') {
         await updateAccountant(accountantId, payload);
-        onSuccess('Contador atualizado com sucesso.');
+        onSuccess('Membro atualizado com sucesso.');
       } else {
         await createAccountant(payload);
-        onSuccess('Contador criado com sucesso.');
+        onSuccess('Membro criado com sucesso.');
       }
     } catch (err) {
       setError(err.message);
@@ -120,7 +131,7 @@ export default function AccountantFormDialog({ open, mode, accountantId, onClose
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth aria-labelledby="accountant-dialog-title">
-      <DialogTitle id="accountant-dialog-title">{mode === 'edit' ? 'Editar Contador' : 'Novo Contador'}</DialogTitle>
+      <DialogTitle id="accountant-dialog-title">{mode === 'edit' ? 'Editar Membro' : 'Novo Membro da Equipe'}</DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
         {fetching ? (
           <CircularProgress sx={{ alignSelf: 'center', my: 4 }} />
@@ -151,13 +162,25 @@ export default function AccountantFormDialog({ open, mode, accountantId, onClose
                 ))}
               </Select>
             </FormControl>
+            <TextField id="accountant-job-title" label="Cargo" value={form.job_title} onChange={handleChange('job_title')} size="small" placeholder="Ex: Analista Fiscal, Contador, Auxiliar" />
+            <TextField id="accountant-department" label="Setor" value={form.department} onChange={handleChange('department')} size="small" placeholder="Ex: Fiscal, DP, Financeiro" />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  id="accountant-responsible"
+                  checked={form.is_responsible_accountant}
+                  onChange={(e) => setForm((prev) => ({ ...prev, is_responsible_accountant: e.target.checked }))}
+                />
+              }
+              label="Responsável contábil (CRC esperado)"
+            />
           </>
         )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={loading}>Cancelar</Button>
         <Button onClick={handleSubmit} variant="contained" disabled={loading || fetching}>
-          {loading ? <CircularProgress size={20} /> : 'Salvar contador'}
+          {loading ? <CircularProgress size={20} /> : 'Salvar'}
         </Button>
       </DialogActions>
     </Dialog>

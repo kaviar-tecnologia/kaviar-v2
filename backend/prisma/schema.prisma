@@ -4445,27 +4445,30 @@ model accounting_firms {
 }
 
 model accountants {
-  id                  String             @id @default(uuid())
-  accounting_firm_id  String
-  nome_completo       String
-  email               String             @unique
-  cpf                 String             @unique
-  crc                 String?
-  crc_uf              String?            @db.VarChar(2)
-  status              accountant_status  @default(INVITED)
-  is_active           Boolean            @default(true)
-  mfa_enabled         Boolean            @default(false)
-  password_hash       String?
-  password_changed_at DateTime?
-  password_version    Int                @default(1)
-  failed_login_count  Int                @default(0)
-  locked_until        DateTime?
-  last_login_at       DateTime?
-  terms_accepted_at   DateTime?
-  invited_at          DateTime?
-  activated_at        DateTime?
-  created_at          DateTime           @default(now())
-  updated_at          DateTime           @updatedAt
+  id                          String             @id @default(uuid())
+  accounting_firm_id          String
+  nome_completo               String
+  email                       String             @unique
+  cpf                         String             @unique
+  crc                         String?
+  crc_uf                      String?            @db.VarChar(2)
+  job_title                   String?
+  department                  String?
+  is_responsible_accountant   Boolean            @default(false)
+  status                      accountant_status  @default(INVITED)
+  is_active                   Boolean            @default(true)
+  mfa_enabled                 Boolean            @default(false)
+  password_hash               String?
+  password_changed_at         DateTime?
+  password_version            Int                @default(1)
+  failed_login_count          Int                @default(0)
+  locked_until                DateTime?
+  last_login_at               DateTime?
+  terms_accepted_at           DateTime?
+  invited_at                  DateTime?
+  activated_at                DateTime?
+  created_at                  DateTime           @default(now())
+  updated_at                  DateTime           @updatedAt
 
   firm                accounting_firms   @relation(fields: [accounting_firm_id], references: [id])
   invites             accountant_invites[]

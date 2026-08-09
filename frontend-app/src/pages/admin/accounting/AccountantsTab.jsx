@@ -184,14 +184,14 @@ export default function AccountantsTab() {
       <Box sx={{ display: 'flex', gap: 1.5, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
         <TextField
           size="small"
-          placeholder="Buscar contador..."
+          placeholder="Buscar membro da equipe..."
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(0); }}
           sx={{ minWidth: 200 }}
         />
         <Box sx={{ flex: 1 }} />
         <Button variant="contained" startIcon={<Add />} onClick={handleCreate} size="small">
-          Novo Contador
+          Novo Membro
         </Button>
       </Box>
 
@@ -209,11 +209,11 @@ export default function AccountantsTab() {
               <TableRow>
                 <TableCell>Nome</TableCell>
                 <TableCell>Email</TableCell>
-                <TableCell>CPF</TableCell>
                 <TableCell>Escritório</TableCell>
+                <TableCell>Cargo</TableCell>
+                <TableCell>Setor</TableCell>
+                <TableCell>Responsável</TableCell>
                 <TableCell>Status</TableCell>
-                <TableCell>Convite</TableCell>
-                <TableCell>Ativo</TableCell>
                 <TableCell align="right">Ações</TableCell>
               </TableRow>
             </TableHead>
@@ -221,28 +221,25 @@ export default function AccountantsTab() {
               {rows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} align="center" sx={{ py: 4, color: '#6B7280' }}>
-                    Nenhum contador encontrado.
+                    Nenhum membro da equipe encontrado.
                   </TableCell>
                 </TableRow>
               ) : rows.map((row) => (
                 <TableRow key={row.id} hover>
                   <TableCell>{row.nome_completo}</TableCell>
                   <TableCell>{row.email || '—'}</TableCell>
-                  <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>{row.cpf_masked || '***.***.***-**'}</TableCell>
-                  <TableCell>{row.accounting_firm?.razao_social || '—'}</TableCell>
+                  <TableCell>{row.firm?.razao_social || row.accounting_firm?.razao_social || '—'}</TableCell>
+                  <TableCell>{row.job_title || '—'}</TableCell>
+                  <TableCell>{row.department || '—'}</TableCell>
+                  <TableCell>
+                    {row.is_responsible_accountant ? (
+                      <Chip label="Sim" size="small" color="primary" variant="outlined" />
+                    ) : '—'}
+                  </TableCell>
                   <TableCell>
                     <Chip
                       label={row.status === 'ACTIVE' ? 'Ativo' : row.status || 'Inativo'}
                       size="small"
-                      color={row.status === 'ACTIVE' ? 'success' : 'default'}
-                    />
-                  </TableCell>
-                  <TableCell>{getInviteChip(row)}</TableCell>
-                  <TableCell>
-                    <Chip
-                      label={row.status === 'ACTIVE' ? 'Sim' : 'Não'}
-                      size="small"
-                      variant="outlined"
                       color={row.status === 'ACTIVE' ? 'success' : 'default'}
                     />
                   </TableCell>

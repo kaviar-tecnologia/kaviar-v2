@@ -19,6 +19,9 @@ interface CreateAccountantInput {
   cpf: string;
   crc?: string | null;
   crc_uf?: string | null;
+  job_title?: string | null;
+  department?: string | null;
+  is_responsible_accountant?: boolean;
 }
 
 interface UpdateAccountantInput {
@@ -26,6 +29,9 @@ interface UpdateAccountantInput {
   email?: string;
   crc?: string | null;
   crc_uf?: string | null;
+  job_title?: string | null;
+  department?: string | null;
+  is_responsible_accountant?: boolean;
   status?: 'INVITED' | 'ACTIVE' | 'SUSPENDED' | 'BLOCKED' | 'REVOKED';
   is_active?: boolean;
 }
@@ -106,6 +112,9 @@ export async function createAccountant(data: CreateAccountantInput, adminId: str
         cpf: data.cpf,
         crc: data.crc ?? null,
         crc_uf: data.crc_uf ?? null,
+        job_title: data.job_title ?? null,
+        department: data.department ?? null,
+        is_responsible_accountant: data.is_responsible_accountant ?? false,
         status: initialStatus,
         is_active: resolveIsActive(initialStatus),
         invited_at: new Date(),
