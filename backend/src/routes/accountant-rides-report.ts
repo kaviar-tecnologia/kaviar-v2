@@ -245,6 +245,16 @@ router.get('/rides-report/csv', async (req: Request, res: Response) => {
       permission: 'can_download',
     });
 
+    // CSV must enforce the same ride-operator boundary as the JSON report.
+    // A linked company must never be able to export another entity's rides.
+    const hasRides = await entityHasRides(entityId);
+    if (!hasRides) {
+      return res.status(404).json({
+        success: false,
+        error: 'Esta empresa não possui operação de corridas',
+      });
+    }
+
     // Parse dates
     const startStr = req.query.start_date as string;
     const endStr = req.query.end_date as string;

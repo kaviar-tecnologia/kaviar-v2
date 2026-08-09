@@ -17,6 +17,8 @@ export default function AccountantRidesReportPage() {
   const [filters, setFilters] = useState({ start_date: '', end_date: '', status: '' });
   const [entityName, setEntityName] = useState('');
 
+  const ridesUnavailable = error === 'Esta empresa não possui operação de corridas';
+
   const fetchData = (overrideFilters) => {
     setLoading(true);
     const f = overrideFilters || filters;
@@ -76,7 +78,11 @@ export default function AccountantRidesReportPage() {
           </Select>
         </FormControl>
         <Button onClick={() => fetchData()} sx={{ color: '#D4AF37', textTransform: 'none' }}>Filtrar</Button>
-        <Button startIcon={<CloudDownload />} onClick={handleExportCSV} sx={{ color: 'rgba(255,255,255,0.5)', textTransform: 'none', ml: 'auto' }}>Exportar CSV</Button>
+        {data && !loading && !ridesUnavailable && (
+          <Button startIcon={<CloudDownload />} onClick={handleExportCSV} sx={{ color: 'rgba(255,255,255,0.5)', textTransform: 'none', ml: 'auto' }}>
+            Exportar CSV
+          </Button>
+        )}
       </Box>
 
       {loading ? (
@@ -84,9 +90,15 @@ export default function AccountantRidesReportPage() {
       ) : error ? (
         <Box sx={{ textAlign: 'center', py: 8 }}>
           <DirectionsCar sx={{ fontSize: 64, color: 'rgba(239,68,68,0.3)', mb: 2 }} />
-          <Typography sx={{ color: '#EF4444', fontSize: 16 }}>Erro ao carregar o relatório</Typography>
+          <Typography sx={{ color: ridesUnavailable ? '#D4AF37' : '#EF4444', fontSize: 16 }}>
+            {ridesUnavailable ? 'Financeiro de corridas não disponível para esta empresa' : 'Erro ao carregar o relatório'}
+          </Typography>
           <Typography sx={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, mt: 0.5 }}>{error}</Typography>
-          <Button onClick={() => fetchData()} sx={{ mt: 2, color: '#D4AF37', textTransform: 'none' }}>Tentar novamente</Button>
+          {!ridesUnavailable && (
+            <Button onClick={() => fetchData()} sx={{ mt: 2, color: '#D4AF37', textTransform: 'none' }}>
+              Tentar novamente
+            </Button>
+          )}
         </Box>
       ) : !data ? (
         <Box sx={{ textAlign: 'center', py: 8 }}>
