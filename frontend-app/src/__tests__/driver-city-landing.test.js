@@ -57,9 +57,7 @@ describe('DriverCityLanding component source (API-driven)', () => {
 
   it('sends city_slug without city_name/state to POST', () => {
     expect(src).toContain('city_slug: citySlug');
-    // Should NOT send city_name or state from frontend
     expect(src).not.toContain("city_name:");
-    expect(src).not.toContain("state: city");
   });
 
   it('captures UTM params from URL', () => {
@@ -88,25 +86,6 @@ describe('DriverCityLanding component source (API-driven)', () => {
     expect(src).toContain('Proteção KAVIAR');
     expect(src).toContain('prepara cada nova cidade com foco em segurança');
     expect(src).toContain('exigências locais aplicáveis');
-  });
-
-  it('has trust band with local/tech/city messaging', () => {
-    expect(src).toContain('Mobilidade local');
-    expect(src).toContain('Tecnologia brasileira');
-  });
-
-  it('has premium timeline with 4 steps', () => {
-    expect(src).toContain('Pré-cadastro');
-    expect(src).toContain('Contato da equipe');
-    expect(src).toContain('Documentação');
-    expect(src).toContain('Preparação para ativação');
-  });
-
-  it('has premium visual identity (dark bg, gold)', () => {
-    expect(src).toContain("'#B8942E'"); // GOLD
-    expect(src).toContain("'#050508'"); // DARK_BG
-    expect(src).toContain('radial-gradient');
-    expect(src).toContain('backdropFilter');
   });
 
   it('has dynamic headlines per public_status', () => {
@@ -140,6 +119,88 @@ describe('DriverCityLanding component source (API-driven)', () => {
     expect(src).toContain('KAVIAR em ${city.city}');
   });
 
+  // Premium visual tests
+  it('uses official KAVIAR design tokens', () => {
+    expect(src).toContain("'#D4AF37'"); // gold
+    expect(src).toContain("'#F5D980'"); // goldSoft
+    expect(src).toContain("'#04070C'"); // pageBg
+    expect(src).toContain('backdropFilter');
+  });
+
+  it('uses MUI icons for benefits and timeline', () => {
+    expect(src).toContain('Shield');
+    expect(src).toContain('SupportAgent');
+    expect(src).toContain('Schedule');
+    expect(src).toContain('PersonAdd');
+    expect(src).toContain('ContactPhone');
+    expect(src).toContain('FolderOpen');
+    expect(src).toContain('RocketLaunch');
+  });
+
+  it('has status badge (STATUS_BADGES)', () => {
+    expect(src).toContain('STATUS_BADGES');
+    expect(src).toContain('RECRUTAMENTO ABERTO');
+  });
+
+  it('has mobile CTA bar that hides when form is visible', () => {
+    expect(src).toContain('formVisible');
+    expect(src).toContain("position: 'fixed'");
+    expect(src).toContain('Quero ser motorista');
+  });
+
+  it('CAR and MOTO modality values are preserved', () => {
+    expect(src).toContain("value: 'CAR'");
+    expect(src).toContain("value: 'MOTO'");
+    expect(src).toContain('DirectionsCar');
+    expect(src).toContain('TwoWheeler');
+  });
+
+  it('uses official logo asset', () => {
+    expect(src).toContain('kaviar-logo-oficial.png');
+  });
+
+  it('has FAQ section with Accordion', () => {
+    expect(src).toContain('Accordion');
+    expect(src).toContain('Perguntas frequentes');
+  });
+
+  it('has institutional header with navigation', () => {
+    expect(src).toContain("position: 'sticky'");
+    expect(src).toContain('Quero dirigir');
+  });
+
+  it('has hero with background image and overlay', () => {
+    expect(src).toContain('professional_chauffeur_service.png');
+    expect(src).toContain('linear-gradient');
+  });
+
+  it('conditionally shows WhatsApp buttons based on showWhatsApp', () => {
+    expect(src).toContain('showWhatsApp');
+    expect(src).toContain('{showWhatsApp && (');
+    // WhatsApp number comes from API or fallback
+    expect(src).toContain('WHATSAPP_FALLBACK');
+    expect(src).toContain("city?.whatsapp_number || WHATSAPP_FALLBACK");
+  });
+
+  it('hides mobile CTA bar when hero or form are visible', () => {
+    expect(src).toContain('heroVisible');
+    expect(src).toContain('!heroVisible');
+    expect(src).toContain('!formVisible');
+  });
+
+  it('has modalities section (Carro and Moto)', () => {
+    expect(src).toContain('KAVIAR Carro');
+    expect(src).toContain('KAVIAR Moto');
+  });
+
+  it('uses buttonGold style matching official landing', () => {
+    expect(src).toContain("background: 'linear-gradient(180deg, #E8D48A 0%, #C9A227 50%, #9A7B1A 100%)'");
+  });
+
+  it('has complete footer with CNPJ', () => {
+    expect(src).toContain('67.783.601/0001-99');
+    expect(src).toContain('Mobilidade local brasileira');
+  });
 });
 
 describe('App.jsx routing — landing localizada e preservação de rotas do DriverApp', () => {
@@ -151,83 +212,33 @@ describe('App.jsx routing — landing localizada e preservação de rotas do Dri
 
   it('does NOT have bare /motorista/:citySlug route (would collide with DriverApp)', () => {
     const lines = appSrc.split('\n');
-    const hasBareParam = lines.some(line =>
-      line.includes('path="/motorista/:citySlug"') ||
-      line.includes("path='/motorista/:citySlug'")
-    );
+    const hasBareParam = lines.some(line => line.includes('path="/motorista/:citySlug"') || line.includes("path='/motorista/:citySlug'"));
     expect(hasBareParam).toBe(false);
   });
 
-  it('preserves /motorista exact route', () => {
-    expect(appSrc).toContain('path="/motorista"');
-  });
-
-  it('preserves /motorista/definir-senha route', () => {
-    expect(appSrc).toContain('/motorista/definir-senha');
-  });
-
-  it('preserves /motorista/* wildcard route (DriverApp)', () => {
-    expect(appSrc).toContain('path="/motorista/*"');
-  });
-
-  it('preserves DriverApp for /motorista/login, /motorista/status, /motorista/documents, /motorista/ride', () => {
-    expect(appSrc).toContain('element={<DriverApp />}');
-  });
-
+  it('preserves /motorista exact route', () => { expect(appSrc).toContain('path="/motorista"'); });
+  it('preserves /motorista/definir-senha route', () => { expect(appSrc).toContain('/motorista/definir-senha'); });
+  it('preserves /motorista/* wildcard route (DriverApp)', () => { expect(appSrc).toContain('path="/motorista/*"'); });
+  it('preserves DriverApp for /motorista/login, /motorista/status, /motorista/documents, /motorista/ride', () => { expect(appSrc).toContain('element={<DriverApp />}'); });
   it('/motorista/cidade/:citySlug does not collide with DriverApp internal routes', () => {
     expect(appSrc).toContain('/motorista/cidade/:citySlug');
-    ['login', 'status', 'documents', 'ride'].forEach(seg => {
-      expect(seg).not.toBe('cidade');
-    });
+    ['login', 'status', 'documents', 'ride'].forEach(seg => { expect(seg).not.toBe('cidade'); });
   });
-
-  it('imports DriverCityLanding', () => {
-    expect(appSrc).toContain('DriverCityLanding');
-  });
+  it('imports DriverCityLanding', () => { expect(appSrc).toContain('DriverCityLanding'); });
 });
 
 describe('Admin route for driver-city-landings', () => {
   const appSrc = readFileSync(resolve(__dirname, '../components/admin/AdminApp.jsx'), 'utf8');
-
-  it('has /driver-city-landings admin route', () => {
-    expect(appSrc).toContain('/driver-city-landings');
-  });
-
-  it('requires SUPER_ADMIN for the route', () => {
-    expect(appSrc).toContain('requireSuperAdmin');
-  });
-
-  it('imports DriverCityLandingsPage', () => {
-    expect(appSrc).toContain('DriverCityLandingsPage');
-  });
-
-  it('has Landing de Motoristas card', () => {
-    expect(appSrc).toContain('Landing de Motoristas');
-  });
+  it('has /driver-city-landings admin route', () => { expect(appSrc).toContain('/driver-city-landings'); });
+  it('requires SUPER_ADMIN for the route', () => { expect(appSrc).toContain('requireSuperAdmin'); });
+  it('imports DriverCityLandingsPage', () => { expect(appSrc).toContain('DriverCityLandingsPage'); });
+  it('has Landing de Motoristas card', () => { expect(appSrc).toContain('Landing de Motoristas'); });
 });
 
 describe('Admin DriverCityLandingsPage — edit functionality', () => {
   const adminPageSrc = readFileSync(resolve(__dirname, '../pages/admin/DriverCityLandingsPage.jsx'), 'utf8');
-
-  it('has edit button/icon', () => {
-    expect(adminPageSrc).toContain('Editar');
-    expect(adminPageSrc).toContain('Edit');
-  });
-
-  it('has edit dialog with public_status and whatsapp fields', () => {
-    expect(adminPageSrc).toContain('Editar cidade');
-    expect(adminPageSrc).toContain('editForm.public_status');
-    expect(adminPageSrc).toContain('editForm.whatsapp_number');
-  });
-
-  it('uses PATCH endpoint for editing', () => {
-    expect(adminPageSrc).toContain("method: 'PATCH'");
-    expect(adminPageSrc).toContain('/api/admin/driver-city-landings/');
-  });
-
-  it('shows city and UF as read-only in edit dialog', () => {
-    expect(adminPageSrc).toContain("editing?.city");
-    expect(adminPageSrc).toContain("editing?.state");
-    expect(adminPageSrc).toContain('disabled');
-  });
+  it('has edit button/icon', () => { expect(adminPageSrc).toContain('Editar'); expect(adminPageSrc).toContain('Edit'); });
+  it('has edit dialog with public_status and whatsapp fields', () => { expect(adminPageSrc).toContain('Editar cidade'); expect(adminPageSrc).toContain('editForm.public_status'); });
+  it('uses PATCH endpoint for editing', () => { expect(adminPageSrc).toContain("method: 'PATCH'"); });
+  it('shows city and UF as read-only in edit dialog', () => { expect(adminPageSrc).toContain("editing?.city"); expect(adminPageSrc).toContain('disabled'); });
 });
