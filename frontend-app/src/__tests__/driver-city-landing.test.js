@@ -116,11 +116,23 @@ describe('DriverCityLanding component source (API-driven)', () => {
   });
 
   it('OPERACAO subheadline does not contain primeira equipe', () => {
-    // Extract the STATUS_SUBHEADLINES block and verify OPERACAO line
     const subheadlinesBlock = src.slice(src.indexOf('STATUS_SUBHEADLINES'), src.indexOf('STATUS_SUBHEADLINES') + 500);
     const operacaoMatch = subheadlinesBlock.match(/OPERACAO:.*$/m);
     expect(operacaoMatch).toBeTruthy();
     expect(operacaoMatch[0]).not.toContain('primeira equipe');
+  });
+
+  it('meta description is dynamic per status', () => {
+    expect(src).toContain('descByStatus');
+    expect(src).toContain("descByStatus[city.public_status]");
+  });
+
+  it('OPERACAO benefits card shows Equipe local instead of Prioridade', () => {
+    expect(src).toContain("'OPERACAO' ? 'Equipe local' : 'Prioridade'");
+  });
+
+  it('OPERACAO timeline step 4 shows Integração à operação', () => {
+    expect(src).toContain("'OPERACAO' ? 'Integração à operação'");
   });
 
   it('PAUSADA uses neutral headline without city operation claims', () => {

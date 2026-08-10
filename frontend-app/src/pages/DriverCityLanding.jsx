@@ -78,7 +78,13 @@ export default function DriverCityLanding() {
     if (city) {
       document.title = `Motorista KAVIAR em ${city.city}/${city.state}`;
       const meta = document.querySelector('meta[name="description"]');
-      const desc = `Seja um dos primeiros motoristas parceiros KAVIAR em ${city.city}/${city.state}. Pré-cadastre-se para a formação da primeira equipe.`;
+      const descByStatus = {
+        IMPLANTACAO: `Seja um dos primeiros motoristas parceiros KAVIAR em ${city.city}/${city.state}. Pré-cadastre-se para a formação da primeira equipe.`,
+        RECRUTAMENTO: `Estamos formando a equipe de motoristas KAVIAR em ${city.city}/${city.state}. Pré-cadastre-se agora.`,
+        OPERACAO: `Cadastre seu interesse para dirigir com a KAVIAR em ${city.city}/${city.state}.`,
+        PAUSADA: `KAVIAR em ${city.city}/${city.state}. Acompanhe as novidades.`,
+      };
+      const desc = descByStatus[city.public_status] || descByStatus.IMPLANTACAO;
       if (meta) meta.setAttribute('content', desc);
       else { const tag = document.createElement('meta'); tag.name = 'description'; tag.content = desc; document.head.appendChild(tag); }
     }
@@ -299,7 +305,7 @@ export default function DriverCityLanding() {
             {[
               { icon: '⏰', title: 'Flexibilidade', desc: 'Defina seus horários e sua disponibilidade.' },
               { icon: '📍', title: 'Suporte local', desc: 'Equipe de apoio na sua cidade.' },
-              { icon: '⭐', title: 'Prioridade', desc: 'Fundadores têm prioridade na abertura da operação.' },
+              { icon: '⭐', title: city.public_status === 'OPERACAO' ? 'Equipe local' : 'Prioridade', desc: city.public_status === 'OPERACAO' ? 'Faça parte da rede de motoristas parceiros KAVIAR na cidade.' : city.public_status === 'PAUSADA' ? 'Cadastre seu interesse para acompanhar novidades.' : 'Motoristas fundadores têm prioridade na formação da equipe local.' },
               { icon: '📋', title: 'Acompanhamento', desc: 'Suporte completo no processo de cadastro e documentação.' },
             ].map((b, i) => (
               <Box key={i} sx={{
@@ -372,7 +378,7 @@ export default function DriverCityLanding() {
               { step: '01', title: 'Pré-cadastro', desc: 'Preencha o formulário abaixo com seus dados.' },
               { step: '02', title: 'Contato da equipe', desc: 'Nossa equipe entra em contato para orientação.' },
               { step: '03', title: 'Documentação', desc: 'Complete a documentação exigida para sua cidade.' },
-              { step: '04', title: 'Preparação para ativação', desc: 'Acompanhe a ativação da operação na sua cidade.' },
+              { step: '04', title: city.public_status === 'OPERACAO' ? 'Integração à operação' : 'Preparação para ativação', desc: city.public_status === 'OPERACAO' ? 'Após a análise e aprovação, você recebe as orientações para começar na plataforma.' : city.public_status === 'PAUSADA' ? 'Acompanhe as novidades sobre a operação na sua cidade.' : 'Acompanhe a ativação da operação na sua cidade.' },
             ].map((s, i) => (
               <Box key={i} sx={{ display: 'flex', gap: 2.5, position: 'relative', pb: i < 3 ? 3 : 0 }}>
                 {/* Vertical line */}
