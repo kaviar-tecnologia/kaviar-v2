@@ -29,11 +29,10 @@ describe('CrmPage premium redesign', () => {
     expect(src).toContain("PET_DRIVER");
   });
 
-  it('has mobile card view that does not depend exclusively on table', () => {
+  it('has compact card layout for screens up to 1199px', () => {
     expect(src).toContain('useMediaQuery');
-    expect(src).toContain('isMobile');
-    // Mobile view should render cards
-    expect(src).toContain('isMobile');
+    expect(src).toContain('isCompactLayout');
+    expect(src).toContain("'(max-width:1199px)'");
   });
 
   it('preserves loading state', () => {
@@ -56,7 +55,6 @@ describe('CrmPage premium redesign', () => {
   });
 
   it('uses MUI icons instead of emojis in STATUS_MAP', () => {
-    // Should NOT have emoji in status labels
     const statusBlock = src.slice(src.indexOf('STATUS_MAP'), src.indexOf('PRIORITY_MAP'));
     expect(statusBlock).not.toMatch(/[📥📞🤝📄📝⏳✅❌🚫⏸️]/);
   });
@@ -66,9 +64,23 @@ describe('CrmPage premium redesign', () => {
     expect(src).not.toContain("'📋 CRM KAVIAR'");
   });
 
-  it('parses CITY_LANDING notes in drawer', () => {
+  it('parses CITY_LANDING notes with EAR label (not Ouviu)', () => {
     expect(src).toContain('CITY_LANDING');
     expect(src).toContain('city_slug');
+    expect(src).toContain('EAR:');
+    expect(src).not.toContain('Ouviu:');
+  });
+
+  it('Drawer receives darkInputSx', () => {
+    const drawerLine = src.match(/Drawer.*PaperProps.*\{[^}]*\}/s);
+    expect(drawerLine).toBeTruthy();
+    expect(drawerLine[0]).toContain('darkInputSx');
+  });
+
+  it('all three DialogContent receive dark input styling', () => {
+    const dialogContents = src.match(/<DialogContent[^>]*>/g) || [];
+    const withDarkInput = dialogContents.filter(d => d.includes('darkInputSx'));
+    expect(withDarkInput.length).toBeGreaterThanOrEqual(3);
   });
 
   it('preserves CSV export', () => {
