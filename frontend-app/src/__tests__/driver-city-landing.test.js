@@ -109,6 +109,25 @@ describe('DriverCityLanding component source (API-driven)', () => {
     expect(src).toContain('backdropFilter');
   });
 
+  it('has dynamic headlines per public_status', () => {
+    expect(src).toContain('STATUS_HEADLINES');
+    expect(src).toContain('STATUS_SUBHEADLINES');
+    expect(src).toContain('STATUS_HEADLINES[city.public_status]');
+  });
+
+  it('OPERACAO subheadline does not contain primeira equipe', () => {
+    // Extract the STATUS_SUBHEADLINES block and verify OPERACAO line
+    const subheadlinesBlock = src.slice(src.indexOf('STATUS_SUBHEADLINES'), src.indexOf('STATUS_SUBHEADLINES') + 500);
+    const operacaoMatch = subheadlinesBlock.match(/OPERACAO:.*$/m);
+    expect(operacaoMatch).toBeTruthy();
+    expect(operacaoMatch[0]).not.toContain('primeira equipe');
+  });
+
+  it('PAUSADA uses neutral headline without city operation claims', () => {
+    expect(src).toContain('PAUSADA: null');
+    expect(src).toContain('KAVIAR em ${city.city}');
+  });
+
 });
 
 describe('App.jsx routing — landing localizada e preservação de rotas do DriverApp', () => {
@@ -172,5 +191,31 @@ describe('Admin route for driver-city-landings', () => {
 
   it('has Landing de Motoristas card', () => {
     expect(appSrc).toContain('Landing de Motoristas');
+  });
+});
+
+describe('Admin DriverCityLandingsPage — edit functionality', () => {
+  const adminPageSrc = readFileSync(resolve(__dirname, '../pages/admin/DriverCityLandingsPage.jsx'), 'utf8');
+
+  it('has edit button/icon', () => {
+    expect(adminPageSrc).toContain('Editar');
+    expect(adminPageSrc).toContain('Edit');
+  });
+
+  it('has edit dialog with public_status and whatsapp fields', () => {
+    expect(adminPageSrc).toContain('Editar cidade');
+    expect(adminPageSrc).toContain('editForm.public_status');
+    expect(adminPageSrc).toContain('editForm.whatsapp_number');
+  });
+
+  it('uses PATCH endpoint for editing', () => {
+    expect(adminPageSrc).toContain("method: 'PATCH'");
+    expect(adminPageSrc).toContain('/api/admin/driver-city-landings/');
+  });
+
+  it('shows city and UF as read-only in edit dialog', () => {
+    expect(adminPageSrc).toContain("editing?.city");
+    expect(adminPageSrc).toContain("editing?.state");
+    expect(adminPageSrc).toContain('disabled');
   });
 });

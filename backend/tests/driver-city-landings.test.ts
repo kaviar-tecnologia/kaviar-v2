@@ -171,6 +171,36 @@ describe('admin-driver-city-landings.ts', () => {
     expect(adminSrc).toContain('/motorista/cidade/');
     expect(adminSrc).toContain('public_url');
   });
+
+  it('has normalizeWhatsapp helper', () => {
+    expect(adminSrc).toContain('function normalizeWhatsapp');
+  });
+
+  it('normalizes whatsapp to digits only', () => {
+    expect(adminSrc).toContain("replace(/\\D/g, '')");
+  });
+
+  it('rejects whatsapp with fewer than 10 digits', () => {
+    expect(adminSrc).toContain('pelo menos 10 dígitos');
+    expect(adminSrc).toContain('digits.length < 10');
+  });
+
+  it('rejects whatsapp with more than 15 digits', () => {
+    expect(adminSrc).toContain('no máximo 15 dígitos');
+    expect(adminSrc).toContain('digits.length > 15');
+  });
+
+  it('stores only digits in whatsapp_number field', () => {
+    // POST uses waResult.digits
+    expect(adminSrc).toContain('whatsapp_number: waResult.digits');
+  });
+
+  it('applies normalizeWhatsapp in both POST and PATCH', () => {
+    const postSection = adminSrc.slice(adminSrc.indexOf("router.post('/'"), adminSrc.indexOf("router.patch('/:id'"));
+    const patchSection = adminSrc.slice(adminSrc.indexOf("router.patch('/:id'"));
+    expect(postSection).toContain('normalizeWhatsapp');
+    expect(patchSection).toContain('normalizeWhatsapp');
+  });
 });
 
 describe('app.ts registration', () => {

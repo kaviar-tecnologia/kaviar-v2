@@ -17,6 +17,15 @@ function toSlug(city: string, state: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+/** Normalize whatsapp_number: strip non-digits, validate 10-15 digits, return digits-only or null */
+function normalizeWhatsapp(value: unknown): { valid: boolean; digits: string | null; error?: string } {
+  if (!value || String(value).trim() === '') return { valid: true, digits: null };
+  const digits = String(value).replace(/\D/g, '');
+  if (digits.length < 10) return { valid: false, digits: null, error: 'WhatsApp deve ter pelo menos 10 dígitos' };
+  if (digits.length > 15) return { valid: false, digits: null, error: 'WhatsApp deve ter no máximo 15 dígitos' };
+  return { valid: true, digits };
+}
+
 // All routes require SUPER_ADMIN
 router.use(authenticateAdmin, requireRole(['SUPER_ADMIN']));
 
@@ -72,8 +81,9 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(409).json({ success: false, error: 'Slug já existe' });
     }
 
-    if (whatsapp_number && String(whatsapp_number).replace(/\D/g, '').length > 20) {
-      return res.status(400).json({ success: false, error: 'whatsapp_number inválido' });
+    const waResult = normalizeWhatsapp(whatsapp_number);
+    if (!waResult.valid) {
+      return res.status(400).json({ success: false, error: waResult.error });
     }
 
     const created = await prisma.driver_city_landings.create({
@@ -83,7 +93,7 @@ router.post('/', async (req: Request, res: Response) => {
         slug,
         public_status: status,
         landing_enabled: landing_enabled === true,
-        whatsapp_number: whatsapp_number ? String(whatsapp_number).trim() : null,
+        whatsapp_number: waResult.digits,
         created_by_admin_id: admin?.id || null,
         updated_by_admin_id: admin?.id || null,
       },
@@ -135,10 +145,11 @@ router.patch('/:id', async (req: Request, res: Response) => {
       data.landing_enabled = landing_enabled === true;
     }
     if (whatsapp_number !== undefined) {
-      if (whatsapp_number && String(whatsapp_number).replace(/\D/g, '').length > 20) {
-        return res.status(400).json({ success: false, error: 'whatsapp_number inválido' });
+      const waResult = normalizeWhatsapp(whatsapp_number);
+      if (!waResult.valid) {
+        return res.status(400).json({ success: false, error: waResult.error });
       }
-      data.whatsapp_number = whatsapp_number ? String(whatsapp_number).trim() : null;
+      data.whatsapp_number = waResult.digits;
     }
 
     const updated = await prisma.driver_city_landings.update({

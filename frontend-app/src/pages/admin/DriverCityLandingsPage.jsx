@@ -5,7 +5,7 @@ import {
   InputLabel, Alert, CircularProgress, Tooltip, FormControlLabel, Table,
   TableHead, TableRow, TableCell, TableBody, Paper
 } from '@mui/material';
-import { ContentCopy, Add } from '@mui/icons-material';
+import { ContentCopy, Add, Edit } from '@mui/icons-material';
 import { API_BASE_URL } from '../../config/api';
 
 const STATUS_LABELS = {
@@ -35,6 +35,8 @@ export default function DriverCityLandingsPage() {
   const [newCity, setNewCity] = useState({ city: '', state: '', public_status: 'IMPLANTACAO', landing_enabled: false, whatsapp_number: '' });
   const [saving, setSaving] = useState(false);
   const [confirmToggle, setConfirmToggle] = useState(null); // city object to toggle
+  const [editing, setEditing] = useState(null); // city object being edited
+  const [editForm, setEditForm] = useState({ public_status: '', whatsapp_number: '' });
 
   const fetchCities = async () => {
     setLoading(true); setError('');
@@ -104,6 +106,37 @@ export default function DriverCityLandingsPage() {
     setSaving(false);
   };
 
+  const openEdit = (city) => {
+    setEditing(city);
+    setEditForm({ public_status: city.public_status, whatsapp_number: city.whatsapp_number || '' });
+  };
+
+  const handleEdit = async () => {
+    if (!editing) return;
+    setSaving(true); setError(''); setSuccess('');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/driver-city-landings/${editing.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({
+          public_status: editForm.public_status,
+          whatsapp_number: editForm.whatsapp_number.trim() || null,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCities(prev => prev.map(c => c.id === editing.id ? { ...c, public_status: editForm.public_status, whatsapp_number: data.data.whatsapp_number } : c));
+        setSuccess(`${editing.city} atualizada`);
+        setEditing(null);
+      } else {
+        setError(data.error || 'Erro ao salvar');
+      }
+    } catch {
+      setError('Erro de conexão');
+    }
+    setSaving(false);
+  };
+
   const copyLink = (url) => {
     const full = `${window.location.origin}${url}`;
     navigator.clipboard.writeText(full).then(() => setSuccess('Link copiado!')).catch(() => {});
@@ -164,6 +197,11 @@ export default function DriverCityLandingsPage() {
                   {c.landing_enabled ? '🟢' : '⚪'}
                 </TableCell>
                 <TableCell align="center">
+                  <Tooltip title="Editar">
+                    <IconButton size="small" onClick={() => openEdit(c)}>
+                      <Edit fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                   {c.landing_enabled && (
                     <Tooltip title="Copiar link">
                       <IconButton size="small" onClick={() => copyLink(c.public_url)}>
@@ -224,6 +262,28 @@ export default function DriverCityLandingsPage() {
         <DialogActions>
           <Button onClick={() => setCreating(false)}>Cancelar</Button>
           <Button variant="contained" onClick={handleCreate} disabled={saving}>
+            {saving ? <CircularProgress size={18} /> : 'Salvar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit city dialog */}
+      <Dialog open={!!editing} onClose={() => setEditing(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>Editar cidade</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}>
+          <TextField label="Cidade" size="small" value={editing?.city || ''} disabled />
+          <TextField label="UF" size="small" value={editing?.state || ''} disabled />
+          <FormControl size="small">
+            <InputLabel>Fase pública</InputLabel>
+            <Select value={editForm.public_status} label="Fase pública" onChange={e => setEditForm(p => ({ ...p, public_status: e.target.value }))}>
+              {VALID_STATUSES.map(s => <MenuItem key={s} value={s}>{STATUS_LABELS[s]}</MenuItem>)}
+            </Select>
+          </FormControl>
+          <TextField label="WhatsApp (somente dígitos)" size="small" value={editForm.whatsapp_number} onChange={e => setEditForm(p => ({ ...p, whatsapp_number: e.target.value }))} placeholder="5519999999999" helperText="10 a 15 dígitos. Deixe vazio para usar o padrão KAVIAR." />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditing(null)}>Cancelar</Button>
+          <Button variant="contained" onClick={handleEdit} disabled={saving}>
             {saving ? <CircularProgress size={18} /> : 'Salvar'}
           </Button>
         </DialogActions>

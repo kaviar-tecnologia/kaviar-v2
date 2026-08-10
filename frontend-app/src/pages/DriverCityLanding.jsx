@@ -22,6 +22,20 @@ const STATUS_MESSAGES = {
   PAUSADA: 'Em breve, mais informações sobre esta cidade.',
 };
 
+const STATUS_HEADLINES = {
+  IMPLANTACAO: 'Motoristas Fundadores KAVIAR',
+  RECRUTAMENTO: 'Motoristas Fundadores KAVIAR',
+  OPERACAO: 'Seja motorista parceiro KAVIAR',
+  PAUSADA: null, // will use city name dynamically
+};
+
+const STATUS_SUBHEADLINES = {
+  IMPLANTACAO: (city) => `Faça parte da primeira equipe de motoristas parceiros KAVIAR em ${city}.`,
+  RECRUTAMENTO: (city) => `Estamos formando a equipe de motoristas parceiros KAVIAR em ${city}.`,
+  OPERACAO: (city) => `Cadastre seu interesse para dirigir com a KAVIAR em ${city}.`,
+  PAUSADA: (city) => `Acompanhe as novidades da KAVIAR em ${city}.`,
+};
+
 const inputSx = {
   '& .MuiOutlinedInput-root': {
     bgcolor: 'rgba(255,255,255,0.03)',
@@ -211,10 +225,10 @@ export default function DriverCityLanding() {
           fontSize: { xs: '1.5rem', md: '2rem' },
           lineHeight: 1.2,
         }}>
-          Motoristas Fundadores KAVIAR
+          {STATUS_HEADLINES[city.public_status] || `KAVIAR em ${city.city}`}
         </Typography>
         <Typography sx={{ color: 'rgba(255,255,255,0.75)', fontSize: { xs: 15, md: 17 }, maxWidth: 520, mx: 'auto', mb: 1.5, lineHeight: 1.5 }}>
-          Faça parte da primeira equipe de motoristas parceiros KAVIAR em {city.city}.
+          {(STATUS_SUBHEADLINES[city.public_status] || STATUS_SUBHEADLINES.PAUSADA)(city.city)}
         </Typography>
         <Typography sx={{ color: 'rgba(184,148,46,0.7)', fontSize: 13, letterSpacing: 0.5, mb: 4 }}>
           {statusMsg}
