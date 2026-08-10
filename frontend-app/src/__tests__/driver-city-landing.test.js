@@ -1,53 +1,53 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect } from 'vitest';
-import { DRIVER_CITY_CONFIG, getCityBySlug, isValidCitySlug } from '../config/driverCities';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
-describe('driverCities config', () => {
-  it('has santa-cruz-das-palmeiras-sp configured', () => {
-    const city = DRIVER_CITY_CONFIG['santa-cruz-das-palmeiras-sp'];
-    expect(city).toBeDefined();
-    expect(city.name).toBe('Santa Cruz das Palmeiras');
-    expect(city.state).toBe('SP');
-    expect(city.status).toBe('implantacao');
-  });
-
-  it('getCityBySlug returns city for valid slug', () => {
-    const city = getCityBySlug('santa-cruz-das-palmeiras-sp');
-    expect(city).not.toBeNull();
-    expect(city.name).toBe('Santa Cruz das Palmeiras');
-  });
-
-  it('getCityBySlug returns null for unknown slug', () => {
-    expect(getCityBySlug('cidade-inexistente')).toBeNull();
-  });
-
-  it('isValidCitySlug returns true for valid slug', () => {
-    expect(isValidCitySlug('santa-cruz-das-palmeiras-sp')).toBe(true);
-  });
-
-  it('isValidCitySlug returns false for unknown slug', () => {
-    expect(isValidCitySlug('nao-existe')).toBe(false);
-  });
-});
-
-describe('DriverCityLanding component source', () => {
+describe('DriverCityLanding component source (API-driven)', () => {
   const src = readFileSync(resolve(__dirname, '../pages/DriverCityLanding.jsx'), 'utf8');
 
-  it('renders city name from config (Santa Cruz das Palmeiras)', () => {
-    // Component uses city.name dynamically — verify it references getCityBySlug
-    expect(src).toContain('getCityBySlug');
-    expect(src).toContain('city.name');
+  it('fetches city from API instead of hardcoded config', () => {
+    expect(src).toContain('/api/public/driver-city-landings/');
+    expect(src).not.toContain('getCityBySlug');
+    expect(src).not.toContain("from '../config/driverCities'");
+  });
+
+  it('implements LOADING state with CircularProgress', () => {
+    expect(src).toContain("pageState === 'LOADING'");
+    expect(src).toContain('CircularProgress');
+  });
+
+  it('implements NETWORK_ERROR state with retry', () => {
+    expect(src).toContain("pageState === 'NETWORK_ERROR'");
+    expect(src).toContain('Tentar novamente');
+    expect(src).toContain('fetchCity');
+  });
+
+  it('implements CITY_NOT_FOUND state', () => {
+    expect(src).toContain("pageState === 'CITY_NOT_FOUND'");
+    expect(src).toContain('Cidade não encontrada');
+  });
+
+  it('uses city.city and city.state from API response', () => {
+    expect(src).toContain('city.city');
+    expect(src).toContain('city.state');
+  });
+
+  it('uses whatsapp_number from API with fallback', () => {
+    expect(src).toContain('city?.whatsapp_number');
+    expect(src).toContain('WHATSAPP_FALLBACK');
+  });
+
+  it('shows STATUS_MESSAGES based on public_status', () => {
+    expect(src).toContain('STATUS_MESSAGES');
+    expect(src).toContain('IMPLANTACAO');
+    expect(src).toContain('RECRUTAMENTO');
+    expect(src).toContain('OPERACAO');
+    expect(src).toContain('PAUSADA');
   });
 
   it('shows Motoristas Fundadores text', () => {
     expect(src).toContain('Motoristas Fundadores KAVIAR');
-  });
-
-  it('shows implantação / formação da primeira equipe messaging', () => {
-    expect(src).toContain('em implantação');
-    expect(src).toContain('formação da primeira equipe');
   });
 
   it('requires name and WhatsApp in form validation', () => {
@@ -55,12 +55,11 @@ describe('DriverCityLanding component source', () => {
     expect(src).toContain("WhatsApp válido é obrigatório");
   });
 
-  it('sends lead_type DRIVER with city and modality and EAR', () => {
-    // The endpoint receives these fields
-    expect(src).toContain('city_slug');
-    expect(src).toContain('city_name');
-    expect(src).toContain('modality');
-    expect(src).toContain('ear');
+  it('sends city_slug without city_name/state to POST', () => {
+    expect(src).toContain('city_slug: citySlug');
+    // Should NOT send city_name or state from frontend
+    expect(src).not.toContain("city_name:");
+    expect(src).not.toContain("state: city");
   });
 
   it('captures UTM params from URL', () => {
@@ -70,14 +69,9 @@ describe('DriverCityLanding component source', () => {
     expect(src).toContain('useSearchParams');
   });
 
-  it('WhatsApp link contains city name', () => {
-    // The message template includes city.name
+  it('WhatsApp link contains city reference', () => {
     expect(src).toContain('motorista parceiro KAVIAR em');
     expect(src).toContain('wa.me');
-  });
-
-  it('has fallback for unknown city slug', () => {
-    expect(src).toContain('Cidade não encontrada');
   });
 
   it('does NOT contain misleading claims', () => {
@@ -86,7 +80,35 @@ describe('DriverCityLanding component source', () => {
     expect(src).not.toContain('ganhos garantidos');
     expect(src).not.toContain('renda garantida');
     expect(src).not.toContain('aprovação garantida');
+    expect(src).not.toContain('você já está segurado');
+    expect(src).not.toContain('seguro ativo');
   });
+
+  it('has Proteção KAVIAR section with compliant messaging', () => {
+    expect(src).toContain('Proteção KAVIAR');
+    expect(src).toContain('prepara cada nova cidade com foco em segurança');
+    expect(src).toContain('exigências locais aplicáveis');
+  });
+
+  it('has trust band with local/tech/city messaging', () => {
+    expect(src).toContain('Mobilidade local');
+    expect(src).toContain('Tecnologia brasileira');
+  });
+
+  it('has premium timeline with 4 steps', () => {
+    expect(src).toContain('Pré-cadastro');
+    expect(src).toContain('Contato da equipe');
+    expect(src).toContain('Documentação');
+    expect(src).toContain('Preparação para ativação');
+  });
+
+  it('has premium visual identity (dark bg, gold)', () => {
+    expect(src).toContain("'#B8942E'"); // GOLD
+    expect(src).toContain("'#050508'"); // DARK_BG
+    expect(src).toContain('radial-gradient');
+    expect(src).toContain('backdropFilter');
+  });
+
 });
 
 describe('App.jsx routing — landing localizada e preservação de rotas do DriverApp', () => {
@@ -97,7 +119,6 @@ describe('App.jsx routing — landing localizada e preservação de rotas do Dri
   });
 
   it('does NOT have bare /motorista/:citySlug route (would collide with DriverApp)', () => {
-    // Ensure the old problematic pattern is not present
     const lines = appSrc.split('\n');
     const hasBareParam = lines.some(line =>
       line.includes('path="/motorista/:citySlug"') ||
@@ -118,23 +139,38 @@ describe('App.jsx routing — landing localizada e preservação de rotas do Dri
     expect(appSrc).toContain('path="/motorista/*"');
   });
 
-  it('preserves /motorista/login access (handled by /motorista/* DriverApp)', () => {
-    // DriverApp handles internal routes via wildcard; ensure wildcard is present
+  it('preserves DriverApp for /motorista/login, /motorista/status, /motorista/documents, /motorista/ride', () => {
     expect(appSrc).toContain('element={<DriverApp />}');
   });
 
-  it('/motorista/cidade/:citySlug does not collide with /motorista/login, /motorista/status, /motorista/documents, /motorista/ride', () => {
-    // The path /motorista/cidade/:citySlug has a static "cidade" segment,
-    // so it can NEVER match /motorista/login, /motorista/status, etc.
+  it('/motorista/cidade/:citySlug does not collide with DriverApp internal routes', () => {
     expect(appSrc).toContain('/motorista/cidade/:citySlug');
-    // None of these segments equal "cidade"
-    const protectedSegments = ['login', 'status', 'documents', 'ride'];
-    protectedSegments.forEach(seg => {
+    ['login', 'status', 'documents', 'ride'].forEach(seg => {
       expect(seg).not.toBe('cidade');
     });
   });
 
   it('imports DriverCityLanding', () => {
     expect(appSrc).toContain('DriverCityLanding');
+  });
+});
+
+describe('Admin route for driver-city-landings', () => {
+  const appSrc = readFileSync(resolve(__dirname, '../components/admin/AdminApp.jsx'), 'utf8');
+
+  it('has /driver-city-landings admin route', () => {
+    expect(appSrc).toContain('/driver-city-landings');
+  });
+
+  it('requires SUPER_ADMIN for the route', () => {
+    expect(appSrc).toContain('requireSuperAdmin');
+  });
+
+  it('imports DriverCityLandingsPage', () => {
+    expect(appSrc).toContain('DriverCityLandingsPage');
+  });
+
+  it('has Landing de Motoristas card', () => {
+    expect(appSrc).toContain('Landing de Motoristas');
   });
 });
