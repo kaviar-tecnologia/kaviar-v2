@@ -577,3 +577,143 @@ test.describe('Finance Transactions — Reference Selectors', () => {
     await expect(page.getByText('Novo Lançamento Manual')).toBeVisible();
   });
 });
+
+test.describe('Finance Transactions — Competence Month Filter', () => {
+  test('field "Competência (mês/ano)" is visible', async ({ page }) => {
+    await setupAuth(page);
+    await interceptAPIs(page);
+    await page.route('**/api/admin/finance/dashboard-summary**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: null }) }));
+    await page.goto('/admin/financeiro/lancamentos');
+    await expect(page.getByLabel('Competência (mês/ano)')).toBeVisible();
+  });
+
+  test('selecting 2026-07 + Filtrar sends correct date params to transactions', async ({ page }) => {
+    await setupAuth(page);
+    let capturedUrl = '';
+    await page.route('**/api/admin/finance/transactions?**', (route) => {
+      capturedUrl = route.request().url();
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) });
+    });
+    await page.route('**/api/admin/finance/transactions', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) }));
+    await page.route('**/api/admin/finance/accounts**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockAccounts) }));
+    await page.route('**/api/admin/finance/categories**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCategories) }));
+    await page.route('**/api/admin/finance/cost-centers**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCostCenters) }));
+    await page.route('**/api/admin/finance/dashboard-summary**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: null }) }));
+    await page.goto('/admin/financeiro/lancamentos');
+    await page.getByLabel('Competência (mês/ano)').fill('2026-07');
+    await page.getByRole('button', { name: 'Filtrar' }).click();
+    await page.waitForTimeout(500);
+    expect(capturedUrl).toContain('date_field=competence_date');
+    expect(capturedUrl).toContain('date_from=2026-07-01');
+    expect(capturedUrl).toContain('date_to=2026-07-31');
+  });
+
+  test('dashboard-summary receives same date range', async ({ page }) => {
+    await setupAuth(page);
+    let dashUrl = '';
+    await page.route('**/api/admin/finance/transactions?**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) }));
+    await page.route('**/api/admin/finance/transactions', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) }));
+    await page.route('**/api/admin/finance/accounts**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockAccounts) }));
+    await page.route('**/api/admin/finance/categories**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCategories) }));
+    await page.route('**/api/admin/finance/cost-centers**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCostCenters) }));
+    await page.route('**/api/admin/finance/dashboard-summary**', (route) => {
+      dashUrl = route.request().url();
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: null }) });
+    });
+    await page.goto('/admin/financeiro/lancamentos');
+    await page.getByLabel('Competência (mês/ano)').fill('2026-07');
+    await page.getByRole('button', { name: 'Filtrar' }).click();
+    await page.waitForTimeout(500);
+    expect(dashUrl).toContain('date_field=competence_date');
+    expect(dashUrl).toContain('date_from=2026-07-01');
+    expect(dashUrl).toContain('date_to=2026-07-31');
+  });
+
+  test('CSV export receives same date range', async ({ page }) => {
+    await setupAuth(page);
+    let csvUrl = '';
+    await page.route('**/api/admin/finance/transactions?**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) }));
+    await page.route('**/api/admin/finance/transactions', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) }));
+    await page.route('**/api/admin/finance/accounts**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockAccounts) }));
+    await page.route('**/api/admin/finance/categories**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCategories) }));
+    await page.route('**/api/admin/finance/cost-centers**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCostCenters) }));
+    await page.route('**/api/admin/finance/dashboard-summary**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: null }) }));
+    await page.route('**/api/admin/finance/transactions/export.csv**', (route) => {
+      csvUrl = route.request().url();
+      return route.fulfill({ status: 200, headers: { 'Content-Type': 'text/csv' }, body: '"ID"\r\n"txn-1"\r\n' });
+    });
+    await page.goto('/admin/financeiro/lancamentos');
+    await page.getByLabel('Competência (mês/ano)').fill('2026-07');
+    await page.getByRole('button', { name: 'Filtrar' }).click();
+    await page.waitForTimeout(300);
+    await page.getByRole('button', { name: 'Exportar CSV' }).click();
+    await page.waitForTimeout(500);
+    expect(csvUrl).toContain('date_field=competence_date');
+    expect(csvUrl).toContain('date_from=2026-07-01');
+    expect(csvUrl).toContain('date_to=2026-07-31');
+  });
+
+  test('2028-02 (leap year) generates date_to=2028-02-29', async ({ page }) => {
+    await setupAuth(page);
+    let capturedUrl = '';
+    await page.route('**/api/admin/finance/transactions?**', (route) => {
+      capturedUrl = route.request().url();
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) });
+    });
+    await page.route('**/api/admin/finance/transactions', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) }));
+    await page.route('**/api/admin/finance/accounts**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockAccounts) }));
+    await page.route('**/api/admin/finance/categories**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCategories) }));
+    await page.route('**/api/admin/finance/cost-centers**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCostCenters) }));
+    await page.route('**/api/admin/finance/dashboard-summary**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: null }) }));
+    await page.goto('/admin/financeiro/lancamentos');
+    await page.getByLabel('Competência (mês/ano)').fill('2028-02');
+    await page.getByRole('button', { name: 'Filtrar' }).click();
+    await page.waitForTimeout(500);
+    expect(capturedUrl).toContain('date_from=2028-02-01');
+    expect(capturedUrl).toContain('date_to=2028-02-29');
+  });
+
+  test('empty filter does NOT send date_from/date_to', async ({ page }) => {
+    await setupAuth(page);
+    let capturedUrl = '';
+    await page.route('**/api/admin/finance/transactions?**', (route) => {
+      capturedUrl = route.request().url();
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) });
+    });
+    await page.route('**/api/admin/finance/transactions', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) }));
+    await page.route('**/api/admin/finance/accounts**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockAccounts) }));
+    await page.route('**/api/admin/finance/categories**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCategories) }));
+    await page.route('**/api/admin/finance/cost-centers**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCostCenters) }));
+    await page.route('**/api/admin/finance/dashboard-summary**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: null }) }));
+    await page.goto('/admin/financeiro/lancamentos');
+    // Leave competence_month empty, just click filter
+    await page.getByRole('button', { name: 'Filtrar' }).click();
+    await page.waitForTimeout(500);
+    expect(capturedUrl).not.toContain('date_from');
+    expect(capturedUrl).not.toContain('date_to');
+    expect(capturedUrl).not.toContain('date_field');
+  });
+
+  test('existing direction filter still works alongside competence', async ({ page }) => {
+    await setupAuth(page);
+    let capturedUrl = '';
+    await page.route('**/api/admin/finance/transactions?**', (route) => {
+      capturedUrl = route.request().url();
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) });
+    });
+    await page.route('**/api/admin/finance/transactions', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockListResponse) }));
+    await page.route('**/api/admin/finance/accounts**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockAccounts) }));
+    await page.route('**/api/admin/finance/categories**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCategories) }));
+    await page.route('**/api/admin/finance/cost-centers**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockCostCenters) }));
+    await page.route('**/api/admin/finance/dashboard-summary**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: null }) }));
+    await page.goto('/admin/financeiro/lancamentos');
+    await page.getByLabel('Competência (mês/ano)').fill('2026-07');
+    await page.getByLabel('Direção').click();
+    await page.getByRole('option', { name: 'Saída' }).click();
+    await page.getByRole('button', { name: 'Filtrar' }).click();
+    await page.waitForTimeout(500);
+    expect(capturedUrl).toContain('direction=OUT');
+    expect(capturedUrl).toContain('date_from=2026-07-01');
+    expect(capturedUrl).toContain('date_to=2026-07-31');
+  });
+});
