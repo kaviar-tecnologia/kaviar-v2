@@ -4,12 +4,40 @@ import { prisma } from '../lib/prisma';
 const router = Router();
 
 // Allowed values — validated server-side
-const ALLOWED_CITY_SLUGS = ['santa-cruz-das-palmeiras-sp'];
 const ALLOWED_MODALITIES = ['CAR', 'MOTO'];
 const ALLOWED_EAR = ['YES', 'NO'];
 const MAX_NAME_LEN = 120;
 const MAX_UTM_LEN = 100;
 const MAX_NOTES_LEN = 500;
+
+// GET /api/public/driver-city-landings/:slug — public city config
+router.get('/driver-city-landings/:slug', async (req: Request, res: Response) => {
+  try {
+    const { slug } = req.params;
+    const city = await prisma.driver_city_landings.findUnique({
+      where: { slug: String(slug).toLowerCase().trim() },
+    });
+
+    if (!city || !city.landing_enabled) {
+      return res.status(404).json({ success: false, error: 'Cidade não encontrada' });
+    }
+
+    // Return only public-safe fields
+    res.json({
+      success: true,
+      data: {
+        city: city.city,
+        state: city.state,
+        slug: city.slug,
+        public_status: city.public_status,
+        whatsapp_number: city.whatsapp_number || null,
+      },
+    });
+  } catch (err) {
+    console.error('[PUBLIC_DRIVER_CITY_LANDINGS] get error:', err);
+    res.status(500).json({ success: false, error: 'Erro interno' });
+  }
+});
 
 // POST /api/public/city-lead — lead público de landing localizada (sem referral code)
 router.post('/city-lead', async (req: Request, res: Response) => {
@@ -31,9 +59,10 @@ router.post('/city-lead', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'Email inválido' });
     }
 
-    // Validate city_slug against allowed list
+    // Validate city_slug against database (must exist and be enabled)
     const slug = String(city_slug).toLowerCase().trim();
-    if (!ALLOWED_CITY_SLUGS.includes(slug)) {
+    const cityRecord = await prisma.driver_city_landings.findUnique({ where: { slug } });
+    if (!cityRecord || !cityRecord.landing_enabled) {
       return res.status(400).json({ success: false, error: 'Cidade não disponível' });
     }
 
@@ -58,8 +87,9 @@ router.post('/city-lead', async (req: Request, res: Response) => {
     const utmMed = safeUtm(utm_medium);
     const utmCamp = safeUtm(utm_campaign);
 
-    // Build notes with structured metadata
+    // Build notes with structured metadata — use DB data as source of truth
     const meta: string[] = [];
+    meta.push(`city=${cityRecord.city}/${cityRecord.state}`);
     meta.push(`city_slug=${slug}`);
     if (mod) meta.push(`modality=${mod}`);
     if (earVal) meta.push(`ear=${earVal}`);

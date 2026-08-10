@@ -5130,3 +5130,21 @@ model accounting_automation_log {
   @@index([legal_entity_id, action, created_at])
   @@map("accounting_automation_log")
 }
+
+model driver_city_landings {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  city                String   @db.VarChar(120)
+  state               String   @db.VarChar(2)
+  slug                String   @unique @db.VarChar(160)
+  public_status       String   @db.VarChar(32)
+  landing_enabled     Boolean  @default(false)
+  whatsapp_number     String?  @db.VarChar(20)
+  created_by_admin_id String?  @db.Uuid
+  updated_by_admin_id String?  @db.Uuid
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  @@index([slug], map: "idx_driver_city_landings_slug")
+  @@index([landing_enabled], map: "idx_driver_city_landings_enabled")
+  @@index([public_status], map: "idx_driver_city_landings_status")
+}

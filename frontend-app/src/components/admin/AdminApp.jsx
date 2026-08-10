@@ -51,6 +51,7 @@ import ForgotPassword from "../../pages/admin/ForgotPassword";
 import InvestorInvites from "../../pages/admin/InvestorInvites";
 import InvestorVision from "../../pages/admin/InvestorVision";
 import ConsultantLeads from "../../pages/admin/ConsultantLeads";
+import DriverCityLandingsPage from "../../pages/admin/DriverCityLandingsPage";
 import LeadPerformance from "../../pages/admin/LeadPerformance";
 import LocalOperators from "../../pages/admin/LocalOperators";
 import TerritorialPartners from "../../pages/admin/TerritorialPartners";
@@ -489,6 +490,7 @@ function AdminHome() {
               { Icon: Description, title: 'Consulta Regulatória Municipal', desc: 'Documento institucional + envio WhatsApp via template Twilio', to: '/admin/regulatory-consultation' },
               { Icon: Shield, title: 'Seguro APP e Coberturas', desc: 'Readiness interno por modalidade, território e vigência', to: '/admin/insurance-coverages' },
               ...(isSuperAdmin ? [{ Icon: Storefront, title: 'Comércios — Admin', desc: 'Financeiro, portal e ativações avançadas', to: '/admin/commerce' }] : []),
+              ...(isSuperAdmin ? [{ Icon: Public, title: 'Landing de Motoristas', desc: 'Gerenciar cidades e landing de captação', to: '/admin/driver-city-landings' }] : []),
             ]},
             { section: 'Financeiro', items: [
               ...(canAccessFinance ? [
@@ -667,6 +669,14 @@ export default function AdminApp() {
               <Container maxWidth="lg" sx={{ mt: 2 }}>
                 <AdminHeader />
                 <ConsultantLeadsHub />
+              </Container>
+            </ProtectedAdminRoute>
+          } />
+          <Route path="/driver-city-landings" element={
+            <ProtectedAdminRoute requireSuperAdmin>
+              <Container maxWidth="lg" sx={{ mt: 2 }}>
+                <AdminHeader />
+                <DriverCityLandingsPage />
               </Container>
             </ProtectedAdminRoute>
           } />
