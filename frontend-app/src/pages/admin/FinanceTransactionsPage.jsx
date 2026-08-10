@@ -52,6 +52,23 @@ function todayLocalISO() {
   return `${year}-${month}-${day}`;
 }
 
+/**
+ * Convert YYYY-MM to { date_field, date_from, date_to } for competence_date filtering.
+ * Returns null if value is empty. Uses pure date math (no UTC conversion).
+ */
+function competenceMonthToDateRange(value) {
+  if (!value) return null;
+  const match = /^(\d{4})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const year = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  // Last day: create date for next month day 0
+  const lastDay = new Date(year, month, 0).getDate();
+  const from = `${match[1]}-${match[2]}-01`;
+  const to = `${match[1]}-${match[2]}-${String(lastDay).padStart(2, '0')}`;
+  return { date_field: 'competence_date', date_from: from, date_to: to };
+}
+
 export default function FinanceTransactionsPage() {
   const { getAdminData, isSuperAdmin } = useAdminAuth();
   const canWrite = isSuperAdmin();
@@ -60,7 +77,7 @@ export default function FinanceTransactionsPage() {
   const [error, setError] = useState('');
   const [page, setPage] = useState(0);
   const [limit, setLimit] = useState(25);
-  const [filters, setFilters] = useState({ direction: '', status: '', transaction_type: '', search: '' });
+  const [filters, setFilters] = useState({ direction: '', status: '', transaction_type: '', search: '', competence_month: '' });
   // Dialogs
   const [createOpen, setCreateOpen] = useState(false);
   const [editDialog, setEditDialog] = useState(null); // txn to edit
@@ -103,7 +120,9 @@ export default function FinanceTransactionsPage() {
   const fetchData = useCallback(async (p = page, l = limit) => {
     setLoading(true); setError('');
     try {
-      const params = { page: p + 1, limit: l, source_type: 'MANUAL', ...filters };
+      const { competence_month, ...rest } = filters;
+      const dateRange = competenceMonthToDateRange(competence_month);
+      const params = { page: p + 1, limit: l, source_type: 'MANUAL', ...rest, ...dateRange };
       Object.keys(params).forEach(k => { if (!params[k]) delete params[k]; });
       const result = await listFinanceTransactions(params);
       setData(result);
@@ -123,7 +142,9 @@ export default function FinanceTransactionsPage() {
   const fetchDashboard = useCallback(async () => {
     setDashLoading(true);
     try {
-      const params = { source_type: 'MANUAL', ...filters };
+      const { competence_month, ...rest } = filters;
+      const dateRange = competenceMonthToDateRange(competence_month);
+      const params = { source_type: 'MANUAL', ...rest, ...dateRange };
       Object.keys(params).forEach(k => { if (!params[k]) delete params[k]; });
       const result = await fetchDashboardSummary(params);
       setDashboard(result?.data || null);
@@ -143,7 +164,9 @@ export default function FinanceTransactionsPage() {
     setExporting(true);
     setError('');
     try {
-      const params = { source_type: 'MANUAL', ...filters };
+      const { competence_month, ...rest } = filters;
+      const dateRange = competenceMonthToDateRange(competence_month);
+      const params = { source_type: 'MANUAL', ...rest, ...dateRange };
       Object.keys(params).forEach(k => { if (!params[k]) delete params[k]; });
       const response = await exportFinanceTransactionsCsv(params);
       const blob = response.data instanceof Blob ? response.data : new Blob([response.data], { type: 'text/csv;charset=utf-8' });
@@ -245,14 +268,15 @@ export default function FinanceTransactionsPage() {
           </Box>
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12} sm={3}><TextField label="Buscar" size="small" fullWidth value={filters.search} onChange={(e) => setFilters(f => ({ ...f, search: e.target.value }))} /></Grid>
+            <Grid item xs={6} sm={2}><TextField label="Competência (mês/ano)" type="month" size="small" fullWidth value={filters.competence_month} onChange={(e) => setFilters(f => ({ ...f, competence_month: e.target.value }))} InputLabelProps={{ shrink: true }} /></Grid>
             <Grid item xs={6} sm={2}><TextField label="Direção" select size="small" fullWidth value={filters.direction} onChange={(e) => setFilters(f => ({ ...f, direction: e.target.value }))}>
               <MenuItem value="">Todas</MenuItem><MenuItem value="IN">Entrada</MenuItem><MenuItem value="OUT">Saída</MenuItem>
             </TextField></Grid>
             <Grid item xs={6} sm={2}><TextField label="Status" select size="small" fullWidth value={filters.status} onChange={(e) => setFilters(f => ({ ...f, status: e.target.value }))}>
               <MenuItem value="">Todos</MenuItem>{Object.entries(STATUS_LABELS).map(([k, v]) => <MenuItem key={k} value={k}>{v}</MenuItem>)}
             </TextField></Grid>
-            <Grid item xs={6} sm={2}><Button variant="contained" size="small" startIcon={<Refresh />} onClick={handleFilter} sx={{ textTransform: 'none', fontWeight: 600 }}>Filtrar</Button></Grid>
-            <Grid item xs={6} sm={2}><Button variant="outlined" size="small" startIcon={<Download />} onClick={handleExportCsv} disabled={exporting || loading} sx={{ textTransform: 'none', fontWeight: 600 }}>{exporting ? 'Exportando...' : 'Exportar CSV'}</Button></Grid>
+            <Grid item xs={6} sm={1.5}><Button variant="contained" size="small" startIcon={<Refresh />} onClick={handleFilter} sx={{ textTransform: 'none', fontWeight: 600 }}>Filtrar</Button></Grid>
+            <Grid item xs={6} sm={1.5}><Button variant="outlined" size="small" startIcon={<Download />} onClick={handleExportCsv} disabled={exporting || loading} sx={{ textTransform: 'none', fontWeight: 600 }}>{exporting ? 'Exportando...' : 'Exportar CSV'}</Button></Grid>
           </Grid>
         </CardContent>
       </Card>
