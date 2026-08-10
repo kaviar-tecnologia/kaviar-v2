@@ -114,7 +114,7 @@ const darkInputSx = {
 const darkDialogPaper = { sx: { bgcolor: '#0D1117', border: `1px solid ${CARD_BORDER}`, color: TEXT_PRIMARY, backgroundImage: 'none' } };
 
 export default function CrmPage() {
-  const isMobile = useMediaQuery('(max-width:768px)');
+  const isCompactLayout = useMediaQuery('(max-width:1199px)');
   const [stats, setStats] = useState({});
   const [leads, setLeads] = useState([]);
   const [total, setTotal] = useState(0);
@@ -420,7 +420,7 @@ export default function CrmPage() {
       {/* Table / Mobile Cards */}
       {loading ? <Box sx={{ textAlign: 'center', py: 4 }}><CircularProgress sx={{ color: GOLD }} /></Box> : (
         <>
-          {isMobile ? (
+          {isCompactLayout ? (
             /* Mobile Card View */
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
               {leads.map(lead => {
@@ -537,7 +537,7 @@ export default function CrmPage() {
       </Menu>
 
       {/* Detail Drawer */}
-      <Drawer anchor="right" open={drawerOpen} onClose={() => setDrawerOpen(false)} PaperProps={{ sx: { width: { xs: '100%', md: 520 }, p: 3, bgcolor: '#0D1117', color: TEXT_PRIMARY, borderLeft: `1px solid ${CARD_BORDER}` } }}>
+      <Drawer anchor="right" open={drawerOpen} onClose={() => setDrawerOpen(false)} PaperProps={{ sx: { width: { xs: '100%', md: 520 }, p: 3, bgcolor: '#0D1117', color: TEXT_PRIMARY, borderLeft: `1px solid ${CARD_BORDER}`, ...darkInputSx } }}>
         {selectedLead && (
           <Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
@@ -601,7 +601,7 @@ export default function CrmPage() {
                       {parsed.city && <Chip label={`Cidade: ${parsed.city}`} size="small" sx={{ fontSize: 10, bgcolor: 'rgba(99,102,241,0.15)', color: '#A5B4FC' }} />}
                       {parsed.city_slug && <Chip label={`Slug: ${parsed.city_slug}`} size="small" sx={{ fontSize: 10, bgcolor: 'rgba(99,102,241,0.15)', color: '#A5B4FC' }} />}
                       {parsed.modality && <Chip label={`Modalidade: ${parsed.modality}`} size="small" sx={{ fontSize: 10, bgcolor: 'rgba(99,102,241,0.15)', color: '#A5B4FC' }} />}
-                      {parsed.ear && <Chip label={`Ouviu: ${parsed.ear}`} size="small" sx={{ fontSize: 10, bgcolor: 'rgba(99,102,241,0.15)', color: '#A5B4FC' }} />}
+                      {parsed.ear && <Chip label={`EAR: ${parsed.ear}`} size="small" sx={{ fontSize: 10, bgcolor: 'rgba(99,102,241,0.15)', color: '#A5B4FC' }} />}
                     </Box>
                   </Box>
                 );
@@ -672,7 +672,7 @@ export default function CrmPage() {
         <DialogTitle sx={{ fontWeight: 700, color: TEXT_PRIMARY, display: 'flex', alignItems: 'center', gap: 1 }}>
           {createForm.lead_type === 'LOCAL_BUSINESS' ? <><Storefront sx={{ color: '#059669' }} /> Novo Comércio Local</> : createForm.lead_type === 'ASSOCIATION' ? <><AccountBalance sx={{ color: '#7C3AED' }} /> Nova Associação</> : <><Assignment sx={{ color: GOLD }} /> Novo Lead</>}
         </DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important', ...darkInputSx }}>
           <TextField label="Nome *" size="small" value={createForm.name} onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))} />
           <Box sx={{ display: 'flex', gap: 1 }}>
             <TextField label="Telefone" size="small" fullWidth value={createForm.phone} onChange={e => setCreateForm(f => ({ ...f, phone: e.target.value }))} />
@@ -725,7 +725,7 @@ export default function CrmPage() {
       {/* Status Change Dialog */}
       <Dialog open={statusOpen} onClose={() => setStatusOpen(false)} maxWidth="xs" fullWidth PaperProps={darkDialogPaper}>
         <DialogTitle sx={{ color: TEXT_PRIMARY }}>Alterar Status</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ ...darkInputSx }}>
           <FormControl size="small" fullWidth sx={{ mt: 1 }}>
             <InputLabel>Novo Status</InputLabel>
             <Select value={newStatus} label="Novo Status" onChange={e => setNewStatus(e.target.value)}>
@@ -742,7 +742,7 @@ export default function CrmPage() {
       {/* Interaction Dialog */}
       <Dialog open={interactionOpen} onClose={() => setInteractionOpen(false)} maxWidth="sm" fullWidth PaperProps={darkDialogPaper}>
         <DialogTitle sx={{ color: TEXT_PRIMARY }}>Adicionar Interação</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important' }}>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important', ...darkInputSx }}>
           <FormControl size="small" fullWidth>
             <InputLabel>Tipo</InputLabel>
             <Select value={interactionForm.event_type} label="Tipo" onChange={e => setInteractionForm(f => ({ ...f, event_type: e.target.value }))}>
