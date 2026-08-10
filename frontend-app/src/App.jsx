@@ -35,6 +35,7 @@ import CommerceStorefront from "./pages/CommerceStorefront";
 import CaptarPage from "./pages/CaptarPage";
 import OrderTrackingPage from "./pages/OrderTrackingPage";
 import DriverRegister from "./pages/DriverRegister";
+import DriverCityLanding from "./pages/DriverCityLanding";
 import ReceiptValidation from "./pages/ReceiptValidation";
 import PrivateRideRequest from "./pages/PrivateRideRequest";
 import RegionPage from "./pages/RegionPage";
@@ -505,6 +506,8 @@ export default function App() {
           <Route path="/admin/convite-expirado" element={<ConviteExpirado />} />
           {/* First access motorista */}
           <Route path="/motorista/definir-senha" element={<SetPassword />} />
+          {/* Landing localizada por cidade */}
+          <Route path="/motorista/cidade/:citySlug" element={<DriverCityLanding />} />
 
           {/* Portal do Contador (public pages) */}
           <Route path="/contador/login" element={<AccountantAuthProvider><AccountantLoginPage /></AccountantAuthProvider>} />
