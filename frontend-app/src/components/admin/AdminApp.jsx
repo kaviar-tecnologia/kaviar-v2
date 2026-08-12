@@ -1,7 +1,7 @@
 import { Routes, Route, Link, Navigate } from "react-router-dom";
 import { API_BASE_URL } from '../../config/api';
 import { Container, Typography, Box, Card, CardContent, Button, Grid, Chip, Alert, CircularProgress, ToggleButton, ToggleButtonGroup, Table, TableBody, TableCell, TableHead, TableRow, Tabs, Tab, TextField } from "@mui/material";
-import { AdminPanelSettings, Dashboard, Group, Analytics, DirectionsCar, Security, PersonAdd, Tour, People, LocationCity, Elderly, PendingActions, CheckCircle, Map, Shield, CreditCard, ChatBubble, Apartment, GridOn, DriveEta, Person, Explore, Lock, Flight, Star, Storefront, BarChart, Handshake, CardGiftcard, Paid, SupportAgent, Public, Pets, Science, Description, MarkEmailRead, Assessment, Business } from "@mui/icons-material";
+import { AdminPanelSettings, Dashboard, Group, Analytics, DirectionsCar, Security, PersonAdd, Tour, People, LocationCity, Elderly, PendingActions, CheckCircle, Map, Shield, CreditCard, ChatBubble, Apartment, GridOn, DriveEta, Person, Explore, Lock, Flight, Star, Storefront, BarChart, Handshake, CardGiftcard, Paid, SupportAgent, Public, Pets, Science, Description, MarkEmailRead, Assessment, Business, SmartToy } from "@mui/icons-material";
 import { ProtectedAdminRoute } from "./ProtectedAdminRoute";
 import AdminLogin from "./AdminLogin";
 import AdminErrorBoundary from "./AdminErrorBoundary";
@@ -95,6 +95,7 @@ import PetHomologationDetail from "../../pages/admin/PetHomologationDetail";
 import OperatorHome from "../../pages/admin/OperatorHome";
 import ManagerHome from "../../pages/admin/ManagerHome";
 import AccountingPortalPage from "../../pages/admin/accounting/AccountingPortalPage";
+import KaviarAiPage from "../../pages/admin/KaviarAiPage";
 import kaviarLogo from "../../assets/logo-kaviar-full.svg";
 import { useState, useEffect } from 'react';
 
@@ -494,6 +495,7 @@ function AdminHome() {
             ]},
             { section: 'Financeiro', items: [
               ...(canAccessFinance ? [
+                { Icon: SmartToy, title: 'Chat KAVIAR', desc: 'Assistente operacional — consulta corridas, documentos e finanças.', to: '/admin/chat-kaviar' },
                 { Icon: Paid, title: 'Painel Financeiro Administrativo', desc: 'Contas, categorias e centros de custo em leitura', to: '/admin/financeiro' },
                 { Icon: Description, title: 'Políticas financeiras', desc: 'Classificação, escopo, vigência e estado das regras de reconhecimento.', to: '/admin/financeiro/politicas' },
                 { Icon: Assessment, title: 'Área do Contador', desc: 'Relatório de corridas, receita e exportação CSV — somente leitura.', to: '/admin/financeiro/contador' },
@@ -766,6 +768,11 @@ export default function AdminApp() {
           <Route path="/financeiro/contas-a-pagar" element={
             <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
               <FinancePayablesPage />
+            </ProtectedAdminRoute>
+          } />
+          <Route path="/chat-kaviar" element={
+            <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
+              <KaviarAiPage />
             </ProtectedAdminRoute>
           } />
           <Route path="/portal-contador" element={
