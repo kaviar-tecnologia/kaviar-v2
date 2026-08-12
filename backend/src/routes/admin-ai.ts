@@ -4,6 +4,7 @@ import {
   allowFinanceAccess,
 } from '../middlewares/auth';
 import { askKaviarAi } from '../services/ai/kaviar-ai.service';
+import { createOpenAiProviderIfConfigured } from '../services/ai/kaviar-ai.openai-provider';
 
 const router = Router();
 
@@ -11,6 +12,10 @@ router.use(authenticateAdmin);
 router.use(allowFinanceAccess);
 
 const MAX_QUESTION_LENGTH = 1000;
+
+// Provider instanciado uma vez na inicialização da rota.
+// Retorna undefined se OPENAI_API_KEY não estiver definida.
+const modelProvider = createOpenAiProviderIfConfigured();
 
 router.post('/chat', async (req: Request, res: Response) => {
   try {
@@ -38,7 +43,7 @@ router.post('/chat', async (req: Request, res: Response) => {
     const result = await askKaviarAi({
       userId: admin.id,
       question,
-    });
+    }, modelProvider);
 
     return res.json({
       success: true,
