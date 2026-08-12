@@ -130,7 +130,6 @@ Decida quais ferramentas devem ser chamadas.`;
         effort: this.reasoningEffort,
       },
       max_output_tokens: this.maxOutputTokens,
-      temperature: 0,
       store: false,
     });
 

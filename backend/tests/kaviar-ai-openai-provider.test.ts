@@ -232,7 +232,7 @@ describe('OpenAiProvider.decide', () => {
     expect(callArgs.text.format.strict).toBe(true);
   });
 
-  it('define max_output_tokens, reasoning effort e temperature', async () => {
+  it('define max_output_tokens, reasoning effort e store (sem temperature)', async () => {
     mockResponsesCreate.mockResolvedValueOnce({
       status: 'completed',
       output_text: '{"toolsToCall":[]}',
@@ -243,8 +243,8 @@ describe('OpenAiProvider.decide', () => {
     const callArgs = mockResponsesCreate.mock.calls[0][0];
     expect(callArgs.max_output_tokens).toBe(256);
     expect(callArgs.reasoning.effort).toBe('low');
-    expect(callArgs.temperature).toBe(0);
     expect(callArgs.store).toBe(false);
+    expect(callArgs).not.toHaveProperty('temperature');
   });
 });
 
