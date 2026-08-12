@@ -1,16 +1,19 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Box, Container, Typography, TextField, IconButton, Paper, Chip,
-  CircularProgress, Alert, InputAdornment,
+  CircularProgress, Alert, InputAdornment, Button, Dialog, DialogTitle,
+  DialogContent, DialogActions,
 } from '@mui/material';
 import { Send, SmartToy, Person, Lock } from '@mui/icons-material';
 import { askKaviarAi, getToolFriendlyNames } from '../../services/adminAiService';
+import api from '../../api';
 
 const SUGGESTIONS = [
   'O que precisa da minha atenção hoje?',
   'Como estão as corridas de hoje?',
   'Há documentos de motoristas pendentes?',
   'Quais obrigações financeiras exigem atenção?',
+  'Quero abrir uma nova cidade',
 ];
 
 const MAX_CHARS = 1000;
@@ -20,7 +23,15 @@ export default function KaviarAiPage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [managerDialog, setManagerDialog] = useState(null); // { territoryId, territoryName }
+  const [managerForm, setManagerForm] = useState({ name: '', email: '' });
+  const [managerResult, setManagerResult] = useState(null); // { name, email, tempPassword, territory, status }
+  const [actionLoading, setActionLoading] = useState(false);
   const messagesEndRef = useRef(null);
+
+  const adminData = localStorage.getItem('kaviar_admin_data');
+  const admin = adminData ? JSON.parse(adminData) : null;
+  const isSuperAdmin = admin?.role === 'SUPER_ADMIN';
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -29,6 +40,82 @@ export default function KaviarAiPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  // ── Ações territoriais ──────────────────────────────────────────────────
+  const handleCreateTerritory = async (city, uf) => {
+    if (!isSuperAdmin) return;
+    setActionLoading(true);
+    try {
+      const res = await api.post('/api/admin/ai/territory/create', { city, uf });
+      if (res.data.success) {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `✓ Território "${res.data.data.name}" criado com status: planning.\nID: ${res.data.data.id}`,
+          toolsUsed: ['territory_onboarding_status'],
+        }]);
+      }
+    } catch (err) {
+      const msg = err?.response?.data?.error || 'Erro ao criar território.';
+      setMessages(prev => [...prev, { role: 'assistant', content: `✗ ${msg}` }]);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCreateManager = async () => {
+    if (!isSuperAdmin || !managerDialog) return;
+    const { name, email } = managerForm;
+    if (!name.trim() || !email.trim()) return;
+    setActionLoading(true);
+    try {
+      const res = await api.post('/api/admin/ai/territory/create-manager', {
+        name: name.trim(),
+        email: email.trim(),
+        territory_id: managerDialog.territoryId,
+      });
+      if (res.data.success) {
+        const d = res.data.data;
+        const s = d.status;
+        // Mostrar resultado com senha em dialog separado (não no chat)
+        setManagerResult({ name: d.name, email: d.email, tempPassword: d.temp_password, territory: d.territory, status: s });
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `✓ Gestor "${d.name}" cadastrado em ${d.territory}.\n\nConta: ${s.conta}\nTerritório: ${s.territorio}\nPerfil: ${s.perfil}\nContrato: ${s.contrato}\nDocumentos: ${s.documentos}`,
+          toolsUsed: ['territory_onboarding_status'],
+        }]);
+      }
+      setManagerDialog(null);
+      setManagerForm({ name: '', email: '' });
+    } catch (err) {
+      const msg = err?.response?.data?.error || 'Erro ao cadastrar gestor.';
+      setError(msg);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRegulatorySearch = async (city, uf) => {
+    setActionLoading(true);
+    try {
+      const res = await api.post('/api/admin/ai/territory/regulatory-search', { city, uf });
+      if (res.data.success) {
+        const d = res.data.data;
+        const sources = d.officialSources.map(s => `  • ${s.title} (${s.orgao})\n    ${s.url}`).join('\n');
+        const reqs = d.requirements.map(r => `• ${r}`).join('\n');
+        const unconf = d.unconfirmedItems.length > 0 ? `\nItens sem confirmação:\n${d.unconfirmedItems.map(i => `• ${i}`).join('\n')}` : '';
+        const steps = d.recommendedNextSteps.map(s => `• ${s}`).join('\n');
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `Pesquisa regulatória: ${city}/${uf}\n\n${d.summary}\n\nExigências:\n${reqs || '• Nenhuma encontrada'}\n\nFontes oficiais:\n${sources || '• Nenhuma fonte oficial encontrada'}${unconf}\n\nPróximos passos:\n${steps}\n\nConfiança: ${d.confidence}`,
+          toolsUsed: ['territory_onboarding_status'],
+        }]);
+      }
+    } catch (err) {
+      setMessages(prev => [...prev, { role: 'assistant', content: '✗ Não foi possível realizar a pesquisa regulatória.' }]);
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   const handleSend = async (questionOverride) => {
     const question = (questionOverride || input).trim();
@@ -92,7 +179,7 @@ export default function KaviarAiPage() {
           </Box>
           <Chip
             icon={<Lock sx={{ fontSize: 12, color: '#6B7280 !important' }} />}
-            label="Somente leitura"
+            label="Leitura + ações confirmadas"
             size="small"
             sx={{ ml: 'auto', bgcolor: 'rgba(107,114,128,0.15)', color: '#6B7280', fontSize: 11, height: 24 }}
           />
@@ -192,6 +279,58 @@ export default function KaviarAiPage() {
                     </Box>
                   </Box>
                 )}
+
+                {/* Ações territoriais (somente SUPER_ADMIN) */}
+                {isSuperAdmin && msg.role === 'assistant' && msg.toolsUsed?.includes('territory_onboarding_status') && msg.content?.includes('não encontrado') && (
+                  <Box sx={{ mt: 1.5, pt: 1, borderTop: '1px solid rgba(184,148,46,0.15)', display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                    <Button size="small" variant="outlined" disabled={actionLoading}
+                      sx={{ color: '#B8942E', borderColor: '#B8942E', fontSize: 11, textTransform: 'none' }}
+                      onClick={() => {
+                        const match = msg.content.match(/Território\s+(.+?)\/([A-Z]{2})\s+não/);
+                        if (match) handleCreateTerritory(match[1].trim(), match[2]);
+                      }}>
+                      Criar território
+                    </Button>
+                    <Button size="small" variant="outlined" disabled={actionLoading}
+                      sx={{ color: '#6B7280', borderColor: '#6B7280', fontSize: 11, textTransform: 'none' }}
+                      onClick={() => {
+                        const match = msg.content.match(/Território\s+(.+?)\/([A-Z]{2})\s+não/);
+                        if (match) handleRegulatorySearch(match[1].trim(), match[2]);
+                      }}>
+                      Pesquisar regulatório
+                    </Button>
+                  </Box>
+                )}
+
+                {/* Pesquisar regulatório para território EXISTENTE */}
+                {isSuperAdmin && msg.role === 'assistant' && msg.toolsUsed?.includes('territory_onboarding_status') && msg.content?.includes('ID:') && (
+                  <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                    <Button size="small" variant="outlined" disabled={actionLoading}
+                      sx={{ color: '#6B7280', borderColor: '#6B7280', fontSize: 11, textTransform: 'none' }}
+                      onClick={() => {
+                        const match = msg.content.match(/Cidade:\s*([^/\n]+)\/([A-Z]{2})/);
+                        if (match) handleRegulatorySearch(match[1].trim(), match[2]);
+                      }}>
+                      Pesquisar regulatório
+                    </Button>
+                  </Box>
+                )}
+
+                {isSuperAdmin && msg.role === 'assistant' && msg.toolsUsed?.includes('territory_onboarding_status') && msg.content?.includes('Nenhum') && msg.content?.includes('gestor') && (
+                  <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
+                    <Button size="small" variant="outlined" disabled={actionLoading}
+                      sx={{ color: '#B8942E', borderColor: '#B8942E', fontSize: 11, textTransform: 'none' }}
+                      onClick={() => {
+                        const idMatch = msg.content.match(/ID:\s*([^\n]+)/);
+                        const cityMatch = msg.content.match(/Cidade:\s*([^\n]+)/);
+                        if (idMatch) {
+                          setManagerDialog({ territoryId: idMatch[1].trim(), territoryName: cityMatch?.[1]?.trim() || '' });
+                        }
+                      }}>
+                      Cadastrar gestor
+                    </Button>
+                  </Box>
+                )}
               </Paper>
             </Box>
           ))}
@@ -277,6 +416,59 @@ export default function KaviarAiPage() {
           </Box>
         </Container>
       </Box>
+
+      {/* Dialog cadastro de gestor */}
+      <Dialog open={!!managerDialog} onClose={() => setManagerDialog(null)}
+        PaperProps={{ sx: { bgcolor: '#1A1A1F', color: '#E5E7EB', minWidth: 360 } }}>
+        <DialogTitle sx={{ color: '#FFD700', fontSize: 16 }}>Cadastrar Gestor Territorial</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ color: '#9CA3AF', fontSize: 12, mb: 2 }}>
+            {managerDialog?.territoryName || 'Território'}
+          </Typography>
+          <TextField fullWidth label="Nome" value={managerForm.name}
+            onChange={(e) => setManagerForm(f => ({ ...f, name: e.target.value }))}
+            sx={{ mb: 2, '& .MuiInputLabel-root': { color: '#6B7280' }, '& .MuiOutlinedInput-root': { color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }}
+          />
+          <TextField fullWidth label="Email" type="email" value={managerForm.email}
+            onChange={(e) => setManagerForm(f => ({ ...f, email: e.target.value }))}
+            sx={{ '& .MuiInputLabel-root': { color: '#6B7280' }, '& .MuiOutlinedInput-root': { color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }}
+          />
+          <Typography sx={{ color: '#6B7280', fontSize: 11, mt: 1 }}>
+            Senha temporária será gerada. O gestor deve alterar no primeiro acesso.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setManagerDialog(null)} sx={{ color: '#6B7280' }}>Cancelar</Button>
+          <Button onClick={handleCreateManager} disabled={actionLoading || !managerForm.name.trim() || !managerForm.email.trim()}
+            sx={{ color: '#B8942E' }}>Cadastrar</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog resultado com senha temporária */}
+      <Dialog open={!!managerResult} onClose={() => setManagerResult(null)}
+        PaperProps={{ sx: { bgcolor: '#1A1A1F', color: '#E5E7EB', minWidth: 360 } }}>
+        <DialogTitle sx={{ color: '#FFD700', fontSize: 16 }}>Gestor Cadastrado</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ color: '#9CA3AF', fontSize: 12, mb: 1 }}>
+            {managerResult?.name} — {managerResult?.territory}
+          </Typography>
+          <Typography sx={{ color: '#E5E7EB', fontSize: 13, mb: 0.5 }}>Email: {managerResult?.email}</Typography>
+          <Box sx={{ mt: 1.5, p: 1.5, bgcolor: 'rgba(184,148,46,0.08)', border: '1px solid rgba(184,148,46,0.3)', borderRadius: 1 }}>
+            <Typography sx={{ color: '#6B7280', fontSize: 11, mb: 0.5 }}>Senha temporária (copie agora):</Typography>
+            <Typography sx={{ color: '#FFD700', fontSize: 14, fontFamily: 'monospace', wordBreak: 'break-all' }}>
+              {managerResult?.tempPassword}
+            </Typography>
+          </Box>
+          <Typography sx={{ color: '#6B7280', fontSize: 11, mt: 1 }}>
+            O gestor deve alterar a senha no primeiro acesso.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { navigator.clipboard?.writeText(managerResult?.tempPassword || ''); }}
+            sx={{ color: '#B8942E', fontSize: 12 }}>Copiar senha</Button>
+          <Button onClick={() => setManagerResult(null)} sx={{ color: '#6B7280' }}>Fechar</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

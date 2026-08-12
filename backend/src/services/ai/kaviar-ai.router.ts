@@ -92,6 +92,32 @@ export function routeByRules(question: string): KaviarAiRouteResult {
     return { toolsToCall: ['finance_due_obligations'] };
   }
 
+  // ── Territorial onboarding ────────────────────────────────────────────
+  const hasTerritoryContext =
+    q.includes('cidade') ||
+    q.includes('território') ||
+    q.includes('territorio') ||
+    q.includes('abrir') ||
+    q.includes('pirassununga') || // exemplo comum
+    q.includes('onboarding');
+
+  const hasTerritoryAction =
+    q.includes('abrir') ||
+    q.includes('cadastrar') ||
+    q.includes('gestor') ||
+    q.includes('pronta') ||
+    q.includes('prontidão') ||
+    q.includes('readiness') ||
+    q.includes('ativ');
+
+  if (hasTerritoryContext && hasTerritoryAction) {
+    return { toolsToCall: ['territory_onboarding_status', 'territory_activation_readiness'] };
+  }
+
+  if (hasTerritoryContext && (q.includes('status') || q.includes('exist') || q.includes('regulat'))) {
+    return { toolsToCall: ['territory_onboarding_status'] };
+  }
+
   return { toolsToCall: [] };
 }
 

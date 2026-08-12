@@ -3,6 +3,8 @@ import {
   getRidesSummaryToday,
   getDriversDocumentsPending,
   getFinanceDueObligations,
+  getTerritoryOnboardingStatus,
+  getTerritoryActivationReadiness,
 } from './kaviar-ai.tools';
 
 /**
@@ -23,7 +25,7 @@ export interface KaviarAiToolDefinition {
   description: string;
   readOnly: true;
   argSchema: KaviarAiToolArgSchema;
-  execute: () => Promise<{ tool: KaviarAiToolName; data: unknown }>;
+  execute: (args?: Record<string, string>) => Promise<{ tool: KaviarAiToolName; data: unknown }>;
 }
 
 /**
@@ -58,6 +60,36 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     argSchema: { type: 'object', properties: {}, required: [] },
     execute: getFinanceDueObligations,
   },
+  {
+    name: 'territory_onboarding_status',
+    description:
+      'Consulta o status de onboarding de um território/cidade: existência, status, regulatório, gestor e pendências. Requer city e uf.',
+    readOnly: true,
+    argSchema: {
+      type: 'object',
+      properties: {
+        city: { type: 'string', description: 'Nome da cidade' },
+        uf: { type: 'string', description: 'Sigla do estado (2 letras)' },
+      },
+      required: ['city', 'uf'],
+    },
+    execute: (args) => getTerritoryOnboardingStatus(args?.city ?? '', args?.uf ?? ''),
+  },
+  {
+    name: 'territory_activation_readiness',
+    description:
+      'Verifica se um território está pronto para ativação: regulatório, gestor, bloqueios. Requer city e uf.',
+    readOnly: true,
+    argSchema: {
+      type: 'object',
+      properties: {
+        city: { type: 'string', description: 'Nome da cidade' },
+        uf: { type: 'string', description: 'Sigla do estado (2 letras)' },
+      },
+      required: ['city', 'uf'],
+    },
+    execute: (args) => getTerritoryActivationReadiness(args?.city ?? '', args?.uf ?? ''),
+  },
 ] as const;
 
 /**
@@ -82,7 +114,8 @@ export function getToolByName(
  * Lança erro se o nome não estiver no registry.
  */
 export async function executeTool(
-  name: string
+  name: string,
+  args?: Record<string, string>
 ): Promise<{ tool: KaviarAiToolName; data: unknown }> {
   const tool = getToolByName(name);
   if (!tool) {
@@ -90,5 +123,5 @@ export async function executeTool(
       `[kaviar-ai-registry] Ferramenta "${name}" não está registrada. Execução negada.`
     );
   }
-  return tool.execute();
+  return tool.execute(args);
 }

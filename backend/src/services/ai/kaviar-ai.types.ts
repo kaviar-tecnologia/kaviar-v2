@@ -1,7 +1,9 @@
 export type KaviarAiToolName =
   | 'rides_summary_today'
   | 'drivers_documents_pending'
-  | 'finance_due_obligations';
+  | 'finance_due_obligations'
+  | 'territory_onboarding_status'
+  | 'territory_activation_readiness';
 
 export type KaviarAiRequest = {
   userId: string;

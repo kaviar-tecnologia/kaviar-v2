@@ -23,9 +23,9 @@ import { askKaviarAi } from '../src/services/ai/kaviar-ai.service';
 // ── Registry ───────────────────────────────────────────────────────────────
 
 describe('kaviar-ai.registry', () => {
-  it('contém exatamente 3 ferramentas autorizadas', () => {
+  it('contém exatamente 5 ferramentas autorizadas', () => {
     const tools = getRegisteredTools();
-    expect(tools).toHaveLength(3);
+    expect(tools).toHaveLength(5);
     const names = tools.map((t) => t.name);
     expect(names).toContain('rides_summary_today');
     expect(names).toContain('drivers_documents_pending');
