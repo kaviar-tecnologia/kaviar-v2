@@ -5,11 +5,20 @@ import type {
 
 import { getRidesSummaryToday } from './kaviar-ai.tools';
 
-function formatBRLFromCents(cents: number): string {
-  return (cents / 100).toLocaleString('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  });
+function formatBRLDecimal(value: string): string {
+  const match = value.match(/^(-?)(\d+)(?:\.(\d{1,2}))?$/);
+
+  if (!match) {
+    throw new Error('Valor financeiro inválido.');
+  }
+
+  const sign = match[1];
+  const integer = match[2];
+  const fraction = (match[3] ?? '').padEnd(2, '0');
+
+  const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+
+  return `${sign}R$ ${grouped},${fraction}`;
 }
 
 export async function askKaviarAi(
@@ -33,16 +42,16 @@ export async function askKaviarAi(
   ) {
     const result = await getRidesSummaryToday();
 
-    const grossAmount = formatBRLFromCents(
-      result.data.grossAmountCents
-    );
+    const grossAmount = formatBRLDecimal(result.data.grossAmount);
+    const kaviarFee = formatBRLDecimal(result.data.kaviarFee);
 
-    const kaviarFee = formatBRLFromCents(
-      result.data.kaviarFeeCents
-    );
+    const ridesLabel =
+      result.data.rides === 1
+        ? 'corrida liquidada'
+        : 'corridas liquidadas';
 
     return {
-      answer: `Hoje tivemos ${result.data.rides} corridas, com ${grossAmount} em valor bruto e ${kaviarFee} de receita para a KAVIAR.`,
+      answer: `Hoje tivemos ${result.data.rides} ${ridesLabel}, com ${grossAmount} em valor bruto e ${kaviarFee} de receita registrada para a KAVIAR.`,
       toolsUsed: [result.tool],
     };
   }
