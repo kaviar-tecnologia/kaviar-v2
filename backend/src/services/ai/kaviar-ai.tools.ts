@@ -1,6 +1,14 @@
 import type { KaviarAiToolResult } from './kaviar-ai.types';
 
-export async function getRidesSummaryToday(): Promise<KaviarAiToolResult> {
+export type RidesSummaryTodayData = {
+  rides: number;
+  grossAmountCents: number;
+  kaviarFeeCents: number;
+};
+
+export async function getRidesSummaryToday(): Promise<
+  KaviarAiToolResult & { data: RidesSummaryTodayData }
+> {
   return {
     tool: 'rides_summary_today',
     data: {

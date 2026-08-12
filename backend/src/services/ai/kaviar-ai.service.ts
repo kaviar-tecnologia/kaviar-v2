@@ -5,6 +5,13 @@ import type {
 
 import { getRidesSummaryToday } from './kaviar-ai.tools';
 
+function formatBRLFromCents(cents: number): string {
+  return (cents / 100).toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  });
+}
+
 export async function askKaviarAi(
   request: KaviarAiRequest
 ): Promise<KaviarAiResponse> {
@@ -26,9 +33,16 @@ export async function askKaviarAi(
   ) {
     const result = await getRidesSummaryToday();
 
+    const grossAmount = formatBRLFromCents(
+      result.data.grossAmountCents
+    );
+
+    const kaviarFee = formatBRLFromCents(
+      result.data.kaviarFeeCents
+    );
+
     return {
-      answer:
-        'Hoje tivemos 3 corridas, com R$ 55,00 em valor bruto e R$ 9,90 de receita para a KAVIAR.',
+      answer: `Hoje tivemos ${result.data.rides} corridas, com ${grossAmount} em valor bruto e ${kaviarFee} de receita para a KAVIAR.`,
       toolsUsed: [result.tool],
     };
   }
