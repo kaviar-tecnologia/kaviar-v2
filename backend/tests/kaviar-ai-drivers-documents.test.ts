@@ -150,13 +150,25 @@ describe('askKaviarAi — drivers_documents_pending', () => {
   });
 
   it('NÃO aciona para obrigações financeiras pendentes', async () => {
+    // Agora aciona finance_due_obligations (não drivers_documents_pending)
+    mockQuery.mockResolvedValueOnce({
+      rows: [{
+        total_pending: 0,
+        total_amount_cents: '0',
+        overdue_count: 0,
+        overdue_amount_cents: '0',
+        due_soon_count: 0,
+        due_soon_amount_cents: '0',
+      }],
+    });
+
     const response = await askKaviarAi({
       userId: 'admin-1',
       question: 'Quais obrigações financeiras estão pendentes?',
     });
 
     expect(response.toolsUsed).not.toContain('drivers_documents_pending');
-    expect(response.answer).toContain('Ainda não sei responder');
+    expect(response.toolsUsed).toContain('finance_due_obligations');
   });
 
   it('NÃO aciona para pagamento aguardando aprovação', async () => {
@@ -170,13 +182,25 @@ describe('askKaviarAi — drivers_documents_pending', () => {
   });
 
   it('NÃO aciona para contas pendentes', async () => {
+    // Agora aciona finance_due_obligations (não drivers_documents_pending)
+    mockQuery.mockResolvedValueOnce({
+      rows: [{
+        total_pending: 0,
+        total_amount_cents: '0',
+        overdue_count: 0,
+        overdue_amount_cents: '0',
+        due_soon_count: 0,
+        due_soon_amount_cents: '0',
+      }],
+    });
+
     const response = await askKaviarAi({
       userId: 'admin-1',
       question: 'Quais contas estão pendentes?',
     });
 
     expect(response.toolsUsed).not.toContain('drivers_documents_pending');
-    expect(response.answer).toContain('Ainda não sei responder');
+    expect(response.toolsUsed).toContain('finance_due_obligations');
   });
 
   it('retorna fallback para perguntas não reconhecidas', async () => {

@@ -3,7 +3,7 @@ import type {
   KaviarAiResponse,
 } from './kaviar-ai.types';
 
-import { getRidesSummaryToday, getDriversDocumentsPending } from './kaviar-ai.tools';
+import { getRidesSummaryToday, getDriversDocumentsPending, getFinanceDueObligations } from './kaviar-ai.tools';
 
 function formatBRLDecimal(value: string): string {
   const match = value.match(/^(-?)(\d+)(?:\.(\d{1,2}))?$/);
@@ -19,6 +19,16 @@ function formatBRLDecimal(value: string): string {
   const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 
   return `${sign}R$ ${grouped},${fraction}`;
+}
+
+function formatCentsBRL(cents: string): string {
+  const value = BigInt(cents);
+  const isNegative = value < 0n;
+  const abs = isNegative ? -value : value;
+  const integer = (abs / 100n).toString();
+  const fraction = (abs % 100n).toString().padStart(2, '0');
+  const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${isNegative ? '-' : ''}R$ ${grouped},${fraction}`;
 }
 
 export async function askKaviarAi(
@@ -110,6 +120,62 @@ export async function askKaviarAi(
         compliancePending === 1 ? 'motorista' : 'motoristas';
       parts.push(
         `${compliancePending} ${compLabel} com documento de compliance aguardando aprovação`
+      );
+    }
+
+    const answer = `Há ${parts.join('. ')}.`;
+
+    return {
+      answer,
+      toolsUsed: [result.tool],
+    };
+  }
+
+  // ── Finance due obligations ──────────────────────────────────────────────
+  const hasFinanceContext =
+    normalizedQuestion.includes('obrigaç') ||
+    normalizedQuestion.includes('financeira') ||
+    normalizedQuestion.includes('financeiro') ||
+    normalizedQuestion.includes('pagar') ||
+    normalizedQuestion.includes('pagamento') ||
+    normalizedQuestion.includes('conta');
+
+  const hasDueContext =
+    normalizedQuestion.includes('vence') ||
+    normalizedQuestion.includes('vencid') ||
+    normalizedQuestion.includes('pendente') ||
+    normalizedQuestion.includes('atenção') ||
+    normalizedQuestion.includes('atencao') ||
+    normalizedQuestion.includes('semana') ||
+    normalizedQuestion.includes('próximos') ||
+    normalizedQuestion.includes('proximos');
+
+  if (hasFinanceContext && hasDueContext) {
+    const result = await getFinanceDueObligations();
+    const { totalPending, totalAmountCents, overdueCount, overdueAmountCents, dueSoonCount, dueSoonAmountCents } = result.data;
+
+    if (totalPending === 0) {
+      return {
+        answer: 'Não há obrigações financeiras pendentes com vencimento registrado.',
+        toolsUsed: [result.tool],
+      };
+    }
+
+    const parts: string[] = [];
+
+    parts.push(
+      `${totalPending} ${totalPending === 1 ? 'obrigação pendente' : 'obrigações pendentes'}, totalizando ${formatCentsBRL(totalAmountCents)}`
+    );
+
+    if (overdueCount > 0) {
+      parts.push(
+        `${overdueCount} ${overdueCount === 1 ? 'está vencida' : 'estão vencidas'} (${formatCentsBRL(overdueAmountCents)})`
+      );
+    }
+
+    if (dueSoonCount > 0) {
+      parts.push(
+        `${dueSoonCount} ${dueSoonCount === 1 ? 'vence' : 'vencem'} nos próximos 7 dias (${formatCentsBRL(dueSoonAmountCents)})`
       );
     }
 
