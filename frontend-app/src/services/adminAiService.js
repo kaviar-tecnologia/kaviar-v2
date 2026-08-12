@@ -32,6 +32,8 @@ const TOOL_FRIENDLY_NAMES = {
   rides_summary_today: 'Corridas de hoje',
   drivers_documents_pending: 'Documentos de motoristas',
   finance_due_obligations: 'Obrigações financeiras',
+  territory_onboarding_status: 'Status territorial',
+  territory_activation_readiness: 'Prontidão de ativação',
 };
 
 /**

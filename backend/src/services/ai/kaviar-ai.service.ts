@@ -8,6 +8,8 @@ import type {
   RidesSummaryTodayData,
   DriversDocumentsPendingData,
   FinanceDueObligationsData,
+  TerritoryOnboardingStatusData,
+  TerritoryActivationReadinessData,
 } from './kaviar-ai.tools';
 import { executeTool } from './kaviar-ai.registry';
 import { routeQuestion } from './kaviar-ai.router';
@@ -114,6 +116,36 @@ function formatFinanceDueObligations(data: FinanceDueObligationsData): string {
   return `Há ${parts.join('. ')}.`;
 }
 
+function formatTerritoryOnboarding(data: TerritoryOnboardingStatusData): string {
+  if (!data.found) {
+    return data.pendencies[0] || 'Território não encontrado.';
+  }
+  const t = data.territory!;
+  const parts: string[] = [];
+  parts.push(`ID: ${t.id}`);
+  parts.push(`Cidade: ${t.city_name || t.name}/${t.uf || '??'}`);
+  parts.push(`Território: ${t.name}`);
+  parts.push(`Status: ${t.status}`);
+  parts.push(`Regulatório: ${t.regulatory_status}`);
+  parts.push(`Gestor: ${data.manager ? data.manager.name : 'Nenhum vinculado'}`);
+  if (t.moto_express_enabled) parts.push('Moto Express: habilitado');
+  if (t.moto_passenger_enabled) parts.push('Moto Passageiro: habilitado');
+  if (data.pendencies.length > 0) {
+    parts.push(`\nPendências:\n${data.pendencies.map(p => `• ${p}`).join('\n')}`);
+  }
+  return parts.join('\n');
+}
+
+function formatTerritoryReadiness(data: TerritoryActivationReadinessData): string {
+  if (!data.territory) {
+    return data.reasons[0] || 'Território não encontrado.';
+  }
+  const status = data.ready ? '✓ READY' : '✗ NOT_READY';
+  const parts = [`Prontidão: ${status}`, `Território: ${data.territory.name} (${data.territory.status})`];
+  parts.push(data.reasons.map(r => `• ${r}`).join('\n'));
+  return parts.join('\n');
+}
+
 const FORMATTERS: Record<KaviarAiToolName, (data: unknown) => string> = {
   rides_summary_today: (data) =>
     formatRidesSummary(data as RidesSummaryTodayData),
@@ -121,7 +153,36 @@ const FORMATTERS: Record<KaviarAiToolName, (data: unknown) => string> = {
     formatDriversDocumentsPending(data as DriversDocumentsPendingData),
   finance_due_obligations: (data) =>
     formatFinanceDueObligations(data as FinanceDueObligationsData),
+  territory_onboarding_status: (data) =>
+    formatTerritoryOnboarding(data as TerritoryOnboardingStatusData),
+  territory_activation_readiness: (data) =>
+    formatTerritoryReadiness(data as TerritoryActivationReadinessData),
 };
+
+// ── Extração de city/uf da pergunta ─────────────────────────────────────────
+
+function parseCityUf(question: string): { city: string; uf: string } | null {
+  // Encontra padrão X/UF ou X - UF, extrai cidade removendo verbos/preposições comuns do início
+  const STOP_WORDS = new Set(['quero', 'abrir', 'cadastrar', 'como', 'verificar', 'criar', 'está', 'status', 'cidade', 'território', 'territorio', 'nova', 'novo']);
+
+  let match = question.match(/(.+?)\s*\/\s*([A-Z]{2})(?:\s|$|[.,!?])/);
+  if (!match) match = question.match(/(.+?)\s+[-–]\s+([A-Z]{2})(?:\s|$|[.,!?])/);
+  if (!match) match = question.match(/(.+?)\s*\(\s*([A-Z]{2})\s*\)/);
+  if (!match) return null;
+
+  const uf = match[2].trim();
+  if (uf.length !== 2) return null;
+
+  // Pegar as palavras antes do separador e remover stop words do início
+  const words = match[1].trim().split(/\s+/);
+  while (words.length > 0 && STOP_WORDS.has(words[0].toLowerCase())) {
+    words.shift();
+  }
+  const city = words.join(' ').trim();
+  if (city.length < 2) return null;
+
+  return { city, uf };
+}
 
 // ── Função principal ───────────────────────────────────────────────────────
 
@@ -152,8 +213,24 @@ export async function askKaviarAi(
   const answers: string[] = [];
   const toolsUsed: KaviarAiToolName[] = [];
 
+  // Extrair city/uf para ferramentas territoriais
+  const territorialTools: KaviarAiToolName[] = ['territory_onboarding_status', 'territory_activation_readiness'];
+  let territorialArgs: Record<string, string> | undefined;
+
+  if (route.toolsToCall.some(t => territorialTools.includes(t))) {
+    const parsed = parseCityUf(question);
+    if (!parsed) {
+      return {
+        answer: 'Informe a cidade e a UF, por exemplo: Pirassununga/SP.',
+        toolsUsed: [],
+      };
+    }
+    territorialArgs = parsed;
+  }
+
   for (const toolName of route.toolsToCall) {
-    const result = await executeTool(toolName);
+    const args = territorialTools.includes(toolName) ? territorialArgs : undefined;
+    const result = await executeTool(toolName, args);
     const formatter = FORMATTERS[result.tool as KaviarAiToolName];
     const formatted = formatter
       ? formatter(result.data)
