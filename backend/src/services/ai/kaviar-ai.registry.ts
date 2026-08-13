@@ -5,6 +5,11 @@ import {
   getFinanceDueObligations,
   getTerritoryOnboardingStatus,
   getTerritoryActivationReadiness,
+  getDailyBriefing,
+  getRidesOperations,
+  getFinanceAccountingBrief,
+  getCrmLeadsSummary,
+  getInboxSummary,
 } from './kaviar-ai.tools';
 
 /**
@@ -25,6 +30,7 @@ export interface KaviarAiToolDefinition {
   description: string;
   readOnly: true;
   argSchema: KaviarAiToolArgSchema;
+  allowedRoles: string[];
   execute: (args?: Record<string, string>) => Promise<{ tool: KaviarAiToolName; data: unknown }>;
 }
 
@@ -42,6 +48,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
       'Retorna o resumo financeiro das corridas liquidadas hoje: quantidade, valor bruto e receita da KAVIAR.',
     readOnly: true,
     argSchema: { type: 'object', properties: {}, required: [] },
+    allowedRoles: ['SUPER_ADMIN', 'FINANCE'],
     execute: getRidesSummaryToday,
   },
   {
@@ -50,6 +57,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
       'Retorna a contagem de motoristas com documentos pendentes de análise (SUBMITTED, MISSING, REJECTED) e compliance pendente.',
     readOnly: true,
     argSchema: { type: 'object', properties: {}, required: [] },
+    allowedRoles: ['SUPER_ADMIN', 'FINANCE'],
     execute: getDriversDocumentsPending,
   },
   {
@@ -58,6 +66,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
       'Retorna obrigações financeiras pendentes: total, valor, vencidas e a vencer nos próximos 7 dias.',
     readOnly: true,
     argSchema: { type: 'object', properties: {}, required: [] },
+    allowedRoles: ['SUPER_ADMIN', 'FINANCE'],
     execute: getFinanceDueObligations,
   },
   {
@@ -73,6 +82,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
       },
       required: ['city', 'uf'],
     },
+    allowedRoles: ['SUPER_ADMIN'],
     execute: (args) => getTerritoryOnboardingStatus(args?.city ?? '', args?.uf ?? ''),
   },
   {
@@ -88,7 +98,70 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
       },
       required: ['city', 'uf'],
     },
+    allowedRoles: ['SUPER_ADMIN'],
     execute: (args) => getTerritoryActivationReadiness(args?.city ?? '', args?.uf ?? ''),
+  },
+  // ── Pacote Administrativo Inteligente v1 ────────────────────────────────
+  {
+    name: 'daily_briefing',
+    description:
+      'Resumo administrativo consolidado: corridas, motoristas, financeiro, leads, inbox e territórios com classificação de prioridade.',
+    readOnly: true,
+    argSchema: { type: 'object', properties: {}, required: [] },
+    allowedRoles: ['SUPER_ADMIN'],
+    execute: getDailyBriefing,
+  },
+  {
+    name: 'rides_operations',
+    description:
+      'Consulta operacional de corridas por período (today/week/month) com comparação ao período anterior.',
+    readOnly: true,
+    argSchema: {
+      type: 'object',
+      properties: { period: { type: 'string', enum: ['today', 'week', 'month'] } },
+      required: ['period'],
+    },
+    allowedRoles: ['SUPER_ADMIN', 'FINANCE'],
+    execute: getRidesOperations,
+  },
+  {
+    name: 'finance_accounting_brief',
+    description:
+      'Resumo financeiro e contábil: receita, despesa, resultado, obrigações e pendências do contador.',
+    readOnly: true,
+    argSchema: {
+      type: 'object',
+      properties: { period: { type: 'string', enum: ['month', 'quarter'] } },
+      required: ['period'],
+    },
+    allowedRoles: ['SUPER_ADMIN', 'FINANCE'],
+    execute: getFinanceAccountingBrief,
+  },
+  {
+    name: 'crm_leads_summary',
+    description:
+      'Resumo do CRM: leads novos, funil, sem contato, parados e distribuição por origem/território.',
+    readOnly: true,
+    argSchema: {
+      type: 'object',
+      properties: { period: { type: 'string', enum: ['today', 'week', 'month'] } },
+      required: ['period'],
+    },
+    allowedRoles: ['SUPER_ADMIN'],
+    execute: getCrmLeadsSummary,
+  },
+  {
+    name: 'inbox_summary',
+    description:
+      'Resumo da inbox institucional: e-mails novos, assuntos recentes e classificação de risco. Nunca retorna corpo das mensagens.',
+    readOnly: true,
+    argSchema: {
+      type: 'object',
+      properties: { limit: { type: 'string', description: 'Máximo de e-mails (1-10, default 5)' } },
+      required: [],
+    },
+    allowedRoles: ['SUPER_ADMIN'],
+    execute: getInboxSummary,
   },
 ] as const;
 
@@ -107,6 +180,15 @@ export function getToolByName(
   name: string
 ): KaviarAiToolDefinition | undefined {
   return TOOL_DEFINITIONS.find((t) => t.name === name);
+}
+
+/**
+ * Verifica se uma role pode executar determinada tool.
+ */
+export function canRoleExecuteTool(role: string, toolName: string): boolean {
+  const tool = getToolByName(toolName);
+  if (!tool) return false;
+  return tool.allowedRoles.includes(role);
 }
 
 /**

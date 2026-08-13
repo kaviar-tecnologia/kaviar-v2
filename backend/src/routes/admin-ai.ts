@@ -63,6 +63,7 @@ router.post('/chat', async (req: Request, res: Response) => {
     const result = await askKaviarAi({
       userId: admin.id,
       question,
+      role: admin.role,
     }, modelProvider);
 
     return res.json({

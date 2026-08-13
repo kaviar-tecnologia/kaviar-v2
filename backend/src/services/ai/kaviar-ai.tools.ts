@@ -426,3 +426,608 @@ export async function getTerritoryActivationReadiness(
     data: { ready, reasons: ready ? ['Território pronto para ativação, aguardando confirmação administrativa.'] : reasons, territory },
   };
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Pacote Administrativo Inteligente v1 — Tools adicionais (read-only)
+// ══════════════════════════════════════════════════════════════════════════════
+
+import { evaluateInboundEmailSecurityRisk } from '../email/inbound-email-security-risk';
+
+// ── Types ──────────────────────────────────────────────────────────────────
+
+export type DailyBriefingPriority = 'ALTA' | 'ATENÇÃO' | 'NORMAL' | 'INDISPONÍVEL';
+
+export type DailyBriefingData = {
+  referenceTime: string;
+  priority: DailyBriefingPriority;
+  rides: {
+    available: boolean;
+    completed: number;
+    grossAmount: string;
+    kaviarFee: string;
+    canceled: number;
+    noDriver: number;
+    pendingAdjustment: number;
+  };
+  drivers: {
+    available: boolean;
+    docsPending: number;
+    pendingApproval: number;
+    compliancePending: number;
+  };
+  finance: {
+    available: boolean;
+    overdueCount: number;
+    overdueAmountCents: string;
+    due7dCount: number;
+    due7dAmountCents: string;
+    due15dCount: number;
+    due15dAmountCents: string;
+    due30dCount: number;
+    due30dAmountCents: string;
+    uncategorizedAvailable: boolean;
+    uncategorizedTransactions: number;
+  };
+  leads: {
+    available: boolean;
+    newToday: number;
+    noContact: number;
+    stale3d: number;
+  };
+  inbox: {
+    available: boolean;
+    newCount: number;
+    highRiskRecentCount: number;
+    riskAssessedLimit: number;
+    latestSubjects: string[];
+  };
+  territories: {
+    available: boolean;
+    preparationCount: number;
+    withoutManagerCount: number;
+  };
+  highItems: string[];
+  attentionItems: string[];
+  normalItems: string[];
+  unavailableItems: string[];
+};
+
+export type RidesOperationsData = {
+  periodLabel: string;
+  periodStart: string;
+  periodEnd: string;
+  total: number;
+  completed: number;
+  canceled: number;
+  noDriver: number;
+  pendingAdjustment: number;
+  grossAmountCents: string;
+  kaviarFeeCents: string;
+  driverEarningsCents: string;
+  previous: {
+    total: number;
+    completed: number;
+    grossAmountCents: string;
+  };
+};
+
+export type FinanceAccountingBriefData = {
+  periodLabel: string;
+  realizedRevenueCents: string;
+  realizedExpenseCents: string;
+  realizedResultCents: string;
+  overdueCount: number;
+  overdueAmountCents: string;
+  due7dCount: number;
+  due15dCount: number;
+  due30dCount: number;
+  uncategorizedCount: number;
+  accountingPendencias: { available: boolean; total: number; urgent: number; high: number };
+};
+
+export type CrmLeadsSummaryData = {
+  periodLabel: string;
+  newCount: number;
+  byStatus: Record<string, number>;
+  noContactCount: number;
+  stale3dCount: number;
+  bySource: Record<string, number>;
+  topTerritories: { name: string; count: number }[];
+};
+
+export type InboxSummaryData = {
+  totalNew: number;
+  recent: {
+    subject: string;
+    fromName: string;
+    receivedAt: string;
+    hasAttachments: boolean;
+    riskLevel: string;
+  }[];
+};
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+const TODAY_SP = `(NOW() AT TIME ZONE 'America/Sao_Paulo')::date`;
+
+function getPeriodBounds(period: 'today' | 'week' | 'month'): { start: string; end: string; label: string; prevStart: string; prevEnd: string } {
+  // Returns SQL expressions for period boundaries
+  switch (period) {
+    case 'today':
+      return {
+        start: `(NOW() AT TIME ZONE 'America/Sao_Paulo')::date`,
+        end: `((NOW() AT TIME ZONE 'America/Sao_Paulo')::date + INTERVAL '1 day')`,
+        label: 'Hoje',
+        prevStart: `((NOW() AT TIME ZONE 'America/Sao_Paulo')::date - INTERVAL '1 day')`,
+        prevEnd: `(NOW() AT TIME ZONE 'America/Sao_Paulo')::date`,
+      };
+    case 'week':
+      return {
+        start: `date_trunc('week', NOW() AT TIME ZONE 'America/Sao_Paulo')::date`,
+        end: `(date_trunc('week', NOW() AT TIME ZONE 'America/Sao_Paulo') + INTERVAL '7 days')::date`,
+        label: 'Esta semana',
+        prevStart: `(date_trunc('week', NOW() AT TIME ZONE 'America/Sao_Paulo') - INTERVAL '7 days')::date`,
+        prevEnd: `date_trunc('week', NOW() AT TIME ZONE 'America/Sao_Paulo')::date`,
+      };
+    case 'month':
+      return {
+        start: `date_trunc('month', NOW() AT TIME ZONE 'America/Sao_Paulo')::date`,
+        end: `(date_trunc('month', NOW() AT TIME ZONE 'America/Sao_Paulo') + INTERVAL '1 month')::date`,
+        label: 'Este mês',
+        prevStart: `(date_trunc('month', NOW() AT TIME ZONE 'America/Sao_Paulo') - INTERVAL '1 month')::date`,
+        prevEnd: `date_trunc('month', NOW() AT TIME ZONE 'America/Sao_Paulo')::date`,
+      };
+  }
+}
+
+// ── Tool 1: daily_briefing ─────────────────────────────────────────────────
+
+export async function getDailyBriefing(): Promise<{
+  tool: 'daily_briefing';
+  data: DailyBriefingData;
+}> {
+  const highItems: string[] = [];
+  const attentionItems: string[] = [];
+  const normalItems: string[] = [];
+  const unavailableItems: string[] = [];
+
+  // Reference time
+  const refResult = await pool.query<{ ref: string }>(`SELECT to_char(NOW() AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD HH24:MI') AS ref`);
+  const referenceTime = refResult.rows[0]?.ref ?? new Date().toISOString();
+
+  // ── Rides ──
+  let rides: DailyBriefingData['rides'] = { available: false, completed: 0, grossAmount: '0', kaviarFee: '0', canceled: 0, noDriver: 0, pendingAdjustment: 0 };
+  try {
+    const ridesResult = await pool.query<{
+      completed: number; gross: string; fee: string; canceled: number; no_driver: number; pending_adj: number;
+    }>(`
+      SELECT
+        COUNT(DISTINCT r.id) FILTER (WHERE s.settled_at IS NOT NULL)::int AS completed,
+        COALESCE(SUM(s.final_price) FILTER (WHERE s.settled_at IS NOT NULL), 0)::text AS gross,
+        COALESCE(SUM(s.fee_amount) FILTER (WHERE s.settled_at IS NOT NULL), 0)::text AS fee,
+        COUNT(DISTINCT r.id) FILTER (WHERE r.status IN ('canceled_by_passenger','canceled_by_driver'))::int AS canceled,
+        COUNT(DISTINCT r.id) FILTER (WHERE r.status = 'no_driver')::int AS no_driver,
+        COUNT(DISTINCT r.id) FILTER (WHERE r.status = 'pending_adjustment')::int AS pending_adj
+      FROM rides_v2 r
+      LEFT JOIN ride_settlements s ON s.ride_id = r.id
+      WHERE (r.requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ${TODAY_SP}
+    `);
+    const rr = ridesResult.rows[0];
+    if (rr) {
+      rides = { available: true, completed: rr.completed, grossAmount: rr.gross, kaviarFee: rr.fee, canceled: rr.canceled, noDriver: rr.no_driver, pendingAdjustment: rr.pending_adj };
+    }
+  } catch { unavailableItems.push('Corridas: fonte indisponível.'); }
+
+  // ── Drivers ──
+  let drivers: DailyBriefingData['drivers'] = { available: false, docsPending: 0, pendingApproval: 0, compliancePending: 0 };
+  try {
+    const driversResult = await pool.query<{ docs_pending: number; pending_approval: number; compliance_pending: number }>(`
+      SELECT
+        (SELECT COUNT(DISTINCT driver_id)::int FROM driver_documents WHERE status IN ('SUBMITTED','MISSING','REJECTED')) AS docs_pending,
+        (SELECT COUNT(*)::int FROM drivers WHERE status = 'pending') AS pending_approval,
+        (SELECT COUNT(DISTINCT driver_id)::int FROM driver_compliance_documents WHERE status = 'pending') AS compliance_pending
+    `);
+    const dr = driversResult.rows[0];
+    if (dr) drivers = { available: true, docsPending: dr.docs_pending, pendingApproval: dr.pending_approval, compliancePending: dr.compliance_pending };
+  } catch { unavailableItems.push('Motoristas: fonte indisponível.'); }
+
+  // ── Finance ──
+  let finance: DailyBriefingData['finance'] = { available: false, overdueCount: 0, overdueAmountCents: '0', due7dCount: 0, due7dAmountCents: '0', due15dCount: 0, due15dAmountCents: '0', due30dCount: 0, due30dAmountCents: '0', uncategorizedAvailable: false, uncategorizedTransactions: 0 };
+  try {
+    const finResult = await pool.query<{
+      overdue_count: number; overdue_cents: string;
+      due7d_count: number; due7d_cents: string;
+      due15d_count: number; due15d_cents: string;
+      due30d_count: number; due30d_cents: string;
+    }>(`
+      SELECT
+        COUNT(*) FILTER (WHERE due_date < ${TODAY_SP})::int AS overdue_count,
+        COALESCE(SUM(net_amount_cents) FILTER (WHERE due_date < ${TODAY_SP}), 0)::text AS overdue_cents,
+        COUNT(*) FILTER (WHERE due_date >= ${TODAY_SP} AND due_date <= ${TODAY_SP} + 7)::int AS due7d_count,
+        COALESCE(SUM(net_amount_cents) FILTER (WHERE due_date >= ${TODAY_SP} AND due_date <= ${TODAY_SP} + 7), 0)::text AS due7d_cents,
+        COUNT(*) FILTER (WHERE due_date >= ${TODAY_SP} AND due_date <= ${TODAY_SP} + 15)::int AS due15d_count,
+        COALESCE(SUM(net_amount_cents) FILTER (WHERE due_date >= ${TODAY_SP} AND due_date <= ${TODAY_SP} + 15), 0)::text AS due15d_cents,
+        COUNT(*) FILTER (WHERE due_date >= ${TODAY_SP} AND due_date <= ${TODAY_SP} + 30)::int AS due30d_count,
+        COALESCE(SUM(net_amount_cents) FILTER (WHERE due_date >= ${TODAY_SP} AND due_date <= ${TODAY_SP} + 30), 0)::text AS due30d_cents
+      FROM financial_obligations
+      WHERE status NOT IN ('PAID','FAILED','CANCELLED') AND due_date IS NOT NULL
+    `);
+    const fr = finResult.rows[0];
+    if (fr) {
+      finance = { ...finance, available: true, overdueCount: fr.overdue_count, overdueAmountCents: fr.overdue_cents, due7dCount: fr.due7d_count, due7dAmountCents: fr.due7d_cents, due15dCount: fr.due15d_count, due15dAmountCents: fr.due15d_cents, due30dCount: fr.due30d_count, due30dAmountCents: fr.due30d_cents };
+    }
+  } catch { unavailableItems.push('Financeiro: fonte indisponível.'); }
+
+  // Uncategorized transactions (independent query)
+  if (finance.available) {
+    try {
+      const uncatResult = await pool.query<{ cnt: number }>(`
+        SELECT COUNT(*)::int AS cnt FROM financial_transactions WHERE category_id IS NULL AND status NOT IN ('CANCELED','REVERSED')
+      `);
+      finance.uncategorizedAvailable = true;
+      finance.uncategorizedTransactions = uncatResult.rows[0]?.cnt ?? 0;
+    } catch {
+      finance.uncategorizedAvailable = false;
+      unavailableItems.push('Lançamentos sem categoria: fonte indisponível.');
+    }
+  }
+
+  // ── Leads ──
+  let leads: DailyBriefingData['leads'] = { available: false, newToday: 0, noContact: 0, stale3d: 0 };
+  try {
+    const leadsResult = await pool.query<{ new_today: number; no_contact: number; stale_3d: number }>(`
+      SELECT
+        COUNT(*) FILTER (WHERE (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ${TODAY_SP})::int AS new_today,
+        COUNT(*) FILTER (WHERE last_contact_at IS NULL AND status = 'NEW')::int AS no_contact,
+        COUNT(*) FILTER (WHERE updated_at < (NOW() - INTERVAL '3 days') AND status NOT IN ('ACTIVE','LOST','REJECTED'))::int AS stale_3d
+      FROM crm_leads
+      WHERE deleted_at IS NULL
+    `);
+    const lr = leadsResult.rows[0];
+    if (lr) leads = { available: true, newToday: lr.new_today, noContact: lr.no_contact, stale3d: lr.stale_3d };
+  } catch { unavailableItems.push('Leads: fonte indisponível.'); }
+
+  // ── Inbox ──
+  const RISK_ASSESSED_LIMIT = 20;
+  let inbox: DailyBriefingData['inbox'] = { available: false, newCount: 0, highRiskRecentCount: 0, riskAssessedLimit: RISK_ASSESSED_LIMIT, latestSubjects: [] };
+  try {
+    const inboxResult = await pool.query<{
+      id: string; subject: string | null; from_name: string | null;
+      from_email: string; text_body: string | null; html_body: string | null;
+      normalized_body: string | null; raw_headers: unknown; attachment_count: number;
+    }>(`
+      SELECT id, subject, from_name, from_email, text_body, html_body, normalized_body, raw_headers, attachment_count
+      FROM inbound_email_messages
+      WHERE status = 'NEW'
+      ORDER BY received_at DESC
+      LIMIT $1
+    `, [RISK_ASSESSED_LIMIT]);
+
+    let highRisk = 0;
+    const subjects: string[] = [];
+    for (const row of inboxResult.rows) {
+      if (subjects.length < 5 && row.subject) {
+        subjects.push(row.subject.length > 100 ? row.subject.slice(0, 100) + '…' : row.subject);
+      }
+      const risk = evaluateInboundEmailSecurityRisk(row);
+      if (risk.level === 'HIGH') highRisk++;
+    }
+
+    // Get exact total count
+    const countResult = await pool.query<{ cnt: number }>(`SELECT COUNT(*)::int AS cnt FROM inbound_email_messages WHERE status = 'NEW'`);
+    const totalNew = countResult.rows[0]?.cnt ?? inboxResult.rows.length;
+
+    inbox = { available: true, newCount: totalNew, highRiskRecentCount: highRisk, riskAssessedLimit: RISK_ASSESSED_LIMIT, latestSubjects: subjects };
+  } catch { unavailableItems.push('Inbox: fonte indisponível.'); }
+
+  // ── Territories ──
+  let territories: DailyBriefingData['territories'] = { available: false, preparationCount: 0, withoutManagerCount: 0 };
+  try {
+    const terResult = await pool.query<{ preparation: number; without_manager: number }>(`
+      SELECT
+        COUNT(*) FILTER (WHERE status = 'preparation')::int AS preparation,
+        COUNT(*) FILTER (WHERE NOT EXISTS (
+          SELECT 1 FROM territory_manager_assignments tma
+          WHERE tma.territory_id = operational_territories.id AND tma.status = 'active' AND tma.ended_at IS NULL
+        ))::int AS without_manager
+      FROM operational_territories
+      WHERE level = 'city' AND is_active = true
+    `);
+    const tr = terResult.rows[0];
+    if (tr) territories = { available: true, preparationCount: tr.preparation, withoutManagerCount: tr.without_manager };
+  } catch { unavailableItems.push('Territórios: fonte indisponível.'); }
+
+  // ── Deterministic priority classification (only from available sections) ──
+  if (rides.available && rides.pendingAdjustment > 0) highItems.push(`${rides.pendingAdjustment} corrida(s) com ajuste pendente.`);
+  if (finance.available && finance.overdueCount > 0) highItems.push(`${finance.overdueCount} obrigação(ões) financeira(s) vencida(s).`);
+  if (inbox.available && inbox.highRiskRecentCount > 0) highItems.push(`${inbox.highRiskRecentCount} e-mail(s) com risco elevado (entre os ${inbox.riskAssessedLimit} mais recentes analisados).`);
+
+  if (finance.available && finance.due7dCount > 0) attentionItems.push(`${finance.due7dCount} obrigação(ões) vence(m) em 7 dias.`);
+  if (drivers.available && drivers.docsPending > 0) attentionItems.push(`${drivers.docsPending} motorista(s) com documentos pendentes.`);
+  if (drivers.available && drivers.pendingApproval > 0) attentionItems.push(`${drivers.pendingApproval} motorista(s) aguardando aprovação.`);
+  if (drivers.available && drivers.compliancePending > 0) attentionItems.push(`${drivers.compliancePending} compliance pendente(s).`);
+  if (leads.available && leads.noContact > 0) attentionItems.push(`${leads.noContact} lead(s) sem primeiro contato.`);
+  if (leads.available && leads.stale3d > 0) attentionItems.push(`${leads.stale3d} lead(s) parado(s) há mais de 3 dias.`);
+  if (inbox.available && inbox.newCount > 0) attentionItems.push(`${inbox.newCount} e-mail(s) novo(s) na inbox.`);
+  if (territories.available && territories.withoutManagerCount > 0) attentionItems.push(`${territories.withoutManagerCount} território(s) sem gestor.`);
+  if (finance.uncategorizedAvailable && finance.uncategorizedTransactions > 0) attentionItems.push(`${finance.uncategorizedTransactions} lançamento(s) sem categoria.`);
+
+  if (highItems.length === 0 && attentionItems.length === 0 && unavailableItems.length === 0) {
+    normalItems.push('Nenhuma pendência prioritária identificada.');
+  }
+
+  let priority: DailyBriefingPriority = 'NORMAL';
+  if (unavailableItems.length > 0 && highItems.length === 0 && attentionItems.length === 0) priority = 'INDISPONÍVEL';
+  else if (highItems.length > 0) priority = 'ALTA';
+  else if (attentionItems.length > 0) priority = 'ATENÇÃO';
+
+  return {
+    tool: 'daily_briefing',
+    data: {
+      referenceTime, priority, rides, drivers, finance, leads, inbox, territories,
+      highItems, attentionItems, normalItems, unavailableItems,
+    },
+  };
+}
+
+// ── Tool 2: rides_operations ───────────────────────────────────────────────
+
+const VALID_RIDE_PERIODS = ['today', 'week', 'month'] as const;
+
+export async function getRidesOperations(args?: Record<string, string>): Promise<{
+  tool: 'rides_operations';
+  data: RidesOperationsData;
+}> {
+  const period = (args?.period ?? 'today') as 'today' | 'week' | 'month';
+  if (!VALID_RIDE_PERIODS.includes(period)) {
+    throw new Error('[rides_operations] Período inválido. Use today, week ou month.');
+  }
+
+  const bounds = getPeriodBounds(period);
+
+  const result = await pool.query<{
+    total: number; completed: number; canceled: number; no_driver: number; pending_adj: number;
+    gross_cents: string; fee_cents: string; driver_cents: string;
+    prev_total: number; prev_completed: number; prev_gross_cents: string;
+    period_start: string; period_end: string;
+  }>(`
+    SELECT
+      (SELECT COUNT(*)::int FROM rides_v2 WHERE (requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.start} AND (requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.end}) AS total,
+      (SELECT COUNT(*)::int FROM rides_v2 r INNER JOIN ride_settlements s ON s.ride_id = r.id WHERE s.settled_at IS NOT NULL AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.start} AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.end}) AS completed,
+      (SELECT COUNT(*)::int FROM rides_v2 WHERE status IN ('canceled_by_passenger','canceled_by_driver') AND (requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.start} AND (requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.end}) AS canceled,
+      (SELECT COUNT(*)::int FROM rides_v2 WHERE status = 'no_driver' AND (requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.start} AND (requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.end}) AS no_driver,
+      (SELECT COUNT(*)::int FROM rides_v2 WHERE status = 'pending_adjustment' AND (requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.start} AND (requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.end}) AS pending_adj,
+      (SELECT COALESCE(SUM(s.final_price * 100), 0)::text FROM rides_v2 r INNER JOIN ride_settlements s ON s.ride_id = r.id WHERE s.settled_at IS NOT NULL AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.start} AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.end}) AS gross_cents,
+      (SELECT COALESCE(SUM(s.fee_amount * 100), 0)::text FROM rides_v2 r INNER JOIN ride_settlements s ON s.ride_id = r.id WHERE s.settled_at IS NOT NULL AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.start} AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.end}) AS fee_cents,
+      (SELECT COALESCE(SUM(s.driver_earnings * 100), 0)::text FROM rides_v2 r INNER JOIN ride_settlements s ON s.ride_id = r.id WHERE s.settled_at IS NOT NULL AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.start} AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.end}) AS driver_cents,
+      -- Previous period
+      (SELECT COUNT(*)::int FROM rides_v2 WHERE (requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.prevStart} AND (requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.prevEnd}) AS prev_total,
+      (SELECT COUNT(*)::int FROM rides_v2 r INNER JOIN ride_settlements s ON s.ride_id = r.id WHERE s.settled_at IS NOT NULL AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.prevStart} AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.prevEnd}) AS prev_completed,
+      (SELECT COALESCE(SUM(s.final_price * 100), 0)::text FROM rides_v2 r INNER JOIN ride_settlements s ON s.ride_id = r.id WHERE s.settled_at IS NOT NULL AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.prevStart} AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.prevEnd}) AS prev_gross_cents,
+      ${bounds.start}::text AS period_start,
+      ${bounds.end}::text AS period_end
+  `);
+
+  const row = result.rows[0]!;
+
+  return {
+    tool: 'rides_operations',
+    data: {
+      periodLabel: bounds.label,
+      periodStart: row.period_start,
+      periodEnd: row.period_end,
+      total: row.total,
+      completed: row.completed,
+      canceled: row.canceled,
+      noDriver: row.no_driver,
+      pendingAdjustment: row.pending_adj,
+      grossAmountCents: row.gross_cents,
+      kaviarFeeCents: row.fee_cents,
+      driverEarningsCents: row.driver_cents,
+      previous: {
+        total: row.prev_total,
+        completed: row.prev_completed,
+        grossAmountCents: row.prev_gross_cents,
+      },
+    },
+  };
+}
+
+// ── Tool 3: finance_accounting_brief ───────────────────────────────────────
+
+const VALID_FINANCE_PERIODS = ['month', 'quarter'] as const;
+
+export async function getFinanceAccountingBrief(args?: Record<string, string>): Promise<{
+  tool: 'finance_accounting_brief';
+  data: FinanceAccountingBriefData;
+}> {
+  const period = (args?.period ?? 'month') as 'month' | 'quarter';
+  if (!VALID_FINANCE_PERIODS.includes(period)) {
+    throw new Error('[finance_accounting_brief] Período inválido. Use month ou quarter.');
+  }
+
+  const periodStart = period === 'month'
+    ? `date_trunc('month', NOW() AT TIME ZONE 'America/Sao_Paulo')::date`
+    : `date_trunc('quarter', NOW() AT TIME ZONE 'America/Sao_Paulo')::date`;
+  const periodEnd = period === 'month'
+    ? `(date_trunc('month', NOW() AT TIME ZONE 'America/Sao_Paulo') + INTERVAL '1 month')::date`
+    : `(date_trunc('quarter', NOW() AT TIME ZONE 'America/Sao_Paulo') + INTERVAL '3 months')::date`;
+  const periodLabel = period === 'month' ? 'Este mês' : 'Este trimestre';
+
+  const result = await pool.query<{
+    revenue_cents: string; expense_cents: string; result_cents: string;
+    overdue_count: number; overdue_cents: string;
+    due7d: number; due15d: number; due30d: number;
+    uncat: number;
+  }>(`
+    SELECT
+      COALESCE((SELECT SUM(net_amount_cents) FROM financial_transactions WHERE direction = 'CREDIT' AND status = 'POSTED' AND transaction_date >= ${periodStart} AND transaction_date < ${periodEnd}), 0)::text AS revenue_cents,
+      COALESCE((SELECT SUM(net_amount_cents) FROM financial_transactions WHERE direction = 'DEBIT' AND status = 'POSTED' AND transaction_date >= ${periodStart} AND transaction_date < ${periodEnd}), 0)::text AS expense_cents,
+      COALESCE((SELECT SUM(CASE WHEN direction = 'CREDIT' THEN net_amount_cents ELSE -net_amount_cents END) FROM financial_transactions WHERE status = 'POSTED' AND transaction_date >= ${periodStart} AND transaction_date < ${periodEnd}), 0)::text AS result_cents,
+      (SELECT COUNT(*)::int FROM financial_obligations WHERE status NOT IN ('PAID','FAILED','CANCELLED') AND due_date IS NOT NULL AND due_date < ${TODAY_SP}) AS overdue_count,
+      COALESCE((SELECT SUM(net_amount_cents) FROM financial_obligations WHERE status NOT IN ('PAID','FAILED','CANCELLED') AND due_date IS NOT NULL AND due_date < ${TODAY_SP}), 0)::text AS overdue_cents,
+      (SELECT COUNT(*)::int FROM financial_obligations WHERE status NOT IN ('PAID','FAILED','CANCELLED') AND due_date IS NOT NULL AND due_date >= ${TODAY_SP} AND due_date <= ${TODAY_SP} + 7) AS due7d,
+      (SELECT COUNT(*)::int FROM financial_obligations WHERE status NOT IN ('PAID','FAILED','CANCELLED') AND due_date IS NOT NULL AND due_date >= ${TODAY_SP} AND due_date <= ${TODAY_SP} + 15) AS due15d,
+      (SELECT COUNT(*)::int FROM financial_obligations WHERE status NOT IN ('PAID','FAILED','CANCELLED') AND due_date IS NOT NULL AND due_date >= ${TODAY_SP} AND due_date <= ${TODAY_SP} + 30) AS due30d,
+      (SELECT COUNT(*)::int FROM financial_transactions WHERE category_id IS NULL AND status NOT IN ('CANCELED','REVERSED')) AS uncat
+  `);
+
+  const row = result.rows[0]!;
+
+  // Accounting pendencias — query accounting_payment_obligations directly
+  // computePendencias() requires an accountantId and is not usable from admin context
+  let accountingPendencias: FinanceAccountingBriefData['accountingPendencias'] = { available: false, total: 0, urgent: 0, high: 0 };
+  try {
+    const pendResult = await pool.query<{ total: number; urgent: number; high: number }>(`
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE status = 'DRAFT' AND due_date < ${TODAY_SP})::int AS urgent,
+        COUNT(*) FILTER (WHERE status IN ('SENT_TO_COMPANY','VIEWED') AND due_date < (${TODAY_SP} + 7))::int AS high
+      FROM accounting_payment_obligations
+      WHERE status NOT IN ('RECONCILED','CANCELED','VERIFIED')
+    `);
+    const pr = pendResult.rows[0];
+    if (pr) accountingPendencias = { available: true, total: pr.total, urgent: pr.urgent, high: pr.high };
+  } catch {
+    accountingPendencias = { available: false, total: 0, urgent: 0, high: 0 };
+  }
+
+  return {
+    tool: 'finance_accounting_brief',
+    data: {
+      periodLabel,
+      realizedRevenueCents: row.revenue_cents,
+      realizedExpenseCents: row.expense_cents,
+      realizedResultCents: row.result_cents,
+      overdueCount: row.overdue_count,
+      overdueAmountCents: row.overdue_cents,
+      due7dCount: row.due7d,
+      due15dCount: row.due15d,
+      due30dCount: row.due30d,
+      uncategorizedCount: row.uncat,
+      accountingPendencias,
+    },
+  };
+}
+
+// ── Tool 4: crm_leads_summary ──────────────────────────────────────────────
+
+const VALID_CRM_PERIODS = ['today', 'week', 'month'] as const;
+
+export async function getCrmLeadsSummary(args?: Record<string, string>): Promise<{
+  tool: 'crm_leads_summary';
+  data: CrmLeadsSummaryData;
+}> {
+  const period = (args?.period ?? 'week') as 'today' | 'week' | 'month';
+  if (!VALID_CRM_PERIODS.includes(period)) {
+    throw new Error('[crm_leads_summary] Período inválido. Use today, week ou month.');
+  }
+
+  const bounds = getPeriodBounds(period);
+
+  const result = await pool.query<{
+    new_count: number; no_contact: number; stale_3d: number;
+  }>(`
+    SELECT
+      COUNT(*) FILTER (WHERE (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.start} AND (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.end})::int AS new_count,
+      COUNT(*) FILTER (WHERE last_contact_at IS NULL AND status = 'NEW')::int AS no_contact,
+      COUNT(*) FILTER (WHERE updated_at < (NOW() - INTERVAL '3 days') AND status NOT IN ('ACTIVE','LOST','REJECTED'))::int AS stale_3d
+    FROM crm_leads
+    WHERE deleted_at IS NULL
+  `);
+
+  const row = result.rows[0]!;
+
+  // By status
+  const statusResult = await pool.query<{ status: string; cnt: number }>(`
+    SELECT status, COUNT(*)::int AS cnt FROM crm_leads WHERE deleted_at IS NULL GROUP BY status ORDER BY cnt DESC
+  `);
+  const byStatus: Record<string, number> = {};
+  for (const r of statusResult.rows) byStatus[r.status] = r.cnt;
+
+  // By source
+  const sourceResult = await pool.query<{ source: string; cnt: number }>(`
+    SELECT source, COUNT(*)::int AS cnt FROM crm_leads
+    WHERE deleted_at IS NULL AND (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.start}
+    GROUP BY source ORDER BY cnt DESC LIMIT 10
+  `);
+  const bySource: Record<string, number> = {};
+  for (const r of sourceResult.rows) bySource[r.source] = r.cnt;
+
+  // Top territories
+  const terResult = await pool.query<{ name: string; cnt: number }>(`
+    SELECT COALESCE(t.name, 'Sem território') AS name, COUNT(*)::int AS cnt
+    FROM crm_leads l
+    LEFT JOIN operational_territories t ON t.id = l.territory_id
+    WHERE l.deleted_at IS NULL AND (l.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.start}
+    GROUP BY t.name ORDER BY cnt DESC LIMIT 5
+  `);
+  const topTerritories = terResult.rows.map(r => ({ name: r.name, count: r.cnt }));
+
+  return {
+    tool: 'crm_leads_summary',
+    data: {
+      periodLabel: bounds.label,
+      newCount: row.new_count,
+      byStatus,
+      noContactCount: row.no_contact,
+      stale3dCount: row.stale_3d,
+      bySource,
+      topTerritories,
+    },
+  };
+}
+
+// ── Tool 5: inbox_summary ──────────────────────────────────────────────────
+
+export async function getInboxSummary(args?: Record<string, string>): Promise<{
+  tool: 'inbox_summary';
+  data: InboxSummaryData;
+}> {
+  const limitRaw = parseInt(args?.limit ?? '5', 10);
+  const limit = Math.max(1, Math.min(10, isNaN(limitRaw) ? 5 : limitRaw));
+
+  const countResult = await pool.query<{ cnt: number }>(`
+    SELECT COUNT(*)::int AS cnt FROM inbound_email_messages WHERE status = 'NEW'
+  `);
+  const totalNew = countResult.rows[0]?.cnt ?? 0;
+
+  const result = await pool.query<{
+    subject: string | null;
+    from_name: string | null;
+    from_email: string;
+    received_at: string;
+    has_attachments: boolean;
+    attachment_count: number;
+    text_body: string | null;
+    html_body: string | null;
+    normalized_body: string | null;
+    raw_headers: unknown;
+  }>(`
+    SELECT subject, from_name, from_email, received_at::text, has_attachments, attachment_count,
+           text_body, html_body, normalized_body, raw_headers
+    FROM inbound_email_messages
+    WHERE status = 'NEW'
+    ORDER BY received_at DESC
+    LIMIT $1
+  `, [limit]);
+
+  const recent = result.rows.map(row => {
+    const risk = evaluateInboundEmailSecurityRisk(row);
+    const subject = row.subject
+      ? (row.subject.length > 100 ? row.subject.slice(0, 100) + '…' : row.subject)
+      : '(sem assunto)';
+    return {
+      subject,
+      fromName: row.from_name || row.from_email.split('@')[0],
+      receivedAt: row.received_at,
+      hasAttachments: row.has_attachments,
+      riskLevel: risk.level,
+    };
+  });
+
+  return {
+    tool: 'inbox_summary',
+    data: { totalNew, recent },
+  };
+}

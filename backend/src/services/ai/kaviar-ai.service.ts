@@ -10,8 +10,13 @@ import type {
   FinanceDueObligationsData,
   TerritoryOnboardingStatusData,
   TerritoryActivationReadinessData,
+  DailyBriefingData,
+  RidesOperationsData,
+  FinanceAccountingBriefData,
+  CrmLeadsSummaryData,
+  InboxSummaryData,
 } from './kaviar-ai.tools';
-import { executeTool } from './kaviar-ai.registry';
+import { executeTool, canRoleExecuteTool } from './kaviar-ai.registry';
 import { routeQuestion } from './kaviar-ai.router';
 
 function formatBRLDecimal(value: string): string {
@@ -146,6 +151,171 @@ function formatTerritoryReadiness(data: TerritoryActivationReadinessData): strin
   return parts.join('\n');
 }
 
+function formatDailyBriefing(data: DailyBriefingData): string {
+  const parts: string[] = [];
+  parts.push(`📋 Briefing Administrativo — ${data.referenceTime} (America/Sao_Paulo)`);
+  parts.push(`Prioridade geral: ${data.priority}`);
+  parts.push('');
+
+  // Rides
+  if (data.rides.available) {
+    parts.push(`🚗 Corridas hoje: ${data.rides.completed} liquidadas (bruto: ${formatBRLDecimal(data.rides.grossAmount)}, receita KAVIAR: ${formatBRLDecimal(data.rides.kaviarFee)})`);
+    if (data.rides.canceled > 0) parts.push(`   Canceladas: ${data.rides.canceled}`);
+    if (data.rides.noDriver > 0) parts.push(`   Sem motorista: ${data.rides.noDriver}`);
+    if (data.rides.pendingAdjustment > 0) parts.push(`   Ajuste pendente: ${data.rides.pendingAdjustment}`);
+  } else {
+    parts.push('🚗 Corridas hoje: não foi possível consultar.');
+  }
+
+  // Drivers
+  if (data.drivers.available) {
+    parts.push(`👤 Motoristas: ${data.drivers.docsPending} docs pendentes, ${data.drivers.pendingApproval} aguardando aprovação, ${data.drivers.compliancePending} compliance pendente`);
+  } else {
+    parts.push('👤 Motoristas: não foi possível consultar.');
+  }
+
+  // Finance
+  if (data.finance.available) {
+    parts.push(`💰 Financeiro: ${data.finance.overdueCount} vencida(s), ${data.finance.due7dCount} em 7d, ${data.finance.due15dCount} em 15d, ${data.finance.due30dCount} em 30d`);
+    if (data.finance.uncategorizedAvailable) {
+      if (data.finance.uncategorizedTransactions > 0) parts.push(`   ${data.finance.uncategorizedTransactions} lançamento(s) sem categoria`);
+    } else {
+      parts.push('   Lançamentos sem categoria: não foi possível consultar.');
+    }
+  } else {
+    parts.push('💰 Financeiro: não foi possível consultar.');
+  }
+
+  // Leads
+  if (data.leads.available) {
+    parts.push(`📊 Leads: ${data.leads.newToday} novos hoje, ${data.leads.noContact} sem contato, ${data.leads.stale3d} parados >3d`);
+  } else {
+    parts.push('📊 Leads: não foi possível consultar.');
+  }
+
+  // Inbox
+  if (data.inbox.available) {
+    parts.push(`📧 Inbox: ${data.inbox.newCount} novos`);
+    if (data.inbox.highRiskRecentCount > 0) {
+      parts.push(`   ${data.inbox.highRiskRecentCount} com risco elevado entre os ${data.inbox.riskAssessedLimit} e-mails novos mais recentes analisados`);
+    }
+    if (data.inbox.latestSubjects.length > 0) {
+      parts.push('   Últimos assuntos:');
+      for (const s of data.inbox.latestSubjects) parts.push(`   • ${s}`);
+    }
+  } else {
+    parts.push('📧 Inbox: não foi possível consultar.');
+  }
+
+  // Territories
+  if (data.territories.available) {
+    parts.push(`🗺️ Territórios: ${data.territories.preparationCount} em preparação, ${data.territories.withoutManagerCount} sem gestor`);
+  } else {
+    parts.push('🗺️ Territórios: não foi possível consultar.');
+  }
+
+  // Priority items
+  if (data.highItems.length > 0) {
+    parts.push('');
+    parts.push('🔴 PRIORIDADE ALTA:');
+    for (const i of data.highItems) parts.push(`  • ${i}`);
+  }
+  if (data.attentionItems.length > 0) {
+    parts.push('');
+    parts.push('🟡 ATENÇÃO:');
+    for (const i of data.attentionItems) parts.push(`  • ${i}`);
+  }
+  if (data.normalItems.length > 0 && data.highItems.length === 0 && data.attentionItems.length === 0) {
+    parts.push('');
+    parts.push('🟢 SITUAÇÃO NORMAL:');
+    for (const i of data.normalItems) parts.push(`  • ${i}`);
+  }
+  if (data.unavailableItems.length > 0) {
+    parts.push('');
+    parts.push('⚠️ INDISPONÍVEL:');
+    for (const i of data.unavailableItems) parts.push(`  • ${i}`);
+  }
+
+  return parts.join('\n');
+}
+
+function formatRidesOperations(data: RidesOperationsData): string {
+  const parts: string[] = [];
+  parts.push(`🚗 Corridas — ${data.periodLabel}`);
+  parts.push(`Total: ${data.total} | Concluídas: ${data.completed} | Canceladas: ${data.canceled} | Sem motorista: ${data.noDriver} | Ajuste pendente: ${data.pendingAdjustment}`);
+  parts.push(`Valor bruto: ${formatCentsBRL(data.grossAmountCents)} | Receita KAVIAR: ${formatCentsBRL(data.kaviarFeeCents)} | Ganhos motoristas: ${formatCentsBRL(data.driverEarningsCents)}`);
+  parts.push('');
+  parts.push(`Período anterior: ${data.previous.total} corridas, ${data.previous.completed} concluídas, ${formatCentsBRL(data.previous.grossAmountCents)} bruto`);
+  const diff = data.completed - data.previous.completed;
+  if (diff > 0) parts.push(`  ↑ +${diff} concluídas vs. período anterior`);
+  else if (diff < 0) parts.push(`  ↓ ${diff} concluídas vs. período anterior`);
+  else parts.push('  = Mesmo volume do período anterior');
+  return parts.join('\n');
+}
+
+function formatFinanceAccountingBrief(data: FinanceAccountingBriefData): string {
+  const parts: string[] = [];
+  parts.push(`💰 Financeiro e Contábil — ${data.periodLabel}`);
+  parts.push(`Receita realizada: ${formatCentsBRL(data.realizedRevenueCents)}`);
+  parts.push(`Despesas realizadas: ${formatCentsBRL(data.realizedExpenseCents)}`);
+  parts.push(`Resultado: ${formatCentsBRL(data.realizedResultCents)}`);
+  parts.push('');
+  parts.push(`Obrigações: ${data.overdueCount} vencida(s), ${data.due7dCount} em 7d, ${data.due15dCount} em 15d, ${data.due30dCount} em 30d`);
+  if (data.uncategorizedCount > 0) parts.push(`Lançamentos sem categoria: ${data.uncategorizedCount}`);
+  if (data.accountingPendencias.available) {
+    if (data.accountingPendencias.total > 0) {
+      parts.push(`Pendências contábeis: ${data.accountingPendencias.total} total (${data.accountingPendencias.urgent} urgente(s), ${data.accountingPendencias.high} alta(s))`);
+    } else {
+      parts.push('Pendências contábeis: nenhuma.');
+    }
+  } else {
+    parts.push('Pendências contábeis: não foi possível consultar (fonte indisponível).');
+  }
+  return parts.join('\n');
+}
+
+function formatCrmLeadsSummary(data: CrmLeadsSummaryData): string {
+  const parts: string[] = [];
+  parts.push(`📊 CRM Leads — ${data.periodLabel}`);
+  parts.push(`Novos: ${data.newCount} | Sem contato: ${data.noContactCount} | Parados >3d: ${data.stale3dCount}`);
+  parts.push('');
+  const statusEntries = Object.entries(data.byStatus).slice(0, 8);
+  if (statusEntries.length > 0) {
+    parts.push('Funil:');
+    for (const [status, count] of statusEntries) parts.push(`  ${status}: ${count}`);
+  }
+  if (Object.keys(data.bySource).length > 0) {
+    parts.push('');
+    parts.push('Por origem:');
+    for (const [source, count] of Object.entries(data.bySource).slice(0, 5)) {
+      parts.push(`  ${source}: ${count}`);
+    }
+  }
+  if (data.topTerritories.length > 0) {
+    parts.push('');
+    parts.push('Top territórios:');
+    for (const t of data.topTerritories) parts.push(`  ${t.name}: ${t.count}`);
+  }
+  return parts.join('\n');
+}
+
+function formatInboxSummary(data: InboxSummaryData): string {
+  const parts: string[] = [];
+  parts.push(`📧 Inbox — ${data.totalNew} e-mail(s) novo(s)`);
+  if (data.recent.length === 0) {
+    parts.push('Nenhum e-mail novo na caixa de entrada.');
+    return parts.join('\n');
+  }
+  parts.push('');
+  for (const r of data.recent) {
+    const risk = r.riskLevel !== 'LOW' ? ` [risco: ${r.riskLevel}]` : '';
+    const attach = r.hasAttachments ? ' 📎' : '';
+    parts.push(`• ${r.subject}${attach}${risk}`);
+    parts.push(`  De: ${r.fromName} — ${r.receivedAt}`);
+  }
+  return parts.join('\n');
+}
+
 const FORMATTERS: Record<KaviarAiToolName, (data: unknown) => string> = {
   rides_summary_today: (data) =>
     formatRidesSummary(data as RidesSummaryTodayData),
@@ -157,12 +327,21 @@ const FORMATTERS: Record<KaviarAiToolName, (data: unknown) => string> = {
     formatTerritoryOnboarding(data as TerritoryOnboardingStatusData),
   territory_activation_readiness: (data) =>
     formatTerritoryReadiness(data as TerritoryActivationReadinessData),
+  daily_briefing: (data) =>
+    formatDailyBriefing(data as DailyBriefingData),
+  rides_operations: (data) =>
+    formatRidesOperations(data as RidesOperationsData),
+  finance_accounting_brief: (data) =>
+    formatFinanceAccountingBrief(data as FinanceAccountingBriefData),
+  crm_leads_summary: (data) =>
+    formatCrmLeadsSummary(data as CrmLeadsSummaryData),
+  inbox_summary: (data) =>
+    formatInboxSummary(data as InboxSummaryData),
 };
 
 // ── Extração de city/uf da pergunta ─────────────────────────────────────────
 
 function parseCityUf(question: string): { city: string; uf: string } | null {
-  // Encontra padrão X/UF ou X - UF, extrai cidade removendo verbos/preposições comuns do início
   const STOP_WORDS = new Set(['quero', 'abrir', 'cadastrar', 'como', 'verificar', 'criar', 'está', 'status', 'cidade', 'território', 'territorio', 'nova', 'novo']);
 
   let match = question.match(/(.+?)\s*\/\s*([A-Z]{2})(?:\s|$|[.,!?])/);
@@ -173,7 +352,6 @@ function parseCityUf(question: string): { city: string; uf: string } | null {
   const uf = match[2].trim();
   if (uf.length !== 2) return null;
 
-  // Pegar as palavras antes do separador e remover stop words do início
   const words = match[1].trim().split(/\s+/);
   while (words.length > 0 && STOP_WORDS.has(words[0].toLowerCase())) {
     words.shift();
@@ -184,6 +362,19 @@ function parseCityUf(question: string): { city: string; uf: string } | null {
   return { city, uf };
 }
 
+// ── Extração de período da pergunta ─────────────────────────────────────────
+
+function parsePeriod(question: string): 'today' | 'week' | 'month' {
+  const q = question.toLowerCase();
+  if (q.includes('mês') || q.includes('mes') || q.includes('mensal')) return 'month';
+  if (q.includes('semana') || q.includes('semanal')) return 'week';
+  return 'today';
+}
+
+// ── Roles permitidas no Chat KAVIAR ─────────────────────────────────────────
+
+const ALLOWED_CHAT_ROLES = new Set(['SUPER_ADMIN', 'FINANCE']);
+
 // ── Função principal ───────────────────────────────────────────────────────
 
 export async function askKaviarAi(
@@ -191,6 +382,15 @@ export async function askKaviarAi(
   provider?: KaviarAiModelProvider
 ): Promise<KaviarAiResponse> {
   const question = request.question.trim();
+  const role = request.role;
+
+  // Fail-closed: role MUST come from the authenticated middleware, never body
+  if (!role || !ALLOWED_CHAT_ROLES.has(role)) {
+    return {
+      answer: 'Acesso negado: role ausente ou não autorizada.',
+      toolsUsed: [],
+    };
+  }
 
   if (!question) {
     return {
@@ -208,16 +408,23 @@ export async function askKaviarAi(
     };
   }
 
-  // Executa todas as ferramentas roteadas, na ordem retornada pelo router.
-  // Cada nome passa obrigatoriamente por executeTool() (validação via registry).
+  // Filter tools by RBAC
+  const authorizedTools = route.toolsToCall.filter(t => canRoleExecuteTool(role, t));
+  if (authorizedTools.length === 0) {
+    return {
+      answer: 'Você não tem permissão para acessar essas informações.',
+      toolsUsed: [],
+    };
+  }
+
   const answers: string[] = [];
   const toolsUsed: KaviarAiToolName[] = [];
 
-  // Extrair city/uf para ferramentas territoriais
+  // Territorial tools need city/uf
   const territorialTools: KaviarAiToolName[] = ['territory_onboarding_status', 'territory_activation_readiness'];
   let territorialArgs: Record<string, string> | undefined;
 
-  if (route.toolsToCall.some(t => territorialTools.includes(t))) {
+  if (authorizedTools.some(t => territorialTools.includes(t))) {
     const parsed = parseCityUf(question);
     if (!parsed) {
       return {
@@ -228,8 +435,25 @@ export async function askKaviarAi(
     territorialArgs = parsed;
   }
 
-  for (const toolName of route.toolsToCall) {
-    const args = territorialTools.includes(toolName) ? territorialArgs : undefined;
+  // Period-based tools
+  const periodTools: KaviarAiToolName[] = ['rides_operations', 'crm_leads_summary'];
+  const period = parsePeriod(question);
+
+  // Finance period
+  const financePeriod = question.toLowerCase().includes('trimestre') || question.toLowerCase().includes('quarter')
+    ? 'quarter' : 'month';
+
+  for (const toolName of authorizedTools) {
+    let args: Record<string, string> | undefined;
+
+    if (territorialTools.includes(toolName)) {
+      args = territorialArgs;
+    } else if (periodTools.includes(toolName)) {
+      args = { period };
+    } else if (toolName === 'finance_accounting_brief') {
+      args = { period: financePeriod };
+    }
+
     const result = await executeTool(toolName, args);
     const formatter = FORMATTERS[result.tool as KaviarAiToolName];
     const formatted = formatter

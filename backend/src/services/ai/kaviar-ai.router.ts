@@ -92,6 +92,62 @@ export function routeByRules(question: string): KaviarAiRouteResult {
     return { toolsToCall: ['finance_due_obligations'] };
   }
 
+  // ── Daily briefing (resumo consolidado) ────────────────────────────────
+  if (
+    q.includes('atenção hoje') ||
+    q.includes('atencao hoje') ||
+    q.includes('minha atenção') ||
+    q.includes('minha atencao') ||
+    q.includes('resumo do dia') ||
+    q.includes('briefing administrativo') ||
+    q.includes('briefing') ||
+    q.includes('precisa da minha')
+  ) {
+    return { toolsToCall: ['daily_briefing'] };
+  }
+
+  // ── Rides operations ──────────────────────────────────────────────────
+  if (
+    (q.includes('corridas') || q.includes('corrida')) &&
+    (q.includes('semana') || q.includes('mês') || q.includes('mes') || q.includes('como est'))
+  ) {
+    return { toolsToCall: ['rides_operations'] };
+  }
+
+  // ── Finance accounting brief ──────────────────────────────────────────
+  if (
+    (q.includes('financeiro') || q.includes('financeira') || q.includes('financ')) &&
+    (q.includes('como est') || q.includes('resumo') || q.includes('balanço') || q.includes('balanco'))
+  ) {
+    return { toolsToCall: ['finance_accounting_brief'] };
+  }
+
+  if (
+    q.includes('contador') ||
+    q.includes('contábil') ||
+    q.includes('contabil') ||
+    q.includes('pendências do contador') ||
+    q.includes('pendencias do contador')
+  ) {
+    return { toolsToCall: ['finance_accounting_brief'] };
+  }
+
+  // ── CRM leads summary ─────────────────────────────────────────────────
+  if (
+    q.includes('lead') &&
+    (q.includes('novo') || q.includes('sem contato') || q.includes('quanto') || q.includes('parado') || q.includes('funil'))
+  ) {
+    return { toolsToCall: ['crm_leads_summary'] };
+  }
+
+  // ── Inbox summary ─────────────────────────────────────────────────────
+  if (
+    (q.includes('e-mail') || q.includes('email') || q.includes('inbox') || q.includes('caixa de entrada')) &&
+    (q.includes('chegaram') || q.includes('novos') || q.includes('novo') || q.includes('assunto') || q.includes('suspeito') || q.includes('quais'))
+  ) {
+    return { toolsToCall: ['inbox_summary'] };
+  }
+
   // ── Territorial onboarding ────────────────────────────────────────────
   const hasTerritoryContext =
     q.includes('cidade') ||
