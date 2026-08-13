@@ -154,8 +154,6 @@ export function routeByRules(question: string): KaviarAiRouteResult {
     (q.includes('o que') && q.includes('kaviar') && (q.includes('faz') || q.includes('é') || q.includes('e '))) ||
     q.includes('como funciona a kaviar') ||
     q.includes('para quem') && q.includes('kaviar') ||
-    q.includes('quais módulos') || q.includes('quais modulos') ||
-    q.includes('quais serviços') || q.includes('quais servicos') ||
     q.includes('como funcionam territórios') || q.includes('como funcionam territorios')
   ) {
     return { toolsToCall: ['company_profile'] };
@@ -213,6 +211,67 @@ export function routeByRules(question: string): KaviarAiRouteResult {
     q.includes('ficha da kaviar')
   ) {
     return { toolsToCall: ['company_profile'] };
+  }
+
+  // ── Platform catalog ───────────────────────────────────────────────────
+  if (
+    q.includes('quais módulos') || q.includes('quais modulos') ||
+    q.includes('quais serviços') || q.includes('quais servicos') ||
+    q.includes('módulos existem') || q.includes('modulos existem') ||
+    q.includes('o que a plataforma possui') ||
+    q.includes('como funciona o kaviar pet') ||
+    q.includes('o que é o premium tourism') || q.includes('o que e o premium tourism') ||
+    q.includes('onde vejo as mensagens') ||
+    q.includes('áreas financeiras existem') || q.includes('areas financeiras existem') ||
+    (q.includes('módulo') || q.includes('modulo')) && (q.includes('existe') || q.includes('possui') || q.includes('tem'))
+  ) {
+    return { toolsToCall: ['platform_catalog'] };
+  }
+
+  // ── Annual incentive summary ──────────────────────────────────────────
+  if (
+    q.includes('gratificação anual') || q.includes('gratificacao anual') ||
+    q.includes('bônus') || q.includes('bonus') ||
+    q.includes('incentivo anual') ||
+    (q.includes('bônus') || q.includes('bonus') || q.includes('gratificação') || q.includes('gratificacao')) &&
+    (q.includes('motorista') || q.includes('pagar') || q.includes('acumulad') || q.includes('previsão') || q.includes('previsao') || q.includes('dezembro'))
+  ) {
+    return { toolsToCall: ['annual_incentive_summary'] };
+  }
+
+  // ── WhatsApp summary ──────────────────────────────────────────────────
+  if (
+    (q.includes('whatsapp') || q.includes('zap')) &&
+    (q.includes('novo') || q.includes('não lid') || q.includes('nao lid') || q.includes('pendente') || q.includes('conversa') || q.includes('mensag'))
+  ) {
+    return { toolsToCall: ['whatsapp_summary'] };
+  }
+
+  // ── Driver pipeline summary ───────────────────────────────────────────
+  if (
+    (q.includes('pipeline') || q.includes('funil de motorista')) ||
+    (q.includes('quantos motoristas') && (q.includes('total') || q.includes('temos') || q.includes('cadastr'))) ||
+    (q.includes('motorista') && (q.includes('por status') || q.includes('por tipo') || q.includes('suspenso')))
+  ) {
+    return { toolsToCall: ['driver_pipeline_summary'] };
+  }
+
+  // ── Emergency operations summary ──────────────────────────────────────
+  if (
+    q.includes('emergência') || q.includes('emergencia') ||
+    q.includes('sos') ||
+    (q.includes('emergênci') || q.includes('emergenci')) && (q.includes('ativa') || q.includes('hoje'))
+  ) {
+    return { toolsToCall: ['emergency_operations_summary'] };
+  }
+
+  // ── Territory portfolio summary ───────────────────────────────────────
+  if (
+    (q.includes('portfólio') || q.includes('portfolio')) && q.includes('territór') ||
+    q.includes('quantos territórios') || q.includes('quantos territorios') ||
+    (q.includes('territórios') || q.includes('territorios')) && (q.includes('por status') || q.includes('panorama') || q.includes('resumo'))
+  ) {
+    return { toolsToCall: ['territory_portfolio_summary'] };
   }
 
   // ── Territorial onboarding ────────────────────────────────────────────

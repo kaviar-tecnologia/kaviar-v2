@@ -9,7 +9,13 @@ export type KaviarAiToolName =
   | 'finance_accounting_brief'
   | 'crm_leads_summary'
   | 'inbox_summary'
-  | 'company_profile';
+  | 'company_profile'
+  | 'platform_catalog'
+  | 'annual_incentive_summary'
+  | 'whatsapp_summary'
+  | 'driver_pipeline_summary'
+  | 'emergency_operations_summary'
+  | 'territory_portfolio_summary';
 
 export type KaviarAiRequest = {
   userId: string;

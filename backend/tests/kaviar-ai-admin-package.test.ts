@@ -14,6 +14,15 @@ vi.mock('../src/services/email/inbound-email-security-risk', () => ({
   },
 }));
 
+vi.mock('../src/services/ai/kaviar-ai.command-center', () => ({
+  getPlatformCatalog: vi.fn().mockResolvedValue({ tool: 'platform_catalog', data: { section: 'overview', modules: [], note: '' } }),
+  getAnnualIncentiveSummary: vi.fn().mockResolvedValue({ tool: 'annual_incentive_summary', data: { available: true, totalOutstandingCents: '0', deadlineBreaches: 0, totalAccruedCents: '0', totalAvailableCents: '0', totalReservedCents: '0', totalPaidCents: '0', totalReversedCents: '0', driversWithBalance: 0, byYear: [], forecast: { available: false }, referenceTime: '' } }),
+  getWhatsAppSummary: vi.fn().mockResolvedValue({ tool: 'whatsapp_summary', data: { available: true, unreadMessages: 0, conversationsWithUnread: 0, newConversations: 0, inProgressConversations: 0, highPriorityConversations: 0, referenceTime: '', recentConversations: [] } }),
+  getDriverPipelineSummary: vi.fn().mockResolvedValue({ tool: 'driver_pipeline_summary', data: { available: true, total: 0, byStatus: {}, byVehicleType: {}, pendingApproval: 0, docsMissing: 0, docsSubmitted: 0, docsRejected: 0, compliancePending: 0, activeDrivers: 0, suspendedDrivers: 0, modalities: { available: true, pending: 0, approved: 0, rejected: 0 }, referenceTime: '' } }),
+  getEmergencyOperationsSummary: vi.fn().mockResolvedValue({ tool: 'emergency_operations_summary', data: { emergencies: { available: true, active: 0, unresolved: 0, critical: null, criticalSupported: false, oldestActiveAt: null }, rides: { available: true, noDriver: 0, pendingAdjustment: 0 }, referenceTime: '' } }),
+  getTerritoryPortfolioSummary: vi.fn().mockResolvedValue({ tool: 'territory_portfolio_summary', data: { available: true, total: 0, byStatus: {}, byRegulatoryStatus: {}, withoutManager: 0, withMotoPassenger: 0, withMotoExpress: 0, regulatoryChecklist: { available: true, pending: 0 }, regulatoryProtocols: { available: true, pending: 0 }, insuranceCoverages: { available: true, pending: 0 }, cityLandings: { available: true, total: 0, active: 0 }, attentionCities: [], referenceTime: '' } }),
+}));
+
 import { askKaviarAi } from '../src/services/ai/kaviar-ai.service';
 import { getRegisteredTools, executeTool, canRoleExecuteTool } from '../src/services/ai/kaviar-ai.registry';
 import { routeByRules } from '../src/services/ai/kaviar-ai.router';
@@ -745,7 +754,7 @@ describe('regressão — tools e roteamento existente', () => {
 
   it('registry contém 10 ferramentas', () => {
     const tools = getRegisteredTools();
-    expect(tools).toHaveLength(11);
+    expect(tools).toHaveLength(17);
   });
 
   it('5 ferramentas originais continuam registradas', () => {

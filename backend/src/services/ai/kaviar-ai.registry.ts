@@ -12,6 +12,14 @@ import {
   getInboxSummary,
   getCompanyProfile,
 } from './kaviar-ai.tools';
+import {
+  getPlatformCatalog,
+  getAnnualIncentiveSummary,
+  getWhatsAppSummary,
+  getDriverPipelineSummary,
+  getEmergencyOperationsSummary,
+  getTerritoryPortfolioSummary,
+} from './kaviar-ai.command-center';
 
 /**
  * Schema de argumentos de uma ferramenta da KAVIAR IA.
@@ -176,6 +184,55 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     },
     allowedRoles: ['SUPER_ADMIN', 'FINANCE'],
     execute: getCompanyProfile,
+  },
+  // ── Command Center v1 ───────────────────────────────────────────────────
+  {
+    name: 'platform_catalog',
+    description: 'Catálogo de módulos da plataforma KAVIAR: o que existe, para que serve e onde acessar no admin.',
+    readOnly: true,
+    argSchema: { type: 'object', properties: { section: { type: 'string' } }, required: [] },
+    allowedRoles: ['SUPER_ADMIN', 'FINANCE'],
+    execute: getPlatformCatalog,
+  },
+  {
+    name: 'annual_incentive_summary',
+    description: 'Resumo da Gratificação Anual: total acumulado, a pagar, disponível, reservado, pago e previsão até dezembro.',
+    readOnly: true,
+    argSchema: { type: 'object', properties: {}, required: [] },
+    allowedRoles: ['SUPER_ADMIN', 'FINANCE'],
+    execute: getAnnualIncentiveSummary,
+  },
+  {
+    name: 'whatsapp_summary',
+    description: 'Resumo da Central WhatsApp: conversas novas, não lidas e urgentes. Nunca retorna telefone ou corpo de mensagem.',
+    readOnly: true,
+    argSchema: { type: 'object', properties: {}, required: [] },
+    allowedRoles: ['SUPER_ADMIN'],
+    execute: getWhatsAppSummary,
+  },
+  {
+    name: 'driver_pipeline_summary',
+    description: 'Pipeline de motoristas: total, por status, por tipo de veículo, documentos pendentes e compliance.',
+    readOnly: true,
+    argSchema: { type: 'object', properties: {}, required: [] },
+    allowedRoles: ['SUPER_ADMIN'],
+    execute: getDriverPipelineSummary,
+  },
+  {
+    name: 'emergency_operations_summary',
+    description: 'Emergências operacionais: ativas, registradas hoje, resolvidas e alarmes falsos.',
+    readOnly: true,
+    argSchema: { type: 'object', properties: {}, required: [] },
+    allowedRoles: ['SUPER_ADMIN'],
+    execute: getEmergencyOperationsSummary,
+  },
+  {
+    name: 'territory_portfolio_summary',
+    description: 'Portfólio de territórios: total por status, regulatório, sem gestor e modalidades habilitadas.',
+    readOnly: true,
+    argSchema: { type: 'object', properties: {}, required: [] },
+    allowedRoles: ['SUPER_ADMIN'],
+    execute: getTerritoryPortfolioSummary,
   },
 ] as const;
 

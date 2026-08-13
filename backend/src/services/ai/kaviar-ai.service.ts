@@ -18,6 +18,14 @@ import type {
   CompanyProfileData,
   CompanyProfileSection,
 } from './kaviar-ai.tools';
+import type {
+  PlatformCatalogData,
+  AnnualIncentiveSummaryData,
+  WhatsAppSummaryData,
+  DriverPipelineSummaryData,
+  EmergencyOperationsSummaryData,
+  TerritoryPortfolioSummaryData,
+} from './kaviar-ai.command-center';
 import { executeTool, canRoleExecuteTool } from './kaviar-ai.registry';
 import { routeQuestion } from './kaviar-ai.router';
 
@@ -435,7 +443,148 @@ const FORMATTERS: Record<KaviarAiToolName, (data: unknown) => string> = {
     formatInboxSummary(data as InboxSummaryData),
   company_profile: (data) =>
     formatCompanyProfile(data as CompanyProfileData),
+  platform_catalog: (data) =>
+    formatPlatformCatalog(data as PlatformCatalogData),
+  annual_incentive_summary: (data) =>
+    formatAnnualIncentiveSummary(data as AnnualIncentiveSummaryData),
+  whatsapp_summary: (data) =>
+    formatWhatsAppSummary(data as WhatsAppSummaryData),
+  driver_pipeline_summary: (data) =>
+    formatDriverPipelineSummary(data as DriverPipelineSummaryData),
+  emergency_operations_summary: (data) =>
+    formatEmergencyOperationsSummary(data as EmergencyOperationsSummaryData),
+  territory_portfolio_summary: (data) =>
+    formatTerritoryPortfolioSummary(data as TerritoryPortfolioSummaryData),
 };
+
+// ── Formatters Command Center ───────────────────────────────────────────────
+
+function formatPlatformCatalog(data: PlatformCatalogData): string {
+  const parts: string[] = [];
+  parts.push(`📚 Catálogo da Plataforma — Seção: ${data.section}`);
+  parts.push(data.note);
+  parts.push('');
+  for (const m of data.modules) {
+    const path = m.adminPath ? ` (${m.adminPath})` : '';
+    parts.push(`• ${m.name}${path}: ${m.description}`);
+  }
+  if (data.modules.length === 0) parts.push('Nenhum módulo nesta seção.');
+  return parts.join('\n');
+}
+
+function formatAnnualIncentiveSummary(data: AnnualIncentiveSummaryData): string {
+  if (!data.available) return 'Gratificação Anual: não foi possível consultar.';
+  const parts: string[] = [];
+  parts.push(`🎁 Gratificação Anual — ${data.referenceTime}`);
+  parts.push(`Total adquirido (ledger): ${formatCentsBRL(data.totalAccruedCents)}`);
+  parts.push(`A pagar atualmente (disponível + reservado): ${formatCentsBRL(data.totalOutstandingCents)}`);
+  parts.push(`  Disponível (pode ser solicitado): ${formatCentsBRL(data.totalAvailableCents)}`);
+  parts.push(`  Reservado (já solicitado/processando): ${formatCentsBRL(data.totalReservedCents)}`);
+  parts.push(`Já pago (liquidado): ${formatCentsBRL(data.totalPaidCents)}`);
+  parts.push(`Revertido: ${formatCentsBRL(data.totalReversedCents)}`);
+  parts.push(`Motoristas com saldo: ${data.driversWithBalance}`);
+  if (data.deadlineBreaches > 0) parts.push(`⚠️ Solicitações com prazo vencido: ${data.deadlineBreaches}`);
+  if (data.forecast.available) {
+    parts.push('');
+    parts.push(`📊 Previsão até 31/12:`);
+    parts.push(`  Geração adicional estimada: ${formatCentsBRL(data.forecast.projectedAdditionalCents!)}`);
+    parts.push(`  Valor a pagar projetado no fim do ano: ${formatCentsBRL(data.forecast.projectedYearEndOutstandingCents!)}`);
+    parts.push(`  ${data.forecast.basis}`);
+    parts.push('  Estimativa baseada no ritmo registrado; não é valor já devido nem garantia de pagamento.');
+  } else if (data.forecast.reason) {
+    parts.push(`Previsão: ${data.forecast.reason}`);
+  }
+  return parts.join('\n');
+}
+
+function formatWhatsAppSummary(data: WhatsAppSummaryData): string {
+  if (!data.available) return 'Central WhatsApp: não foi possível consultar.';
+  const parts: string[] = [];
+  parts.push(`💬 Central WhatsApp — ${data.referenceTime}`);
+  parts.push(`Mensagens não lidas: ${data.unreadMessages} (em ${data.conversationsWithUnread} conversas)`);
+  parts.push(`Conversas novas: ${data.newConversations} | Em andamento: ${data.inProgressConversations} | Urgentes: ${data.highPriorityConversations}`);
+  if (data.recentConversations.length > 0) {
+    parts.push('');
+    parts.push('Conversas recentes com mensagens não lidas:');
+    for (const c of data.recentConversations) {
+      parts.push(`  • ${c.contactType} | ${c.status} | prioridade: ${c.priority} | não lidas: ${c.unreadCount}`);
+    }
+  }
+  return parts.join('\n');
+}
+
+function formatDriverPipelineSummary(data: DriverPipelineSummaryData): string {
+  if (!data.available) return 'Pipeline de motoristas: não foi possível consultar.';
+  const parts: string[] = [];
+  parts.push(`👤 Pipeline de Motoristas — ${data.referenceTime}`);
+  parts.push(`Total: ${data.total} | Ativos: ${data.activeDrivers} | Pendentes: ${data.pendingApproval} | Suspensos: ${data.suspendedDrivers}`);
+  const statusEntries = Object.entries(data.byStatus);
+  if (statusEntries.length > 0) {
+    parts.push('Por status: ' + statusEntries.map(([s, c]) => `${s}: ${c}`).join(', '));
+  }
+  const vehicleEntries = Object.entries(data.byVehicleType);
+  if (vehicleEntries.length > 0) {
+    parts.push('Por veículo: ' + vehicleEntries.map(([v, c]) => `${v}: ${c}`).join(', '));
+  }
+  parts.push(`Docs: ${data.docsSubmitted} aguardando revisão, ${data.docsMissing} ausentes, ${data.docsRejected} rejeitados`);
+  if (data.compliancePending > 0) parts.push(`Compliance pendente: ${data.compliancePending}`);
+  if (data.modalities.available) {
+    parts.push(`Modalidades: ${data.modalities.pending} aguardando aprovação, ${data.modalities.approved} aprovadas, ${data.modalities.rejected} rejeitadas`);
+  } else {
+    parts.push('Modalidades: não foi possível consultar.');
+  }
+  return parts.join('\n');
+}
+
+function formatEmergencyOperationsSummary(data: EmergencyOperationsSummaryData): string {
+  const parts: string[] = [];
+  parts.push(`🚨 Emergências e Corridas — ${data.referenceTime}`);
+
+  if (data.emergencies.available) {
+    if (data.emergencies.active > 0) {
+      parts.push(`⚠️ EMERGÊNCIAS ATIVAS: ${data.emergencies.active}`);
+    } else {
+      parts.push('Nenhuma emergência ativa no momento.');
+    }
+    if (data.emergencies.unresolved > 0) parts.push(`Não resolvidas: ${data.emergencies.unresolved}`);
+  } else {
+    parts.push('Emergências: não foi possível consultar.');
+  }
+
+  if (data.rides.available) {
+    if (data.rides.noDriver > 0) parts.push(`Corridas sem motorista (hoje): ${data.rides.noDriver}`);
+    if (data.rides.pendingAdjustment > 0) parts.push(`Corridas com ajuste pendente: ${data.rides.pendingAdjustment}`);
+    if (data.rides.noDriver === 0 && data.rides.pendingAdjustment === 0) parts.push('Nenhuma corrida com pendência operacional.');
+  } else {
+    parts.push('Corridas operacionais: não foi possível consultar.');
+  }
+
+  return parts.join('\n');
+}
+
+function formatTerritoryPortfolioSummary(data: TerritoryPortfolioSummaryData): string {
+  if (!data.available) return 'Portfólio de territórios: não foi possível consultar.';
+  const parts: string[] = [];
+  parts.push(`🗺️ Portfólio de Territórios — ${data.referenceTime}`);
+  parts.push(`Total: ${data.total}`);
+  const statusEntries = Object.entries(data.byStatus);
+  if (statusEntries.length > 0) parts.push('Por status: ' + statusEntries.map(([s, c]) => `${s}: ${c}`).join(', '));
+  const regEntries = Object.entries(data.byRegulatoryStatus);
+  if (regEntries.length > 0) parts.push('Regulatório: ' + regEntries.map(([s, c]) => `${s}: ${c}`).join(', '));
+  parts.push(`Sem gestor: ${data.withoutManager} | Moto passageiro: ${data.withMotoPassenger} | Moto express: ${data.withMotoExpress}`);
+
+  if (data.regulatoryChecklist.available && data.regulatoryChecklist.pending > 0) parts.push(`Checklist regulatório pendente: ${data.regulatoryChecklist.pending}`);
+  if (data.regulatoryProtocols.available && data.regulatoryProtocols.pending > 0) parts.push(`Protocolos regulatórios pendentes: ${data.regulatoryProtocols.pending}`);
+  if (data.insuranceCoverages.available && data.insuranceCoverages.pending > 0) parts.push(`Coberturas de seguro pendentes/expiradas: ${data.insuranceCoverages.pending}`);
+  if (data.cityLandings.available) parts.push(`Landings de cidade: ${data.cityLandings.active} ativas de ${data.cityLandings.total} total`);
+
+  if (data.attentionCities.length > 0) {
+    parts.push('');
+    parts.push('Cidades com atenção:');
+    for (const c of data.attentionCities) parts.push(`  • ${c.city}/${c.uf}: ${c.reasons.join(', ')}`);
+  }
+  return parts.join('\n');
+}
 
 // ── Extração de city/uf da pergunta ─────────────────────────────────────────
 
@@ -470,6 +619,18 @@ function parsePeriod(question: string): 'today' | 'week' | 'month' {
 }
 
 // ── Extração de seção da company_profile ────────────────────────────────────
+
+function parseCatalogSection(question: string): string {
+  const q = question.toLowerCase();
+  if (q.includes('corrida') || q.includes('cockpit') || q.includes('emergência') || q.includes('emergencia') || q.includes('compensaç') || q.includes('avaliação') || q.includes('avaliacao') || q.includes('particular') || q.includes('rota fixa')) return 'mobility_operations';
+  if (q.includes('motorista') || q.includes('passageiro') || q.includes('guia') || q.includes('comunidade') || q.includes('bairro')) return 'people_communities';
+  if (q.includes('território') || q.includes('territorio') || q.includes('regulat') || q.includes('geofence') || q.includes('seguro') || q.includes('landing') || q.includes('lab')) return 'territory_regulatory';
+  if (q.includes('financ') || q.includes('contador') || q.includes('contábil') || q.includes('contabil') || q.includes('obrigaç') || q.includes('repasse') || q.includes('crédito') || q.includes('credito') || q.includes('gratificaç') || q.includes('gratificacao')) return 'finance_accounting';
+  if (q.includes('whatsapp') || q.includes('inbox') || q.includes('crm') || q.includes('lead') || q.includes('indicaç') || q.includes('indicacao') || q.includes('comercial')) return 'communications_commercial';
+  if (q.includes('pet') || q.includes('tourism') || q.includes('turismo') || q.includes('vitrine') || q.includes('comércio') || q.includes('comercio') || q.includes('grupo') || q.includes('mulher') || q.includes('idoso') || q.includes('care')) return 'products_verticals';
+  if (q.includes('equipe') || q.includes('auditoria') || q.includes('conformidade') || q.includes('preço') || q.includes('preco') || q.includes('feature') || q.includes('investidor') || q.includes('contrato')) return 'governance';
+  return 'overview';
+}
 
 function parseCompanySection(question: string): string {
   const q = question.toLowerCase();
@@ -565,6 +726,8 @@ export async function askKaviarAi(
       args = { period: financePeriod };
     } else if (toolName === 'company_profile') {
       args = { section: parseCompanySection(question) };
+    } else if (toolName === 'platform_catalog') {
+      args = { section: parseCatalogSection(question) };
     }
 
     const result = await executeTool(toolName, args);
