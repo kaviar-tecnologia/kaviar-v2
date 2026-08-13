@@ -97,7 +97,7 @@ export default function KaviarAiPage() {
   const handleRegulatorySearch = async (city, uf) => {
     setActionLoading(true);
     try {
-      const res = await api.post('/api/admin/ai/territory/regulatory-search', { city, uf });
+      const res = await api.post('/api/admin/ai/territory/regulatory-search', { city, uf }, { timeout: 65000 });
       if (res.data.success) {
         const d = res.data.data;
         const sources = d.officialSources.map(s => `  • ${s.title} (${s.orgao})\n    ${s.url}`).join('\n');
