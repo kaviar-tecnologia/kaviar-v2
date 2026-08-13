@@ -942,7 +942,7 @@ export async function getCrmLeadsSummary(args?: Record<string, string>): Promise
   const terResult = await pool.query<{ name: string; cnt: number }>(`
     SELECT COALESCE(t.name, 'Sem território') AS name, COUNT(*)::int AS cnt
     FROM crm_leads l
-    LEFT JOIN operational_territories t ON t.id = l.territory_id
+    LEFT JOIN operational_territories t ON t.id = l.territory_id::text
     WHERE l.deleted_at IS NULL AND (l.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.start}
     GROUP BY t.name ORDER BY cnt DESC LIMIT 5
   `);

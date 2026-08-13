@@ -911,3 +911,45 @@ describe('PR #215 fix 4: pendências do contador indisponíveis', () => {
     expect(sql).not.toContain('accounting_payment_obligations');
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Fix: crm_leads_summary UUID join
+// ══════════════════════════════════════════════════════════════════════════════
+
+describe('crm_leads_summary — UUID join fix', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('SQL de top territórios usa territory_id::text (não comparação direta uuid vs text)', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ new_count: 5, no_contact: 1, stale_3d: 0 }] })
+      .mockResolvedValueOnce({ rows: [{ status: 'NEW', cnt: 5 }] })
+      .mockResolvedValueOnce({ rows: [{ source: 'WEBSITE', cnt: 3 }] })
+      .mockResolvedValueOnce({ rows: [{ name: 'Rio de Janeiro', cnt: 4 }] });
+
+    const r = await getCrmLeadsSummary({ period: 'week' });
+
+    // Verify the territory join query (4th call, index 3)
+    const territorySql: string = mockQuery.mock.calls[3][0];
+    expect(territorySql).toContain('t.id = l.territory_id::text');
+    expect(territorySql).not.toMatch(/t\.id\s*=\s*l\.territory_id(?!::)/);
+
+    // Verify results
+    expect(r.data.newCount).toBe(5);
+    expect(r.data.byStatus['NEW']).toBe(5);
+    expect(r.data.bySource['WEBSITE']).toBe(3);
+    expect(r.data.topTerritories[0]).toEqual({ name: 'Rio de Janeiro', count: 4 });
+  });
+
+  it('"Quantos leads novos tivemos esta semana?" executa crm_leads_summary sem erro', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ new_count: 12, no_contact: 3, stale_3d: 2 }] })
+      .mockResolvedValueOnce({ rows: [{ status: 'NEW', cnt: 8 }, { status: 'CONTACTED', cnt: 4 }] })
+      .mockResolvedValueOnce({ rows: [{ source: 'CITY_LANDING', cnt: 7 }] })
+      .mockResolvedValueOnce({ rows: [{ name: 'Campinas', cnt: 5 }] });
+
+    const r = await askKaviarAi({ userId: 'a', question: 'Quantos leads novos tivemos esta semana?', role: 'SUPER_ADMIN' });
+    expect(r.toolsUsed).toContain('crm_leads_summary');
+    expect(r.answer).toContain('12');
+    expect(r.answer).not.toContain('Erro');
+  });
+});
