@@ -624,10 +624,11 @@ jobs:
           cache-dependency-path: backend/package-lock.json
 
       - name: Install and type-check
+        working-directory: backend
         run: |
-          cd backend
+          set -euo pipefail
           npm ci
-          npx prisma generate
+          npx prisma generate --schema=prisma/schema.prisma
           npx tsc --noEmit -p tsconfig.build.json
 
       - name: Login to ECR
