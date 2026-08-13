@@ -148,6 +148,73 @@ export function routeByRules(question: string): KaviarAiRouteResult {
     return { toolsToCall: ['inbox_summary'] };
   }
 
+  // ── Company profile ────────────────────────────────────────────────────
+  if (
+    (q.includes('o que é a kaviar') || q.includes('o que e a kaviar')) ||
+    (q.includes('o que') && q.includes('kaviar') && (q.includes('faz') || q.includes('é') || q.includes('e '))) ||
+    q.includes('como funciona a kaviar') ||
+    q.includes('para quem') && q.includes('kaviar') ||
+    q.includes('quais módulos') || q.includes('quais modulos') ||
+    q.includes('quais serviços') || q.includes('quais servicos') ||
+    q.includes('como funcionam territórios') || q.includes('como funcionam territorios')
+  ) {
+    return { toolsToCall: ['company_profile'] };
+  }
+
+  if (
+    q.includes('cnpj') ||
+    q.includes('razão social') ||
+    q.includes('razao social') ||
+    q.includes('capital social') ||
+    q.includes('natureza jurídica') ||
+    q.includes('natureza juridica')
+  ) {
+    return { toolsToCall: ['company_profile'] };
+  }
+
+  if (
+    (q.includes('sócio') || q.includes('socio') || q.includes('ceo') || q.includes('administrador')) &&
+    (q.includes('kaviar') || q.includes('empresa') || q.includes('quem'))
+  ) {
+    return { toolsToCall: ['company_profile'] };
+  }
+
+  if (
+    (q.includes('cnae') || q.includes('atividade econômica') || q.includes('atividade economica'))
+  ) {
+    return { toolsToCall: ['company_profile'] };
+  }
+
+  if (
+    (q.includes('filial') || q.includes('filiais') || q.includes('matriz')) &&
+    (q.includes('kaviar') || q.includes('empresa') || q.includes('tem') || q.includes('possui'))
+  ) {
+    return { toolsToCall: ['company_profile'] };
+  }
+
+  if (
+    (q.includes('telefone') || q.includes('whatsapp') || q.includes('e-mail') || q.includes('email') || q.includes('site') || q.includes('onde fica')) &&
+    (q.includes('institucional') || q.includes('kaviar') || q.includes('empresa') || q.includes('da kaviar'))
+  ) {
+    return { toolsToCall: ['company_profile'] };
+  }
+
+  if (
+    (q.includes('quando') && (q.includes('aberta') || q.includes('abertura') || q.includes('fundada'))) &&
+    (q.includes('kaviar') || q.includes('empresa'))
+  ) {
+    return { toolsToCall: ['company_profile'] };
+  }
+
+  if (
+    q.includes('dados da empresa') ||
+    q.includes('dados institucionais') ||
+    q.includes('ficha da empresa') ||
+    q.includes('ficha da kaviar')
+  ) {
+    return { toolsToCall: ['company_profile'] };
+  }
+
   // ── Territorial onboarding ────────────────────────────────────────────
   const hasTerritoryContext =
     q.includes('cidade') ||

@@ -8,7 +8,8 @@ export type KaviarAiToolName =
   | 'rides_operations'
   | 'finance_accounting_brief'
   | 'crm_leads_summary'
-  | 'inbox_summary';
+  | 'inbox_summary'
+  | 'company_profile';
 
 export type KaviarAiRequest = {
   userId: string;

@@ -4403,12 +4403,33 @@ model legal_entities {
   endereco          String?
   codigo_interno    String?             @unique
   is_active         Boolean             @default(true)
+
+  // Institutional fields
+  data_abertura           DateTime?           @db.Date
+  situacao_cadastral      String?             @db.VarChar(20)
+  data_situacao_cadastral DateTime?           @db.Date
+  porte                   String?             @db.VarChar(10)
+  natureza_juridica       String?
+  capital_social_cents    BigInt?
+  email_institucional     String?
+  telefone_institucional  String?
+  whatsapp_institucional  String?
+  site                    String?
+  logradouro              String?
+  numero                  String?
+  complemento             String?
+  bairro                  String?
+  cep                     String?             @db.VarChar(10)
+  cnae_principal          String?
+  cnaes_secundarios       String[]            @default([])
+
   created_at        DateTime            @default(now())
   updated_at        DateTime            @updatedAt
 
   parent            legal_entities?     @relation("LegalEntityHierarchy", fields: [parent_entity_id], references: [id])
   children          legal_entities[]    @relation("LegalEntityHierarchy")
   accountant_links  accountant_entity_links[]
+  persons           legal_entity_persons[]
 
   @@index([parent_entity_id])
   @@index([entity_type])
@@ -4422,6 +4443,23 @@ model legal_entities {
   automation_config   accounting_automation_config?       @relation("entity_automation_config")
   automation_log      accounting_automation_log[]         @relation("entity_automation_log")
   @@map("legal_entities")
+}
+
+model legal_entity_persons {
+  id                String   @id @default(uuid())
+  entity_id         String
+  nome              String
+  funcao            String
+  funcao_origem     String   @default("INTERNAL")
+  is_active         Boolean  @default(true)
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  entity            legal_entities @relation(fields: [entity_id], references: [id], onDelete: Cascade)
+
+  @@unique([entity_id, nome, funcao])
+  @@index([entity_id, is_active])
+  @@map("legal_entity_persons")
 }
 
 model accounting_firms {

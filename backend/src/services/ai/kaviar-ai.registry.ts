@@ -10,6 +10,7 @@ import {
   getFinanceAccountingBrief,
   getCrmLeadsSummary,
   getInboxSummary,
+  getCompanyProfile,
 } from './kaviar-ai.tools';
 
 /**
@@ -162,6 +163,19 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     },
     allowedRoles: ['SUPER_ADMIN'],
     execute: getInboxSummary,
+  },
+  {
+    name: 'company_profile',
+    description:
+      'Dados institucionais da KAVIAR: identidade (CNPJ, razão social), contatos, governança (sócios, CEO), estrutura (matriz/filiais) e atividades (CNAEs).',
+    readOnly: true,
+    argSchema: {
+      type: 'object',
+      properties: { section: { type: 'string', enum: ['identity', 'contacts', 'governance', 'structure', 'activities', 'about', 'full'] } },
+      required: [],
+    },
+    allowedRoles: ['SUPER_ADMIN', 'FINANCE'],
+    execute: getCompanyProfile,
   },
 ] as const;
 

@@ -15,6 +15,8 @@ import type {
   FinanceAccountingBriefData,
   CrmLeadsSummaryData,
   InboxSummaryData,
+  CompanyProfileData,
+  CompanyProfileSection,
 } from './kaviar-ai.tools';
 import { executeTool, canRoleExecuteTool } from './kaviar-ai.registry';
 import { routeQuestion } from './kaviar-ai.router';
@@ -43,6 +45,13 @@ function formatCentsBRL(cents: string): string {
   const fraction = (abs % 100n).toString().padStart(2, '0');
   const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   return `${isNegative ? '-' : ''}R$ ${grouped},${fraction}`;
+}
+
+function formatDateBR(isoDate: string): string {
+  // Input: 'YYYY-MM-DD' (from ISO slice). Output: 'DD/MM/YYYY'
+  const parts = isoDate.split('-');
+  if (parts.length !== 3) return isoDate;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
 // ── Formatadores por ferramenta ────────────────────────────────────────────
@@ -316,6 +325,93 @@ function formatInboxSummary(data: InboxSummaryData): string {
   return parts.join('\n');
 }
 
+function formatCompanyProfile(data: CompanyProfileData): string {
+  if (!data.available) {
+    return 'Dados institucionais: não foi possível consultar.';
+  }
+
+  const parts: string[] = [];
+
+  if (data.about) {
+    parts.push('🏢 Sobre a KAVIAR');
+    parts.push(data.about.description);
+    parts.push('');
+    parts.push('Conceitos:');
+    for (const c of data.about.concepts) parts.push(`• ${c}`);
+  }
+
+  if (data.identity) {
+    parts.push('');
+    parts.push('📋 Identidade');
+    parts.push(`CNPJ: ${data.identity.cnpj}`);
+    parts.push(`Razão social: ${data.identity.razaoSocial}`);
+    if (data.identity.nomeFantasia) parts.push(`Nome fantasia: ${data.identity.nomeFantasia}`);
+    if (data.identity.dataAbertura) parts.push(`Data de abertura: ${formatDateBR(data.identity.dataAbertura)}`);
+    if (data.identity.situacaoCadastral) {
+      const since = data.identity.dataSituacaoCadastral ? ` desde ${formatDateBR(data.identity.dataSituacaoCadastral)}` : '';
+      parts.push(`Situação cadastral: ${data.identity.situacaoCadastral}${since}`);
+    }
+    if (data.identity.porte) parts.push(`Porte: ${data.identity.porte}`);
+    if (data.identity.naturezaJuridica) parts.push(`Natureza jurídica: ${data.identity.naturezaJuridica}`);
+    if (data.identity.capitalSocialCents) parts.push(`Capital social: ${formatCentsBRL(data.identity.capitalSocialCents)}`);
+  }
+
+  if (data.contacts) {
+    parts.push('');
+    parts.push('📞 Contatos');
+    if (data.contacts.email) parts.push(`E-mail: ${data.contacts.email}`);
+    if (data.contacts.telefone) parts.push(`Telefone: ${data.contacts.telefone}`);
+    if (data.contacts.whatsapp) parts.push(`WhatsApp: ${data.contacts.whatsapp}`);
+    if (data.contacts.site) parts.push(`Site: ${data.contacts.site}`);
+    const e = data.contacts.endereco;
+    if (e.logradouro) {
+      const addr = [e.logradouro, e.numero, e.complemento, e.bairro, e.municipio ? `${e.municipio}/${e.uf}` : null, e.cep ? `CEP ${e.cep}` : null].filter(Boolean).join(', ');
+      parts.push(`Endereço: ${addr}`);
+    }
+  }
+
+  if (data.governance) {
+    parts.push('');
+    parts.push('👥 Governança');
+    if (data.governance.persons.length === 0) {
+      parts.push('Nenhuma pessoa cadastrada.');
+    } else {
+      for (const p of data.governance.persons) {
+        const origem = p.funcaoOrigem === 'RFB_QSA' ? '(QSA/Receita Federal)' : '(função interna)';
+        parts.push(`• ${p.nome} — ${p.funcao} ${origem}`);
+      }
+    }
+  }
+
+  if (data.structure) {
+    parts.push('');
+    parts.push('🏗️ Estrutura');
+    if (!data.structure.available || data.structure.entities.length === 0) {
+      parts.push('Não foi possível consultar a estrutura.');
+    } else {
+      for (const e of data.structure.entities) {
+        parts.push(`• ${e.nomeFantasia || 'Sem nome fantasia'} (${e.tipo}) — ${e.cnpj} — ${e.municipio || ''}/${e.uf || ''}`);
+      }
+    }
+  }
+
+  if (data.activities) {
+    parts.push('');
+    parts.push('📊 Atividades');
+    if (data.activities.cnaePrincipal) parts.push(`CNAE principal: ${data.activities.cnaePrincipal}`);
+    if (data.activities.cnaesSecundarios.length > 0) {
+      parts.push('CNAEs secundários:');
+      for (const c of data.activities.cnaesSecundarios) parts.push(`• ${c}`);
+    }
+  }
+
+  if (parts.length === 0) {
+    return 'Dados institucionais: não cadastrados.';
+  }
+
+  return parts.join('\n');
+}
+
 const FORMATTERS: Record<KaviarAiToolName, (data: unknown) => string> = {
   rides_summary_today: (data) =>
     formatRidesSummary(data as RidesSummaryTodayData),
@@ -337,6 +433,8 @@ const FORMATTERS: Record<KaviarAiToolName, (data: unknown) => string> = {
     formatCrmLeadsSummary(data as CrmLeadsSummaryData),
   inbox_summary: (data) =>
     formatInboxSummary(data as InboxSummaryData),
+  company_profile: (data) =>
+    formatCompanyProfile(data as CompanyProfileData),
 };
 
 // ── Extração de city/uf da pergunta ─────────────────────────────────────────
@@ -369,6 +467,19 @@ function parsePeriod(question: string): 'today' | 'week' | 'month' {
   if (q.includes('mês') || q.includes('mes') || q.includes('mensal')) return 'month';
   if (q.includes('semana') || q.includes('semanal')) return 'week';
   return 'today';
+}
+
+// ── Extração de seção da company_profile ────────────────────────────────────
+
+function parseCompanySection(question: string): string {
+  const q = question.toLowerCase();
+  if (q.includes('cnpj') || q.includes('razão social') || q.includes('razao social') || q.includes('capital social') || q.includes('natureza jurídica') || q.includes('natureza juridica') || q.includes('data de abertura') || q.includes('quando') && q.includes('aberta')) return 'identity';
+  if (q.includes('telefone') || q.includes('whatsapp') || q.includes('e-mail') || q.includes('email') || q.includes('site') || q.includes('endereço') || q.includes('endereco') || q.includes('onde fica')) return 'contacts';
+  if (q.includes('sócio') || q.includes('socio') || q.includes('ceo') || q.includes('administrador') || q.includes('quem administra') || q.includes('quem são')) return 'governance';
+  if (q.includes('filial') || q.includes('filiais') || q.includes('matriz')) return 'structure';
+  if (q.includes('cnae') || q.includes('atividade econômica') || q.includes('atividade economica')) return 'activities';
+  if (q.includes('o que é') || q.includes('o que e') || q.includes('o que faz') || q.includes('como funciona') || q.includes('módulo') || q.includes('modulo') || q.includes('serviço') || q.includes('servico') || q.includes('para quem') || q.includes('território') && q.includes('comunidade')) return 'about';
+  return 'full';
 }
 
 // ── Roles permitidas no Chat KAVIAR ─────────────────────────────────────────
@@ -452,6 +563,8 @@ export async function askKaviarAi(
       args = { period };
     } else if (toolName === 'finance_accounting_brief') {
       args = { period: financePeriod };
+    } else if (toolName === 'company_profile') {
+      args = { section: parseCompanySection(question) };
     }
 
     const result = await executeTool(toolName, args);
