@@ -747,3 +747,61 @@ describe('pesquisa regulatória — reconciliação normativa', () => {
     expect(instructions).toContain('NEEDS_HUMAN_REVIEW');
   });
 });
+
+describe('pesquisa regulatória — guarda determinística de confidence', () => {
+  beforeEach(() => { vi.clearAllMocks(); process.env.OPENAI_API_KEY = 'sk-test'; });
+  afterEach(() => { delete process.env.OPENAI_API_KEY; });
+
+  it('modelo retorna CONFIRMED com unconfirmedItems não vazio → resultado final NEEDS_HUMAN_REVIEW', async () => {
+    mockResponsesCreate.mockResolvedValueOnce({
+      status: 'completed',
+      output_text: JSON.stringify({
+        summary: 'Campinas regulamentada com conflitos.',
+        requirements: ['Cadastro ETC na EMDEC'],
+        officialSources: [{ title: 'EMDEC', url: 'https://emdec.campinas.sp.gov.br/info', orgao: 'EMDEC' }],
+        unconfirmedItems: ['CA individual: conflito entre Decreto 18.551/2015 e orientação atual da EMDEC'],
+        recommendedNextSteps: ['Confirmar com EMDEC'],
+        confidence: 'CONFIRMED',
+      }),
+    });
+
+    const r = await searchRegulatoryRequirements('Campinas', 'SP');
+    expect(r.confidence).toBe('NEEDS_HUMAN_REVIEW');
+    expect(r.unconfirmedItems).toHaveLength(1);
+  });
+
+  it('modelo retorna CONFIRMED com unconfirmedItems vazio → permanece CONFIRMED', async () => {
+    mockResponsesCreate.mockResolvedValueOnce({
+      status: 'completed',
+      output_text: JSON.stringify({
+        summary: 'Cidade regulamentada sem conflitos.',
+        requirements: ['Alvará municipal'],
+        officialSources: [{ title: 'Prefeitura', url: 'https://prefeitura.cidade.sp.gov.br/lei', orgao: 'Prefeitura' }],
+        unconfirmedItems: [],
+        recommendedNextSteps: ['Protocolar'],
+        confidence: 'CONFIRMED',
+      }),
+    });
+
+    const r = await searchRegulatoryRequirements('Cidade', 'SP');
+    expect(r.confidence).toBe('CONFIRMED');
+    expect(r.unconfirmedItems).toHaveLength(0);
+  });
+
+  it('modelo retorna NEEDS_HUMAN_REVIEW → permanece NEEDS_HUMAN_REVIEW', async () => {
+    mockResponsesCreate.mockResolvedValueOnce({
+      status: 'completed',
+      output_text: JSON.stringify({
+        summary: 'Informação insuficiente.',
+        requirements: [],
+        officialSources: [{ title: 'Portal', url: 'https://prefeitura.mg.gov.br/x', orgao: 'Prefeitura' }],
+        unconfirmedItems: ['Sem confirmação de vigência'],
+        recommendedNextSteps: ['Consultar Diário Oficial'],
+        confidence: 'NEEDS_HUMAN_REVIEW',
+      }),
+    });
+
+    const r = await searchRegulatoryRequirements('Cidade', 'MG');
+    expect(r.confidence).toBe('NEEDS_HUMAN_REVIEW');
+  });
+});
