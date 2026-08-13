@@ -31,8 +31,8 @@ const KAVIAR_ENTITY = {
   natureza_juridica: '206-2 — Sociedade Empresária Limitada',
   capital_social_cents: '1000000',
   email_institucional: 'contato@kaviar.com.br',
-  telefone_institucional: '(21) 6864-8777',
-  whatsapp_institucional: '+55 21 6864-8777',
+  telefone_institucional: '(21) 96864-8777',
+  whatsapp_institucional: '+55 21 96864-8777',
   site: 'https://kaviar.com.br',
   logradouro: 'Estrada das Furnas',
   numero: '03001',
@@ -93,8 +93,8 @@ describe('company_profile — contacts', () => {
   it('retorna telefone e WhatsApp institucional', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [KAVIAR_ENTITY] });
     const r = await askKaviarAi({ userId: 'a', question: 'Qual é o telefone institucional da KAVIAR?', role: 'SUPER_ADMIN' });
-    expect(r.answer).toContain('(21) 6864-8777');
-    expect(r.answer).toContain('+55 21 6864-8777');
+    expect(r.answer).toContain('(21) 96864-8777');
+    expect(r.answer).toContain('+55 21 96864-8777');
   });
 
   it('retorna endereço da matriz', async () => {
@@ -387,6 +387,6 @@ describe('company_profile — privacidade mantida', () => {
     expect(r.answer).not.toMatch(/\(\d{2}\)\s*\d{4,5}-\d{4}/); // only institutional phone should be absent here (governance section)
     expect(r.answer).not.toMatch(/\d{3}\.\d{3}\.\d{3}-\d{2}/); // CPF
     // Institutional contacts should NOT appear in governance-only response
-    expect(r.answer).not.toContain('6864-8777'); // governance section doesn't show contacts
+    expect(r.answer).not.toContain('96864-8777'); // governance section doesn't show contacts
   });
 });
