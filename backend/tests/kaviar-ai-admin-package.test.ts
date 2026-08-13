@@ -399,33 +399,35 @@ describe('rides_operations', () => {
 describe('finance_accounting_brief', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('retorna dados do mês com pendências contábeis', async () => {
+  it('retorna dados do mês com pendências contábeis indisponíveis', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{
         revenue_cents: '500000', expense_cents: '200000', result_cents: '300000',
         overdue_count: 1, overdue_cents: '30000', due7d: 2, due15d: 3, due30d: 5, uncat: 1,
-      }] })
-      .mockResolvedValueOnce({ rows: [{ total: 4, urgent: 1, high: 2 }] });
+      }] });
 
     const r = await getFinanceAccountingBrief({ period: 'month' });
     expect(r.tool).toBe('finance_accounting_brief');
     expect(r.data.realizedRevenueCents).toBe('500000');
-    expect(r.data.accountingPendencias.available).toBe(true);
-    expect(r.data.accountingPendencias.total).toBe(4);
+    expect(r.data.accountingPendencias.available).toBe(false);
     expect(r.data.periodLabel).toBe('Este mês');
+    // DRE and obligations are present
+    expect(r.data.overdueCount).toBe(1);
+    expect(r.data.uncategorizedCount).toBe(1);
   });
 
-  it('retorna dados sem pendências contábeis quando tabela indisponível', async () => {
+  it('não afirma inexistência de pendências do contador', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{
         revenue_cents: '0', expense_cents: '0', result_cents: '0',
         overdue_count: 0, overdue_cents: '0', due7d: 0, due15d: 0, due30d: 0, uncat: 0,
-      }] })
-      .mockRejectedValueOnce(new Error('relation does not exist'));
+      }] });
 
     const r = await getFinanceAccountingBrief({ period: 'month' });
+    // Must NOT claim zero pendencias — it's unavailable
     expect(r.data.accountingPendencias.available).toBe(false);
-    expect(r.data.accountingPendencias.total).toBe(0);
+    // Only 1 query call (DRE+obligations), no accounting query
+    expect(mockQuery).toHaveBeenCalledTimes(1);
   });
 
   it('rejeita período inválido', async () => {
@@ -800,5 +802,112 @@ describe('regressão — tools e roteamento existente', () => {
   it('pergunta puramente territorial NÃO aciona briefing', () => {
     const r = routeByRules('Quero abrir Sorocaba como território');
     expect(r.toolsToCall).not.toContain('daily_briefing');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PR #215 review fixes — testes específicos
+// ══════════════════════════════════════════════════════════════════════════════
+
+describe('PR #215 fix 1: direção financeira IN/OUT', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('SQL usa direction IN e OUT, não CREDIT/DEBIT', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{
+      revenue_cents: '0', expense_cents: '0', result_cents: '0',
+      overdue_count: 0, overdue_cents: '0', due7d: 0, due15d: 0, due30d: 0, uncat: 0,
+    }] });
+
+    await getFinanceAccountingBrief({ period: 'month' });
+    const sql: string = mockQuery.mock.calls[0][0];
+    expect(sql).toContain("direction = 'IN'");
+    expect(sql).toContain("direction = 'OUT'");
+    expect(sql).not.toContain("'CREDIT'");
+    expect(sql).not.toContain("'DEBIT'");
+  });
+});
+
+describe('PR #215 fix 2: conversão monetária bigint em rides_operations', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('SQL converte somas via ROUND(...*100)::bigint::text', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{
+      total: 3, completed: 2, canceled: 0, no_driver: 1, pending_adj: 0,
+      gross_cents: '25440', fee_cents: '2544', driver_cents: '22896',
+      prev_total: 2, prev_completed: 1, prev_gross_cents: '12000',
+      period_start: '2024-01-15', period_end: '2024-01-16',
+    }] });
+
+    const r = await getRidesOperations({ period: 'today' });
+    const sql: string = mockQuery.mock.calls[0][0];
+
+    // Must use ROUND + bigint for all 4 monetary sums
+    expect(sql).toContain('ROUND(COALESCE(SUM(s.final_price), 0) * 100)::bigint::text');
+    expect(sql).toContain('ROUND(COALESCE(SUM(s.fee_amount), 0) * 100)::bigint::text');
+    expect(sql).toContain('ROUND(COALESCE(SUM(s.driver_earnings), 0) * 100)::bigint::text');
+
+    // Response formats without error (BigInt parse succeeds on integer strings)
+    expect(r.data.grossAmountCents).toBe('25440');
+    expect(() => BigInt(r.data.grossAmountCents)).not.toThrow();
+    expect(() => BigInt(r.data.kaviarFeeCents)).not.toThrow();
+    expect(() => BigInt(r.data.driverEarningsCents)).not.toThrow();
+    expect(() => BigInt(r.data.previous.grossAmountCents)).not.toThrow();
+  });
+});
+
+describe('PR #215 fix 3: data das corridas liquidadas no briefing', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('liquidadas/bruto/receita filtrados por settled_at; operacionais por requested_at', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ ref: '2024-01-15 09:00' }] })
+      .mockResolvedValueOnce({ rows: [{ completed: 0, gross: '0', fee: '0', canceled: 0, no_driver: 0, pending_adj: 0 }] })
+      .mockResolvedValueOnce({ rows: [{ docs_pending: 0, pending_approval: 0, compliance_pending: 0 }] })
+      .mockResolvedValueOnce({ rows: [{ overdue_count: 0, overdue_cents: '0', due7d_count: 0, due7d_cents: '0', due15d_count: 0, due15d_cents: '0', due30d_count: 0, due30d_cents: '0' }] })
+      .mockResolvedValueOnce({ rows: [{ cnt: 0 }] })
+      .mockResolvedValueOnce({ rows: [{ new_today: 0, no_contact: 0, stale_3d: 0 }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ cnt: 0 }] })
+      .mockResolvedValueOnce({ rows: [{ preparation: 0, without_manager: 0 }] });
+
+    await getDailyBriefing();
+
+    // The rides query is the 2nd call (index 1)
+    const ridesSql: string = mockQuery.mock.calls[1][0];
+
+    // Liquidadas use settled_at for date filter
+    expect(ridesSql).toContain('s.settled_at');
+    expect(ridesSql).toContain('settled_at AT TIME ZONE');
+
+    // Operational statuses use requested_at
+    expect(ridesSql).toContain('requested_at AT TIME ZONE');
+
+    // Both use TODAY_SP equivalent
+    expect(ridesSql).toContain("AT TIME ZONE 'America/Sao_Paulo'");
+  });
+});
+
+describe('PR #215 fix 4: pendências do contador indisponíveis', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('finance_accounting_brief retorna DRE e obrigações sem afirmar pendências do contador', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{
+      revenue_cents: '100000', expense_cents: '50000', result_cents: '50000',
+      overdue_count: 2, overdue_cents: '40000', due7d: 1, due15d: 1, due30d: 2, uncat: 0,
+    }] });
+
+    const r = await getFinanceAccountingBrief({ period: 'month' });
+
+    // DRE is available
+    expect(r.data.realizedRevenueCents).toBe('100000');
+    expect(r.data.overdueCount).toBe(2);
+
+    // Accounting pendencias are explicitly unavailable
+    expect(r.data.accountingPendencias.available).toBe(false);
+
+    // No query was made to accounting_payment_obligations
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    const sql: string = mockQuery.mock.calls[0][0];
+    expect(sql).not.toContain('accounting_payment_obligations');
   });
 });

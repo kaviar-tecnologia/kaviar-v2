@@ -269,7 +269,7 @@ function formatFinanceAccountingBrief(data: FinanceAccountingBriefData): string 
       parts.push('Pendências contábeis: nenhuma.');
     }
   } else {
-    parts.push('Pendências contábeis: não foi possível consultar (fonte indisponível).');
+    parts.push('Pendências do contador: indisponíveis nesta versão porque exigem contexto do contador.');
   }
   return parts.join('\n');
 }

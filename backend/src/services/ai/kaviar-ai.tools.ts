@@ -602,15 +602,12 @@ export async function getDailyBriefing(): Promise<{
       completed: number; gross: string; fee: string; canceled: number; no_driver: number; pending_adj: number;
     }>(`
       SELECT
-        COUNT(DISTINCT r.id) FILTER (WHERE s.settled_at IS NOT NULL)::int AS completed,
-        COALESCE(SUM(s.final_price) FILTER (WHERE s.settled_at IS NOT NULL), 0)::text AS gross,
-        COALESCE(SUM(s.fee_amount) FILTER (WHERE s.settled_at IS NOT NULL), 0)::text AS fee,
-        COUNT(DISTINCT r.id) FILTER (WHERE r.status IN ('canceled_by_passenger','canceled_by_driver'))::int AS canceled,
-        COUNT(DISTINCT r.id) FILTER (WHERE r.status = 'no_driver')::int AS no_driver,
-        COUNT(DISTINCT r.id) FILTER (WHERE r.status = 'pending_adjustment')::int AS pending_adj
-      FROM rides_v2 r
-      LEFT JOIN ride_settlements s ON s.ride_id = r.id
-      WHERE (r.requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ${TODAY_SP}
+        (SELECT COUNT(DISTINCT r.id)::int FROM rides_v2 r INNER JOIN ride_settlements s ON s.ride_id = r.id WHERE s.settled_at IS NOT NULL AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ${TODAY_SP}) AS completed,
+        (SELECT COALESCE(SUM(s.final_price), 0)::text FROM ride_settlements s WHERE s.settled_at IS NOT NULL AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ${TODAY_SP}) AS gross,
+        (SELECT COALESCE(SUM(s.fee_amount), 0)::text FROM ride_settlements s WHERE s.settled_at IS NOT NULL AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ${TODAY_SP}) AS fee,
+        (SELECT COUNT(*)::int FROM rides_v2 WHERE status IN ('canceled_by_passenger','canceled_by_driver') AND (requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ${TODAY_SP}) AS canceled,
+        (SELECT COUNT(*)::int FROM rides_v2 WHERE status = 'no_driver' AND (requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ${TODAY_SP}) AS no_driver,
+        (SELECT COUNT(*)::int FROM rides_v2 WHERE status = 'pending_adjustment' AND (requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date = ${TODAY_SP}) AS pending_adj
     `);
     const rr = ridesResult.rows[0];
     if (rr) {
@@ -797,13 +794,13 @@ export async function getRidesOperations(args?: Record<string, string>): Promise
       (SELECT COUNT(*)::int FROM rides_v2 WHERE status IN ('canceled_by_passenger','canceled_by_driver') AND (requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.start} AND (requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.end}) AS canceled,
       (SELECT COUNT(*)::int FROM rides_v2 WHERE status = 'no_driver' AND (requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.start} AND (requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.end}) AS no_driver,
       (SELECT COUNT(*)::int FROM rides_v2 WHERE status = 'pending_adjustment' AND (requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.start} AND (requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.end}) AS pending_adj,
-      (SELECT COALESCE(SUM(s.final_price * 100), 0)::text FROM rides_v2 r INNER JOIN ride_settlements s ON s.ride_id = r.id WHERE s.settled_at IS NOT NULL AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.start} AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.end}) AS gross_cents,
-      (SELECT COALESCE(SUM(s.fee_amount * 100), 0)::text FROM rides_v2 r INNER JOIN ride_settlements s ON s.ride_id = r.id WHERE s.settled_at IS NOT NULL AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.start} AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.end}) AS fee_cents,
-      (SELECT COALESCE(SUM(s.driver_earnings * 100), 0)::text FROM rides_v2 r INNER JOIN ride_settlements s ON s.ride_id = r.id WHERE s.settled_at IS NOT NULL AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.start} AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.end}) AS driver_cents,
+      (SELECT ROUND(COALESCE(SUM(s.final_price), 0) * 100)::bigint::text FROM rides_v2 r INNER JOIN ride_settlements s ON s.ride_id = r.id WHERE s.settled_at IS NOT NULL AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.start} AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.end}) AS gross_cents,
+      (SELECT ROUND(COALESCE(SUM(s.fee_amount), 0) * 100)::bigint::text FROM rides_v2 r INNER JOIN ride_settlements s ON s.ride_id = r.id WHERE s.settled_at IS NOT NULL AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.start} AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.end}) AS fee_cents,
+      (SELECT ROUND(COALESCE(SUM(s.driver_earnings), 0) * 100)::bigint::text FROM rides_v2 r INNER JOIN ride_settlements s ON s.ride_id = r.id WHERE s.settled_at IS NOT NULL AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.start} AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.end}) AS driver_cents,
       -- Previous period
       (SELECT COUNT(*)::int FROM rides_v2 WHERE (requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.prevStart} AND (requested_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.prevEnd}) AS prev_total,
       (SELECT COUNT(*)::int FROM rides_v2 r INNER JOIN ride_settlements s ON s.ride_id = r.id WHERE s.settled_at IS NOT NULL AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.prevStart} AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.prevEnd}) AS prev_completed,
-      (SELECT COALESCE(SUM(s.final_price * 100), 0)::text FROM rides_v2 r INNER JOIN ride_settlements s ON s.ride_id = r.id WHERE s.settled_at IS NOT NULL AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.prevStart} AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.prevEnd}) AS prev_gross_cents,
+      (SELECT ROUND(COALESCE(SUM(s.final_price), 0) * 100)::bigint::text FROM rides_v2 r INNER JOIN ride_settlements s ON s.ride_id = r.id WHERE s.settled_at IS NOT NULL AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date >= ${bounds.prevStart} AND (s.settled_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo')::date < ${bounds.prevEnd}) AS prev_gross_cents,
       ${bounds.start}::text AS period_start,
       ${bounds.end}::text AS period_end
   `);
@@ -861,9 +858,9 @@ export async function getFinanceAccountingBrief(args?: Record<string, string>): 
     uncat: number;
   }>(`
     SELECT
-      COALESCE((SELECT SUM(net_amount_cents) FROM financial_transactions WHERE direction = 'CREDIT' AND status = 'POSTED' AND transaction_date >= ${periodStart} AND transaction_date < ${periodEnd}), 0)::text AS revenue_cents,
-      COALESCE((SELECT SUM(net_amount_cents) FROM financial_transactions WHERE direction = 'DEBIT' AND status = 'POSTED' AND transaction_date >= ${periodStart} AND transaction_date < ${periodEnd}), 0)::text AS expense_cents,
-      COALESCE((SELECT SUM(CASE WHEN direction = 'CREDIT' THEN net_amount_cents ELSE -net_amount_cents END) FROM financial_transactions WHERE status = 'POSTED' AND transaction_date >= ${periodStart} AND transaction_date < ${periodEnd}), 0)::text AS result_cents,
+      COALESCE((SELECT SUM(net_amount_cents) FROM financial_transactions WHERE direction = 'IN' AND status = 'POSTED' AND transaction_date >= ${periodStart} AND transaction_date < ${periodEnd}), 0)::text AS revenue_cents,
+      COALESCE((SELECT SUM(net_amount_cents) FROM financial_transactions WHERE direction = 'OUT' AND status = 'POSTED' AND transaction_date >= ${periodStart} AND transaction_date < ${periodEnd}), 0)::text AS expense_cents,
+      COALESCE((SELECT SUM(CASE WHEN direction = 'IN' THEN net_amount_cents ELSE -net_amount_cents END) FROM financial_transactions WHERE status = 'POSTED' AND transaction_date >= ${periodStart} AND transaction_date < ${periodEnd}), 0)::text AS result_cents,
       (SELECT COUNT(*)::int FROM financial_obligations WHERE status NOT IN ('PAID','FAILED','CANCELLED') AND due_date IS NOT NULL AND due_date < ${TODAY_SP}) AS overdue_count,
       COALESCE((SELECT SUM(net_amount_cents) FROM financial_obligations WHERE status NOT IN ('PAID','FAILED','CANCELLED') AND due_date IS NOT NULL AND due_date < ${TODAY_SP}), 0)::text AS overdue_cents,
       (SELECT COUNT(*)::int FROM financial_obligations WHERE status NOT IN ('PAID','FAILED','CANCELLED') AND due_date IS NOT NULL AND due_date >= ${TODAY_SP} AND due_date <= ${TODAY_SP} + 7) AS due7d,
@@ -874,23 +871,10 @@ export async function getFinanceAccountingBrief(args?: Record<string, string>): 
 
   const row = result.rows[0]!;
 
-  // Accounting pendencias — query accounting_payment_obligations directly
-  // computePendencias() requires an accountantId and is not usable from admin context
-  let accountingPendencias: FinanceAccountingBriefData['accountingPendencias'] = { available: false, total: 0, urgent: 0, high: 0 };
-  try {
-    const pendResult = await pool.query<{ total: number; urgent: number; high: number }>(`
-      SELECT
-        COUNT(*)::int AS total,
-        COUNT(*) FILTER (WHERE status = 'DRAFT' AND due_date < ${TODAY_SP})::int AS urgent,
-        COUNT(*) FILTER (WHERE status IN ('SENT_TO_COMPANY','VIEWED') AND due_date < (${TODAY_SP} + 7))::int AS high
-      FROM accounting_payment_obligations
-      WHERE status NOT IN ('RECONCILED','CANCELED','VERIFIED')
-    `);
-    const pr = pendResult.rows[0];
-    if (pr) accountingPendencias = { available: true, total: pr.total, urgent: pr.urgent, high: pr.high };
-  } catch {
-    accountingPendencias = { available: false, total: 0, urgent: 0, high: 0 };
-  }
+  // Accounting pendencias — computePendencias() requires accountantId (accountant context).
+  // Not usable from admin context without creating an artificial scope.
+  // Marked as unavailable in this version.
+  const accountingPendencias: FinanceAccountingBriefData['accountingPendencias'] = { available: false, total: 0, urgent: 0, high: 0 };
 
   return {
     tool: 'finance_accounting_brief',
