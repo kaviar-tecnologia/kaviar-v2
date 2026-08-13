@@ -26,25 +26,39 @@ REGRAS DE VIGÊNCIA TEMPORAL:
 - Se houver conflito entre normas, mudança legislativa recente ou dúvida sobre vigência, coloque o item em unconfirmedItems com explicação clara.
 - Exemplo: DPVAT foi substituído por SPVAT (LC 207/2024) e depois o SPVAT foi revogado (LC 211/2024). Não afirme que DPVAT é exigência atual sem verificar o regime vigente.
 
+REGRAS DE RECONCILIAÇÃO NORMATIVA (OBRIGATÓRIAS):
+1. Ao encontrar conflito entre uma norma antiga e uma fonte oficial atual do órgão competente (ex: página operacional, orientação da autarquia, decreto regulamentador posterior), identifique EXPLICITAMENTE o conflito, citando a fonte antiga e a fonte mais recente que gera ou resolve o conflito.
+2. Dentro da mesma execução de pesquisa, busque ativamente alterações, revogações, regulamentações e atos normativos posteriores relacionados à norma original.
+3. Priorize a situação jurídica e operacional ATUALMENTE VIGENTE, desde que sustentada por fonte oficial do órgão competente.
+4. NUNCA apresente requisito de norma histórica como vigente (em "requirements") sem confirmação em fonte oficial atual ou em norma cuja vigência tenha sido expressamente reconciliada com atos posteriores.
+5. Requisitos conflitantes ou cuja vigência não foi confirmada por fonte atual DEVEM ir para "unconfirmedItems" — NUNCA na lista "requirements".
+6. Use "NEEDS_HUMAN_REVIEW" quando o conflito entre norma antiga e orientação atual não puder ser reconciliado com segurança.
+7. No campo unconfirmedItems, informe claramente: (a) qual fonte antiga contém a exigência, (b) qual fonte oficial mais recente gera ou resolve o conflito, e (c) por que a vigência não pode ser confirmada.
+8. Não considere apenas a data da fonte. Observe hierarquia normativa (lei > decreto > portaria > orientação), alterações expressas, revogações e competência do órgão emissor. Uma página operacional atual do órgão competente NÃO revoga uma lei por si só, mas DEVE gerar conflito e IMPEDIR que a exigência antiga seja tratada como vigente sem confirmação adicional.
+9. Preferir fontes primárias oficiais: legislação municipal consolidada, atos alteradores, Diário Oficial e orientação do órgão municipal competente (autarquia, secretaria).
+10. NÃO invente revogação, alteração ou conclusão jurídica. Se não encontrar ato posterior expresso que resolva o conflito, mantenha o item em unconfirmedItems.
+
 Foque SOMENTE em fontes oficiais:
 - Prefeitura
 - Câmara Municipal
 - Diário Oficial do município
 - Secretaria municipal de transportes
+- Autarquia municipal de transporte (ex: EMDEC, SPTrans, SMTR)
 - DETRAN estadual
 - Governo estadual
 - gov.br
 
 Retorne um JSON com:
 - summary: resumo curto (1-2 frases)
-- requirements: lista SOMENTE de exigências confirmadamente vigentes
+- requirements: lista SOMENTE de exigências confirmadamente vigentes, sustentadas por fonte oficial atual e sem conflito normativo pendente
 - officialSources: lista de {title, url, orgao} das fontes oficiais encontradas
-- unconfirmedItems: itens com dúvida de vigência, conflito legislativo ou sem confirmação oficial
+- unconfirmedItems: itens com dúvida de vigência, conflito legislativo ou sem confirmação oficial. Cada item deve explicar o conflito (norma antiga vs. fonte atual) quando aplicável.
 - recommendedNextSteps: próximos passos recomendados
-- confidence: "CONFIRMED" se houver fonte oficial suficiente E todas as exigências estiverem confirmadamente vigentes, "NEEDS_HUMAN_REVIEW" caso contrário
+- confidence: "CONFIRMED" se houver fonte oficial suficiente E todas as exigências estiverem confirmadamente vigentes E não houver conflito normativo pendente, "NEEDS_HUMAN_REVIEW" caso contrário
 
 Se NÃO encontrar legislação específica vigente, retorne confidence: "NEEDS_HUMAN_REVIEW".
 Se houver qualquer dúvida sobre vigência de norma, retorne confidence: "NEEDS_HUMAN_REVIEW".
+Se houver conflito entre norma antiga e orientação oficial atual do órgão competente e o conflito NÃO puder ser reconciliado com segurança (isto é, não houver ato posterior oficial, competente e de hierarquia adequada que resolva expressamente a divergência), retorne confidence: "NEEDS_HUMAN_REVIEW". Se um ato posterior competente resolver expressamente o conflito e todas as exigências vigentes estiverem confirmadas, confidence pode ser "CONFIRMED".
 Nunca afirme que uma cidade está liberada ou que uma exigência está em vigor sem fonte oficial atual.`;
 
 const RESULT_SCHEMA = {

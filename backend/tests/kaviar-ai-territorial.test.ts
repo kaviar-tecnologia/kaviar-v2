@@ -596,3 +596,154 @@ describe('pesquisa regulatória — params e incomplete', () => {
     await expect(searchRegulatoryRequirements('X', 'SP')).rejects.toThrow('max_output_tokens');
   });
 });
+
+describe('pesquisa regulatória — reconciliação normativa', () => {
+  beforeEach(() => { vi.clearAllMocks(); process.env.OPENAI_API_KEY = 'sk-test'; });
+  afterEach(() => { delete process.env.OPENAI_API_KEY; });
+
+  it('cenário 1: conflito norma antiga vs orientação oficial atual — exigência vai para unconfirmedItems', async () => {
+    // Simula o cenário Campinas: lei antiga exige CA individual,
+    // mas orientação atual da EMDEC diz que motorista não precisa de cadastro individual.
+    mockResponsesCreate.mockResolvedValueOnce({
+      status: 'completed',
+      output_text: JSON.stringify({
+        summary: 'Conflito entre Decreto 18.551/2015 e orientação operacional atual da EMDEC.',
+        requirements: [
+          'Empresa (ETC/OTTC) deve possuir cadastro na EMDEC',
+        ],
+        officialSources: [
+          { title: 'Decreto 18.551/2015', url: 'https://leismunicipais.campinas.sp.gov.br/decreto-18551', orgao: 'Prefeitura de Campinas' },
+          { title: 'Orientação EMDEC 2024 — Transporte por Aplicativo', url: 'https://emdec.campinas.sp.gov.br/transporte-aplicativo', orgao: 'EMDEC' },
+        ],
+        unconfirmedItems: [
+          'CA individual do motorista: exigido pelo Decreto 18.551/2015 art. 5º, porém orientação operacional atual da EMDEC (2024) indica que motorista não precisa de cadastro individual. Conflito não reconciliado — vigência não confirmada.',
+          'Domicílio em Campinas: exigido pelo Decreto 18.551/2015 art. 7º, mas não mencionado na orientação atual da EMDEC. Vigência incerta.',
+          'Veículo licenciado em Campinas: exigido pelo Decreto 18.551/2015, sem confirmação na orientação atual. Vigência incerta.',
+        ],
+        recommendedNextSteps: [
+          'Consultar EMDEC diretamente para confirmar se Decreto 18.551/2015 segue vigente integralmente',
+          'Verificar Diário Oficial de Campinas por decreto alterador ou revogador',
+        ],
+        confidence: 'NEEDS_HUMAN_REVIEW',
+      }),
+    });
+
+    const r = await searchRegulatoryRequirements('Campinas', 'SP');
+
+    // Conflito explicitado: exigências antigas NÃO estão em requirements
+    expect(r.requirements).not.toContain(expect.stringMatching(/CA individual/i));
+    expect(r.requirements).not.toContain(expect.stringMatching(/domicílio/i));
+    expect(r.requirements).not.toContain(expect.stringMatching(/licenciado em Campinas/i));
+
+    // Exigências conflitantes estão em unconfirmedItems
+    expect(r.unconfirmedItems.length).toBeGreaterThanOrEqual(1);
+    expect(r.unconfirmedItems.some(i => i.includes('Decreto 18.551'))).toBe(true);
+    expect(r.unconfirmedItems.some(i => i.includes('EMDEC'))).toBe(true);
+
+    // Confidence deve ser NEEDS_HUMAN_REVIEW
+    expect(r.confidence).toBe('NEEDS_HUMAN_REVIEW');
+
+    // Fontes oficiais citam ambas (norma antiga E orientação atual)
+    expect(r.officialSources.some(s => s.url.includes('leismunicipais'))).toBe(true);
+    expect(r.officialSources.some(s => s.url.includes('emdec'))).toBe(true);
+  });
+
+  it('cenário 2: ato posterior resolve expressamente o conflito — só regra vigente em requirements', async () => {
+    // Simula: lei antiga exigia taxa X, lei posterior de mesma hierarquia revogou expressamente o artigo.
+    mockResponsesCreate.mockResolvedValueOnce({
+      status: 'completed',
+      output_text: JSON.stringify({
+        summary: 'Lei 5.000/2018 exigia taxa de vistoria. Lei 6.200/2023 revogou expressamente o art. 12 da Lei 5.000/2018, eliminando a taxa.',
+        requirements: [
+          'Cadastro da empresa na Secretaria de Transportes (Lei 5.000/2018 art. 3º, mantido vigente)',
+        ],
+        officialSources: [
+          { title: 'Lei 5.000/2018', url: 'https://legislacao.cidade.sp.gov.br/lei-5000', orgao: 'Câmara Municipal' },
+          { title: 'Lei 6.200/2023 — Revogação de taxa de vistoria', url: 'https://legislacao.cidade.sp.gov.br/lei-6200', orgao: 'Câmara Municipal' },
+        ],
+        unconfirmedItems: [],
+        recommendedNextSteps: ['Confirmar vigência consolidada no portal da prefeitura'],
+        confidence: 'CONFIRMED',
+      }),
+    });
+
+    const r = await searchRegulatoryRequirements('Cidade', 'SP');
+
+    // Apenas regra vigente aparece em requirements
+    expect(r.requirements).toHaveLength(1);
+    expect(r.requirements[0]).toContain('Cadastro da empresa');
+
+    // Taxa revogada NÃO aparece em requirements
+    expect(r.requirements.some(req => req.includes('taxa de vistoria'))).toBe(false);
+
+    // Summary cita fonte antiga E ato posterior
+    expect(r.summary).toContain('Lei 5.000/2018');
+    expect(r.summary).toContain('Lei 6.200/2023');
+
+    // Sem itens não confirmados (conflito foi resolvido)
+    expect(r.unconfirmedItems).toHaveLength(0);
+
+    // Confidence CONFIRMED porque lei posterior de mesma hierarquia resolveu
+    expect(r.confidence).toBe('CONFIRMED');
+  });
+
+  it('cenário 3: ausência de confirmação sobre vigência — mantém em unconfirmedItems', async () => {
+    // Simula: norma encontrada mas sem confirmação de que ainda está vigente (sem ato revogador nem confirmação)
+    mockResponsesCreate.mockResolvedValueOnce({
+      status: 'completed',
+      output_text: JSON.stringify({
+        summary: 'Decreto 3.100/2016 regulamenta transporte por aplicativo, mas não foi possível confirmar vigência atual.',
+        requirements: [],
+        officialSources: [
+          { title: 'Decreto 3.100/2016', url: 'https://prefeitura.cidade.mg.gov.br/decreto-3100', orgao: 'Prefeitura' },
+        ],
+        unconfirmedItems: [
+          'Alvará anual para motorista (Decreto 3.100/2016 art. 8º): norma de 2016, sem confirmação de vigência atual. Não foi localizado ato revogador nem confirmação oficial de que o requisito permanece exigido.',
+          'Seguro APP específico (Decreto 3.100/2016 art. 10): mesma situação — vigência não confirmada.',
+        ],
+        recommendedNextSteps: [
+          'Consultar Diário Oficial do município por alterações ao Decreto 3.100/2016',
+          'Verificar site da Secretaria de Transportes para orientação operacional atualizada',
+        ],
+        confidence: 'NEEDS_HUMAN_REVIEW',
+      }),
+    });
+
+    const r = await searchRegulatoryRequirements('Cidade', 'MG');
+
+    // Nenhum requisito apresentado como vigente (requirements vazio)
+    expect(r.requirements).toHaveLength(0);
+
+    // Itens sem confirmação estão em unconfirmedItems
+    expect(r.unconfirmedItems.length).toBeGreaterThanOrEqual(2);
+    expect(r.unconfirmedItems.some(i => i.includes('vigência não confirmada') || i.includes('sem confirmação'))).toBe(true);
+
+    // Confidence NEEDS_HUMAN_REVIEW
+    expect(r.confidence).toBe('NEEDS_HUMAN_REVIEW');
+
+    // Fontes oficiais presentes (a norma foi encontrada, só não confirmada)
+    expect(r.officialSources.length).toBeGreaterThanOrEqual(1);
+    expect(r.officialSources[0].url).toContain('.gov.br');
+  });
+
+  it('prompt contém regras de reconciliação normativa', async () => {
+    mockResponsesCreate.mockResolvedValueOnce({
+      status: 'completed',
+      output_text: JSON.stringify({
+        summary: 'ok', requirements: [], officialSources: [],
+        unconfirmedItems: [], recommendedNextSteps: [], confidence: 'NEEDS_HUMAN_REVIEW',
+      }),
+    });
+    await searchRegulatoryRequirements('Teste', 'SP');
+    const args = mockResponsesCreate.mock.calls[0][0];
+    const instructions: string = args.instructions;
+
+    // Verifica presença das regras de reconciliação no prompt enviado ao modelo
+    expect(instructions).toContain('REGRAS DE RECONCILIAÇÃO NORMATIVA');
+    expect(instructions).toContain('unconfirmedItems');
+    expect(instructions).toContain('NUNCA apresente requisito de norma histórica como vigente');
+    expect(instructions).toContain('hierarquia normativa');
+    expect(instructions).toContain('NÃO invente revogação');
+    expect(instructions).toContain('NEEDS_HUMAN_REVIEW');
+  });
+});
