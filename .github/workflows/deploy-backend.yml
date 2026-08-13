@@ -627,9 +627,15 @@ jobs:
         working-directory: backend
         run: |
           set -euo pipefail
-          npm ci
-          npx prisma generate --schema=prisma/schema.prisma
-          npx tsc --noEmit -p tsconfig.build.json
+
+          echo "== npm ci =="
+          timeout 10m npm ci
+
+          echo "== prisma generate =="
+          timeout 2m ./node_modules/.bin/prisma generate --schema=prisma/schema.prisma
+
+          echo "== backend typecheck =="
+          timeout 5m ./node_modules/.bin/tsc --noEmit -p tsconfig.build.json
 
       - name: Login to ECR
         run: |
