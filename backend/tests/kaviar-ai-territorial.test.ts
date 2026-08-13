@@ -140,9 +140,9 @@ describe('territory_activation_readiness', () => {
 });
 
 describe('registry — novas tools registradas', () => {
-  it('registry contém 5 ferramentas', () => {
+  it('registry contém 10 ferramentas', () => {
     const tools = getRegisteredTools();
-    expect(tools).toHaveLength(5);
+    expect(tools).toHaveLength(10);
   });
 
   it('3 ferramentas antigas continuam registradas', () => {
@@ -360,7 +360,7 @@ describe('Fix 1: parseCityUf + args passados à tool', () => {
     // Query 2: readiness (segundo tool)
     mockQuery.mockResolvedValueOnce({ rows: [] });
 
-    const r = await askKaviarAi({ userId: 'admin-1', question: 'Quero abrir Pirassununga/SP' });
+    const r = await askKaviarAi({ userId: 'admin-1', question: 'Quero abrir Pirassununga/SP', role: 'SUPER_ADMIN' });
     expect(r.toolsUsed).toContain('territory_onboarding_status');
 
     // Verificar que a query foi chamada com 'Pirassununga' e 'SP'
@@ -370,7 +370,7 @@ describe('Fix 1: parseCityUf + args passados à tool', () => {
   });
 
   it('pergunta territorial sem city/uf retorna mensagem de orientação', async () => {
-    const r = await askKaviarAi({ userId: 'admin-1', question: 'Quero abrir uma cidade nova' });
+    const r = await askKaviarAi({ userId: 'admin-1', question: 'Quero abrir uma cidade nova', role: 'SUPER_ADMIN' });
     expect(r.answer).toContain('Informe a cidade e a UF');
     expect(r.toolsUsed).toHaveLength(0);
   });
@@ -379,7 +379,7 @@ describe('Fix 1: parseCityUf + args passados à tool', () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
     mockQuery.mockResolvedValueOnce({ rows: [] });
 
-    await askKaviarAi({ userId: 'admin-1', question: 'Quero abrir cidade Sorocaba - SP e cadastrar gestor' });
+    await askKaviarAi({ userId: 'admin-1', question: 'Quero abrir cidade Sorocaba - SP e cadastrar gestor', role: 'SUPER_ADMIN' });
     const firstCall = mockQuery.mock.calls[0];
     expect(firstCall[1][0]).toBe('Sorocaba');
     expect(firstCall[1][1]).toBe('SP');
@@ -521,7 +521,7 @@ describe('parseCityUf — nomes multi-palavra', () => {
   it('Santa Cruz das Palmeiras/SP', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
     mockQuery.mockResolvedValueOnce({ rows: [] });
-    await askKaviarAi({ userId: 'a', question: 'Quero abrir Santa Cruz das Palmeiras/SP' });
+    await askKaviarAi({ userId: 'a', question: 'Quero abrir Santa Cruz das Palmeiras/SP', role: 'SUPER_ADMIN' });
     expect(mockQuery.mock.calls[0][1][0]).toBe('Santa Cruz das Palmeiras');
     expect(mockQuery.mock.calls[0][1][1]).toBe('SP');
   });
@@ -529,7 +529,7 @@ describe('parseCityUf — nomes multi-palavra', () => {
   it('Santa Rita do Passa Quatro/SP', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
     mockQuery.mockResolvedValueOnce({ rows: [] });
-    await askKaviarAi({ userId: 'a', question: 'Abrir Santa Rita do Passa Quatro/SP' });
+    await askKaviarAi({ userId: 'a', question: 'Abrir Santa Rita do Passa Quatro/SP', role: 'SUPER_ADMIN' });
     expect(mockQuery.mock.calls[0][1][0]).toBe('Santa Rita do Passa Quatro');
     expect(mockQuery.mock.calls[0][1][1]).toBe('SP');
   });
@@ -537,7 +537,7 @@ describe('parseCityUf — nomes multi-palavra', () => {
   it('Sorocaba - SP continua funcionando', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
     mockQuery.mockResolvedValueOnce({ rows: [] });
-    await askKaviarAi({ userId: 'a', question: 'Abrir cidade Sorocaba - SP como gestor' });
+    await askKaviarAi({ userId: 'a', question: 'Abrir cidade Sorocaba - SP como gestor', role: 'SUPER_ADMIN' });
     expect(mockQuery.mock.calls[0][1][0]).toBe('Sorocaba');
     expect(mockQuery.mock.calls[0][1][1]).toBe('SP');
   });
