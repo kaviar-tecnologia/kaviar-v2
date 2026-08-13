@@ -571,3 +571,28 @@ describe('Fix 3: moto_passenger_compliance', () => {
     expect(r.data.ready).toBe(true);
   });
 });
+
+describe('pesquisa regulatória — params e incomplete', () => {
+  beforeEach(() => { vi.clearAllMocks(); process.env.OPENAI_API_KEY = 'sk-test'; });
+  afterEach(() => { delete process.env.OPENAI_API_KEY; });
+
+  it('usa reasoning low e max_output_tokens 4096', async () => {
+    mockResponsesCreate.mockResolvedValueOnce({
+      status: 'completed',
+      output_text: JSON.stringify({ summary: 'ok', requirements: [], officialSources: [], unconfirmedItems: [], recommendedNextSteps: [], confidence: 'NEEDS_HUMAN_REVIEW' }),
+    });
+    await searchRegulatoryRequirements('Teste', 'SP');
+    const args = mockResponsesCreate.mock.calls[0][0];
+    expect(args.reasoning).toEqual({ effort: 'low' });
+    expect(args.max_output_tokens).toBe(4096);
+  });
+
+  it('erro incomplete inclui reason', async () => {
+    mockResponsesCreate.mockResolvedValueOnce({
+      status: 'incomplete',
+      incomplete_details: { reason: 'max_output_tokens' },
+      output_text: '',
+    });
+    await expect(searchRegulatoryRequirements('X', 'SP')).rejects.toThrow('max_output_tokens');
+  });
+});

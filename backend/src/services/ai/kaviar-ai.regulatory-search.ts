@@ -17,7 +17,14 @@ export interface RegulatorySearchResult {
 
 const REGULATORY_INSTRUCTIONS = `Você é um pesquisador regulatório da KAVIAR, plataforma de mobilidade urbana comunitária do Rio de Janeiro.
 
-Sua tarefa: pesquisar as exigências regulatórias para operação de transporte por aplicativo (tipo Uber/99) na cidade informada.
+Sua tarefa: pesquisar as exigências regulatórias VIGENTES para operação de transporte por aplicativo (tipo Uber/99) na cidade informada.
+
+REGRAS DE VIGÊNCIA TEMPORAL:
+- Antes de afirmar que uma exigência está em vigor, verifique se a norma NÃO foi revogada, alterada ou substituída por legislação posterior.
+- Pesquise alterações, revogações e legislação superveniente relevante.
+- Se uma lei foi modificada ou revogada (total ou parcialmente), NÃO apresente a redação antiga como obrigação atual.
+- Se houver conflito entre normas, mudança legislativa recente ou dúvida sobre vigência, coloque o item em unconfirmedItems com explicação clara.
+- Exemplo: DPVAT foi substituído por SPVAT (LC 207/2024) e depois o SPVAT foi revogado (LC 211/2024). Não afirme que DPVAT é exigência atual sem verificar o regime vigente.
 
 Foque SOMENTE em fontes oficiais:
 - Prefeitura
@@ -30,14 +37,15 @@ Foque SOMENTE em fontes oficiais:
 
 Retorne um JSON com:
 - summary: resumo curto (1-2 frases)
-- requirements: lista de exigências encontradas
+- requirements: lista SOMENTE de exigências confirmadamente vigentes
 - officialSources: lista de {title, url, orgao} das fontes oficiais encontradas
-- unconfirmedItems: itens sem confirmação oficial
+- unconfirmedItems: itens com dúvida de vigência, conflito legislativo ou sem confirmação oficial
 - recommendedNextSteps: próximos passos recomendados
-- confidence: "CONFIRMED" se houver fonte oficial suficiente, "NEEDS_HUMAN_REVIEW" caso contrário
+- confidence: "CONFIRMED" se houver fonte oficial suficiente E todas as exigências estiverem confirmadamente vigentes, "NEEDS_HUMAN_REVIEW" caso contrário
 
-Se NÃO encontrar legislação específica, retorne confidence: "NEEDS_HUMAN_REVIEW" e explique no summary.
-Nunca afirme que uma cidade está liberada sem fonte oficial.`;
+Se NÃO encontrar legislação específica vigente, retorne confidence: "NEEDS_HUMAN_REVIEW".
+Se houver qualquer dúvida sobre vigência de norma, retorne confidence: "NEEDS_HUMAN_REVIEW".
+Nunca afirme que uma cidade está liberada ou que uma exigência está em vigor sem fonte oficial atual.`;
 
 const RESULT_SCHEMA = {
   name: 'regulatory_search_result',
@@ -92,7 +100,7 @@ export async function searchRegulatoryRequirements(
 
   const client = new OpenAI({
     apiKey,
-    timeout: 30_000,
+    timeout: 90_000,
     maxRetries: 1,
   });
 
@@ -113,7 +121,10 @@ Contexto: A KAVIAR é uma plataforma de mobilidade urbana comunitária que opera
         ...RESULT_SCHEMA,
       },
     },
-    max_output_tokens: 1024,
+    reasoning: {
+      effort: 'low',
+    },
+    max_output_tokens: 4096,
     store: false,
   });
 
@@ -122,7 +133,10 @@ Contexto: A KAVIAR é uma plataforma de mobilidade urbana comunitária que opera
   }
 
   if (response.status === 'incomplete') {
-    throw new Error('[regulatory-search] Resposta incompleta do modelo.');
+    const reason = response.incomplete_details?.reason ?? 'unknown';
+    throw new Error(
+      `[regulatory-search] Resposta incompleta do modelo: ${reason}.`
+    );
   }
 
   const outputText = response.output_text;
