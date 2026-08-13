@@ -1015,3 +1015,218 @@ export async function getInboxSummary(args?: Record<string, string>): Promise<{
     data: { totalNew, recent },
   };
 }
+
+// ── Tool: company_profile ──────────────────────────────────────────────────
+
+export type CompanyProfileSection = 'identity' | 'contacts' | 'governance' | 'structure' | 'activities' | 'about' | 'full';
+
+export type CompanyProfileData = {
+  available: boolean;
+  section: CompanyProfileSection;
+  identity?: {
+    cnpj: string;
+    razaoSocial: string;
+    nomeFantasia: string | null;
+    dataAbertura: string | null;
+    situacaoCadastral: string | null;
+    dataSituacaoCadastral: string | null;
+    porte: string | null;
+    naturezaJuridica: string | null;
+    capitalSocialCents: string | null;
+  };
+  contacts?: {
+    email: string | null;
+    telefone: string | null;
+    whatsapp: string | null;
+    site: string | null;
+    endereco: {
+      logradouro: string | null;
+      numero: string | null;
+      complemento: string | null;
+      bairro: string | null;
+      municipio: string | null;
+      uf: string | null;
+      cep: string | null;
+    };
+  };
+  governance?: {
+    persons: { nome: string; funcao: string; funcaoOrigem: string }[];
+  };
+  structure?: {
+    available: boolean;
+    entities: { cnpj: string; nomeFantasia: string | null; tipo: string; uf: string | null; municipio: string | null; isActive: boolean }[];
+  };
+  activities?: {
+    cnaePrincipal: string | null;
+    cnaesSecundarios: string[];
+  };
+  about?: {
+    description: string;
+    concepts: string[];
+  };
+};
+
+const KAVIAR_CNPJ = '67783601000199';
+
+const VALID_SECTIONS: CompanyProfileSection[] = ['identity', 'contacts', 'governance', 'structure', 'activities', 'about', 'full'];
+
+export async function getCompanyProfile(args?: Record<string, string>): Promise<{
+  tool: 'company_profile';
+  data: CompanyProfileData;
+}> {
+  const section = (args?.section ?? 'full') as CompanyProfileSection;
+  if (!VALID_SECTIONS.includes(section)) {
+    throw new Error('[company_profile] Seção inválida. Use identity, contacts, governance, structure, activities ou full.');
+  }
+
+  const needsEntity = section !== 'structure' && section !== 'about';
+  const needsGovernance = section === 'governance' || section === 'full';
+  const needsStructure = section === 'structure' || section === 'full';
+
+  let entity: any = null;
+  let persons: any[] = [];
+  let entities: any[] = [];
+
+  // Fetch main entity
+  if (needsEntity) {
+    try {
+      const entityResult = await pool.query(`
+        SELECT id, cnpj, razao_social, nome_fantasia, entity_type, uf, municipio,
+               data_abertura, situacao_cadastral, data_situacao_cadastral,
+               porte, natureza_juridica,
+               capital_social_cents, email_institucional, telefone_institucional,
+               whatsapp_institucional, site, logradouro, numero, complemento,
+               bairro, cep, cnae_principal, cnaes_secundarios
+        FROM legal_entities
+        WHERE cnpj = $1
+        LIMIT 1
+      `, [KAVIAR_CNPJ]);
+      entity = entityResult.rows[0] ?? null;
+    } catch {
+      return { tool: 'company_profile', data: { available: false, section } };
+    }
+    if (!entity) {
+      return { tool: 'company_profile', data: { available: false, section } };
+    }
+  }
+
+  // Fetch governance
+  if (needsGovernance && entity) {
+    try {
+      const personsResult = await pool.query(`
+        SELECT nome, funcao, funcao_origem
+        FROM legal_entity_persons
+        WHERE entity_id = $1 AND is_active = true
+        ORDER BY funcao_origem, nome
+      `, [entity.id]);
+      persons = personsResult.rows;
+    } catch {
+      // Governance unavailable but entity is available
+    }
+  }
+
+  // Fetch structure
+  if (needsStructure) {
+    try {
+      const structResult = await pool.query(`
+        SELECT cnpj, nome_fantasia, entity_type AS tipo, uf, municipio, is_active
+        FROM legal_entities
+        WHERE is_active = true
+        ORDER BY entity_type, nome_fantasia
+      `);
+      entities = structResult.rows;
+    } catch {
+      entities = [];
+    }
+  }
+
+  const data: CompanyProfileData = { available: true, section };
+
+  if (section === 'identity' || section === 'full') {
+    data.identity = {
+      cnpj: formatCnpj(entity.cnpj),
+      razaoSocial: entity.razao_social,
+      nomeFantasia: entity.nome_fantasia,
+      dataAbertura: entity.data_abertura ? new Date(entity.data_abertura).toISOString().slice(0, 10) : null,
+      situacaoCadastral: entity.situacao_cadastral,
+      dataSituacaoCadastral: entity.data_situacao_cadastral ? new Date(entity.data_situacao_cadastral).toISOString().slice(0, 10) : null,
+      porte: entity.porte,
+      naturezaJuridica: entity.natureza_juridica,
+      capitalSocialCents: entity.capital_social_cents?.toString() ?? null,
+    };
+  }
+
+  if (section === 'contacts' || section === 'full') {
+    data.contacts = {
+      email: entity.email_institucional,
+      telefone: entity.telefone_institucional,
+      whatsapp: entity.whatsapp_institucional,
+      site: entity.site,
+      endereco: {
+        logradouro: entity.logradouro,
+        numero: entity.numero,
+        complemento: entity.complemento,
+        bairro: entity.bairro,
+        municipio: entity.municipio,
+        uf: entity.uf,
+        cep: entity.cep,
+      },
+    };
+  }
+
+  if (section === 'governance' || section === 'full') {
+    data.governance = {
+      persons: persons.map((p: any) => ({
+        nome: p.nome,
+        funcao: p.funcao,
+        funcaoOrigem: p.funcao_origem,
+      })),
+    };
+  }
+
+  if (section === 'structure' || section === 'full') {
+    data.structure = {
+      available: entities.length > 0 || needsStructure,
+      entities: entities.map((e: any) => ({
+        cnpj: formatCnpj(e.cnpj),
+        nomeFantasia: e.nome_fantasia,
+        tipo: e.tipo,
+        uf: e.uf,
+        municipio: e.municipio,
+        isActive: e.is_active,
+      })),
+    };
+  }
+
+  if (section === 'activities' || section === 'full') {
+    data.activities = {
+      cnaePrincipal: entity.cnae_principal,
+      cnaesSecundarios: entity.cnaes_secundarios ?? [],
+    };
+  }
+
+  if (section === 'about' || section === 'full') {
+    data.about = {
+      description: 'A KAVIAR é uma plataforma brasileira de mobilidade urbana comunitária. Ela conecta passageiros, motoristas e parceiros locais, organizando a operação por cidades, territórios e comunidades. A plataforma reúne recursos de corridas, segurança, gestão de motoristas, CRM, financeiro, comunicação e expansão territorial. Novos territórios são preparados e verificados antes da operação; cadastrar um território não significa ativá-lo automaticamente.',
+      concepts: [
+        'Empresa: KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA — pessoa jurídica responsável pela plataforma.',
+        'Plataforma: sistema tecnológico e operacional desenvolvido pela empresa.',
+        'Matriz e filiais: estabelecimentos jurídicos da empresa, identificados por CNPJ.',
+        'Território: área municipal ou operacional cadastrada na plataforma. Cadastrar não significa ativar.',
+        'Comunidade: organização local utilizada pela operação e pelos motoristas.',
+        'Ativação territorial: nunca é automática, exige verificação regulatória e decisão de SUPER_ADMIN.',
+        'CRM: organiza leads e contatos comerciais.',
+        'Financeiro: controla contas, receitas, despesas, obrigações e informações contábeis.',
+        'Inbox e WhatsApp: apoiam a comunicação administrativa.',
+        'Chat KAVIAR: assistente administrativo e operacional. Não substitui contador, advogado ou decisão humana.',
+      ],
+    };
+  }
+
+  return { tool: 'company_profile', data };
+}
+
+function formatCnpj(cnpj: string): string {
+  if (cnpj.length !== 14) return cnpj;
+  return `${cnpj.slice(0, 2)}.${cnpj.slice(2, 5)}.${cnpj.slice(5, 8)}/${cnpj.slice(8, 12)}-${cnpj.slice(12)}`;
+}

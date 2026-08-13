@@ -745,7 +745,7 @@ describe('regressão — tools e roteamento existente', () => {
 
   it('registry contém 10 ferramentas', () => {
     const tools = getRegisteredTools();
-    expect(tools).toHaveLength(10);
+    expect(tools).toHaveLength(11);
   });
 
   it('5 ferramentas originais continuam registradas', () => {
