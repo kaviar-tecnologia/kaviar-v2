@@ -1,4 +1,11 @@
 import { pool } from '../../db';
+import {
+  getAnnualIncentiveSummary,
+  getWhatsAppSummary,
+  getEmergencyOperationsSummary,
+  getDriverPipelineSummary,
+  getTerritoryPortfolioSummary,
+} from './kaviar-ai.command-center';
 
 export type RidesSummaryTodayData = {
   rides: number;
@@ -550,6 +557,16 @@ export type InboxSummaryData = {
 
 const TODAY_SP = `(NOW() AT TIME ZONE 'America/Sao_Paulo')::date`;
 
+function formatBriefingCents(cents: string): string {
+  const value = BigInt(cents);
+  const isNeg = value < 0n;
+  const abs = isNeg ? -value : value;
+  const integer = (abs / 100n).toString();
+  const fraction = (abs % 100n).toString().padStart(2, '0');
+  const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${isNeg ? '-' : ''}${grouped},${fraction}`;
+}
+
 function getPeriodBounds(period: 'today' | 'week' | 'month'): { start: string; end: string; label: string; prevStart: string; prevEnd: string } {
   // Returns SQL expressions for period boundaries
   switch (period) {
@@ -734,11 +751,103 @@ export async function getDailyBriefing(): Promise<{
     if (tr) territories = { available: true, preparationCount: tr.preparation, withoutManagerCount: tr.without_manager };
   } catch { unavailableItems.push('Territórios: fonte indisponível.'); }
 
+  // ── Command Center amplification (each source independent) ──
+
+  // Emergencies and rides
+  let emergencyActive = 0;
+  let emergencyAvailable = false;
+  let ridesNoDriver = 0;
+  let ridesPendingAdj = 0;
+  let ridesOpsAvailable = false;
+  try {
+    const emergencyResult = await getEmergencyOperationsSummary();
+    if (emergencyResult.data.emergencies.available) {
+      emergencyAvailable = true;
+      emergencyActive = emergencyResult.data.emergencies.active;
+    } else {
+      unavailableItems.push('Emergências: fonte indisponível.');
+    }
+    if (emergencyResult.data.rides.available) {
+      ridesOpsAvailable = true;
+      ridesNoDriver = emergencyResult.data.rides.noDriver;
+      ridesPendingAdj = emergencyResult.data.rides.pendingAdjustment;
+    }
+  } catch { unavailableItems.push('Emergências/corridas operacionais: fonte indisponível.'); }
+
+  // Annual incentive deadline breaches and outstanding
+  let incentiveDeadlineBreaches = 0;
+  let incentiveOutstandingCents = '0';
+  let incentiveAvailable = false;
+  try {
+    const incentiveResult = await getAnnualIncentiveSummary();
+    if (incentiveResult.data.available) {
+      incentiveAvailable = true;
+      incentiveDeadlineBreaches = incentiveResult.data.deadlineBreaches;
+      incentiveOutstandingCents = incentiveResult.data.totalOutstandingCents;
+    } else {
+      unavailableItems.push('Gratificação Anual: fonte indisponível.');
+    }
+  } catch { unavailableItems.push('Gratificação Anual: fonte indisponível.'); }
+
+  // WhatsApp
+  let whatsappUnread = 0;
+  let whatsappUrgent = 0;
+  let whatsappAvailable = false;
+  try {
+    const waResult = await getWhatsAppSummary();
+    if (waResult.data.available) {
+      whatsappAvailable = true;
+      whatsappUnread = waResult.data.unreadMessages;
+      whatsappUrgent = waResult.data.highPriorityConversations;
+    } else {
+      unavailableItems.push('WhatsApp: fonte indisponível.');
+    }
+  } catch { unavailableItems.push('WhatsApp: fonte indisponível.'); }
+
+  // Driver pipeline — modalities
+  let modalitiesPending = 0;
+  let modalitiesAvailable = false;
+  try {
+    const pipelineResult = await getDriverPipelineSummary();
+    if (pipelineResult.data.available && pipelineResult.data.modalities.available) {
+      modalitiesAvailable = true;
+      modalitiesPending = pipelineResult.data.modalities.pending;
+    } else if (pipelineResult.data.available && !pipelineResult.data.modalities.available) {
+      unavailableItems.push('Modalidades de motoristas: fonte indisponível.');
+    } else {
+      unavailableItems.push('Pipeline de motoristas (detalhado): fonte indisponível.');
+    }
+  } catch { unavailableItems.push('Pipeline de motoristas (detalhado): fonte indisponível.'); }
+
+  // Territory portfolio — checklists, protocols, insurance, blocked
+  let territoryBlocked = 0;
+  let checklistPending = 0;
+  let protocolsPending = 0;
+  let insurancePending = 0;
+  let portfolioAvailable = false;
+  try {
+    const portfolioResult = await getTerritoryPortfolioSummary();
+    if (portfolioResult.data.available) {
+      portfolioAvailable = true;
+      territoryBlocked = portfolioResult.data.byRegulatoryStatus['blocked'] ?? 0;
+    }
+    if (portfolioResult.data.regulatoryChecklist.available) checklistPending = portfolioResult.data.regulatoryChecklist.pending;
+    if (portfolioResult.data.regulatoryProtocols.available) protocolsPending = portfolioResult.data.regulatoryProtocols.pending;
+    if (portfolioResult.data.insuranceCoverages.available) insurancePending = portfolioResult.data.insuranceCoverages.pending;
+  } catch { unavailableItems.push('Portfólio territorial (detalhado): fonte indisponível.'); }
+
   // ── Deterministic priority classification (only from available sections) ──
-  if (rides.available && rides.pendingAdjustment > 0) highItems.push(`${rides.pendingAdjustment} corrida(s) com ajuste pendente.`);
+  if (emergencyAvailable && emergencyActive > 0) highItems.push(`🚨 ${emergencyActive} emergência(s) ativa(s).`);
+  if (ridesOpsAvailable && ridesPendingAdj > 0) highItems.push(`${ridesPendingAdj} corrida(s) com ajuste pendente.`);
+  else if (rides.available && rides.pendingAdjustment > 0) highItems.push(`${rides.pendingAdjustment} corrida(s) com ajuste pendente.`);
+  if (incentiveAvailable && incentiveDeadlineBreaches > 0) highItems.push(`${incentiveDeadlineBreaches} solicitação(ões) de bônus com prazo violado.`);
   if (finance.available && finance.overdueCount > 0) highItems.push(`${finance.overdueCount} obrigação(ões) financeira(s) vencida(s).`);
   if (inbox.available && inbox.highRiskRecentCount > 0) highItems.push(`${inbox.highRiskRecentCount} e-mail(s) com risco elevado (entre os ${inbox.riskAssessedLimit} mais recentes analisados).`);
 
+  if (ridesOpsAvailable && ridesNoDriver > 0) attentionItems.push(`${ridesNoDriver} corrida(s) sem motorista hoje.`);
+  if (whatsappAvailable && whatsappUnread > 0) attentionItems.push(`${whatsappUnread} mensagem(ns) não lida(s) no WhatsApp${whatsappUrgent > 0 ? ` (${whatsappUrgent} urgente(s))` : ''}.`);
+  if (incentiveAvailable && BigInt(incentiveOutstandingCents) > 0n) attentionItems.push(`Gratificação Anual a pagar: R$ ${formatBriefingCents(incentiveOutstandingCents)}.`);
+  if (modalitiesAvailable && modalitiesPending > 0) attentionItems.push(`${modalitiesPending} modalidade(s) de motorista aguardando aprovação.`);
   if (finance.available && finance.due7dCount > 0) attentionItems.push(`${finance.due7dCount} obrigação(ões) vence(m) em 7 dias.`);
   if (drivers.available && drivers.docsPending > 0) attentionItems.push(`${drivers.docsPending} motorista(s) com documentos pendentes.`);
   if (drivers.available && drivers.pendingApproval > 0) attentionItems.push(`${drivers.pendingApproval} motorista(s) aguardando aprovação.`);
@@ -747,6 +856,10 @@ export async function getDailyBriefing(): Promise<{
   if (leads.available && leads.stale3d > 0) attentionItems.push(`${leads.stale3d} lead(s) parado(s) há mais de 3 dias.`);
   if (inbox.available && inbox.newCount > 0) attentionItems.push(`${inbox.newCount} e-mail(s) novo(s) na inbox.`);
   if (territories.available && territories.withoutManagerCount > 0) attentionItems.push(`${territories.withoutManagerCount} território(s) sem gestor.`);
+  if (portfolioAvailable && territoryBlocked > 0) attentionItems.push(`${territoryBlocked} território(s) com regulatório bloqueado.`);
+  if (checklistPending > 0) attentionItems.push(`${checklistPending} item(ns) de checklist regulatório pendente(s).`);
+  if (protocolsPending > 0) attentionItems.push(`${protocolsPending} protocolo(s) regulatório(s) pendente(s).`);
+  if (insurancePending > 0) attentionItems.push(`${insurancePending} cobertura(s) de seguro pendente(s)/expirada(s).`);
   if (finance.uncategorizedAvailable && finance.uncategorizedTransactions > 0) attentionItems.push(`${finance.uncategorizedTransactions} lançamento(s) sem categoria.`);
 
   if (highItems.length === 0 && attentionItems.length === 0 && unavailableItems.length === 0) {
