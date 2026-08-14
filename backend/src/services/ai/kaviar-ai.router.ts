@@ -36,6 +36,14 @@ export function getRouterMode(): KaviarAiRouterMode {
 export function routeByRules(question: string): KaviarAiRouteResult {
   const q = question.toLowerCase();
 
+  // ── Emergency: corridas sem motorista / ajustes (before rides_summary) ──
+  if (
+    (q.includes('corrida') || q.includes('corridas')) &&
+    (q.includes('sem motorista') || q.includes('ajuste pendente') || q.includes('ajustes pendentes'))
+  ) {
+    return { toolsToCall: ['emergency_operations_summary'] };
+  }
+
   // ── Rides summary ─────────────────────────────────────────────────────
   if (
     q.includes('ganhou hoje') ||
@@ -43,6 +51,15 @@ export function routeByRules(question: string): KaviarAiRouteResult {
     q.includes('faturou hoje')
   ) {
     return { toolsToCall: ['rides_summary_today'] };
+  }
+
+  // ── Emergency operations summary (must be before drivers_documents) ────
+  if (
+    q.includes('emergência') || q.includes('emergencia') ||
+    q.includes('emergências') || q.includes('emergencias') ||
+    q.includes('sos')
+  ) {
+    return { toolsToCall: ['emergency_operations_summary'] };
   }
 
   // ── Drivers documents pending ─────────────────────────────────────────
@@ -53,7 +70,9 @@ export function routeByRules(question: string): KaviarAiRouteResult {
     q.includes('documento') ||
     q.includes('doc ') ||
     q.includes('docs ') ||
-    q.includes('docs?');
+    q.includes('docs?') ||
+    q.includes('documentação') ||
+    q.includes('documentacao');
 
   const hasPendingContext =
     q.includes('pendente') ||
@@ -64,7 +83,8 @@ export function routeByRules(question: string): KaviarAiRouteResult {
   if (
     (hasDocContext && hasDriverContext) ||
     (hasDocContext && hasPendingContext) ||
-    (hasDriverContext && hasPendingContext)
+    (hasDriverContext && hasPendingContext && hasDocContext) ||
+    (hasDriverContext && (q.includes('aprovação') || q.includes('aprovacao') || q.includes('aguardando') || q.includes('cadastro')))
   ) {
     return { toolsToCall: ['drivers_documents_pending'] };
   }
@@ -254,15 +274,6 @@ export function routeByRules(question: string): KaviarAiRouteResult {
     (q.includes('motorista') && (q.includes('por status') || q.includes('por tipo') || q.includes('suspenso')))
   ) {
     return { toolsToCall: ['driver_pipeline_summary'] };
-  }
-
-  // ── Emergency operations summary ──────────────────────────────────────
-  if (
-    q.includes('emergência') || q.includes('emergencia') ||
-    q.includes('sos') ||
-    (q.includes('emergênci') || q.includes('emergenci')) && (q.includes('ativa') || q.includes('hoje'))
-  ) {
-    return { toolsToCall: ['emergency_operations_summary'] };
   }
 
   // ── Territory portfolio summary ───────────────────────────────────────

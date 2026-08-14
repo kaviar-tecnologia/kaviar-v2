@@ -599,3 +599,83 @@ describe('segurança — dados sensíveis command center', () => {
     expect(json).not.toContain('file_url');
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Fix: emergency routing priority over drivers_documents_pending
+// ══════════════════════════════════════════════════════════════════════════════
+
+describe('routing — emergency vs drivers_documents priority', () => {
+  it('"Há emergências, corridas sem motorista ou ajustes pendentes?" → emergency_operations_summary', () => {
+    const r = routeByRules('Há emergências, corridas sem motorista ou ajustes pendentes?');
+    expect(r.toolsToCall).toContain('emergency_operations_summary');
+    expect(r.toolsToCall).not.toContain('drivers_documents_pending');
+  });
+
+  it('"Há emergências ativas?" → emergency_operations_summary', () => {
+    const r = routeByRules('Há emergências ativas?');
+    expect(r.toolsToCall).toContain('emergency_operations_summary');
+    expect(r.toolsToCall).not.toContain('drivers_documents_pending');
+  });
+
+  it('"Há corridas sem motorista?" → emergency_operations_summary', () => {
+    const r = routeByRules('Há corridas sem motorista?');
+    expect(r.toolsToCall).toContain('emergency_operations_summary');
+    expect(r.toolsToCall).not.toContain('drivers_documents_pending');
+  });
+
+  it('"Há ajustes pendentes nas corridas?" → emergency_operations_summary', () => {
+    const r = routeByRules('Há ajustes pendentes nas corridas?');
+    expect(r.toolsToCall).toContain('emergency_operations_summary');
+    expect(r.toolsToCall).not.toContain('drivers_documents_pending');
+  });
+
+  it('"Há documentos de motoristas pendentes?" → drivers_documents_pending', () => {
+    const r = routeByRules('Há documentos de motoristas pendentes?');
+    expect(r.toolsToCall).toContain('drivers_documents_pending');
+    expect(r.toolsToCall).not.toContain('emergency_operations_summary');
+  });
+
+  it('"Quantos motoristas aguardam aprovação?" → drivers_documents_pending', () => {
+    const r = routeByRules('Quantos motoristas aguardam aprovação?');
+    expect(r.toolsToCall).toContain('drivers_documents_pending');
+    expect(r.toolsToCall).not.toContain('emergency_operations_summary');
+  });
+
+  it('nenhuma pergunta acima aciona simultaneamente as duas tools', () => {
+    const questions = [
+      'Há emergências, corridas sem motorista ou ajustes pendentes?',
+      'Há emergências ativas?',
+      'Há corridas sem motorista?',
+      'Há ajustes pendentes nas corridas?',
+      'Há documentos de motoristas pendentes?',
+      'Quantos motoristas aguardam aprovação?',
+    ];
+    for (const question of questions) {
+      const r = routeByRules(question);
+      const hasEmergency = r.toolsToCall.includes('emergency_operations_summary');
+      const hasDriverDocs = r.toolsToCall.includes('drivers_documents_pending');
+      expect(hasEmergency && hasDriverDocs).toBe(false);
+    }
+  });
+});
+
+describe('routing — corridas hoje sem motorista vs rides_summary', () => {
+  it('"Há corridas hoje sem motorista?" → emergency_operations_summary', () => {
+    const r = routeByRules('Há corridas hoje sem motorista?');
+    expect(r.toolsToCall).toContain('emergency_operations_summary');
+    expect(r.toolsToCall).not.toContain('rides_summary_today');
+  });
+
+  it('"Como estão as corridas hoje?" → rides_summary_today', () => {
+    const r = routeByRules('Como estão as corridas hoje?');
+    // "corridas hoje" matches rides_summary
+    expect(r.toolsToCall).toContain('rides_summary_today');
+    expect(r.toolsToCall).not.toContain('emergency_operations_summary');
+  });
+
+  it('"Corridas hoje?" → rides_summary_today', () => {
+    const r = routeByRules('Corridas hoje?');
+    expect(r.toolsToCall).toContain('rides_summary_today');
+    expect(r.toolsToCall).not.toContain('emergency_operations_summary');
+  });
+});
