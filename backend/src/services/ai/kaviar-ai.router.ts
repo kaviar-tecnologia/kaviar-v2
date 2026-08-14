@@ -311,6 +311,24 @@ export function routeByRules(question: string): KaviarAiRouteResult {
     return { toolsToCall: ['territory_onboarding_status'] };
   }
 
+  // ── Knowledge answer (RAG) — catch-all for explanatory/institutional questions ──
+  // Only matches questions that seem to ask "what is", "how does", "explain", "tell me about"
+  if (
+    q.includes('o que é') || q.includes('o que e') ||
+    q.includes('como funciona') ||
+    q.includes('explique') || q.includes('me explica') ||
+    q.includes('o que significa') ||
+    q.includes('qual a política') || q.includes('qual a politica') ||
+    q.includes('como a kaviar') ||
+    q.includes('o que o chat') ||
+    q.includes('quais as regras') ||
+    q.includes('como funciona o rag') ||
+    q.includes('segurança do chat') || q.includes('seguranca do chat') ||
+    q.includes('limites do chat')
+  ) {
+    return { toolsToCall: ['knowledge_answer'] };
+  }
+
   return { toolsToCall: [] };
 }
 

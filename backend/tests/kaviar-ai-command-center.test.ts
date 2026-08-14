@@ -314,7 +314,7 @@ describe('territory_portfolio_summary', () => {
 
 describe('command center — registry', () => {
   it('registry contém 17 ferramentas', () => {
-    expect(getRegisteredTools()).toHaveLength(17);
+    expect(getRegisteredTools()).toHaveLength(18);
   });
 
   it('todas as 6 novas tools são readOnly', () => {
