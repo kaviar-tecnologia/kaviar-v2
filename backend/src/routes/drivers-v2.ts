@@ -423,4 +423,28 @@ router.get('/me/current-ride', authenticateDriver, async (req: Request, res: Res
   }
 });
 
+// ── Excellence Seal: driver queries own seal ──────────────────────────────────
+router.get('/me/excellence-seal', authenticateDriver, async (req: Request, res: Response) => {
+  try {
+    const driverId = (req as any).driverId;
+    if (!driverId) return res.status(401).json({ success: false, error: 'Não autenticado' });
+
+    const badge = await prisma.driver_badges.findUnique({
+      where: { driver_id_badge_code: { driver_id: driverId, badge_code: 'EXCELLENCE_SEAL' } },
+      select: { progress: true, unlocked_at: true },
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        active: badge ? badge.progress === 100 : false,
+        grantedAt: badge?.unlocked_at ?? null,
+      },
+    });
+  } catch (error) {
+    console.error('[DRIVER_SEAL_QUERY]', error);
+    return res.status(500).json({ success: false, error: 'Erro ao consultar selo.' });
+  }
+});
+
 export default router;
