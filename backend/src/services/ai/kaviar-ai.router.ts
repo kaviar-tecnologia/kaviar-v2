@@ -410,11 +410,17 @@ export async function routeQuestion(
   question: string,
   provider?: KaviarAiModelProvider
 ): Promise<KaviarAiRouteResult> {
-  const mode = getRouterMode();
+  // Rules-first: deterministic rules always take precedence
+  const rulesDecision = routeByRules(question);
 
-  if (mode === 'model') {
+  if (rulesDecision.toolsToCall.length > 0) {
+    return rulesDecision;
+  }
+
+  // If no rule matched and mode is 'model', delegate to provider
+  if (getRouterMode() === 'model') {
     return routeByModel(question, provider);
   }
 
-  return routeByRules(question);
+  return rulesDecision;
 }
