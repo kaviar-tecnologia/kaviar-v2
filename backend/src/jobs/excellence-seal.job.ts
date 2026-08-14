@@ -122,7 +122,7 @@ async function runSealEvaluation(): Promise<void> {
 
   // Also check drivers who currently have the seal (for suspension)
   const currentHolders = await pool.query<{ driver_id: string }>(`
-    SELECT driver_id FROM driver_badges WHERE badge_code = $1
+    SELECT driver_id FROM driver_badges WHERE badge_type = $1
   `, [BADGE_CODE]);
 
   const allDriverIds = new Set([
@@ -138,17 +138,17 @@ async function runSealEvaluation(): Promise<void> {
 
       // Check current badge state
       const badge = await pool.query<{ id: string }>(`
-        SELECT id FROM driver_badges WHERE driver_id = $1 AND badge_code = $2
+        SELECT id FROM driver_badges WHERE driver_id = $1 AND badge_type = $2
       `, [driverId, BADGE_CODE]);
       const hasBadge = badge.rows.length > 0;
 
       if (eligible && !hasBadge) {
         // GRANT
         await pool.query(`
-          INSERT INTO driver_badges (id, driver_id, badge_code, unlocked_at, progress, metadata, created_at, updated_at)
-          VALUES (gen_random_uuid()::text, $1, $2, NOW(), 100, $3, NOW(), NOW())
-          ON CONFLICT (driver_id, badge_code) DO UPDATE SET progress = 100, metadata = $3, updated_at = NOW()
-        `, [driverId, BADGE_CODE, JSON.stringify(criteria)]);
+          INSERT INTO driver_badges (driver_id, badge_type, unlocked_at, progress)
+          VALUES ($1, $2, NOW(), 100)
+          ON CONFLICT (driver_id, badge_type) DO UPDATE SET progress = 100
+        `, [driverId, BADGE_CODE]);
         await pool.query(`
           INSERT INTO driver_badge_events (driver_id, badge_code, event_type, criteria_snapshot, created_at)
           VALUES ($1, $2, 'GRANTED', $3, NOW())
@@ -157,10 +157,10 @@ async function runSealEvaluation(): Promise<void> {
       } else if (eligible && hasBadge) {
         // Check if was suspended (progress=0) and restore
         const suspended_badge = await pool.query<{ progress: number }>(`
-          SELECT progress FROM driver_badges WHERE driver_id = $1 AND badge_code = $2
+          SELECT progress FROM driver_badges WHERE driver_id = $1 AND badge_type = $2
         `, [driverId, BADGE_CODE]);
         if (suspended_badge.rows[0]?.progress === 0) {
-          await pool.query(`UPDATE driver_badges SET progress = 100, metadata = $3, updated_at = NOW() WHERE driver_id = $1 AND badge_code = $2`, [driverId, BADGE_CODE, JSON.stringify(criteria)]);
+          await pool.query(`UPDATE driver_badges SET progress = 100 WHERE driver_id = $1 AND badge_type = $2`, [driverId, BADGE_CODE]);
           await pool.query(`INSERT INTO driver_badge_events (driver_id, badge_code, event_type, criteria_snapshot, created_at) VALUES ($1, $2, 'RESTORED', $3, NOW())`, [driverId, BADGE_CODE, JSON.stringify(criteria)]);
           restored++;
         } else {
@@ -172,7 +172,7 @@ async function runSealEvaluation(): Promise<void> {
 
         if (isLowRatingFail) {
           // Immediate suspension
-          await pool.query(`UPDATE driver_badges SET progress = 0, metadata = $3, updated_at = NOW() WHERE driver_id = $1 AND badge_code = $2`, [driverId, BADGE_CODE, JSON.stringify({ ...criteria, failedCriteria })]);
+          await pool.query(`UPDATE driver_badges SET progress = 0 WHERE driver_id = $1 AND badge_type = $2`, [driverId, BADGE_CODE]);
           await pool.query(`INSERT INTO driver_badge_events (driver_id, badge_code, event_type, reason, criteria_snapshot, created_at) VALUES ($1, $2, 'SUSPENDED', $3, $4, NOW())`, [driverId, BADGE_CODE, 'Notas baixas recorrentes (imediato)', JSON.stringify({ ...criteria, failedCriteria })]);
           suspended++;
         } else {
@@ -185,7 +185,7 @@ async function runSealEvaluation(): Promise<void> {
 
           if ((failHistory.rows[0]?.cnt ?? 0) >= GRACE_PERIOD_DAYS - 1) {
             // 7 days reached — suspend
-            await pool.query(`UPDATE driver_badges SET progress = 0, metadata = $3, updated_at = NOW() WHERE driver_id = $1 AND badge_code = $2`, [driverId, BADGE_CODE, JSON.stringify({ ...criteria, failedCriteria })]);
+            await pool.query(`UPDATE driver_badges SET progress = 0 WHERE driver_id = $1 AND badge_type = $2`, [driverId, BADGE_CODE]);
             await pool.query(`INSERT INTO driver_badge_events (driver_id, badge_code, event_type, reason, criteria_snapshot, created_at) VALUES ($1, $2, 'SUSPENDED', $3, $4, NOW())`, [driverId, BADGE_CODE, `Critérios não atendidos por ${GRACE_PERIOD_DAYS} dias`, JSON.stringify({ ...criteria, failedCriteria })]);
             suspended++;
           } else {

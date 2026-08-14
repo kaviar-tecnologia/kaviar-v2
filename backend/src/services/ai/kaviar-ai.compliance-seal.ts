@@ -67,7 +67,7 @@ export async function getExcellenceSealSummary(): Promise<{
       SELECT
         COUNT(*) FILTER (WHERE progress = 100)::int AS active,
         COUNT(*) FILTER (WHERE progress = 0)::int AS suspended_count
-      FROM driver_badges WHERE badge_code = 'EXCELLENCE_SEAL'
+      FROM driver_badges WHERE badge_type = 'EXCELLENCE_SEAL'
     `);
     const weekResult = await pool.query<{ granted_week: number; suspended_week: number }>(`
       SELECT

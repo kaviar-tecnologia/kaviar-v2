@@ -430,14 +430,14 @@ router.get('/me/excellence-seal', authenticateDriver, async (req: Request, res: 
     if (!driverId) return res.status(401).json({ success: false, error: 'Não autenticado' });
 
     const badge = await prisma.driver_badges.findUnique({
-      where: { driver_id_badge_code: { driver_id: driverId, badge_code: 'EXCELLENCE_SEAL' } },
+      where: { driver_id_badge_type: { driver_id: driverId, badge_type: 'EXCELLENCE_SEAL' } },
       select: { progress: true, unlocked_at: true },
     });
 
     return res.json({
       success: true,
       data: {
-        active: badge ? badge.progress === 100 : false,
+        active: badge ? Number(badge.progress) === 100 : false,
         grantedAt: badge?.unlocked_at ?? null,
       },
     });
