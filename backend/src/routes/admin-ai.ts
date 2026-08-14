@@ -6,7 +6,7 @@ import {
 } from '../middlewares/auth';
 import { askKaviarAi } from '../services/ai/kaviar-ai.service';
 import { createOpenAiProviderIfConfigured } from '../services/ai/kaviar-ai.openai-provider';
-import { searchRegulatoryRequirements, classifyRegulatorySearchError } from '../services/ai/kaviar-ai.regulatory-search';
+import { searchRegulatoryRequirements, startRegulatorySearch, retrieveRegulatorySearch, classifyRegulatorySearchError } from '../services/ai/kaviar-ai.regulatory-search';
 import { prisma } from '../lib/prisma';
 import { audit, auditCtx } from '../utils/audit';
 import bcrypt from 'bcryptjs';
@@ -83,12 +83,10 @@ router.post('/chat', async (req: Request, res: Response) => {
 
 // ── Territorial: Pesquisa regulatória ────────────────────────────────────────
 router.post('/territory/regulatory-search', requireSuperAdmin, async (req: Request, res: Response) => {
-  const startHr = process.hrtime.bigint();
   const city = req.body?.city ?? '';
   const uf = req.body?.uf ?? '';
   const model = process.env.KAVIAR_AI_MODEL || 'gpt-5.4-mini';
 
-  // Sanitize for logging only (not for the actual search)
   const logCity = String(city).replace(/[\n\r]/g, '').slice(0, 60);
   const logUf = String(uf).replace(/[\n\r]/g, '').slice(0, 2);
   const logModel = String(model).replace(/[\n\r]/g, '').slice(0, 30);
@@ -99,20 +97,40 @@ router.post('/territory/regulatory-search', requireSuperAdmin, async (req: Reque
     if (!city || !uf) {
       return res.status(400).json({ success: false, code: 'REGULATORY_SEARCH_INVALID_INPUT', error: 'city e uf são obrigatórios.' });
     }
-    const result = await searchRegulatoryRequirements(city, uf);
-    const elapsed = Number((process.hrtime.bigint() - startHr) / 1_000_000n);
-    console.log(`[REGULATORY_SEARCH_OK] city=${logCity} uf=${logUf} elapsed_ms=${elapsed} confidence=${result.confidence} sources=${result.officialSources.length}`);
-    return res.json({ success: true, data: result });
+    const result = await startRegulatorySearch(city, uf);
+    console.log(`[REGULATORY_SEARCH_INITIATED] city=${logCity} uf=${logUf} responseId=${result.responseId} status=${result.status}`);
+    return res.status(202).json({ success: true, data: { responseId: result.responseId, status: result.status } });
   } catch (error: any) {
-    const elapsed = Number((process.hrtime.bigint() - startHr) / 1_000_000n);
     const errName = error?.name || 'UnknownError';
-    const errStatus = error?.status;
-    const errCode = error?.code;
-    const errType = error?.type;
     const errMsg = (error?.message || '').replace(/[\n\r]/g, ' ').slice(0, 200);
+    console.error(`[REGULATORY_SEARCH_ERROR] city=${logCity} uf=${logUf} name=${errName} message=${errMsg}`);
+    const classified = classifyRegulatorySearchError(error);
+    return res.status(classified.httpStatus).json({ success: false, code: classified.code, error: classified.publicMessage });
+  }
+});
 
-    console.error(`[REGULATORY_SEARCH_ERROR] city=${logCity} uf=${logUf} elapsed_ms=${elapsed} name=${errName} status=${errStatus} code=${errCode} type=${errType} message=${errMsg}`);
+const RESPONSE_ID_PATTERN = /^resp_[a-zA-Z0-9]{20,80}$/;
 
+router.get('/territory/regulatory-search/:responseId', requireSuperAdmin, async (req: Request, res: Response) => {
+  const { responseId } = req.params;
+
+  if (!responseId || !RESPONSE_ID_PATTERN.test(responseId)) {
+    return res.status(400).json({ success: false, code: 'REGULATORY_SEARCH_INVALID_INPUT', error: 'responseId inválido.' });
+  }
+
+  try {
+    const result = await retrieveRegulatorySearch(responseId);
+
+    if (result.status === 'queued' || result.status === 'in_progress') {
+      return res.status(202).json({ success: true, data: { responseId, status: result.status } });
+    }
+
+    // completed
+    console.log(`[REGULATORY_SEARCH_COMPLETED] responseId=${responseId} confidence=${result.result!.confidence} sources=${result.result!.officialSources.length}`);
+    return res.json({ success: true, data: result.result });
+  } catch (error: any) {
+    const errMsg = (error?.message || '').replace(/[\n\r]/g, ' ').slice(0, 200);
+    console.error(`[REGULATORY_SEARCH_RETRIEVE_ERROR] responseId=${responseId} message=${errMsg}`);
     const classified = classifyRegulatorySearchError(error);
     return res.status(classified.httpStatus).json({ success: false, code: classified.code, error: classified.publicMessage });
   }

@@ -109,29 +109,65 @@ export default function KaviarAiPage() {
 
   const handleRegulatorySearch = async (city, uf) => {
     setActionLoading(true);
+    const MAX_POLL_MS = 180000;
+    const POLL_INTERVAL_MS = 2000;
+    let timer = null;
     try {
-      const res = await api.post('/api/admin/ai/territory/regulatory-search', { city, uf }, { timeout: 65000 });
-      if (res.data.success) {
-        const d = res.data.data;
-        const sources = d.officialSources.map(s => `  • ${s.title} (${s.orgao})\n    ${s.url}`).join('\n');
-        const reqs = d.requirements.map(r => `• ${r}`).join('\n');
-        const unconf = d.unconfirmedItems.length > 0 ? `\nItens sem confirmação:\n${d.unconfirmedItems.map(i => `• ${i}`).join('\n')}` : '';
-        const steps = d.recommendedNextSteps.map(s => `• ${s}`).join('\n');
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: `Pesquisa regulatória: ${city}/${uf}\n\n${d.summary}\n\nExigências:\n${reqs || '• Nenhuma encontrada'}\n\nFontes oficiais:\n${sources || '• Nenhuma fonte oficial encontrada'}${unconf}\n\nPróximos passos:\n${steps}\n\nConfiança: ${d.confidence}`,
-          toolsUsed: ['territory_onboarding_status'],
-        }]);
+      // Start background search
+      const startRes = await api.post('/api/admin/ai/territory/regulatory-search', { city, uf }, { timeout: 15000 });
+      if (!startRes.data.success || !startRes.data.data?.responseId) {
+        throw new Error(startRes.data.error || 'Falha ao iniciar pesquisa.');
       }
+      const responseId = startRes.data.data.responseId;
+
+      setMessages(prev => [...prev, { role: 'assistant', content: '⏳ Pesquisa regulatória em andamento...' }]);
+
+      // Poll for completion
+      const pollStart = Date.now();
+      const result = await new Promise((resolve, reject) => {
+        const poll = async () => {
+          if (Date.now() - pollStart > MAX_POLL_MS) {
+            reject(new Error('timeout'));
+            return;
+          }
+          try {
+            const pollRes = await api.get(`/api/admin/ai/territory/regulatory-search/${responseId}`, { timeout: 10000 });
+            if (pollRes.data.success && pollRes.data.data?.status && ['queued', 'in_progress'].includes(pollRes.data.data.status)) {
+              timer = setTimeout(poll, POLL_INTERVAL_MS);
+              return;
+            }
+            resolve(pollRes.data);
+          } catch (pollErr) {
+            if (pollErr.response?.data) reject(pollErr);
+            else timer = setTimeout(poll, POLL_INTERVAL_MS);
+          }
+        };
+        poll();
+      });
+
+      // Remove "em andamento" message and show result
+      setMessages(prev => prev.filter(m => m.content !== '⏳ Pesquisa regulatória em andamento...'));
+      const d = result.data;
+      const sources = d.officialSources.map(s => `  • ${s.title} (${s.orgao})\n    ${s.url}`).join('\n');
+      const reqs = d.requirements.map(r => `• ${r}`).join('\n');
+      const unconf = d.unconfirmedItems.length > 0 ? `\nItens sem confirmação:\n${d.unconfirmedItems.map(i => `• ${i}`).join('\n')}` : '';
+      const steps = d.recommendedNextSteps.map(s => `• ${s}`).join('\n');
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `Pesquisa regulatória: ${city}/${uf}\n\n${d.summary}\n\nExigências:\n${reqs || '• Nenhuma encontrada'}\n\nFontes oficiais:\n${sources || '• Nenhuma fonte oficial encontrada'}${unconf}\n\nPróximos passos:\n${steps}\n\nConfiança: ${d.confidence}`,
+        toolsUsed: ['territory_onboarding_status'],
+      }]);
     } catch (err) {
+      setMessages(prev => prev.filter(m => m.content !== '⏳ Pesquisa regulatória em andamento...'));
       let errorMsg = '✗ Não foi possível realizar a pesquisa regulatória.';
-      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+      if (err.message === 'timeout' || err.code === 'ECONNABORTED') {
         errorMsg = '✗ A pesquisa regulatória demorou mais que o esperado. Tente novamente.';
       } else if (err.response?.data?.error) {
         errorMsg = `✗ ${err.response.data.error}`;
       }
       setMessages(prev => [...prev, { role: 'assistant', content: errorMsg }]);
     } finally {
+      if (timer) clearTimeout(timer);
       setActionLoading(false);
     }
   };

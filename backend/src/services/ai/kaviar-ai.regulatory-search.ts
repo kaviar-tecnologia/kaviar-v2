@@ -100,6 +100,35 @@ export async function searchRegulatoryRequirements(
   city: string,
   uf: string
 ): Promise<RegulatorySearchResult> {
+  const result = await startRegulatorySearch(city, uf);
+  // Legacy sync path — kept for compatibility but now uses background internally
+  const retrieved = await retrieveRegulatorySearch(result.responseId);
+  if (retrieved.status !== 'completed' || !retrieved.result) {
+    const err: any = new Error(`[regulatory-search] Pesquisa não concluída: ${retrieved.status}`);
+    err.regulatoryCode = 'PROVIDER_ERROR';
+    throw err;
+  }
+  return retrieved.result;
+}
+
+export interface RegulatorySearchStartResult {
+  responseId: string;
+  status: string;
+}
+
+export interface RegulatorySearchRetrieveResult {
+  status: 'queued' | 'in_progress' | 'completed' | 'failed' | 'incomplete' | 'cancelled';
+  result: RegulatorySearchResult | null;
+}
+
+/**
+ * Inicia pesquisa regulatória em background via OpenAI Responses API.
+ * Retorna responseId para polling.
+ */
+export async function startRegulatorySearch(
+  city: string,
+  uf: string
+): Promise<RegulatorySearchStartResult> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error('[regulatory-search] OPENAI_API_KEY não configurada.');
@@ -140,24 +169,61 @@ Contexto: A KAVIAR é uma plataforma de mobilidade urbana comunitária que opera
     },
     max_output_tokens: 4096,
     store: false,
+    background: true,
+  } as any);
+
+  return {
+    responseId: response.id,
+    status: response.status || 'queued',
+  };
+}
+
+/**
+ * Consulta o status de uma pesquisa regulatória em background.
+ */
+export async function retrieveRegulatorySearch(
+  responseId: string
+): Promise<RegulatorySearchRetrieveResult> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('[regulatory-search] OPENAI_API_KEY não configurada.');
+  }
+
+  const client = new OpenAI({
+    apiKey,
+    timeout: 15_000,
+    maxRetries: 0,
   });
 
-  if (response.status === 'failed') {
+  const response = await client.responses.retrieve(responseId);
+
+  const status = response.status as RegulatorySearchRetrieveResult['status'];
+
+  if (status === 'queued' || status === 'in_progress') {
+    return { status, result: null };
+  }
+
+  if (status === 'failed') {
     const err: any = new Error('[regulatory-search] Modelo falhou ao gerar resposta.');
     err.regulatoryCode = 'PROVIDER_ERROR';
     throw err;
   }
 
-  if (response.status === 'incomplete') {
-    const reason = response.incomplete_details?.reason ?? 'unknown';
-    const err: any = new Error(
-      `[regulatory-search] Resposta incompleta do modelo: ${reason}.`
-    );
+  if (status === 'incomplete') {
+    const reason = (response as any).incomplete_details?.reason ?? 'unknown';
+    const err: any = new Error(`[regulatory-search] Resposta incompleta do modelo: ${reason}.`);
     err.regulatoryCode = 'INVALID_RESPONSE';
     throw err;
   }
 
-  const outputText = response.output_text;
+  if (status === 'cancelled') {
+    const err: any = new Error('[regulatory-search] Pesquisa cancelada.');
+    err.regulatoryCode = 'PROVIDER_ERROR';
+    throw err;
+  }
+
+  // completed
+  const outputText = (response as any).output_text;
   if (!outputText) {
     const err: any = new Error('[regulatory-search] Resposta vazia do modelo.');
     err.regulatoryCode = 'INVALID_RESPONSE';
@@ -180,7 +246,7 @@ Contexto: A KAVIAR é uma plataforma de mobilidade urbana comunitária que opera
     parsed.confidence = 'NEEDS_HUMAN_REVIEW';
   }
 
-  // Filtrar somente fontes oficiais (*.gov.br, *.leg.br, *.jus.br)
+  // Filtrar somente fontes oficiais
   const GOV_DOMAINS = ['.gov.br', '.leg.br', '.jus.br'];
   if (Array.isArray(parsed.officialSources)) {
     parsed.officialSources = parsed.officialSources.filter((s) => {
@@ -193,17 +259,15 @@ Contexto: A KAVIAR é uma plataforma de mobilidade urbana comunitária que opera
     });
   }
 
-  // Se não restar nenhuma fonte oficial, forçar NEEDS_HUMAN_REVIEW
   if (!parsed.officialSources || parsed.officialSources.length === 0) {
     parsed.confidence = 'NEEDS_HUMAN_REVIEW';
   }
 
-  // Garantia determinística: itens não confirmados impedem confidence CONFIRMED
   if (Array.isArray(parsed.unconfirmedItems) && parsed.unconfirmedItems.length > 0) {
     parsed.confidence = 'NEEDS_HUMAN_REVIEW';
   }
 
-  return parsed;
+  return { status: 'completed', result: parsed };
 }
 
 // ── Error classification ──────────────────────────────────────────────────────

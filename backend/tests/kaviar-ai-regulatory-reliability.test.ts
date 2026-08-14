@@ -3,10 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const { mockQuery } = vi.hoisted(() => ({ mockQuery: vi.fn() }));
 vi.mock('../src/db', () => ({ pool: { query: mockQuery } }));
 
-const { mockResponsesCreate } = vi.hoisted(() => ({ mockResponsesCreate: vi.fn() }));
+const { mockResponsesCreate, mockResponsesRetrieve } = vi.hoisted(() => ({ mockResponsesCreate: vi.fn(), mockResponsesRetrieve: vi.fn() }));
 vi.mock('openai', () => ({
   default: class MockOpenAI {
-    responses = { create: mockResponsesCreate };
+    responses = { create: mockResponsesCreate, retrieve: mockResponsesRetrieve };
     constructor(opts: any) {
       // Capture config for assertions
       (MockOpenAI as any).lastConfig = opts;
@@ -29,7 +29,7 @@ vi.mock('../src/services/ai/kaviar-ai.command-center', () => ({
 }));
 
 import { askKaviarAi } from '../src/services/ai/kaviar-ai.service';
-import { searchRegulatoryRequirements } from '../src/services/ai/kaviar-ai.regulatory-search';
+import { searchRegulatoryRequirements, startRegulatorySearch, retrieveRegulatorySearch } from '../src/services/ai/kaviar-ai.regulatory-search';
 import OpenAI from 'openai';
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -86,55 +86,31 @@ describe('regulatory search — timeout and retries', () => {
   afterEach(() => { delete process.env.OPENAI_API_KEY; });
 
   it('OpenAI client uses timeout 50_000 and maxRetries 0', async () => {
-    mockResponsesCreate.mockResolvedValueOnce({
-      status: 'completed',
-      output_text: JSON.stringify({
-        summary: 'ok', requirements: [], officialSources: [],
-        unconfirmedItems: [], recommendedNextSteps: [], confidence: 'NEEDS_HUMAN_REVIEW',
-      }),
-    });
-    await searchRegulatoryRequirements('Teste', 'SP');
+    mockResponsesCreate.mockResolvedValueOnce({ id: 'resp_test123456789012345', status: 'queued' });
+    await startRegulatorySearch('Teste', 'SP');
     const config = (OpenAI as any).lastConfig;
     expect(config.timeout).toBe(50_000);
     expect(config.maxRetries).toBe(0);
   });
 
   it('timeout is NOT 90_000 (previous dangerous value)', async () => {
-    mockResponsesCreate.mockResolvedValueOnce({
-      status: 'completed',
-      output_text: JSON.stringify({
-        summary: 'ok', requirements: [], officialSources: [],
-        unconfirmedItems: [], recommendedNextSteps: [], confidence: 'NEEDS_HUMAN_REVIEW',
-      }),
-    });
-    await searchRegulatoryRequirements('Teste', 'SP');
+    mockResponsesCreate.mockResolvedValueOnce({ id: 'resp_test123456789012345', status: 'queued' });
+    await startRegulatorySearch('Teste', 'SP');
     const config = (OpenAI as any).lastConfig;
     expect(config.timeout).not.toBe(90_000);
     expect(config.maxRetries).not.toBe(1);
   });
 
   it('web_search uses search_context_size low', async () => {
-    mockResponsesCreate.mockResolvedValueOnce({
-      status: 'completed',
-      output_text: JSON.stringify({
-        summary: 'ok', requirements: [], officialSources: [],
-        unconfirmedItems: [], recommendedNextSteps: [], confidence: 'NEEDS_HUMAN_REVIEW',
-      }),
-    });
-    await searchRegulatoryRequirements('Teste', 'SP');
+    mockResponsesCreate.mockResolvedValueOnce({ id: 'resp_test123456789012345', status: 'queued' });
+    await startRegulatorySearch('Teste', 'SP');
     const args = mockResponsesCreate.mock.calls[0][0];
     expect(args.tools).toEqual([{ type: 'web_search', search_context_size: 'low' }]);
   });
 
   it('max_output_tokens remains 4096', async () => {
-    mockResponsesCreate.mockResolvedValueOnce({
-      status: 'completed',
-      output_text: JSON.stringify({
-        summary: 'ok', requirements: [], officialSources: [],
-        unconfirmedItems: [], recommendedNextSteps: [], confidence: 'NEEDS_HUMAN_REVIEW',
-      }),
-    });
-    await searchRegulatoryRequirements('Teste', 'SP');
+    mockResponsesCreate.mockResolvedValueOnce({ id: 'resp_test123456789012345', status: 'queued' });
+    await startRegulatorySearch('Teste', 'SP');
     const args = mockResponsesCreate.mock.calls[0][0];
     expect(args.max_output_tokens).toBe(4096);
   });
@@ -163,13 +139,13 @@ describe('regulatory search — error handling', () => {
   });
 
   it('incomplete response throws with regulatoryCode INVALID_RESPONSE', async () => {
-    mockResponsesCreate.mockResolvedValueOnce({
+    mockResponsesRetrieve.mockResolvedValueOnce({
       status: 'incomplete',
       incomplete_details: { reason: 'max_output_tokens' },
       output_text: '',
     });
     try {
-      await searchRegulatoryRequirements('Cidade', 'SP');
+      await retrieveRegulatorySearch('resp_test123456789012345');
       expect.fail('should throw');
     } catch (err: any) {
       expect(err.regulatoryCode).toBe('INVALID_RESPONSE');
@@ -177,12 +153,12 @@ describe('regulatory search — error handling', () => {
   });
 
   it('invalid JSON response throws with regulatoryCode INVALID_RESPONSE', async () => {
-    mockResponsesCreate.mockResolvedValueOnce({
+    mockResponsesRetrieve.mockResolvedValueOnce({
       status: 'completed',
       output_text: 'not json at all {{{',
     });
     try {
-      await searchRegulatoryRequirements('Cidade', 'SP');
+      await retrieveRegulatorySearch('resp_test123456789012345');
       expect.fail('should throw');
     } catch (err: any) {
       expect(err.regulatoryCode).toBe('INVALID_RESPONSE');
@@ -190,7 +166,7 @@ describe('regulatory search — error handling', () => {
   });
 
   it('success preserves existing NEEDS_HUMAN_REVIEW guard', async () => {
-    mockResponsesCreate.mockResolvedValueOnce({
+    mockResponsesRetrieve.mockResolvedValueOnce({
       status: 'completed',
       output_text: JSON.stringify({
         summary: 'Conflito encontrado.',
@@ -201,8 +177,8 @@ describe('regulatory search — error handling', () => {
         confidence: 'CONFIRMED',
       }),
     });
-    const r = await searchRegulatoryRequirements('Cidade', 'SP');
-    expect(r.confidence).toBe('NEEDS_HUMAN_REVIEW'); // Guard forces it
+    const r = await retrieveRegulatorySearch('resp_test123456789012345');
+    expect(r.result?.confidence).toBe('NEEDS_HUMAN_REVIEW');
   });
 });
 
@@ -237,8 +213,8 @@ describe('regulatory search — preserved behavior', () => {
   beforeEach(() => { vi.clearAllMocks(); process.env.OPENAI_API_KEY = 'sk-test'; });
   afterEach(() => { delete process.env.OPENAI_API_KEY; });
 
-  it('successful search returns structured result', async () => {
-    mockResponsesCreate.mockResolvedValueOnce({
+  it('successful search returns structured result via retrieve', async () => {
+    mockResponsesRetrieve.mockResolvedValueOnce({
       status: 'completed',
       output_text: JSON.stringify({
         summary: 'Cidade regulamentada.',
@@ -249,9 +225,10 @@ describe('regulatory search — preserved behavior', () => {
         confidence: 'CONFIRMED',
       }),
     });
-    const r = await searchRegulatoryRequirements('Ribeirão Preto', 'SP');
-    expect(r.confidence).toBe('CONFIRMED');
-    expect(r.requirements).toContain('Alvará');
+    const r = await retrieveRegulatorySearch('resp_test123456789012345');
+    expect(r.status).toBe('completed');
+    expect(r.result?.confidence).toBe('CONFIRMED');
+    expect(r.result?.requirements).toContain('Alvará');
   });
 
   it('route requires SUPER_ADMIN (checked in route source)', () => {
