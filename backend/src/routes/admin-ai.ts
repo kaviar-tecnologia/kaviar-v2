@@ -6,7 +6,7 @@ import {
 } from '../middlewares/auth';
 import { askKaviarAi } from '../services/ai/kaviar-ai.service';
 import { createOpenAiProviderIfConfigured } from '../services/ai/kaviar-ai.openai-provider';
-import { searchRegulatoryRequirements } from '../services/ai/kaviar-ai.regulatory-search';
+import { searchRegulatoryRequirements, classifyRegulatorySearchError } from '../services/ai/kaviar-ai.regulatory-search';
 import { prisma } from '../lib/prisma';
 import { audit, auditCtx } from '../utils/audit';
 import bcrypt from 'bcryptjs';
@@ -83,15 +83,38 @@ router.post('/chat', async (req: Request, res: Response) => {
 
 // ── Territorial: Pesquisa regulatória ────────────────────────────────────────
 router.post('/territory/regulatory-search', requireSuperAdmin, async (req: Request, res: Response) => {
+  const startHr = process.hrtime.bigint();
+  const city = req.body?.city ?? '';
+  const uf = req.body?.uf ?? '';
+  const model = process.env.KAVIAR_AI_MODEL || 'gpt-5.4-mini';
+
+  // Sanitize for logging only (not for the actual search)
+  const logCity = String(city).replace(/[\n\r]/g, '').slice(0, 60);
+  const logUf = String(uf).replace(/[\n\r]/g, '').slice(0, 2);
+  const logModel = String(model).replace(/[\n\r]/g, '').slice(0, 30);
+
+  console.log(`[REGULATORY_SEARCH_START] city=${logCity} uf=${logUf} model=${logModel}`);
+
   try {
-    const { city, uf } = req.body;
     if (!city || !uf) {
-      return res.status(400).json({ success: false, error: 'city e uf são obrigatórios.' });
+      return res.status(400).json({ success: false, code: 'REGULATORY_SEARCH_INVALID_INPUT', error: 'city e uf são obrigatórios.' });
     }
     const result = await searchRegulatoryRequirements(city, uf);
+    const elapsed = Number((process.hrtime.bigint() - startHr) / 1_000_000n);
+    console.log(`[REGULATORY_SEARCH_OK] city=${logCity} uf=${logUf} elapsed_ms=${elapsed} confidence=${result.confidence} sources=${result.officialSources.length}`);
     return res.json({ success: true, data: result });
   } catch (error: any) {
-    return res.status(500).json({ success: false, error: 'Não foi possível realizar a pesquisa regulatória.' });
+    const elapsed = Number((process.hrtime.bigint() - startHr) / 1_000_000n);
+    const errName = error?.name || 'UnknownError';
+    const errStatus = error?.status;
+    const errCode = error?.code;
+    const errType = error?.type;
+    const errMsg = (error?.message || '').replace(/[\n\r]/g, ' ').slice(0, 200);
+
+    console.error(`[REGULATORY_SEARCH_ERROR] city=${logCity} uf=${logUf} elapsed_ms=${elapsed} name=${errName} status=${errStatus} code=${errCode} type=${errType} message=${errMsg}`);
+
+    const classified = classifyRegulatorySearchError(error);
+    return res.status(classified.httpStatus).json({ success: false, code: classified.code, error: classified.publicMessage });
   }
 });
 

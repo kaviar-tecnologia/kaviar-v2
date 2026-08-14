@@ -612,12 +612,12 @@ function formatKnowledgeAnswer(data: KnowledgeAnswerData): string {
 function parseCityUf(question: string): { city: string; uf: string } | null {
   const STOP_WORDS = new Set(['quero', 'abrir', 'cadastrar', 'como', 'verificar', 'criar', 'está', 'status', 'cidade', 'território', 'territorio', 'nova', 'novo']);
 
-  let match = question.match(/(.+?)\s*\/\s*([A-Z]{2})(?:\s|$|[.,!?])/);
-  if (!match) match = question.match(/(.+?)\s+[-–]\s+([A-Z]{2})(?:\s|$|[.,!?])/);
-  if (!match) match = question.match(/(.+?)\s*\(\s*([A-Z]{2})\s*\)/);
+  let match = question.match(/(.+?)\s*\/\s*([A-Za-z]{2})(?:\s|$|[.,!?])/);
+  if (!match) match = question.match(/(.+?)\s+[-–]\s+([A-Za-z]{2})(?:\s|$|[.,!?])/);
+  if (!match) match = question.match(/(.+?)\s*\(\s*([A-Za-z]{2})\s*\)/);
   if (!match) return null;
 
-  const uf = match[2].trim();
+  const uf = match[2].trim().toUpperCase();
   if (uf.length !== 2) return null;
 
   const words = match[1].trim().split(/\s+/);
