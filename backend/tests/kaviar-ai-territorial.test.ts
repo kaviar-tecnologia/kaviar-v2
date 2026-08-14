@@ -277,7 +277,7 @@ describe('pesquisa regulatória', () => {
     });
     await searchRegulatoryRequirements('Teste', 'SP');
     const args = mockResponsesCreate.mock.calls[0][0];
-    expect(args.tools).toEqual([{ type: 'web_search' }]);
+    expect(args.tools).toEqual([{ type: 'web_search', search_context_size: 'low' }]);
   });
 });
 

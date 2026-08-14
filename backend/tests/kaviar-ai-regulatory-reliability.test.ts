@@ -112,6 +112,32 @@ describe('regulatory search — timeout and retries', () => {
     expect(config.timeout).not.toBe(90_000);
     expect(config.maxRetries).not.toBe(1);
   });
+
+  it('web_search uses search_context_size low', async () => {
+    mockResponsesCreate.mockResolvedValueOnce({
+      status: 'completed',
+      output_text: JSON.stringify({
+        summary: 'ok', requirements: [], officialSources: [],
+        unconfirmedItems: [], recommendedNextSteps: [], confidence: 'NEEDS_HUMAN_REVIEW',
+      }),
+    });
+    await searchRegulatoryRequirements('Teste', 'SP');
+    const args = mockResponsesCreate.mock.calls[0][0];
+    expect(args.tools).toEqual([{ type: 'web_search', search_context_size: 'low' }]);
+  });
+
+  it('max_output_tokens remains 4096', async () => {
+    mockResponsesCreate.mockResolvedValueOnce({
+      status: 'completed',
+      output_text: JSON.stringify({
+        summary: 'ok', requirements: [], officialSources: [],
+        unconfirmedItems: [], recommendedNextSteps: [], confidence: 'NEEDS_HUMAN_REVIEW',
+      }),
+    });
+    await searchRegulatoryRequirements('Teste', 'SP');
+    const args = mockResponsesCreate.mock.calls[0][0];
+    expect(args.max_output_tokens).toBe(4096);
+  });
 });
 
 // ══════════════════════════════════════════════════════════════════════════════

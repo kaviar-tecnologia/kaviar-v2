@@ -128,7 +128,7 @@ Contexto: A KAVIAR é uma plataforma de mobilidade urbana comunitária que opera
     model,
     instructions: REGULATORY_INSTRUCTIONS,
     input: userInput,
-    tools: [{ type: 'web_search' as any }],
+    tools: [{ type: 'web_search' as const, search_context_size: 'low' as const }],
     text: {
       format: {
         type: 'json_schema',
