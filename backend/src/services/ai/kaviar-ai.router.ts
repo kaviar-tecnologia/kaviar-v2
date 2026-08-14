@@ -311,6 +311,22 @@ export function routeByRules(question: string): KaviarAiRouteResult {
     return { toolsToCall: ['territory_onboarding_status'] };
   }
 
+  // ── Driver ratings summary ─────────────────────────────────────────────
+  if (
+    (q.includes('avaliação') || q.includes('avaliacao') || q.includes('avaliações') || q.includes('avaliacoes') || q.includes('nota') || q.includes('estrela')) &&
+    (q.includes('motorista') || q.includes('driver') || q.includes('baixa') || q.includes('atenção') || q.includes('atencao'))
+  ) {
+    return { toolsToCall: ['driver_ratings_summary'] };
+  }
+
+  if (
+    q.includes('média do motorista') || q.includes('media do motorista') ||
+    q.includes('notas baixas') ||
+    q.includes('avaliações do motorista') || q.includes('avaliacoes do motorista')
+  ) {
+    return { toolsToCall: ['driver_ratings_summary'] };
+  }
+
   // ── Knowledge answer (RAG) — catch-all for explanatory/institutional questions ──
   // Only matches questions that seem to ask "what is", "how does", "explain", "tell me about"
   if (

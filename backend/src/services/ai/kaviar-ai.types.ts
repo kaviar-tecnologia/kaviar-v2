@@ -16,7 +16,8 @@ export type KaviarAiToolName =
   | 'driver_pipeline_summary'
   | 'emergency_operations_summary'
   | 'territory_portfolio_summary'
-  | 'knowledge_answer';
+  | 'knowledge_answer'
+  | 'driver_ratings_summary';
 
 export type KaviarAiRequest = {
   userId: string;
