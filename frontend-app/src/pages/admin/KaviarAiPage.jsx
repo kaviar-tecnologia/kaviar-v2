@@ -10,10 +10,22 @@ import api from '../../api';
 
 const SUGGESTIONS = [
   'O que precisa da minha atenção hoje?',
-  'Como estão as corridas de hoje?',
-  'Há documentos de motoristas pendentes?',
+  'Há emergências ou corridas pendentes?',
+  'Como estão as corridas esta semana?',
+  'Há motoristas aguardando aprovação?',
   'Quais obrigações financeiras exigem atenção?',
+  'Quanto temos de bônus anual a pagar?',
+];
+
+const EXTRA_SUGGESTIONS = [
+  'Quais e-mails novos chegaram?',
+  'Há mensagens novas no WhatsApp?',
+  'Quantos leads novos tivemos esta semana?',
+  'Como está o financeiro deste mês?',
+  'Quais territórios exigem atenção?',
   'Quero abrir uma nova cidade',
+  'Qual é o CNPJ e o contato da KAVIAR?',
+  'Quais módulos existem na plataforma?',
 ];
 
 const MAX_CHARS = 1000;
@@ -23,6 +35,7 @@ export default function KaviarAiPage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showExtra, setShowExtra] = useState(false);
   const [managerDialog, setManagerDialog] = useState(null); // { territoryId, territoryName }
   const [managerForm, setManagerForm] = useState({ name: '', email: '' });
   const [managerResult, setManagerResult] = useState(null); // { name, email, tempPassword, territory, status }
@@ -213,6 +226,43 @@ export default function KaviarAiPage() {
                     }}
                   />
                 ))}
+              </Box>
+
+              {showExtra && (
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'center', mt: 1 }}>
+                  {EXTRA_SUGGESTIONS.map((s) => (
+                    <Chip
+                      key={s}
+                      label={s}
+                      onClick={() => handleSend(s)}
+                      sx={{
+                        bgcolor: 'rgba(184,148,46,0.05)',
+                        color: '#B8942E',
+                        border: '1px solid rgba(184,148,46,0.15)',
+                        fontSize: 12,
+                        cursor: 'pointer',
+                        '&:hover': { bgcolor: 'rgba(184,148,46,0.12)', borderColor: '#B8942E' },
+                      }}
+                    />
+                  ))}
+                </Box>
+              )}
+
+              <Box sx={{ display: 'flex', justifyContent: 'center', mt: 1 }}>
+                <Button
+                  type="button"
+                  size="small"
+                  aria-expanded={showExtra}
+                  onClick={() => setShowExtra(!showExtra)}
+                  sx={{
+                    color: 'rgba(184,148,46,0.6)',
+                    fontSize: 12,
+                    textTransform: 'none',
+                    '&:hover': { color: '#B8942E', bgcolor: 'transparent' },
+                  }}
+                >
+                  {showExtra ? 'Ocultar perguntas' : 'Mais perguntas'}
+                </Button>
               </Box>
             </Box>
           )}

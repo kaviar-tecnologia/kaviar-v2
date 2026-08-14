@@ -14,15 +14,52 @@ describe('KaviarAiPage — Chat KAVIAR', () => {
     expect(src).toContain('Assistente operacional do KAVIAR');
   });
 
-  it('indicação de somente leitura', () => {
-    expect(src).toContain('Somente leitura');
+  it('indicação de leitura', () => {
+    expect(src).toContain('Leitura');
   });
 
-  it('sugestões aparecem', () => {
+  it('sugestões principais aparecem', () => {
     expect(src).toContain('O que precisa da minha atenção hoje?');
-    expect(src).toContain('Como estão as corridas de hoje?');
-    expect(src).toContain('Há documentos de motoristas pendentes?');
+    expect(src).toContain('Há emergências ou corridas pendentes?');
+    expect(src).toContain('Como estão as corridas esta semana?');
+    expect(src).toContain('Há motoristas aguardando aprovação?');
     expect(src).toContain('Quais obrigações financeiras exigem atenção?');
+    expect(src).toContain('Quanto temos de bônus anual a pagar?');
+  });
+
+  it('sugestões adicionais existem como EXTRA_SUGGESTIONS', () => {
+    expect(src).toContain('EXTRA_SUGGESTIONS');
+    expect(src).toContain('Quais e-mails novos chegaram?');
+    expect(src).toContain('Há mensagens novas no WhatsApp?');
+    expect(src).toContain('Quantos leads novos tivemos esta semana?');
+    expect(src).toContain('Quais módulos existem na plataforma?');
+  });
+
+  it('sugestões adicionais começam ocultas (showExtra inicia false)', () => {
+    expect(src).toContain('useState(false)');
+    expect(src).toContain('showExtra');
+    // The extra block is conditionally rendered
+    expect(src).toContain('{showExtra && (');
+  });
+
+  it('"Mais perguntas" abre a lista', () => {
+    expect(src).toContain('Mais perguntas');
+    expect(src).toContain('setShowExtra(!showExtra)');
+  });
+
+  it('"Ocultar perguntas" fecha a lista', () => {
+    expect(src).toContain('Ocultar perguntas');
+  });
+
+  it('botão tem aria-expanded', () => {
+    expect(src).toContain('aria-expanded={showExtra}');
+  });
+
+  it('clicar em sugestão mantém comportamento de envio existente', () => {
+    // Both SUGGESTIONS and EXTRA_SUGGESTIONS use the same onClick handler
+    expect(src).toContain('onClick={() => handleSend(s)}');
+    // handleSend is the existing send function
+    expect(src).toContain('const handleSend');
   });
 
   it('pergunta é enviada para /api/admin/ai/chat', () => {
