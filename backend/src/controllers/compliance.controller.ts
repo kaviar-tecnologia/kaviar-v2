@@ -190,6 +190,7 @@ export class ComplianceController {
     try {
       const { documentId } = req.params;
       const adminId = (req as any).userId;
+      const emissionDate = req.body?.emission_date || req.body?.emissionDate || undefined;
 
       if (!adminId) {
         return res.status(401).json({
@@ -200,7 +201,8 @@ export class ComplianceController {
 
       const document = await complianceService.approveDocument({
         documentId,
-        adminId
+        adminId,
+        emissionDate,
       });
 
       res.json({

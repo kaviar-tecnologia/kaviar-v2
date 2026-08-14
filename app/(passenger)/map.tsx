@@ -18,6 +18,7 @@ import { COLORS } from '../../src/config/colors';
 import { DrawerMenu, DrawerItem } from '../../src/components/DrawerMenu';
 import { CommunityStatusCard } from '../../src/components/passenger/CommunityStatusCard';
 import { ReturnHomeCard } from '../../src/components/passenger/ReturnHomeCard';
+import { DriverExcellenceIndicator } from '../../src/components/passenger/DriverExcellenceIndicator';
 import { TripComposition } from '../../src/components/passenger/TripComposition';
 import { ScheduleSelector } from '../../src/components/passenger/ScheduleSelector';
 import { RideCompletedModal } from '../../src/components/passenger/RideCompletedModal';
@@ -1225,6 +1226,7 @@ export default function PassengerMap() {
                         {ride.driver.vehicle_model} {ride.driver.vehicle_color} • {ride.driver.vehicle_plate}
                       </Text>
                     )}
+                    <DriverExcellenceIndicator sealActive={!!ride.driver.has_excellence_seal} />
                   </View>
                 </View>
                 <View style={s.safetyTip}>

@@ -28,6 +28,7 @@ import type {
 } from './kaviar-ai.command-center';
 import type { KnowledgeAnswerData } from './kaviar-ai.knowledge';
 import type { DriverRatingsSummaryData } from './kaviar-ai.driver-ratings';
+import type { ComplianceSummaryData, ExcellenceSealSummaryData } from './kaviar-ai.compliance-seal';
 import { executeTool, canRoleExecuteTool } from './kaviar-ai.registry';
 import { routeQuestion } from './kaviar-ai.router';
 
@@ -461,6 +462,16 @@ const FORMATTERS: Record<KaviarAiToolName, (data: unknown) => string> = {
     formatKnowledgeAnswer(data as KnowledgeAnswerData),
   driver_ratings_summary: (data) =>
     formatDriverRatingsSummary(data as DriverRatingsSummaryData),
+  compliance_summary: (data) => {
+    const d = data as ComplianceSummaryData;
+    if (!d.available) return 'Compliance: não foi possível consultar.';
+    return `📋 Compliance de Antecedentes — ${d.referenceTime}\nVálidos: ${d.valid} | Vencendo em 30d: ${d.expiringSoon30d} | Vencidos: ${d.expired}\nPendentes de análise: ${d.pending} | Sem data de emissão: ${d.noEmissionDate}\nTotal de registros: ${d.total}`;
+  },
+  excellence_seal_summary: (data) => {
+    const d = data as ExcellenceSealSummaryData;
+    if (!d.available) return 'Selo Excelência: não foi possível consultar.';
+    return `🏆 Selo Excelência KAVIAR — ${d.referenceTime}\nAtivos: ${d.activeCount} | Suspensos: ${d.suspendedCount}\nEsta semana: +${d.grantedThisWeek} concedidos, ${d.suspendedThisWeek} suspensos`;
+  },
 };
 
 // ── Formatters Command Center ───────────────────────────────────────────────

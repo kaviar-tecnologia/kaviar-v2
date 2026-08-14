@@ -538,6 +538,7 @@ router.get('/:ride_id', authenticatePassenger, async (req: Request, res: Respons
         last_lng: ride.driver.last_lng ? Number(ride.driver.last_lng) : null,
         photo_url: await toPhotoUrl(ride.driver.photo_url),
         vehicle_photo_url: await getVehiclePhotoUrl(ride.driver.id),
+        has_excellence_seal: !!(await prisma.driver_badges.findUnique({ where: { driver_id_badge_code: { driver_id: ride.driver.id, badge_code: 'EXCELLENCE_SEAL' } }, select: { progress: true } }))?.progress,
       } : null,
     } });
   } catch (error: any) {

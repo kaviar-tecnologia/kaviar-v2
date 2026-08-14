@@ -4,6 +4,7 @@ import { prisma } from './lib/prisma';
 import { startOfferTimeoutJob } from './jobs/offer-timeout.job';
 import { startStaleDriverCleanupJob } from './jobs/stale-driver-cleanup.job';
 import { startScheduledDispatchJob } from './jobs/scheduled-dispatch.job';
+import { startExcellenceSealScheduler } from './jobs/excellence-seal.job';
 import { startSumUpRechargeReconcileScheduler } from './services/wallet-v2/sumup-recharge-reconcile-scheduler';
 import { startPayoutWorkerScheduler, stopPayoutWorkerScheduler } from './services/finance/annual-incentive-payout/worker-scheduler';
 import { shouldStartLegacyWorker } from './services/finance/annual-incentive-payout/engine-selection';
@@ -22,6 +23,7 @@ async function startServer() {
     // Start offer timeout job (SPEC_RIDE_FLOW_V1)
     startOfferTimeoutJob();
     startStaleDriverCleanupJob();
+    startExcellenceSealScheduler();
     startScheduledDispatchJob();
     if (process.env.SUMUP_RECONCILE_SCHEDULER_ENABLED === 'true') {
       startSumUpRechargeReconcileScheduler();
