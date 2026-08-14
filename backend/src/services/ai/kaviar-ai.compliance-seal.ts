@@ -40,7 +40,9 @@ export async function getComplianceSummary(): Promise<{
       tool: 'compliance_summary',
       data: { available: true, total: r.total, valid: r.valid, expiringSoon30d: r.expiring, expired: r.expired, noEmissionDate: r.no_emission, pending: r.pending, referenceTime: refResult.rows[0]?.ref ?? '' },
     };
-  } catch {
+  } catch (err: unknown) {
+    const e = err as any;
+    console.error(`[COMPLIANCE_SUMMARY_ERROR] name=${e?.name || 'Unknown'} message=${(e?.message || '').replace(/[\n\r]/g, ' ').slice(0, 200)}`);
     return { tool: 'compliance_summary', data: { available: false, total: 0, valid: 0, expiringSoon30d: 0, expired: 0, noEmissionDate: 0, pending: 0, referenceTime: '' } };
   }
 }
@@ -80,7 +82,9 @@ export async function getExcellenceSealSummary(): Promise<{
       tool: 'excellence_seal_summary',
       data: { available: true, activeCount: r.active, suspendedCount: r.suspended_count, grantedThisWeek: w.granted_week, suspendedThisWeek: w.suspended_week, referenceTime: refResult.rows[0]?.ref ?? '' },
     };
-  } catch {
+  } catch (err: unknown) {
+    const e = err as any;
+    console.error(`[EXCELLENCE_SEAL_SUMMARY_ERROR] name=${e?.name || 'Unknown'} message=${(e?.message || '').replace(/[\n\r]/g, ' ').slice(0, 200)}`);
     return { tool: 'excellence_seal_summary', data: { available: false, activeCount: 0, suspendedCount: 0, grantedThisWeek: 0, suspendedThisWeek: 0, referenceTime: '' } };
   }
 }

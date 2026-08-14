@@ -19,7 +19,7 @@ export function ExcellenceSealBadge() {
         const user = authStore.getUser();
         if (!user?.id) return;
         const token = authStore.getToken();
-        const res = await fetch(`${API_BASE}/api/admin/drivers/${user.id}/excellence-seal`, {
+        const res = await fetch(`${API_BASE}/api/v2/drivers/me/excellence-seal`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.ok) {
