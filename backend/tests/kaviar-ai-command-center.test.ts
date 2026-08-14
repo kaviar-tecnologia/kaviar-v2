@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockQuery } = vi.hoisted(() => ({ mockQuery: vi.fn() }));
 vi.mock('../src/db', () => ({ pool: { query: mockQuery } }));
@@ -9,7 +9,7 @@ vi.mock('../src/services/email/inbound-email-security-risk', () => ({
 
 import { askKaviarAi } from '../src/services/ai/kaviar-ai.service';
 import { getRegisteredTools, canRoleExecuteTool } from '../src/services/ai/kaviar-ai.registry';
-import { routeByRules } from '../src/services/ai/kaviar-ai.router';
+import { routeByRules, routeQuestion } from '../src/services/ai/kaviar-ai.router';
 import {
   getPlatformCatalog,
   getAnnualIncentiveSummary,
@@ -677,5 +677,78 @@ describe('routing — corridas hoje sem motorista vs rides_summary', () => {
     const r = routeByRules('Corridas hoje?');
     expect(r.toolsToCall).toContain('rides_summary_today');
     expect(r.toolsToCall).not.toContain('emergency_operations_summary');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Fix: hybrid router rules-first — routeQuestion tests
+// ══════════════════════════════════════════════════════════════════════════════
+
+describe('routeQuestion — hybrid rules-first', () => {
+  const mockProvider = {
+    decide: vi.fn(),
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete process.env.KAVIAR_AI_ROUTER_MODE;
+  });
+
+  afterEach(() => {
+    delete process.env.KAVIAR_AI_ROUTER_MODE;
+  });
+
+  it('mode=model: "Há emergências, corridas sem motorista ou ajustes pendentes?" → emergency, provider NOT called', async () => {
+    process.env.KAVIAR_AI_ROUTER_MODE = 'model';
+    const r = await routeQuestion('Há emergências, corridas sem motorista ou ajustes pendentes?', mockProvider as any);
+    expect(r.toolsToCall).toContain('emergency_operations_summary');
+    expect(mockProvider.decide).not.toHaveBeenCalled();
+  });
+
+  it('mode=model: "Há emergências ativas?" → emergency, provider NOT called', async () => {
+    process.env.KAVIAR_AI_ROUTER_MODE = 'model';
+    const r = await routeQuestion('Há emergências ativas?', mockProvider as any);
+    expect(r.toolsToCall).toContain('emergency_operations_summary');
+    expect(mockProvider.decide).not.toHaveBeenCalled();
+  });
+
+  it('mode=model: "Há documentos de motoristas pendentes?" → drivers_documents_pending, provider NOT called', async () => {
+    process.env.KAVIAR_AI_ROUTER_MODE = 'model';
+    const r = await routeQuestion('Há documentos de motoristas pendentes?', mockProvider as any);
+    expect(r.toolsToCall).toContain('drivers_documents_pending');
+    expect(mockProvider.decide).not.toHaveBeenCalled();
+  });
+
+  it('mode=model: "Como estão as corridas hoje?" → rides_summary_today, provider NOT called', async () => {
+    process.env.KAVIAR_AI_ROUTER_MODE = 'model';
+    const r = await routeQuestion('Como estão as corridas hoje?', mockProvider as any);
+    expect(r.toolsToCall).toContain('rides_summary_today');
+    expect(mockProvider.decide).not.toHaveBeenCalled();
+  });
+
+  it('mode=model: pergunta não reconhecida → provider chamado exatamente uma vez', async () => {
+    process.env.KAVIAR_AI_ROUTER_MODE = 'model';
+    mockProvider.decide.mockResolvedValueOnce({ toolsToCall: ['rides_summary_today'] });
+    const r = await routeQuestion('Qual foi o desempenho geral?', mockProvider as any);
+    expect(mockProvider.decide).toHaveBeenCalledTimes(1);
+    expect(r.toolsToCall).toContain('rides_summary_today');
+  });
+
+  it('mode=model: pergunta desconhecida + decisão inválida → fail-closed', async () => {
+    process.env.KAVIAR_AI_ROUTER_MODE = 'model';
+    mockProvider.decide.mockResolvedValueOnce({ toolsToCall: ['tool_inexistente'] });
+    await expect(routeQuestion('Qual é a meta do trimestre?', mockProvider as any)).rejects.toThrow('não registrada');
+  });
+
+  it('mode=rules: pergunta reconhecida → comportamento preservado', async () => {
+    process.env.KAVIAR_AI_ROUTER_MODE = 'rules';
+    const r = await routeQuestion('Corridas hoje?');
+    expect(r.toolsToCall).toContain('rides_summary_today');
+  });
+
+  it('mode=rules: pergunta desconhecida → toolsToCall vazio', async () => {
+    process.env.KAVIAR_AI_ROUTER_MODE = 'rules';
+    const r = await routeQuestion('Qual é a meta do trimestre?');
+    expect(r.toolsToCall).toHaveLength(0);
   });
 });
