@@ -164,14 +164,16 @@ Contexto: A KAVIAR é uma plataforma de mobilidade urbana comunitária que opera
     throw err;
   }
 
-  let parsed: RegulatorySearchResult;
+  let rawParsed: unknown;
   try {
-    parsed = JSON.parse(outputText);
+    rawParsed = JSON.parse(outputText);
   } catch {
     const err: any = new Error('[regulatory-search] Resposta do modelo não é JSON válido.');
     err.regulatoryCode = 'INVALID_RESPONSE';
     throw err;
   }
+
+  let parsed: RegulatorySearchResult = validateRegulatoryResult(rawParsed);
 
   // Validação básica runtime
   if (!parsed.confidence || !['CONFIRMED', 'NEEDS_HUMAN_REVIEW'].includes(parsed.confidence)) {
@@ -202,4 +204,96 @@ Contexto: A KAVIAR é uma plataforma de mobilidade urbana comunitária que opera
   }
 
   return parsed;
+}
+
+// ── Error classification ──────────────────────────────────────────────────────
+
+export interface RegulatorySearchErrorClassification {
+  httpStatus: number;
+  code: string;
+  publicMessage: string;
+}
+
+export function classifyRegulatorySearchError(error: unknown): RegulatorySearchErrorClassification {
+  const err = error as any;
+  const name = err?.name || '';
+  const status = err?.status;
+  const code = err?.code || '';
+  const message = ((err?.message || '') as string).toLowerCase();
+  const regulatoryCode = err?.regulatoryCode;
+
+  // Timeout
+  if (name === 'APIConnectionTimeoutError' || code === 'ETIMEDOUT' || code === 'ECONNABORTED' || message.includes('timed out') || message.includes('timeout')) {
+    return { httpStatus: 504, code: 'REGULATORY_SEARCH_TIMEOUT', publicMessage: 'A pesquisa regulatória demorou mais que o esperado. Tente novamente.' };
+  }
+
+  // Rate limit
+  if (status === 429) {
+    return { httpStatus: 429, code: 'REGULATORY_SEARCH_RATE_LIMITED', publicMessage: 'Limite de requisições atingido. Aguarde alguns minutos e tente novamente.' };
+  }
+
+  // Invalid response (incomplete, empty, malformed JSON)
+  if (regulatoryCode === 'INVALID_RESPONSE') {
+    return { httpStatus: 502, code: 'REGULATORY_SEARCH_INVALID_RESPONSE', publicMessage: 'A pesquisa regulatória recebeu uma resposta inválida. Tente novamente.' };
+  }
+
+  // Provider error (model failed, upstream 5xx)
+  if (regulatoryCode === 'PROVIDER_ERROR' || status >= 500 || name === 'APIError') {
+    return { httpStatus: 502, code: 'REGULATORY_SEARCH_PROVIDER_ERROR', publicMessage: 'O provedor da pesquisa regulatória retornou um erro. Tente novamente.' };
+  }
+
+  // Fallback
+  return { httpStatus: 500, code: 'REGULATORY_SEARCH_INTERNAL_ERROR', publicMessage: 'Não foi possível realizar a pesquisa regulatória.' };
+}
+
+// ── Runtime validation of parsed response ─────────────────────────────────────
+
+export function validateRegulatoryResult(parsed: unknown): RegulatorySearchResult {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    const err: any = new Error('[regulatory-search] Resultado não é um objeto válido.');
+    err.regulatoryCode = 'INVALID_RESPONSE';
+    throw err;
+  }
+
+  const obj = parsed as Record<string, unknown>;
+
+  if (typeof obj.summary !== 'string') {
+    const err: any = new Error('[regulatory-search] Campo summary ausente ou inválido.');
+    err.regulatoryCode = 'INVALID_RESPONSE';
+    throw err;
+  }
+
+  if (!Array.isArray(obj.requirements) || !obj.requirements.every((r: unknown) => typeof r === 'string')) {
+    const err: any = new Error('[regulatory-search] Campo requirements inválido.');
+    err.regulatoryCode = 'INVALID_RESPONSE';
+    throw err;
+  }
+
+  if (!Array.isArray(obj.officialSources)) {
+    const err: any = new Error('[regulatory-search] Campo officialSources inválido.');
+    err.regulatoryCode = 'INVALID_RESPONSE';
+    throw err;
+  }
+
+  for (const src of obj.officialSources as any[]) {
+    if (!src || typeof src.title !== 'string' || typeof src.url !== 'string' || typeof src.orgao !== 'string') {
+      const err: any = new Error('[regulatory-search] Fonte oficial com formato inválido.');
+      err.regulatoryCode = 'INVALID_RESPONSE';
+      throw err;
+    }
+  }
+
+  if (!Array.isArray(obj.unconfirmedItems) || !obj.unconfirmedItems.every((i: unknown) => typeof i === 'string')) {
+    const err: any = new Error('[regulatory-search] Campo unconfirmedItems inválido.');
+    err.regulatoryCode = 'INVALID_RESPONSE';
+    throw err;
+  }
+
+  if (!Array.isArray(obj.recommendedNextSteps) || !obj.recommendedNextSteps.every((s: unknown) => typeof s === 'string')) {
+    const err: any = new Error('[regulatory-search] Campo recommendedNextSteps inválido.');
+    err.regulatoryCode = 'INVALID_RESPONSE';
+    throw err;
+  }
+
+  return obj as unknown as RegulatorySearchResult;
 }

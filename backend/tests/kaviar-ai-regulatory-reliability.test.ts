@@ -245,3 +245,143 @@ describe('regulatory search — preserved behavior', () => {
     expect(logSection).not.toContain('apiKey');
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Classifier unit tests
+// ══════════════════════════════════════════════════════════════════════════════
+
+import { classifyRegulatorySearchError, validateRegulatoryResult } from '../src/services/ai/kaviar-ai.regulatory-search';
+
+describe('classifyRegulatorySearchError', () => {
+  it('APIConnectionTimeoutError → 504 TIMEOUT', () => {
+    const err = new Error('timeout'); err.name = 'APIConnectionTimeoutError';
+    const r = classifyRegulatorySearchError(err);
+    expect(r.httpStatus).toBe(504);
+    expect(r.code).toBe('REGULATORY_SEARCH_TIMEOUT');
+  });
+
+  it('ETIMEDOUT → 504 TIMEOUT', () => {
+    const err: any = new Error('connect'); err.code = 'ETIMEDOUT';
+    expect(classifyRegulatorySearchError(err).httpStatus).toBe(504);
+  });
+
+  it('ECONNABORTED → 504 TIMEOUT', () => {
+    const err: any = new Error('aborted'); err.code = 'ECONNABORTED';
+    expect(classifyRegulatorySearchError(err).httpStatus).toBe(504);
+  });
+
+  it('message "timed out" → 504 TIMEOUT', () => {
+    const err = new Error('Request timed out after 50000ms');
+    expect(classifyRegulatorySearchError(err).httpStatus).toBe(504);
+  });
+
+  it('message "timeout" → 504 TIMEOUT', () => {
+    const err = new Error('Connection timeout');
+    expect(classifyRegulatorySearchError(err).httpStatus).toBe(504);
+  });
+
+  it('status 429 → 429 RATE_LIMITED', () => {
+    const err: any = new Error('rate limit'); err.status = 429;
+    const r = classifyRegulatorySearchError(err);
+    expect(r.httpStatus).toBe(429);
+    expect(r.code).toBe('REGULATORY_SEARCH_RATE_LIMITED');
+  });
+
+  it('regulatoryCode INVALID_RESPONSE → 502 INVALID_RESPONSE', () => {
+    const err: any = new Error('incomplete'); err.regulatoryCode = 'INVALID_RESPONSE';
+    const r = classifyRegulatorySearchError(err);
+    expect(r.httpStatus).toBe(502);
+    expect(r.code).toBe('REGULATORY_SEARCH_INVALID_RESPONSE');
+  });
+
+  it('regulatoryCode PROVIDER_ERROR → 502 PROVIDER_ERROR', () => {
+    const err: any = new Error('failed'); err.regulatoryCode = 'PROVIDER_ERROR';
+    const r = classifyRegulatorySearchError(err);
+    expect(r.httpStatus).toBe(502);
+    expect(r.code).toBe('REGULATORY_SEARCH_PROVIDER_ERROR');
+  });
+
+  it('status 500 → 502 PROVIDER_ERROR', () => {
+    const err: any = new Error('server'); err.status = 500;
+    expect(classifyRegulatorySearchError(err).code).toBe('REGULATORY_SEARCH_PROVIDER_ERROR');
+  });
+
+  it('APIError name → 502 PROVIDER_ERROR', () => {
+    const err = new Error('api'); err.name = 'APIError';
+    expect(classifyRegulatorySearchError(err).code).toBe('REGULATORY_SEARCH_PROVIDER_ERROR');
+  });
+
+  it('unexpected error → 500 INTERNAL_ERROR', () => {
+    const err = new Error('something else');
+    const r = classifyRegulatorySearchError(err);
+    expect(r.httpStatus).toBe(500);
+    expect(r.code).toBe('REGULATORY_SEARCH_INTERNAL_ERROR');
+  });
+
+  it('null error → 500 INTERNAL_ERROR', () => {
+    expect(classifyRegulatorySearchError(null).httpStatus).toBe(500);
+  });
+
+  it('undefined error → 500 INTERNAL_ERROR', () => {
+    expect(classifyRegulatorySearchError(undefined).httpStatus).toBe(500);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Validator unit tests
+// ══════════════════════════════════════════════════════════════════════════════
+
+describe('validateRegulatoryResult', () => {
+  const validResult = {
+    summary: 'ok',
+    requirements: ['Alvará'],
+    officialSources: [{ title: 'Lei', url: 'https://x.gov.br', orgao: 'Pref' }],
+    unconfirmedItems: [],
+    recommendedNextSteps: ['Protocolar'],
+    confidence: 'CONFIRMED',
+  };
+
+  it('valid object passes', () => {
+    expect(() => validateRegulatoryResult(validResult)).not.toThrow();
+  });
+
+  it('null throws INVALID_RESPONSE', () => {
+    try { validateRegulatoryResult(null); expect.fail('should throw'); }
+    catch (e: any) { expect(e.regulatoryCode).toBe('INVALID_RESPONSE'); }
+  });
+
+  it('string throws INVALID_RESPONSE', () => {
+    try { validateRegulatoryResult('hello'); expect.fail('should throw'); }
+    catch (e: any) { expect(e.regulatoryCode).toBe('INVALID_RESPONSE'); }
+  });
+
+  it('empty object throws INVALID_RESPONSE (missing summary)', () => {
+    try { validateRegulatoryResult({}); expect.fail('should throw'); }
+    catch (e: any) { expect(e.regulatoryCode).toBe('INVALID_RESPONSE'); }
+  });
+
+  it('requirements not array throws INVALID_RESPONSE', () => {
+    try { validateRegulatoryResult({ ...validResult, requirements: 'not array' }); expect.fail('should throw'); }
+    catch (e: any) { expect(e.regulatoryCode).toBe('INVALID_RESPONSE'); }
+  });
+
+  it('officialSources not array throws INVALID_RESPONSE', () => {
+    try { validateRegulatoryResult({ ...validResult, officialSources: 'not array' }); expect.fail('should throw'); }
+    catch (e: any) { expect(e.regulatoryCode).toBe('INVALID_RESPONSE'); }
+  });
+
+  it('officialSources with invalid entry throws INVALID_RESPONSE', () => {
+    try { validateRegulatoryResult({ ...validResult, officialSources: [{ title: 123 }] }); expect.fail('should throw'); }
+    catch (e: any) { expect(e.regulatoryCode).toBe('INVALID_RESPONSE'); }
+  });
+
+  it('recommendedNextSteps not array throws INVALID_RESPONSE', () => {
+    try { validateRegulatoryResult({ ...validResult, recommendedNextSteps: null }); expect.fail('should throw'); }
+    catch (e: any) { expect(e.regulatoryCode).toBe('INVALID_RESPONSE'); }
+  });
+
+  it('unconfirmedItems not array throws INVALID_RESPONSE', () => {
+    try { validateRegulatoryResult({ ...validResult, unconfirmedItems: 42 }); expect.fail('should throw'); }
+    catch (e: any) { expect(e.regulatoryCode).toBe('INVALID_RESPONSE'); }
+  });
+});

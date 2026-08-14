@@ -6,7 +6,7 @@ import {
 } from '../middlewares/auth';
 import { askKaviarAi } from '../services/ai/kaviar-ai.service';
 import { createOpenAiProviderIfConfigured } from '../services/ai/kaviar-ai.openai-provider';
-import { searchRegulatoryRequirements } from '../services/ai/kaviar-ai.regulatory-search';
+import { searchRegulatoryRequirements, classifyRegulatorySearchError } from '../services/ai/kaviar-ai.regulatory-search';
 import { prisma } from '../lib/prisma';
 import { audit, auditCtx } from '../utils/audit';
 import bcrypt from 'bcryptjs';
@@ -88,7 +88,12 @@ router.post('/territory/regulatory-search', requireSuperAdmin, async (req: Reque
   const uf = req.body?.uf ?? '';
   const model = process.env.KAVIAR_AI_MODEL || 'gpt-5.4-mini';
 
-  console.log(`[REGULATORY_SEARCH_START] city=${city} uf=${uf} model=${model}`);
+  // Sanitize for logging only (not for the actual search)
+  const logCity = String(city).replace(/[\n\r]/g, '').slice(0, 60);
+  const logUf = String(uf).replace(/[\n\r]/g, '').slice(0, 2);
+  const logModel = String(model).replace(/[\n\r]/g, '').slice(0, 30);
+
+  console.log(`[REGULATORY_SEARCH_START] city=${logCity} uf=${logUf} model=${logModel}`);
 
   try {
     if (!city || !uf) {
@@ -96,7 +101,7 @@ router.post('/territory/regulatory-search', requireSuperAdmin, async (req: Reque
     }
     const result = await searchRegulatoryRequirements(city, uf);
     const elapsed = Number((process.hrtime.bigint() - startHr) / 1_000_000n);
-    console.log(`[REGULATORY_SEARCH_OK] city=${city} uf=${uf} elapsed_ms=${elapsed} confidence=${result.confidence} sources=${result.officialSources.length}`);
+    console.log(`[REGULATORY_SEARCH_OK] city=${logCity} uf=${logUf} elapsed_ms=${elapsed} confidence=${result.confidence} sources=${result.officialSources.length}`);
     return res.json({ success: true, data: result });
   } catch (error: any) {
     const elapsed = Number((process.hrtime.bigint() - startHr) / 1_000_000n);
@@ -106,26 +111,10 @@ router.post('/territory/regulatory-search', requireSuperAdmin, async (req: Reque
     const errType = error?.type;
     const errMsg = (error?.message || '').replace(/[\n\r]/g, ' ').slice(0, 200);
 
-    console.error(`[REGULATORY_SEARCH_ERROR] city=${city} uf=${uf} elapsed_ms=${elapsed} name=${errName} status=${errStatus} code=${errCode} type=${errType} message=${errMsg}`);
+    console.error(`[REGULATORY_SEARCH_ERROR] city=${logCity} uf=${logUf} elapsed_ms=${elapsed} name=${errName} status=${errStatus} code=${errCode} type=${errType} message=${errMsg}`);
 
-    // Classify error for appropriate HTTP response
-    if (errName === 'APIConnectionTimeoutError' || errCode === 'ETIMEDOUT' || errCode === 'ECONNABORTED' || errMsg.includes('timeout')) {
-      return res.status(504).json({ success: false, code: 'REGULATORY_SEARCH_TIMEOUT', error: 'A pesquisa regulatória demorou mais que o esperado. Tente novamente.' });
-    }
-
-    if (errStatus === 429) {
-      return res.status(429).json({ success: false, code: 'REGULATORY_SEARCH_RATE_LIMITED', error: 'Limite de requisições atingido. Aguarde alguns minutos e tente novamente.' });
-    }
-
-    if (error?.regulatoryCode === 'INVALID_RESPONSE') {
-      return res.status(502).json({ success: false, code: 'REGULATORY_SEARCH_INVALID_RESPONSE', error: 'A pesquisa regulatória recebeu uma resposta inválida. Tente novamente.' });
-    }
-
-    if (error?.regulatoryCode === 'PROVIDER_ERROR' || errStatus >= 500 || errName === 'APIError') {
-      return res.status(502).json({ success: false, code: 'REGULATORY_SEARCH_PROVIDER_ERROR', error: 'O provedor da pesquisa regulatória retornou um erro. Tente novamente.' });
-    }
-
-    return res.status(500).json({ success: false, code: 'REGULATORY_SEARCH_INTERNAL_ERROR', error: 'Não foi possível realizar a pesquisa regulatória.' });
+    const classified = classifyRegulatorySearchError(error);
+    return res.status(classified.httpStatus).json({ success: false, code: classified.code, error: classified.publicMessage });
   }
 });
 
