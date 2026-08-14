@@ -6,7 +6,7 @@ import {
 } from '../middlewares/auth';
 import { askKaviarAi } from '../services/ai/kaviar-ai.service';
 import { createOpenAiProviderIfConfigured } from '../services/ai/kaviar-ai.openai-provider';
-import { searchRegulatoryRequirements, startRegulatorySearch, retrieveRegulatorySearch, classifyRegulatorySearchError } from '../services/ai/kaviar-ai.regulatory-search';
+import { startRegulatorySearch, retrieveRegulatorySearch, classifyRegulatorySearchError } from '../services/ai/kaviar-ai.regulatory-search';
 import { prisma } from '../lib/prisma';
 import { audit, auditCtx } from '../utils/audit';
 import bcrypt from 'bcryptjs';

@@ -41,6 +41,15 @@ export default function KaviarAiPage() {
   const [managerResult, setManagerResult] = useState(null); // { name, email, tempPassword, territory, status }
   const [actionLoading, setActionLoading] = useState(false);
   const messagesEndRef = useRef(null);
+  const regulatoryAbortRef = useRef({ cancelled: false, timer: null });
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      regulatoryAbortRef.current.cancelled = true;
+      if (regulatoryAbortRef.current.timer) clearTimeout(regulatoryAbortRef.current.timer);
+    };
+  }, []);
 
   const adminData = localStorage.getItem('kaviar_admin_data');
   const admin = adminData ? JSON.parse(adminData) : null;
@@ -111,10 +120,13 @@ export default function KaviarAiPage() {
     setActionLoading(true);
     const MAX_POLL_MS = 180000;
     const POLL_INTERVAL_MS = 2000;
-    let timer = null;
+    const abort = regulatoryAbortRef.current;
+    abort.cancelled = false;
+    abort.timer = null;
     try {
       // Start background search
       const startRes = await api.post('/api/admin/ai/territory/regulatory-search', { city, uf }, { timeout: 15000 });
+      if (abort.cancelled) return;
       if (!startRes.data.success || !startRes.data.data?.responseId) {
         throw new Error(startRes.data.error || 'Falha ao iniciar pesquisa.');
       }
@@ -126,25 +138,26 @@ export default function KaviarAiPage() {
       const pollStart = Date.now();
       const result = await new Promise((resolve, reject) => {
         const poll = async () => {
-          if (Date.now() - pollStart > MAX_POLL_MS) {
-            reject(new Error('timeout'));
-            return;
-          }
+          if (abort.cancelled) { reject(new Error('cancelled')); return; }
+          if (Date.now() - pollStart > MAX_POLL_MS) { reject(new Error('timeout')); return; }
           try {
             const pollRes = await api.get(`/api/admin/ai/territory/regulatory-search/${responseId}`, { timeout: 10000 });
+            if (abort.cancelled) { reject(new Error('cancelled')); return; }
             if (pollRes.data.success && pollRes.data.data?.status && ['queued', 'in_progress'].includes(pollRes.data.data.status)) {
-              timer = setTimeout(poll, POLL_INTERVAL_MS);
+              abort.timer = setTimeout(poll, POLL_INTERVAL_MS);
               return;
             }
             resolve(pollRes.data);
           } catch (pollErr) {
+            if (abort.cancelled) { reject(new Error('cancelled')); return; }
             if (pollErr.response?.data) reject(pollErr);
-            else timer = setTimeout(poll, POLL_INTERVAL_MS);
+            else abort.timer = setTimeout(poll, POLL_INTERVAL_MS);
           }
         };
         poll();
       });
 
+      if (abort.cancelled) return;
       // Remove "em andamento" message and show result
       setMessages(prev => prev.filter(m => m.content !== '⏳ Pesquisa regulatória em andamento...'));
       const d = result.data;
@@ -158,17 +171,20 @@ export default function KaviarAiPage() {
         toolsUsed: ['territory_onboarding_status'],
       }]);
     } catch (err) {
+      if (abort.cancelled) return;
       setMessages(prev => prev.filter(m => m.content !== '⏳ Pesquisa regulatória em andamento...'));
       let errorMsg = '✗ Não foi possível realizar a pesquisa regulatória.';
       if (err.message === 'timeout' || err.code === 'ECONNABORTED') {
         errorMsg = '✗ A pesquisa regulatória demorou mais que o esperado. Tente novamente.';
+      } else if (err.message === 'cancelled') {
+        return; // Unmounted, don't update state
       } else if (err.response?.data?.error) {
         errorMsg = `✗ ${err.response.data.error}`;
       }
       setMessages(prev => [...prev, { role: 'assistant', content: errorMsg }]);
     } finally {
-      if (timer) clearTimeout(timer);
-      setActionLoading(false);
+      if (abort.timer) clearTimeout(abort.timer);
+      if (!abort.cancelled) setActionLoading(false);
     }
   };
 

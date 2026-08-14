@@ -161,7 +161,7 @@ describe('frontend — polling behavior', () => {
     const fs = require('fs');
     const path = require('path');
     const src = fs.readFileSync(path.resolve(__dirname, '../../frontend-app/src/pages/admin/KaviarAiPage.jsx'), 'utf8');
-    expect(src).toContain('clearTimeout(timer)');
+    expect(src).toContain('clearTimeout(abort.timer)');
     expect(src).toContain('setActionLoading(false)');
     expect(src).toContain('} finally {');
   });
@@ -171,5 +171,60 @@ describe('frontend — polling behavior', () => {
     const path = require('path');
     const src = fs.readFileSync(path.resolve(__dirname, '../../frontend-app/src/pages/admin/KaviarAiPage.jsx'), 'utf8');
     expect(src).toContain('Pesquisa regulatória em andamento');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Frontend cancellation on unmount
+// ══════════════════════════════════════════════════════════════════════════════
+
+describe('frontend — unmount cancellation', () => {
+  it('uses regulatoryAbortRef with cancelled flag and timer', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.resolve(__dirname, '../../frontend-app/src/pages/admin/KaviarAiPage.jsx'), 'utf8');
+    expect(src).toContain('regulatoryAbortRef');
+    expect(src).toContain('regulatoryAbortRef.current.cancelled = true');
+    expect(src).toContain('clearTimeout(regulatoryAbortRef.current.timer)');
+  });
+
+  it('cleanup effect sets cancelled on unmount', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.resolve(__dirname, '../../frontend-app/src/pages/admin/KaviarAiPage.jsx'), 'utf8');
+    // useEffect with return function that sets cancelled
+    expect(src).toContain('regulatoryAbortRef.current.cancelled = true');
+    // The cleanup is in a useEffect returning a cleanup function
+    const cleanupIdx = src.indexOf('regulatoryAbortRef.current.cancelled = true');
+    const effectBlock = src.substring(Math.max(0, cleanupIdx - 100), cleanupIdx + 50);
+    expect(effectBlock).toContain('return ()');
+  });
+
+  it('polling checks abort.cancelled before each iteration', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.resolve(__dirname, '../../frontend-app/src/pages/admin/KaviarAiPage.jsx'), 'utf8');
+    const pollSection = src.split('handleRegulatorySearch')[1];
+    // Multiple abort.cancelled checks
+    const cancelledChecks = (pollSection.match(/abort\.cancelled/g) || []).length;
+    expect(cancelledChecks).toBeGreaterThanOrEqual(4); // before poll, after start, after pollRes, in catch
+  });
+
+  it('does not call setState after cancellation', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.resolve(__dirname, '../../frontend-app/src/pages/admin/KaviarAiPage.jsx'), 'utf8');
+    // After catch, if cancelled → return without setState
+    expect(src).toContain("err.message === 'cancelled'");
+    // In finally, only setActionLoading if not cancelled
+    expect(src).toContain('if (!abort.cancelled) setActionLoading(false)');
+  });
+
+  it('abort.timer is stored and cleared in finally', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.resolve(__dirname, '../../frontend-app/src/pages/admin/KaviarAiPage.jsx'), 'utf8');
+    expect(src).toContain('abort.timer = setTimeout(poll');
+    expect(src).toContain('if (abort.timer) clearTimeout(abort.timer)');
   });
 });
