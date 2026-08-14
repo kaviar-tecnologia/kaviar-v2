@@ -101,11 +101,11 @@ export async function calculateBadgeProgress(driverId: string) {
   // Buscar badges já desbloqueados
   const unlockedBadges = await prisma.driver_badges.findMany({
     where: { driver_id: driverId },
-    select: { badge_code: true, unlocked_at: true },
+    select: { badge_type: true, unlocked_at: true },
   });
 
   const unlockedMap = new Map(
-    unlockedBadges.map((b) => [b.badge_code, b.unlocked_at])
+    unlockedBadges.map((b) => [b.badge_type, b.unlocked_at])
   );
 
   return Object.values(BADGE_DEFINITIONS).map((badge) => ({
@@ -129,12 +129,8 @@ export async function checkAndUnlockBadges(driverId: string) {
         await prisma.driver_badges.create({
           data: {
             driver_id: driverId,
-            badge_code: badge.code,
+            badge_type: badge.code,
             progress: badge.progress,
-            metadata: {
-              threshold: badge.threshold,
-              achieved_at: new Date().toISOString(),
-            },
           },
         });
         unlocked.push(badge.code);
@@ -158,11 +154,11 @@ export async function getDriverBadges(driverId: string) {
   });
 
   return badges.map((b) => ({
-    ...BADGE_DEFINITIONS[b.badge_code as keyof typeof BADGE_DEFINITIONS],
+    ...BADGE_DEFINITIONS[b.badge_type as keyof typeof BADGE_DEFINITIONS],
     unlocked: true,
     unlockedAt: b.unlocked_at,
     progress: b.progress,
-    metadata: b.metadata,
+
   }));
 }
 

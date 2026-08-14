@@ -113,9 +113,9 @@ export class DriverEnforcementService {
       });
 
       // Auto-revoke Excellence Seal on ban
-      const seal = await tx.driver_badges.findUnique({ where: { driver_id_badge_code: { driver_id, badge_code: 'EXCELLENCE_SEAL' } } });
+      const seal = await tx.driver_badges.findUnique({ where: { driver_id_badge_type: { driver_id, badge_type: 'EXCELLENCE_SEAL' } } });
       if (seal) {
-        await tx.driver_badges.delete({ where: { driver_id_badge_code: { driver_id, badge_code: 'EXCELLENCE_SEAL' } } });
+        await tx.driver_badges.delete({ where: { driver_id_badge_type: { driver_id, badge_type: 'EXCELLENCE_SEAL' } } });
         await tx.driver_badge_events.create({ data: { driver_id, badge_code: 'EXCELLENCE_SEAL', event_type: 'REVOKED', reason: 'Banimento do motorista', admin_id } });
       }
 

@@ -1047,19 +1047,16 @@ enum TourPackageType {
 }
 
 model driver_badges {
-  id          String   @id @default(uuid())
+  id          Int      @id @default(autoincrement())
   driver_id   String
-  badge_code  String   @db.VarChar(50)
+  badge_type  String   @db.VarChar(50)
   unlocked_at DateTime @default(now())
-  progress    Int      @default(100)
-  metadata    Json?
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  progress    Decimal  @default(100) @db.Decimal
   drivers     drivers  @relation(fields: [driver_id], references: [id], onDelete: Cascade)
 
-  @@unique([driver_id, badge_code])
+  @@unique([driver_id, badge_type])
   @@index([driver_id, unlocked_at(sort: Desc)])
-  @@index([badge_code])
+  @@index([badge_type])
 }
 
 model driver_territory_stats {
