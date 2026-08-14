@@ -20,6 +20,7 @@ import {
   getEmergencyOperationsSummary,
   getTerritoryPortfolioSummary,
 } from './kaviar-ai.command-center';
+import { getKnowledgeAnswer } from './kaviar-ai.knowledge';
 
 /**
  * Schema de argumentos de uma ferramenta da KAVIAR IA.
@@ -233,6 +234,19 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     argSchema: { type: 'object', properties: {}, required: [] },
     allowedRoles: ['SUPER_ADMIN'],
     execute: getTerritoryPortfolioSummary,
+  },
+  // ── RAG v1 ──────────────────────────────────────────────────────────────
+  {
+    name: 'knowledge_answer',
+    description: 'Responde perguntas explicativas e institucionais a partir de artigos de conhecimento aprovados. Não retorna dados operacionais vivos.',
+    readOnly: true,
+    argSchema: {
+      type: 'object',
+      properties: { question: { type: 'string' }, role: { type: 'string' } },
+      required: ['question', 'role'],
+    },
+    allowedRoles: ['SUPER_ADMIN', 'FINANCE'],
+    execute: getKnowledgeAnswer,
   },
 ] as const;
 

@@ -264,7 +264,7 @@ describe('company_profile — integração com tools existentes', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('registry atualizado com 11 tools', () => {
-    expect(getRegisteredTools()).toHaveLength(17);
+    expect(getRegisteredTools()).toHaveLength(18);
   });
 
   it('roteamentos antigos continuam funcionando — corridas hoje', () => {

@@ -26,6 +26,7 @@ import type {
   EmergencyOperationsSummaryData,
   TerritoryPortfolioSummaryData,
 } from './kaviar-ai.command-center';
+import type { KnowledgeAnswerData } from './kaviar-ai.knowledge';
 import { executeTool, canRoleExecuteTool } from './kaviar-ai.registry';
 import { routeQuestion } from './kaviar-ai.router';
 
@@ -455,6 +456,8 @@ const FORMATTERS: Record<KaviarAiToolName, (data: unknown) => string> = {
     formatEmergencyOperationsSummary(data as EmergencyOperationsSummaryData),
   territory_portfolio_summary: (data) =>
     formatTerritoryPortfolioSummary(data as TerritoryPortfolioSummaryData),
+  knowledge_answer: (data) =>
+    formatKnowledgeAnswer(data as KnowledgeAnswerData),
 };
 
 // ── Formatters Command Center ───────────────────────────────────────────────
@@ -583,6 +586,24 @@ function formatTerritoryPortfolioSummary(data: TerritoryPortfolioSummaryData): s
     parts.push('Cidades com atenção:');
     for (const c of data.attentionCities) parts.push(`  • ${c.city}/${c.uf}: ${c.reasons.join(', ')}`);
   }
+  return parts.join('\n');
+}
+
+function formatKnowledgeAnswer(data: KnowledgeAnswerData): string {
+  if (!data.available) return 'Base de conhecimento: não foi possível consultar.';
+  if (data.noMatch) return data.answer;
+
+  const parts: string[] = [];
+  parts.push(data.answer);
+
+  if (data.citations.length > 0) {
+    parts.push('');
+    parts.push('Fontes:');
+    for (const c of data.citations) {
+      parts.push(`• ${c.title} (${c.slug} v${c.version})`);
+    }
+  }
+
   return parts.join('\n');
 }
 
@@ -728,6 +749,8 @@ export async function askKaviarAi(
       args = { section: parseCompanySection(question) };
     } else if (toolName === 'platform_catalog') {
       args = { section: parseCatalogSection(question) };
+    } else if (toolName === 'knowledge_answer') {
+      args = { question, role };
     }
 
     const result = await executeTool(toolName, args);

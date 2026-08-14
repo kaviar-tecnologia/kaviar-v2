@@ -15,7 +15,8 @@ export type KaviarAiToolName =
   | 'whatsapp_summary'
   | 'driver_pipeline_summary'
   | 'emergency_operations_summary'
-  | 'territory_portfolio_summary';
+  | 'territory_portfolio_summary'
+  | 'knowledge_answer';
 
 export type KaviarAiRequest = {
   userId: string;
