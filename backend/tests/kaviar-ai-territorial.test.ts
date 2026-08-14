@@ -3,10 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const { mockQuery } = vi.hoisted(() => ({ mockQuery: vi.fn() }));
 vi.mock('../src/db', () => ({ pool: { query: mockQuery } }));
 
-const { mockResponsesCreate } = vi.hoisted(() => ({ mockResponsesCreate: vi.fn() }));
+const { mockResponsesCreate, mockResponsesRetrieve } = vi.hoisted(() => ({ mockResponsesCreate: vi.fn(), mockResponsesRetrieve: vi.fn() }));
 vi.mock('openai', () => ({
   default: class MockOpenAI {
-    responses = { create: mockResponsesCreate };
+    responses = { create: mockResponsesCreate, retrieve: mockResponsesRetrieve };
     constructor(_opts: any) {}
   },
 }));
@@ -211,7 +211,7 @@ describe('pesquisa regulatória', () => {
   });
 
   it('retorna resultado estruturado com CONFIRMED', async () => {
-    mockResponsesCreate.mockResolvedValueOnce({
+    mockResponsesCreate.mockResolvedValueOnce({ id: 'resp_test12345678901234567890', status: 'queued' }); mockResponsesRetrieve.mockResolvedValueOnce({
       status: 'completed',
       output_text: JSON.stringify({
         summary: 'Cidade regulamentada.',
@@ -229,7 +229,7 @@ describe('pesquisa regulatória', () => {
   });
 
   it('retorna NEEDS_HUMAN_REVIEW sem fonte suficiente', async () => {
-    mockResponsesCreate.mockResolvedValueOnce({
+    mockResponsesCreate.mockResolvedValueOnce({ id: 'resp_test12345678901234567890', status: 'queued' }); mockResponsesRetrieve.mockResolvedValueOnce({
       status: 'completed',
       output_text: JSON.stringify({
         summary: 'Sem informação.',
@@ -256,7 +256,7 @@ describe('pesquisa regulatória', () => {
   it('não envia dados sensíveis ao OpenAI', async () => {
     process.env.DATABASE_URL = 'postgresql://secret';
     process.env.JWT_SECRET = 'jwt123';
-    mockResponsesCreate.mockResolvedValueOnce({
+    mockResponsesCreate.mockResolvedValueOnce({ id: 'resp_test12345678901234567890', status: 'queued' }); mockResponsesRetrieve.mockResolvedValueOnce({
       status: 'completed',
       output_text: JSON.stringify({ summary: 'ok', requirements: [], officialSources: [], unconfirmedItems: [], recommendedNextSteps: [], confidence: 'NEEDS_HUMAN_REVIEW' }),
     });
@@ -271,7 +271,7 @@ describe('pesquisa regulatória', () => {
   });
 
   it('usa web_search como tool', async () => {
-    mockResponsesCreate.mockResolvedValueOnce({
+    mockResponsesCreate.mockResolvedValueOnce({ id: 'resp_test12345678901234567890', status: 'queued' }); mockResponsesRetrieve.mockResolvedValueOnce({
       status: 'completed',
       output_text: JSON.stringify({ summary: 'ok', requirements: [], officialSources: [], unconfirmedItems: [], recommendedNextSteps: [], confidence: 'NEEDS_HUMAN_REVIEW' }),
     });
@@ -458,7 +458,7 @@ describe('Fix 5: filtro de fontes governamentais', () => {
   afterEach(() => { delete process.env.OPENAI_API_KEY; });
 
   it('remove fontes não .gov.br/.leg.br', async () => {
-    mockResponsesCreate.mockResolvedValueOnce({
+    mockResponsesCreate.mockResolvedValueOnce({ id: 'resp_test12345678901234567890', status: 'queued' }); mockResponsesRetrieve.mockResolvedValueOnce({
       status: 'completed',
       output_text: JSON.stringify({
         summary: 'Resultado',
@@ -480,7 +480,7 @@ describe('Fix 5: filtro de fontes governamentais', () => {
   });
 
   it('sem fonte gov => NEEDS_HUMAN_REVIEW', async () => {
-    mockResponsesCreate.mockResolvedValueOnce({
+    mockResponsesCreate.mockResolvedValueOnce({ id: 'resp_test12345678901234567890', status: 'queued' }); mockResponsesRetrieve.mockResolvedValueOnce({
       status: 'completed',
       output_text: JSON.stringify({
         summary: 'Resultado',
@@ -577,7 +577,7 @@ describe('pesquisa regulatória — params e incomplete', () => {
   afterEach(() => { delete process.env.OPENAI_API_KEY; });
 
   it('usa reasoning low e max_output_tokens 4096', async () => {
-    mockResponsesCreate.mockResolvedValueOnce({
+    mockResponsesCreate.mockResolvedValueOnce({ id: 'resp_test12345678901234567890', status: 'queued' }); mockResponsesRetrieve.mockResolvedValueOnce({
       status: 'completed',
       output_text: JSON.stringify({ summary: 'ok', requirements: [], officialSources: [], unconfirmedItems: [], recommendedNextSteps: [], confidence: 'NEEDS_HUMAN_REVIEW' }),
     });
@@ -588,7 +588,7 @@ describe('pesquisa regulatória — params e incomplete', () => {
   });
 
   it('erro incomplete inclui reason', async () => {
-    mockResponsesCreate.mockResolvedValueOnce({
+    mockResponsesCreate.mockResolvedValueOnce({ id: 'resp_test12345678901234567890', status: 'queued' }); mockResponsesRetrieve.mockResolvedValueOnce({
       status: 'incomplete',
       incomplete_details: { reason: 'max_output_tokens' },
       output_text: '',
@@ -604,7 +604,7 @@ describe('pesquisa regulatória — reconciliação normativa', () => {
   it('cenário 1: conflito norma antiga vs orientação oficial atual — exigência vai para unconfirmedItems', async () => {
     // Simula o cenário Campinas: lei antiga exige CA individual,
     // mas orientação atual da EMDEC diz que motorista não precisa de cadastro individual.
-    mockResponsesCreate.mockResolvedValueOnce({
+    mockResponsesCreate.mockResolvedValueOnce({ id: 'resp_test12345678901234567890', status: 'queued' }); mockResponsesRetrieve.mockResolvedValueOnce({
       status: 'completed',
       output_text: JSON.stringify({
         summary: 'Conflito entre Decreto 18.551/2015 e orientação operacional atual da EMDEC.',
@@ -650,7 +650,7 @@ describe('pesquisa regulatória — reconciliação normativa', () => {
 
   it('cenário 2: ato posterior resolve expressamente o conflito — só regra vigente em requirements', async () => {
     // Simula: lei antiga exigia taxa X, lei posterior de mesma hierarquia revogou expressamente o artigo.
-    mockResponsesCreate.mockResolvedValueOnce({
+    mockResponsesCreate.mockResolvedValueOnce({ id: 'resp_test12345678901234567890', status: 'queued' }); mockResponsesRetrieve.mockResolvedValueOnce({
       status: 'completed',
       output_text: JSON.stringify({
         summary: 'Lei 5.000/2018 exigia taxa de vistoria. Lei 6.200/2023 revogou expressamente o art. 12 da Lei 5.000/2018, eliminando a taxa.',
@@ -689,7 +689,7 @@ describe('pesquisa regulatória — reconciliação normativa', () => {
 
   it('cenário 3: ausência de confirmação sobre vigência — mantém em unconfirmedItems', async () => {
     // Simula: norma encontrada mas sem confirmação de que ainda está vigente (sem ato revogador nem confirmação)
-    mockResponsesCreate.mockResolvedValueOnce({
+    mockResponsesCreate.mockResolvedValueOnce({ id: 'resp_test12345678901234567890', status: 'queued' }); mockResponsesRetrieve.mockResolvedValueOnce({
       status: 'completed',
       output_text: JSON.stringify({
         summary: 'Decreto 3.100/2016 regulamenta transporte por aplicativo, mas não foi possível confirmar vigência atual.',
@@ -727,7 +727,7 @@ describe('pesquisa regulatória — reconciliação normativa', () => {
   });
 
   it('prompt contém regras de reconciliação normativa', async () => {
-    mockResponsesCreate.mockResolvedValueOnce({
+    mockResponsesCreate.mockResolvedValueOnce({ id: 'resp_test12345678901234567890', status: 'queued' }); mockResponsesRetrieve.mockResolvedValueOnce({
       status: 'completed',
       output_text: JSON.stringify({
         summary: 'ok', requirements: [], officialSources: [],
@@ -753,7 +753,7 @@ describe('pesquisa regulatória — guarda determinística de confidence', () =>
   afterEach(() => { delete process.env.OPENAI_API_KEY; });
 
   it('modelo retorna CONFIRMED com unconfirmedItems não vazio → resultado final NEEDS_HUMAN_REVIEW', async () => {
-    mockResponsesCreate.mockResolvedValueOnce({
+    mockResponsesCreate.mockResolvedValueOnce({ id: 'resp_test12345678901234567890', status: 'queued' }); mockResponsesRetrieve.mockResolvedValueOnce({
       status: 'completed',
       output_text: JSON.stringify({
         summary: 'Campinas regulamentada com conflitos.',
@@ -771,7 +771,7 @@ describe('pesquisa regulatória — guarda determinística de confidence', () =>
   });
 
   it('modelo retorna CONFIRMED com unconfirmedItems vazio → permanece CONFIRMED', async () => {
-    mockResponsesCreate.mockResolvedValueOnce({
+    mockResponsesCreate.mockResolvedValueOnce({ id: 'resp_test12345678901234567890', status: 'queued' }); mockResponsesRetrieve.mockResolvedValueOnce({
       status: 'completed',
       output_text: JSON.stringify({
         summary: 'Cidade regulamentada sem conflitos.',
@@ -789,7 +789,7 @@ describe('pesquisa regulatória — guarda determinística de confidence', () =>
   });
 
   it('modelo retorna NEEDS_HUMAN_REVIEW → permanece NEEDS_HUMAN_REVIEW', async () => {
-    mockResponsesCreate.mockResolvedValueOnce({
+    mockResponsesCreate.mockResolvedValueOnce({ id: 'resp_test12345678901234567890', status: 'queued' }); mockResponsesRetrieve.mockResolvedValueOnce({
       status: 'completed',
       output_text: JSON.stringify({
         summary: 'Informação insuficiente.',
