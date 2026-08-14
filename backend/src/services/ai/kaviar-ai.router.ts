@@ -343,7 +343,6 @@ export function routeByRules(question: string): KaviarAiRouteResult {
   ) {
     return { toolsToCall: ['excellence_seal_summary'] };
   }
-  }
 
   // ── Knowledge answer (RAG) — catch-all for explanatory/institutional questions ──
   // Only matches questions that seem to ask "what is", "how does", "explain", "tell me about"

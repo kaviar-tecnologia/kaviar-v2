@@ -13,7 +13,7 @@ import { routeByRules } from '../src/services/ai/kaviar-ai.router';
 
 describe('compliance_summary + excellence_seal_summary — registry', () => {
   it('registry contains 20 tools', () => {
-    expect(getRegisteredTools()).toHaveLength(20);
+    expect(getRegisteredTools()).toHaveLength(21);
   });
 
   it('compliance_summary registered as SUPER_ADMIN only readOnly', () => {

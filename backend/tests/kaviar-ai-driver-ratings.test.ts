@@ -23,7 +23,7 @@ import { askKaviarAi } from '../src/services/ai/kaviar-ai.service';
 
 describe('driver_ratings_summary — registry and RBAC', () => {
   it('registry contains 19 tools', () => {
-    expect(getRegisteredTools()).toHaveLength(19);
+    expect(getRegisteredTools()).toHaveLength(21);
   });
 
   it('driver_ratings_summary is registered and readOnly', () => {
