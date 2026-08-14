@@ -22,6 +22,7 @@ import {
 } from './kaviar-ai.command-center';
 import { getKnowledgeAnswer } from './kaviar-ai.knowledge';
 import { getDriverRatingsSummary } from './kaviar-ai.driver-ratings';
+import { getComplianceSummary, getExcellenceSealSummary } from './kaviar-ai.compliance-seal';
 
 /**
  * Schema de argumentos de uma ferramenta da KAVIAR IA.
@@ -260,6 +261,22 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     },
     allowedRoles: ['SUPER_ADMIN'],
     execute: getDriverRatingsSummary,
+  },
+  {
+    name: 'compliance_summary',
+    description: 'Resumo de conformidade de antecedentes criminais: válidos, vencendo, vencidos, sem data de emissão. Não retorna documentos ou dados pessoais.',
+    readOnly: true,
+    argSchema: { type: 'object', properties: {}, required: [] },
+    allowedRoles: ['SUPER_ADMIN'],
+    execute: getComplianceSummary,
+  },
+  {
+    name: 'excellence_seal_summary',
+    description: 'Resumo do Selo Excelência KAVIAR: motoristas ativos, suspensos e movimentações da semana.',
+    readOnly: true,
+    argSchema: { type: 'object', properties: {}, required: [] },
+    allowedRoles: ['SUPER_ADMIN'],
+    execute: getExcellenceSealSummary,
   },
 ] as const;
 

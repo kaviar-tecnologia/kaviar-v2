@@ -994,4 +994,56 @@ router.post('/drivers/:id/photo-upload', requireSuperAdmin, uploadToS3.single('p
   }
 });
 
+// ── Excellence Seal ──────────────────────────────────────────────────────────
+
+router.get('/drivers/:id/excellence-seal', allowReadAccess, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const badge = await prisma.driver_badges.findUnique({ where: { driver_id_badge_code: { driver_id: id, badge_code: 'EXCELLENCE_SEAL' } } });
+    const events = await prisma.driver_badge_events.findMany({
+      where: { driver_id: id, badge_code: 'EXCELLENCE_SEAL' },
+      orderBy: { created_at: 'desc' },
+      take: 20,
+      select: { id: true, event_type: true, reason: true, criteria_snapshot: true, admin_id: true, created_at: true },
+    });
+    return res.json({
+      success: true,
+      data: {
+        hasSeal: !!badge,
+        active: badge ? badge.progress === 100 : false,
+        suspended: badge ? badge.progress === 0 : false,
+        grantedAt: badge?.unlocked_at ?? null,
+        criteria: badge?.metadata ?? null,
+        history: events,
+      },
+    });
+  } catch (error) {
+    console.error('[EXCELLENCE_SEAL_QUERY]', error);
+    return res.status(500).json({ success: false, error: 'Erro ao consultar selo.' });
+  }
+});
+
+router.post('/drivers/:id/excellence-seal/revoke', requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const adminId = (req as any).admin?.id;
+    const reason = req.body?.reason;
+    if (!reason || typeof reason !== 'string' || reason.trim().length < 5) {
+      return res.status(400).json({ success: false, error: 'Motivo obrigatório (mínimo 5 caracteres).' });
+    }
+    const badge = await prisma.driver_badges.findUnique({ where: { driver_id_badge_code: { driver_id: id, badge_code: 'EXCELLENCE_SEAL' } } });
+    if (!badge) {
+      return res.status(404).json({ success: false, error: 'Motorista não possui o Selo Excelência.' });
+    }
+    await prisma.driver_badges.delete({ where: { driver_id_badge_code: { driver_id: id, badge_code: 'EXCELLENCE_SEAL' } } });
+    await prisma.driver_badge_events.create({
+      data: { driver_id: id, badge_code: 'EXCELLENCE_SEAL', event_type: 'REVOKED', reason: reason.trim(), admin_id: adminId, criteria_snapshot: (badge.metadata ?? undefined) as any },
+    });
+    return res.json({ success: true, message: 'Selo revogado.' });
+  } catch (error) {
+    console.error('[EXCELLENCE_SEAL_REVOKE]', error);
+    return res.status(500).json({ success: false, error: 'Erro ao revogar selo.' });
+  }
+});
+
 export default router;

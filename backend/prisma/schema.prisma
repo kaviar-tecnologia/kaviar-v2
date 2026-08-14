@@ -435,6 +435,7 @@ model drivers {
   created_at                  DateTime                      @default(now())
   updated_at                  DateTime
   driver_compliance_documents driver_compliance_documents[]
+  badge_events              driver_badge_events[]
   driver_consents             driver_consents?
   driver_modalities           driver_modalities[]
   driver_badges               driver_badges[]
@@ -975,6 +976,7 @@ model driver_compliance_documents {
   status                String    @default("pending")
   valid_from            DateTime?
   valid_until           DateTime?
+  emission_date         DateTime? @db.Date
   approved_by           String?
   approved_at           DateTime?
   rejected_by           String?
@@ -5209,4 +5211,25 @@ model knowledge_articles {
   @@index([status, knowledge_scope])
   @@index([category])
   @@map("knowledge_articles")
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Driver Badge Events — Seal of Excellence history
+// ═══════════════════════════════════════════════════════════════════
+
+model driver_badge_events {
+  id                String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  driver_id         String
+  badge_code        String   @db.VarChar(50)
+  event_type        String   @db.VarChar(30)
+  reason            String?
+  criteria_snapshot Json?    @db.JsonB
+  admin_id          String?
+  created_at        DateTime @default(now()) @db.Timestamptz
+
+  driver            drivers  @relation(fields: [driver_id], references: [id], onDelete: Cascade)
+
+  @@index([driver_id, badge_code, created_at(sort: Desc)])
+  @@index([badge_code, event_type])
+  @@map("driver_badge_events")
 }

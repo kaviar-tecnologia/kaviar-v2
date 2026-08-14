@@ -327,6 +327,23 @@ export function routeByRules(question: string): KaviarAiRouteResult {
     return { toolsToCall: ['driver_ratings_summary'] };
   }
 
+  // ── Compliance summary ─────────────────────────────────────────────────
+  if (
+    (q.includes('antecedente') || q.includes('certidão') || q.includes('certidao') || q.includes('certidões') || q.includes('certidoes') || q.includes('compliance')) &&
+    (q.includes('venc') || q.includes('válid') || q.includes('valid') || q.includes('quantos') || q.includes('pendente'))
+  ) {
+    return { toolsToCall: ['compliance_summary'] };
+  }
+
+  // ── Excellence seal summary ───────────────────────────────────────────
+  if (
+    q.includes('selo excelência') || q.includes('selo excelencia') ||
+    q.includes('excellence seal') ||
+    (q.includes('selo') && (q.includes('motorista') || q.includes('quantos') || q.includes('ativo')))
+  ) {
+    return { toolsToCall: ['excellence_seal_summary'] };
+  }
+
   // ── Knowledge answer (RAG) — catch-all for explanatory/institutional questions ──
   // Only matches questions that seem to ask "what is", "how does", "explain", "tell me about"
   if (

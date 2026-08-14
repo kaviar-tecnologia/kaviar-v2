@@ -17,7 +17,9 @@ export type KaviarAiToolName =
   | 'emergency_operations_summary'
   | 'territory_portfolio_summary'
   | 'knowledge_answer'
-  | 'driver_ratings_summary';
+  | 'driver_ratings_summary'
+  | 'compliance_summary'
+  | 'excellence_seal_summary';
 
 export type KaviarAiRequest = {
   userId: string;

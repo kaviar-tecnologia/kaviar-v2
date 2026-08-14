@@ -121,7 +121,7 @@ export default function ComplianceManagement() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: action === 'reject' ? JSON.stringify({ reason }) : undefined
+        body: action === 'reject' ? JSON.stringify({ reason }) : action === 'approve' ? JSON.stringify({ emission_date: actionDialog.emissionDate || undefined }) : undefined
       });
       
       if (!response.ok) throw new Error(`Erro ao ${action === 'approve' ? 'aprovar' : 'rejeitar'} documento`);
@@ -320,11 +320,21 @@ export default function ComplianceManagement() {
         </DialogTitle>
         <DialogContent>
           {actionDialog.action === 'approve' ? (
-            <Typography>
-              Confirma a aprovação do documento de <strong>{actionDialog.document?.drivers?.name}</strong>?
-              <br /><br />
-              O documento será válido por 12 meses.
-            </Typography>
+            <>
+              <Typography>
+                Confirma a aprovação do documento de <strong>{actionDialog.document?.drivers?.name}</strong>?
+              </Typography>
+              <TextField
+                fullWidth
+                type="date"
+                label="Data de emissão da certidão"
+                value={actionDialog.emissionDate || ''}
+                onChange={(e) => setActionDialog({ ...actionDialog, emissionDate: e.target.value })}
+                helperText="Obrigatória. Validade: 6 meses a partir da emissão."
+                InputLabelProps={{ shrink: true }}
+                sx={{ mt: 2 }}
+              />
+            </>
           ) : (
             <TextField
               fullWidth

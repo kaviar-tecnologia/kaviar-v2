@@ -1,7 +1,7 @@
 import { prisma } from '../lib/prisma';
 import { z } from 'zod';
 
-const REVALIDATION_PERIOD_MONTHS = 12;
+const REVALIDATION_PERIOD_MONTHS = 6;
 const WARNING_DAYS = [30, 7];
 
 export class ComplianceService {
@@ -59,8 +59,9 @@ export class ComplianceService {
   async approveDocument(data: {
     documentId: string;
     adminId: string;
+    emissionDate?: string; // ISO date string YYYY-MM-DD
   }) {
-    const { documentId, adminId } = data;
+    const { documentId, adminId, emissionDate } = data;
 
     const document = await prisma.driver_compliance_documents.findUnique({
       where: { id: documentId }
@@ -72,6 +73,20 @@ export class ComplianceService {
 
     if (document.status !== 'pending') {
       throw new Error('Documento já foi processado');
+    }
+
+    // Validate emission_date if provided
+    let parsedEmissionDate: Date | null = null;
+    if (emissionDate) {
+      parsedEmissionDate = new Date(emissionDate + 'T00:00:00Z');
+      if (isNaN(parsedEmissionDate.getTime())) {
+        throw new Error('Data de emissão inválida.');
+      }
+      if (parsedEmissionDate > new Date()) {
+        throw new Error('Data de emissão não pode ser futura.');
+      }
+    } else {
+      throw new Error('Data de emissão é obrigatória para novas aprovações.');
     }
 
     // Desativar documento atual do motorista
@@ -86,9 +101,10 @@ export class ComplianceService {
       }
     });
 
-    // Calcular validade
+    // Calcular validade: 6 meses a partir da emissão (obrigatória para novas aprovações)
+    const baseDate = parsedEmissionDate!;
     const validFrom = new Date();
-    const validUntil = new Date();
+    const validUntil = new Date(baseDate.getTime());
     validUntil.setMonth(validUntil.getMonth() + REVALIDATION_PERIOD_MONTHS);
 
     // Aprovar e ativar novo documento
@@ -99,6 +115,7 @@ export class ComplianceService {
         is_current: true,
         valid_from: validFrom,
         valid_until: validUntil,
+        emission_date: parsedEmissionDate,
         approved_by: adminId,
         approved_at: new Date(),
         updated_at: new Date()

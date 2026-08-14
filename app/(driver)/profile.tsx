@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { authStore } from '../../src/auth/auth.store';
 import { PhoneVerifyBadge } from '../../src/components/PhoneVerifyBadge';
 import WomenPreferenceSection from '../../src/components/WomenPreferenceSection';
+import { ExcellenceSealBadge } from '../../src/components/ExcellenceSealBadge';
 import { COLORS } from '../../src/config/colors';
 import { User } from '../../src/types/user';
 
@@ -50,6 +51,7 @@ export default function DriverProfile() {
         {field('E-mail', user?.email)}
         {field('Tipo', 'Motorista')}
         {field('Status', user?.status === 'approved' ? 'Aprovado' : user?.status || '—')}
+        <ExcellenceSealBadge />
       </View>
 
       <WomenPreferenceSection role="driver" />
