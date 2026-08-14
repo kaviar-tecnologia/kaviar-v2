@@ -27,6 +27,7 @@ import type {
   TerritoryPortfolioSummaryData,
 } from './kaviar-ai.command-center';
 import type { KnowledgeAnswerData } from './kaviar-ai.knowledge';
+import type { DriverRatingsSummaryData } from './kaviar-ai.driver-ratings';
 import { executeTool, canRoleExecuteTool } from './kaviar-ai.registry';
 import { routeQuestion } from './kaviar-ai.router';
 
@@ -458,6 +459,8 @@ const FORMATTERS: Record<KaviarAiToolName, (data: unknown) => string> = {
     formatTerritoryPortfolioSummary(data as TerritoryPortfolioSummaryData),
   knowledge_answer: (data) =>
     formatKnowledgeAnswer(data as KnowledgeAnswerData),
+  driver_ratings_summary: (data) =>
+    formatDriverRatingsSummary(data as DriverRatingsSummaryData),
 };
 
 // ── Formatters Command Center ───────────────────────────────────────────────
@@ -602,6 +605,39 @@ function formatKnowledgeAnswer(data: KnowledgeAnswerData): string {
     for (const c of data.citations) {
       parts.push(`• ${c.title} (${c.slug} v${c.version})`);
     }
+  }
+
+  return parts.join('\n');
+}
+
+function formatDriverRatingsSummary(data: DriverRatingsSummaryData): string {
+  if (!data.available) return 'Avaliações de motoristas: não foi possível consultar.';
+
+  const parts: string[] = [];
+  parts.push(`⭐ Avaliações de Motoristas — ${data.referenceTime}`);
+  parts.push(`Total de motoristas avaliados: ${data.totalDriversRated}`);
+  if (data.globalAverageRating) parts.push(`Média global: ${data.globalAverageRating}`);
+
+  if (data.driversNeedingAttention.length > 0) {
+    parts.push('');
+    parts.push(`⚠️ Motoristas com atenção (${data.attentionCriteria}):`);
+    for (const d of data.driversNeedingAttention) {
+      parts.push(`  • ${d.driverName} — ${d.lowRatingsCount} avaliações baixas, média ${d.averageRating} (${d.totalRatings} total)`);
+    }
+  } else {
+    parts.push('Nenhum motorista com padrão de avaliações baixas recorrentes no período.');
+  }
+
+  if (data.individual?.available && data.individual.driverId) {
+    parts.push('');
+    parts.push(`Motorista: ${data.individual.driverName || data.individual.driverId}`);
+    parts.push(`Média: ${data.individual.averageRating ?? 'sem avaliações'} | Total: ${data.individual.totalRatings}`);
+    if (data.individual.totalRatings > 0) {
+      const dist = data.individual.distribution;
+      parts.push(`Distribuição: ⭐1=${dist['1']||0} ⭐2=${dist['2']||0} ⭐3=${dist['3']||0} ⭐4=${dist['4']||0} ⭐5=${dist['5']||0}`);
+    }
+    parts.push(`Avaliações baixas (últimos 30d): ${data.individual.lowRatingsLast30d}`);
+    if (data.individual.needsAttention) parts.push('⚠️ Este motorista requer atenção.');
   }
 
   return parts.join('\n');

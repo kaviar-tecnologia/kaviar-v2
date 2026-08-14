@@ -21,6 +21,7 @@ import {
   getTerritoryPortfolioSummary,
 } from './kaviar-ai.command-center';
 import { getKnowledgeAnswer } from './kaviar-ai.knowledge';
+import { getDriverRatingsSummary } from './kaviar-ai.driver-ratings';
 
 /**
  * Schema de argumentos de uma ferramenta da KAVIAR IA.
@@ -247,6 +248,18 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     },
     allowedRoles: ['SUPER_ADMIN', 'FINANCE'],
     execute: getKnowledgeAnswer,
+  },
+  {
+    name: 'driver_ratings_summary',
+    description: 'Resumo de avaliações de motoristas: média, distribuição, motoristas com atenção por notas baixas recorrentes. Não retorna comentários ou dados pessoais.',
+    readOnly: true,
+    argSchema: {
+      type: 'object',
+      properties: { driverId: { type: 'string', description: 'ID do motorista (opcional, para consulta individual)' } },
+      required: [],
+    },
+    allowedRoles: ['SUPER_ADMIN'],
+    execute: getDriverRatingsSummary,
   },
 ] as const;
 
