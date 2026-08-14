@@ -124,7 +124,13 @@ export default function KaviarAiPage() {
         }]);
       }
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', content: '✗ Não foi possível realizar a pesquisa regulatória.' }]);
+      let errorMsg = '✗ Não foi possível realizar a pesquisa regulatória.';
+      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        errorMsg = '✗ A pesquisa regulatória demorou mais que o esperado. Tente novamente.';
+      } else if (err.response?.data?.error) {
+        errorMsg = `✗ ${err.response.data.error}`;
+      }
+      setMessages(prev => [...prev, { role: 'assistant', content: errorMsg }]);
     } finally {
       setActionLoading(false);
     }

@@ -187,3 +187,32 @@ describe('AdminApp — rota e menu Chat KAVIAR', () => {
     expect(block).not.toContain('TERRITORIAL');
   });
 });
+
+describe('KaviarAiPage — pesquisa regulatória error handling', () => {
+  const src = readFileSync(resolve(__dirname, '../pages/admin/KaviarAiPage.jsx'), 'utf8');
+
+  it('usa err.response.data.error quando backend retorna mensagem segura', () => {
+    expect(src).toContain('err.response?.data?.error');
+  });
+
+  it('ECONNABORTED apresenta mensagem de timeout amigável', () => {
+    expect(src).toContain("err.code === 'ECONNABORTED'");
+    expect(src).toContain('demorou mais que o esperado. Tente novamente.');
+  });
+
+  it('erro sem response mantém mensagem genérica segura', () => {
+    // Default errorMsg is generic when no response or timeout
+    expect(src).toContain('Não foi possível realizar a pesquisa regulatória');
+  });
+
+  it('actionLoading volta para false pelo finally', () => {
+    // handleRegulatorySearch uses try/catch/finally
+    const searchSection = src.split('handleRegulatorySearch')[1];
+    expect(searchSection).toContain('} finally {');
+    expect(searchSection).toContain('setActionLoading(false)');
+  });
+
+  it('timeout da chamada regulatória permanece 65000', () => {
+    expect(src).toContain('timeout: 65000');
+  });
+});

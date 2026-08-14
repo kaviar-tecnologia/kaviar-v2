@@ -83,15 +83,49 @@ router.post('/chat', async (req: Request, res: Response) => {
 
 // ── Territorial: Pesquisa regulatória ────────────────────────────────────────
 router.post('/territory/regulatory-search', requireSuperAdmin, async (req: Request, res: Response) => {
+  const startHr = process.hrtime.bigint();
+  const city = req.body?.city ?? '';
+  const uf = req.body?.uf ?? '';
+  const model = process.env.KAVIAR_AI_MODEL || 'gpt-5.4-mini';
+
+  console.log(`[REGULATORY_SEARCH_START] city=${city} uf=${uf} model=${model}`);
+
   try {
-    const { city, uf } = req.body;
     if (!city || !uf) {
-      return res.status(400).json({ success: false, error: 'city e uf são obrigatórios.' });
+      return res.status(400).json({ success: false, code: 'REGULATORY_SEARCH_INVALID_INPUT', error: 'city e uf são obrigatórios.' });
     }
     const result = await searchRegulatoryRequirements(city, uf);
+    const elapsed = Number((process.hrtime.bigint() - startHr) / 1_000_000n);
+    console.log(`[REGULATORY_SEARCH_OK] city=${city} uf=${uf} elapsed_ms=${elapsed} confidence=${result.confidence} sources=${result.officialSources.length}`);
     return res.json({ success: true, data: result });
   } catch (error: any) {
-    return res.status(500).json({ success: false, error: 'Não foi possível realizar a pesquisa regulatória.' });
+    const elapsed = Number((process.hrtime.bigint() - startHr) / 1_000_000n);
+    const errName = error?.name || 'UnknownError';
+    const errStatus = error?.status;
+    const errCode = error?.code;
+    const errType = error?.type;
+    const errMsg = (error?.message || '').replace(/[\n\r]/g, ' ').slice(0, 200);
+
+    console.error(`[REGULATORY_SEARCH_ERROR] city=${city} uf=${uf} elapsed_ms=${elapsed} name=${errName} status=${errStatus} code=${errCode} type=${errType} message=${errMsg}`);
+
+    // Classify error for appropriate HTTP response
+    if (errName === 'APIConnectionTimeoutError' || errCode === 'ETIMEDOUT' || errCode === 'ECONNABORTED' || errMsg.includes('timeout')) {
+      return res.status(504).json({ success: false, code: 'REGULATORY_SEARCH_TIMEOUT', error: 'A pesquisa regulatória demorou mais que o esperado. Tente novamente.' });
+    }
+
+    if (errStatus === 429) {
+      return res.status(429).json({ success: false, code: 'REGULATORY_SEARCH_RATE_LIMITED', error: 'Limite de requisições atingido. Aguarde alguns minutos e tente novamente.' });
+    }
+
+    if (error?.regulatoryCode === 'INVALID_RESPONSE') {
+      return res.status(502).json({ success: false, code: 'REGULATORY_SEARCH_INVALID_RESPONSE', error: 'A pesquisa regulatória recebeu uma resposta inválida. Tente novamente.' });
+    }
+
+    if (error?.regulatoryCode === 'PROVIDER_ERROR' || errStatus >= 500 || errName === 'APIError') {
+      return res.status(502).json({ success: false, code: 'REGULATORY_SEARCH_PROVIDER_ERROR', error: 'O provedor da pesquisa regulatória retornou um erro. Tente novamente.' });
+    }
+
+    return res.status(500).json({ success: false, code: 'REGULATORY_SEARCH_INTERNAL_ERROR', error: 'Não foi possível realizar a pesquisa regulatória.' });
   }
 });
 

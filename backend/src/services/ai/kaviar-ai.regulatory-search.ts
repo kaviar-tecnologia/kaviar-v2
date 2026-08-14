@@ -114,8 +114,8 @@ export async function searchRegulatoryRequirements(
 
   const client = new OpenAI({
     apiKey,
-    timeout: 90_000,
-    maxRetries: 1,
+    timeout: 50_000,
+    maxRetries: 0,
   });
 
   const model = process.env.KAVIAR_AI_MODEL || 'gpt-5.4-mini';
@@ -143,26 +143,34 @@ Contexto: A KAVIAR é uma plataforma de mobilidade urbana comunitária que opera
   });
 
   if (response.status === 'failed') {
-    throw new Error('[regulatory-search] Modelo falhou ao gerar resposta.');
+    const err: any = new Error('[regulatory-search] Modelo falhou ao gerar resposta.');
+    err.regulatoryCode = 'PROVIDER_ERROR';
+    throw err;
   }
 
   if (response.status === 'incomplete') {
     const reason = response.incomplete_details?.reason ?? 'unknown';
-    throw new Error(
+    const err: any = new Error(
       `[regulatory-search] Resposta incompleta do modelo: ${reason}.`
     );
+    err.regulatoryCode = 'INVALID_RESPONSE';
+    throw err;
   }
 
   const outputText = response.output_text;
   if (!outputText) {
-    throw new Error('[regulatory-search] Resposta vazia do modelo.');
+    const err: any = new Error('[regulatory-search] Resposta vazia do modelo.');
+    err.regulatoryCode = 'INVALID_RESPONSE';
+    throw err;
   }
 
   let parsed: RegulatorySearchResult;
   try {
     parsed = JSON.parse(outputText);
   } catch {
-    throw new Error('[regulatory-search] Resposta do modelo não é JSON válido.');
+    const err: any = new Error('[regulatory-search] Resposta do modelo não é JSON válido.');
+    err.regulatoryCode = 'INVALID_RESPONSE';
+    throw err;
   }
 
   // Validação básica runtime
