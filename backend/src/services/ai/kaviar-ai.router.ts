@@ -363,8 +363,9 @@ export function routeByRules(question: string): KaviarAiRouteResult {
   if (
     q.includes('visão geral') || q.includes('visao geral') ||
     q.includes('panorama operacional') ||
-    (q.includes('quantos motoristas') && !q.includes('avaliação') && !q.includes('nota')) ||
-    q.includes('quantos gestores') || q.includes('quantos admins')
+    (q.includes('quantos motoristas') && !q.includes('avaliação') && !q.includes('nota') && !q.includes('ativo') && !q.includes('pendente') && !q.includes('suspenso')) ||
+    q.includes('quantos gestores') || q.includes('quantos admins') ||
+    q.includes('homologações pet') || q.includes('homologacoes pet')
   ) {
     return { toolsToCall: ['operations_overview'] };
   }
