@@ -37,6 +37,15 @@ describe('operations_overview', () => {
     expect(r.data.territories.blocked).toBe(1);
   });
   it('routes "visão geral operacional"', () => { expect(routeByRules('Visão geral operacional').toolsToCall).toContain('operations_overview'); });
+  it('routes "Quantas homologações Pet aprovadas temos?"', () => { expect(routeByRules('Quantas homologações Pet aprovadas temos?').toolsToCall).toContain('operations_overview'); });
+  it('routes "Quantos territórios temos?" to territory_portfolio (more specific)', () => { expect(routeByRules('Quantos territórios temos cadastrados?').toolsToCall).toContain('territory_portfolio_summary'); });
+  it('routes "Quantos motoristas ativos?" to pipeline (more specific)', () => { expect(routeByRules('Quantos motoristas ativos temos?').toolsToCall).toContain('driver_pipeline_summary'); });
+  it('routes "motoristas pendentes" — matches driver docs (motorista+aguardando+cadastro)', () => {
+    // "Há motoristas aguardando aprovação?" hits drivers_documents_pending
+    expect(routeByRules('Há motoristas aguardando aprovação?').toolsToCall).toContain('drivers_documents_pending');
+  });
+  it('routes "panorama operacional" to operations_overview', () => { expect(routeByRules('Me dê o panorama operacional').toolsToCall).toContain('operations_overview'); });
+  it('routes "Quantos gestores temos?"', () => { expect(routeByRules('Quantos gestores temos?').toolsToCall).toContain('operations_overview'); });
 });
 
 describe('person_lookup', () => {
