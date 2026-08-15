@@ -311,6 +311,14 @@ export function routeByRules(question: string): KaviarAiRouteResult {
     return { toolsToCall: ['territory_onboarding_status'] };
   }
 
+  // ── Named driver detail (BEFORE ratings — catches "motorista <Name>") ────
+  {
+    const namedDriverMatch = question.match(/(?:do|da) motorista\s+([A-Z][a-záàâãéèêíïóôõúç]+(?:\s+[A-Za-záàâãéèêíïóôõúç]+)*)/i);
+    if (namedDriverMatch && namedDriverMatch[1].length >= 3) {
+      return { toolsToCall: ['person_lookup'] };
+    }
+  }
+
   // ── Driver ratings summary ─────────────────────────────────────────────
   if (
     (q.includes('avaliação') || q.includes('avaliacao') || q.includes('avaliações') || q.includes('avaliacoes') || q.includes('nota') || q.includes('estrela')) &&
@@ -335,6 +343,13 @@ export function routeByRules(question: string): KaviarAiRouteResult {
     return { toolsToCall: ['compliance_summary'] };
   }
 
+  // ── Seal history (must be before excellence_seal_summary) ──────────────
+  if (
+    (q.includes('histórico') || q.includes('historico')) && q.includes('selo')
+  ) {
+    return { toolsToCall: ['seal_history'] };
+  }
+
   // ── Excellence seal summary ───────────────────────────────────────────
   if (
     q.includes('selo excelência') || q.includes('selo excelencia') ||
@@ -342,6 +357,35 @@ export function routeByRules(question: string): KaviarAiRouteResult {
     (q.includes('selo') && (q.includes('motorista') || q.includes('quantos') || q.includes('ativo')))
   ) {
     return { toolsToCall: ['excellence_seal_summary'] };
+  }
+
+  // ── Operations overview ────────────────────────────────────────────────
+  if (
+    q.includes('visão geral') || q.includes('visao geral') ||
+    q.includes('panorama operacional') ||
+    (q.includes('quantos motoristas') && !q.includes('avaliação') && !q.includes('nota')) ||
+    q.includes('quantos gestores') || q.includes('quantos admins')
+  ) {
+    return { toolsToCall: ['operations_overview'] };
+  }
+
+  // ── Person lookup / driver detail by name ───────────────────────────────
+  // Only fires when a proper name (capitalized word after "motorista") is detected
+  if (
+    q.includes('quem é') || q.includes('quem e') ||
+    q.includes('mostre o motorista') || q.includes('buscar motorista') ||
+    q.includes('encontre') || q.includes('procure') ||
+    (q.includes('motorista') && q.includes('nome'))
+  ) {
+    return { toolsToCall: ['person_lookup'] };
+  }
+
+  // Named driver detail: "média/compliance/selo DO MOTORISTA <Name>"
+  if (
+    (q.includes('do motorista ') || q.includes('da motorista ')) &&
+    (q.includes('média') || q.includes('media') || q.includes('compliance') || q.includes('selo') || q.includes('detalhe') || q.includes('situação') || q.includes('situacao'))
+  ) {
+    return { toolsToCall: ['person_lookup'] };
   }
 
   // ── Knowledge answer (RAG) — catch-all for explanatory/institutional questions ──

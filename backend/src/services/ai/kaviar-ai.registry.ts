@@ -23,6 +23,7 @@ import {
 import { getKnowledgeAnswer } from './kaviar-ai.knowledge';
 import { getDriverRatingsSummary } from './kaviar-ai.driver-ratings';
 import { getComplianceSummary, getExcellenceSealSummary } from './kaviar-ai.compliance-seal';
+import { getOperationsOverview, getPersonLookup, getDriverDetail, getSealHistory } from './kaviar-ai.central-ops';
 
 /**
  * Schema de argumentos de uma ferramenta da KAVIAR IA.
@@ -277,6 +278,38 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     argSchema: { type: 'object', properties: {}, required: [] },
     allowedRoles: ['SUPER_ADMIN'],
     execute: getExcellenceSealSummary,
+  },
+  {
+    name: 'operations_overview',
+    description: 'Visão geral operacional: motoristas, selos, admins, territórios e bloqueios.',
+    readOnly: true,
+    argSchema: { type: 'object', properties: {}, required: [] },
+    allowedRoles: ['SUPER_ADMIN'],
+    execute: getOperationsOverview,
+  },
+  {
+    name: 'person_lookup',
+    description: 'Busca segura de pessoa por nome: motorista, admin ou passageiro. Retorna apenas dados operacionais, sem CPF/telefone/email.',
+    readOnly: true,
+    argSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
+    allowedRoles: ['SUPER_ADMIN'],
+    execute: getPersonLookup,
+  },
+  {
+    name: 'driver_detail',
+    description: 'Detalhe individual do motorista: avaliações, compliance, selo, modalidades. Identificado por driverId.',
+    readOnly: true,
+    argSchema: { type: 'object', properties: { driverId: { type: 'string' } }, required: ['driverId'] },
+    allowedRoles: ['SUPER_ADMIN'],
+    execute: getDriverDetail,
+  },
+  {
+    name: 'seal_history',
+    description: 'Histórico do Selo Excelência: ativos, suspensos, concessões e revogações recentes.',
+    readOnly: true,
+    argSchema: { type: 'object', properties: {}, required: [] },
+    allowedRoles: ['SUPER_ADMIN'],
+    execute: getSealHistory,
   },
 ] as const;
 

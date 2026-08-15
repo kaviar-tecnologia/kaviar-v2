@@ -142,7 +142,7 @@ describe('territory_activation_readiness', () => {
 describe('registry — novas tools registradas', () => {
   it('registry contém 10 ferramentas', () => {
     const tools = getRegisteredTools();
-    expect(tools).toHaveLength(21);
+    expect(tools).toHaveLength(25);
   });
 
   it('3 ferramentas antigas continuam registradas', () => {
