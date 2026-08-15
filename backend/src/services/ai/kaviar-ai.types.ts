@@ -19,7 +19,11 @@ export type KaviarAiToolName =
   | 'knowledge_answer'
   | 'driver_ratings_summary'
   | 'compliance_summary'
-  | 'excellence_seal_summary';
+  | 'excellence_seal_summary'
+  | 'operations_overview'
+  | 'person_lookup'
+  | 'driver_detail'
+  | 'seal_history';
 
 export type KaviarAiRequest = {
   userId: string;

@@ -29,6 +29,7 @@ import type {
 import type { KnowledgeAnswerData } from './kaviar-ai.knowledge';
 import type { DriverRatingsSummaryData } from './kaviar-ai.driver-ratings';
 import type { ComplianceSummaryData, ExcellenceSealSummaryData } from './kaviar-ai.compliance-seal';
+import type { OperationsOverviewData, PersonLookupData, DriverDetailData, SealHistoryData } from './kaviar-ai.central-ops';
 import { executeTool, canRoleExecuteTool } from './kaviar-ai.registry';
 import { routeQuestion } from './kaviar-ai.router';
 
@@ -472,6 +473,47 @@ const FORMATTERS: Record<KaviarAiToolName, (data: unknown) => string> = {
     if (!d.available) return 'Selo Excelência: não foi possível consultar.';
     return `🏆 Selo Excelência KAVIAR — ${d.referenceTime}\nAtivos: ${d.activeCount} | Suspensos: ${d.suspendedCount}\nEsta semana: +${d.grantedThisWeek} concedidos, ${d.suspendedThisWeek} suspensos`;
   },
+  operations_overview: (data) => {
+    const d = data as OperationsOverviewData;
+    if (!d.available) return 'Visão operacional: não foi possível consultar.';
+    const parts = [`📊 Visão Operacional — ${d.referenceTime}`];
+    parts.push(`Motoristas: ${d.drivers.total} total | ${d.drivers.active} ativos | ${d.drivers.pending} pendentes | ${d.drivers.suspended} suspensos`);
+    parts.push(`Selo Excelência: ${d.drivers.sealActive} ativos, ${d.drivers.sealSuspended} suspensos`);
+    if (d.drivers.petApproved > 0) parts.push(`Homologações Pet aprovadas: ${d.drivers.petApproved}`);
+    parts.push(`Admins: ${d.admins.total} (${Object.entries(d.admins.byRole).map(([r,c]) => `${r}: ${c}`).join(', ')})`);
+    parts.push(`Territórios: ${d.territories.total} total | ${d.territories.active} ativos | ${d.territories.preparation} preparação | ${d.territories.blocked} bloqueados`);
+    return parts.join('\n');
+  },
+  person_lookup: (data) => {
+    const d = data as PersonLookupData;
+    if (!d.available) return 'Busca de pessoa: não foi possível consultar.';
+    if (d.results.length === 0) return d.message;
+    const parts = [d.message, ''];
+    for (const r of d.results) {
+      const link = r.adminLink ? ` → gestão: ${r.adminLink}` : '';
+      parts.push(`• ${r.name} (${r.type}) — ${r.status}${r.role ? ` [${r.role}]` : ''}${link}`);
+    }
+    return parts.join('\n');
+  },
+  driver_detail: (data) => {
+    const d = data as DriverDetailData;
+    if (!d.available) return 'Detalhe do motorista: não foi possível consultar.';
+    if (!d.found) return 'Motorista não encontrado.';
+    const parts = [`👤 ${d.name} — ${d.status} (${d.vehicleType})`];
+    if (d.rating) { parts.push(`Avaliações: média ${d.rating.average ?? '—'} | total ${d.rating.total} | baixas 30d: ${d.rating.lowLast30d}${d.rating.needsAttention ? ' ⚠️' : ''}`); }
+    if (d.compliance) { parts.push(`Compliance: ${d.compliance.currentStatus} | validade: ${d.compliance.validUntil ?? 'indisponível'}`); }
+    if (d.seal) { parts.push(`Selo: ${d.seal.active ? '✓ Ativo' : d.seal.suspended ? '⏸ Suspenso' : '—'}${d.seal.grantedAt ? ` (desde ${d.seal.grantedAt.slice(0,10)})` : ''}`); }
+    if (d.modalities.length > 0) { parts.push(`Modalidades: ${d.modalities.map(m => `${m.modality}:${m.status}`).join(', ')}`); }
+    parts.push(`Admin: ${d.adminLink}`);
+    return parts.join('\n');
+  },
+  seal_history: (data) => {
+    const d = data as SealHistoryData;
+    if (!d.available) return 'Histórico do selo: não foi possível consultar.';
+    const parts = [`🏆 Histórico do Selo — ${d.referenceTime}`, `Ativos: ${d.totalActive} | Suspensos: ${d.totalSuspended}`];
+    if (d.recentEvents.length > 0) { parts.push('', 'Eventos recentes:'); for (const e of d.recentEvents) parts.push(`  • ${e.driverName} — ${e.eventType}${e.reason ? ` (${e.reason})` : ''} — ${e.createdAt.slice(0,10)}`); }
+    return parts.join('\n');
+  },
 };
 
 // ── Formatters Command Center ───────────────────────────────────────────────
@@ -688,6 +730,19 @@ function parsePeriod(question: string): 'today' | 'week' | 'month' {
 
 // ── Extração de seção da company_profile ────────────────────────────────────
 
+// ── Extração de nome de pessoa da pergunta ──────────────────────────────────
+
+function extractPersonName(question: string): string {
+  // Remove common prefixes: "quem é", "mostre o motorista", "buscar", "encontre"
+  let name = question
+    .replace(/^(quem [eé]|mostre o motorista|buscar motorista|encontre|procure|motorista|admin|gestor)\s*/i, '')
+    .replace(/[?!.]+$/, '')
+    .trim();
+  // If still has "motorista X" or "o X", extract the name part
+  name = name.replace(/^(o|a|motorista|passageiro|gestor|admin)\s+/i, '').trim();
+  return name.slice(0, 100);
+}
+
 function parseCatalogSection(question: string): string {
   const q = question.toLowerCase();
   if (q.includes('corrida') || q.includes('cockpit') || q.includes('emergência') || q.includes('emergencia') || q.includes('compensaç') || q.includes('avaliação') || q.includes('avaliacao') || q.includes('particular') || q.includes('rota fixa')) return 'mobility_operations';
@@ -798,6 +853,11 @@ export async function askKaviarAi(
       args = { section: parseCatalogSection(question) };
     } else if (toolName === 'knowledge_answer') {
       args = { question, role };
+    } else if (toolName === 'person_lookup') {
+      args = { name: extractPersonName(question) };
+    } else if (toolName === 'driver_detail') {
+      const idMatch = question.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+      args = idMatch ? { driverId: idMatch[0] } : undefined;
     }
 
     const result = await executeTool(toolName, args);
@@ -807,6 +867,19 @@ export async function askKaviarAi(
       : `Resultado obtido da ferramenta "${result.tool}".`;
     answers.push(formatted);
     toolsUsed.push(result.tool as KaviarAiToolName);
+
+    // Auto-chain: if person_lookup found exactly 1 driver, also get driver_detail
+    if (toolName === 'person_lookup') {
+      const lookupData = result.data as any;
+      if (lookupData.results?.length === 1 && lookupData.results[0].type === 'driver' && !lookupData.ambiguous) {
+        const detailResult = await executeTool('driver_detail', { driverId: lookupData.results[0].id });
+        const detailFormatter = FORMATTERS['driver_detail'];
+        if (detailFormatter) {
+          answers.push(detailFormatter(detailResult.data));
+          toolsUsed.push('driver_detail');
+        }
+      }
+    }
   }
 
   return {
