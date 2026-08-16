@@ -369,6 +369,35 @@ describe('Fix 1: parseCityUf + args passados à tool', () => {
     expect(firstCall[1][1]).toBe('SP');
   });
 
+  it('"Libere a landing de Itaperuna/RJ" extrai city=Itaperuna, uf=RJ', async () => {
+    // Query 1: território
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    // Query 2: landings
+    mockQuery.mockResolvedValueOnce({
+      rows: [{
+        city: 'Itaperuna',
+        state: 'RJ',
+        slug: 'itaperuna-rj',
+        public_status: 'IMPLANTACAO',
+        landing_enabled: false,
+      }],
+    });
+
+    const r = await askKaviarAi({
+      userId: 'admin-1',
+      question: 'Libere a landing de Itaperuna/RJ',
+      role: 'SUPER_ADMIN',
+    });
+
+    expect(r.toolsUsed).toContain('territory_onboarding_status');
+    expect(r.toolsUsed).toContain('driver_city_landings');
+
+    const firstCall = mockQuery.mock.calls[0];
+    expect(firstCall[1][0]).toBe('Itaperuna');
+    expect(firstCall[1][1]).toBe('RJ');
+  });
+
   it('pergunta territorial sem city/uf retorna mensagem de orientação', async () => {
     const r = await askKaviarAi({ userId: 'admin-1', question: 'Quero abrir uma cidade nova', role: 'SUPER_ADMIN' });
     expect(r.answer).toContain('Informe a cidade e a UF');
