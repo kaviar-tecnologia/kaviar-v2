@@ -47,6 +47,43 @@ describe('territory_onboarding_status', () => {
     expect(r.data.pendencies).toContain('Regulatório não avaliado.');
   });
 
+  it('reconhece gestor ativo vinculado a região filha da cidade', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{
+      id: 'rio-city', name: 'Rio de Janeiro', level: 'city', status: 'active',
+      uf: 'RJ', city_name: 'Rio de Janeiro', regulatory_status: 'approved',
+      regulatory_notes: null, moto_express_enabled: false, moto_passenger_enabled: false,
+    }] });
+
+    mockQuery.mockResolvedValueOnce({ rows: [{
+      id: 'fernanda',
+      name: 'Fernanda',
+      email: 'fernanda@kaviar.com.br',
+      role: 'TERRITORIAL_MANAGER',
+      status: 'active',
+      territory_id: 'barra',
+      territory_name: 'Barra da Tijuca',
+      territory_level: 'region',
+    }] });
+
+    mockQuery.mockResolvedValueOnce({ rows: [{
+      is_active: true,
+      contract_status: 'not_required',
+      document_status: 'verified',
+    }] });
+
+    const r = await getTerritoryOnboardingStatus('Rio de Janeiro', 'RJ');
+
+    expect(r.data.manager?.name).toBe('Fernanda');
+    expect(r.data.manager?.territory_name).toBe('Barra da Tijuca');
+    expect(r.data.pendencies).not.toContain('Nenhum gestor territorial vinculado.');
+
+    const managerSql = String(mockQuery.mock.calls[1][0]);
+    expect(managerSql).toContain('managed_t.parent_id = $1');
+    expect(managerSql).toContain('a.is_active = true');
+
+    expect(mockQuery.mock.calls[2][1]).toEqual(['fernanda', 'barra']);
+  });
+
   it('retorna sem gestor quando não há assignment', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [{
       id: 't1', name: 'Teste', level: 'city', status: 'planning',
@@ -170,6 +207,11 @@ describe('registry — novas tools registradas', () => {
 describe('routeByRules — territorial', () => {
   it('detecta "Quero abrir Pirassununga"', () => {
     const r = routeByRules('Quero abrir Pirassununga como cidade');
+    expect(r.toolsToCall).toContain('territory_onboarding_status');
+  });
+
+  it('detecta pergunta individual "Tem gestor em Cidade/UF?"', () => {
+    const r = routeByRules('Tem gestor em Rio de Janeiro/RJ?');
     expect(r.toolsToCall).toContain('territory_onboarding_status');
   });
 
