@@ -61,6 +61,17 @@ describe('driver_city_landings', () => {
     expect(result.data.items[0].landingEnabled).toBe(true);
   });
 
+  it('retorna vazio quando a cidade solicitada não possui landing cadastrada', async () => {
+    mockQuery.mockResolvedValueOnce({ rows });
+
+    const result = await getDriverCityLandings({
+      question: 'Qual é a landing de Campinas?',
+    });
+
+    expect(result.data.matched).toBe(0);
+    expect(result.data.items).toEqual([]);
+  });
+
   it('lista somente landings habilitadas quando solicitado', async () => {
     mockQuery.mockResolvedValueOnce({ rows });
 
