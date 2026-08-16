@@ -733,7 +733,13 @@ function formatDriverRatingsSummary(data: DriverRatingsSummaryData): string {
 // ── Extração de city/uf da pergunta ─────────────────────────────────────────
 
 function parseCityUf(question: string): { city: string; uf: string } | null {
-  const STOP_WORDS = new Set(['quero', 'abrir', 'cadastrar', 'como', 'verificar', 'criar', 'está', 'status', 'cidade', 'território', 'territorio', 'nova', 'novo']);
+  const STOP_WORDS = new Set([
+    'quero', 'abrir', 'cadastrar', 'como', 'verificar', 'criar',
+    'está', 'status', 'cidade', 'território', 'territorio', 'nova', 'novo',
+    'liberar', 'libere', 'ativar', 'ative', 'habilitar', 'habilite',
+    'landing', 'page', 'página', 'pagina',
+    'a', 'o', 'uma', 'um', 'de', 'da', 'do', 'em', 'para'
+  ]);
 
   let match = question.match(/(.+?)\s*\/\s*([A-Za-z]{2})(?:\s|$|[.,!?])/);
   if (!match) match = question.match(/(.+?)\s+[-–]\s+([A-Za-z]{2})(?:\s|$|[.,!?])/);
