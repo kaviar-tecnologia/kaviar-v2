@@ -44,6 +44,10 @@ describe('driver_city_landings', () => {
     expect(
       routeByRules('Quais cidades têm landing ativa?').toolsToCall
     ).toEqual(['driver_city_landings']);
+
+    expect(
+      routeByRules('Libere a landing de Araraquara/SP').toolsToCall
+    ).toEqual(['territory_onboarding_status', 'driver_city_landings']);
   });
 
   it('localiza cidade citada e devolve URL pública real', async () => {

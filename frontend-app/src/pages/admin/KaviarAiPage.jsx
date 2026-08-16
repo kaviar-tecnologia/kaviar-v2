@@ -39,6 +39,7 @@ export default function KaviarAiPage() {
   const [managerDialog, setManagerDialog] = useState(null); // { territoryId, territoryName }
   const [managerForm, setManagerForm] = useState({ name: '', email: '' });
   const [managerResult, setManagerResult] = useState(null); // { name, email, tempPassword, territory, status }
+  const [landingDialog, setLandingDialog] = useState(null); // { city, uf }
   const [actionLoading, setActionLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const regulatoryAbortRef = useRef({ cancelled: false, timer: null });
@@ -110,6 +111,43 @@ export default function KaviarAiPage() {
       setManagerForm({ name: '', email: '' });
     } catch (err) {
       const msg = err?.response?.data?.error || 'Erro ao cadastrar gestor.';
+      setError(msg);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleEnableLanding = async () => {
+    if (!isSuperAdmin || !landingDialog) return;
+
+    setActionLoading(true);
+    setError('');
+
+    try {
+      const res = await api.post('/api/admin/ai/territory/landing/enable', {
+        city: landingDialog.city,
+        uf: landingDialog.uf,
+        confirmation: 'LIBERAR_LANDING',
+      });
+
+      if (res.data.success) {
+        const d = res.data.data;
+
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content:
+            `✓ Landing de motoristas liberada para ${d.city}/${d.state}.\n` +
+            `Status público: ${d.public_status}\n` +
+            `URL: ${d.url}`,
+          toolsUsed: ['driver_city_landings'],
+        }]);
+      }
+
+      setLandingDialog(null);
+    } catch (err) {
+      const msg =
+        err?.response?.data?.error ||
+        'Erro ao liberar landing de motoristas.';
       setError(msg);
     } finally {
       setActionLoading(false);
@@ -424,6 +462,42 @@ export default function KaviarAiPage() {
                   </Box>
                 )}
 
+                {/* Liberar landing com confirmação explícita */}
+                {isSuperAdmin &&
+                  msg.role === 'assistant' &&
+                  msg.toolsUsed?.includes('territory_onboarding_status') &&
+                  msg.toolsUsed?.includes('driver_city_landings') &&
+                  msg.content?.includes('ID:') &&
+                  (
+                    msg.content?.includes('Nenhuma landing page de motoristas correspondente foi encontrada.') ||
+                    msg.content?.includes('Landing: desativada')
+                  ) && (
+                  <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      disabled={actionLoading}
+                      sx={{
+                        color: '#B8942E',
+                        borderColor: '#B8942E',
+                        fontSize: 11,
+                        textTransform: 'none',
+                      }}
+                      onClick={() => {
+                        const match = msg.content.match(/Cidade:\s*([^/\n]+)\/([A-Z]{2})/);
+                        if (match) {
+                          setLandingDialog({
+                            city: match[1].trim(),
+                            uf: match[2],
+                          });
+                        }
+                      }}
+                    >
+                      Liberar landing
+                    </Button>
+                  </Box>
+                )}
+
                 {isSuperAdmin && msg.role === 'assistant' && msg.toolsUsed?.includes('territory_onboarding_status') && msg.content?.includes('Nenhum') && msg.content?.includes('gestor') && (
                   <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
                     <Button size="small" variant="outlined" disabled={actionLoading}
@@ -524,6 +598,57 @@ export default function KaviarAiPage() {
           </Box>
         </Container>
       </Box>
+
+      {/* Dialog confirmação de liberação da landing */}
+      <Dialog
+        open={!!landingDialog}
+        onClose={() => setLandingDialog(null)}
+        PaperProps={{
+          sx: {
+            bgcolor: '#1A1A1F',
+            color: '#E5E7EB',
+            minWidth: 360,
+          },
+        }}
+      >
+        <DialogTitle sx={{ color: '#FFD700', fontSize: 16 }}>
+          Liberar Landing de Motoristas
+        </DialogTitle>
+
+        <DialogContent>
+          <Typography sx={{ color: '#E5E7EB', fontSize: 13, mb: 1.5 }}>
+            {landingDialog
+              ? `${landingDialog.city}/${landingDialog.uf}`
+              : ''}
+          </Typography>
+
+          <Typography sx={{ color: '#9CA3AF', fontSize: 12 }}>
+            Esta ação tornará pública a página de captação de motoristas
+            desta cidade.
+          </Typography>
+
+          <Typography sx={{ color: '#6B7280', fontSize: 11, mt: 1.5 }}>
+            Isso não ativa o território e não libera a operação de corridas.
+          </Typography>
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={() => setLandingDialog(null)}
+            sx={{ color: '#6B7280' }}
+          >
+            Cancelar
+          </Button>
+
+          <Button
+            onClick={handleEnableLanding}
+            disabled={actionLoading}
+            sx={{ color: '#B8942E' }}
+          >
+            Liberar landing
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Dialog cadastro de gestor */}
       <Dialog open={!!managerDialog} onClose={() => setManagerDialog(null)}
