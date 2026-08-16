@@ -233,6 +233,20 @@ export function routeByRules(question: string): KaviarAiRouteResult {
     return { toolsToCall: ['company_profile'] };
   }
 
+  // ── Driver city landings ───────────────────────────────────────────────
+  const hasDriverCityLandingContext =
+    q.includes('landing') ||
+    q.includes('landing page') ||
+    ((q.includes('página') || q.includes('pagina')) &&
+      q.includes('recrutamento')) ||
+    ((q.includes('link') || q.includes('página') || q.includes('pagina')) &&
+      q.includes('motorista') &&
+      (q.includes('cidade') || q.includes('cadastrar') || q.includes('recrut')));
+
+  if (hasDriverCityLandingContext) {
+    return { toolsToCall: ['driver_city_landings'] };
+  }
+
   // ── Platform catalog ───────────────────────────────────────────────────
   if (
     q.includes('quais módulos') || q.includes('quais modulos') ||
