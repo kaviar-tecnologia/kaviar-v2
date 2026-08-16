@@ -600,6 +600,7 @@ export type TerritoryPortfolioSummaryData = {
   byStatus: Record<string, number>;
   byRegulatoryStatus: Record<string, number>;
   withoutManager: number;
+  withoutManagerCities: { city: string; uf: string; status: string; isActive: boolean }[];
   withMotoPassenger: number;
   withMotoExpress: number;
   regulatoryChecklist: { available: boolean; pending: number };
@@ -619,6 +620,7 @@ export async function getTerritoryPortfolioSummary(): Promise<{
   let byStatus: Record<string, number> = {};
   let byRegulatoryStatus: Record<string, number> = {};
   let withoutManager = 0, withMotoPassenger = 0, withMotoExpress = 0;
+  let withoutManagerCities: TerritoryPortfolioSummaryData['withoutManagerCities'] = [];
 
   try {
     const statusResult = await pool.query<{ status: string; cnt: number }>(`
@@ -631,17 +633,53 @@ export async function getTerritoryPortfolioSummary(): Promise<{
     `);
     for (const r of regResult.rows) byRegulatoryStatus[r.regulatory_status] = r.cnt;
 
-    const metaResult = await pool.query<{ without_manager: number; moto_passenger: number; moto_express: number }>(`
+    const metaResult = await pool.query<{
+      without_manager: number;
+      moto_passenger: number;
+      moto_express: number;
+      without_manager_cities: TerritoryPortfolioSummaryData['withoutManagerCities'];
+    }>(`
       SELECT
         COUNT(*) FILTER (WHERE NOT EXISTS (
           SELECT 1 FROM territory_manager_assignments tma WHERE tma.territory_id = t.id AND tma.status = 'active' AND tma.ended_at IS NULL
         ))::int AS without_manager,
         COUNT(*) FILTER (WHERE t.moto_passenger_enabled = true)::int AS moto_passenger,
-        COUNT(*) FILTER (WHERE t.moto_express_enabled = true)::int AS moto_express
+        COUNT(*) FILTER (WHERE t.moto_express_enabled = true)::int AS moto_express,
+        (
+          SELECT COALESCE(
+            json_agg(
+              json_build_object(
+                'city', no_mgr.city_name,
+                'uf', no_mgr.uf,
+                'status', no_mgr.status,
+                'isActive', no_mgr.is_active
+              )
+              ORDER BY no_mgr.is_active DESC, no_mgr.uf, no_mgr.city_name
+            ),
+            '[]'::json
+          )
+          FROM (
+            SELECT t2.id, t2.city_name, t2.uf, t2.status, t2.is_active
+            FROM operational_territories t2
+            WHERE t2.level = 'city'
+              AND NOT EXISTS (
+                SELECT 1
+                FROM territory_manager_assignments tma2
+                WHERE tma2.territory_id = t2.id
+                  AND tma2.status = 'active'
+                  AND tma2.ended_at IS NULL
+              )
+            ORDER BY t2.is_active DESC, t2.uf, t2.city_name
+            LIMIT 50
+          ) no_mgr
+        ) AS without_manager_cities
       FROM operational_territories t WHERE t.level = 'city' AND t.is_active = true
     `);
     const meta = metaResult.rows[0]!;
     withoutManager = meta.without_manager;
+    withoutManagerCities = Array.isArray(meta.without_manager_cities)
+      ? meta.without_manager_cities
+      : [];
     withMotoPassenger = meta.moto_passenger;
     withMotoExpress = meta.moto_express;
     available = true;
@@ -711,7 +749,8 @@ export async function getTerritoryPortfolioSummary(): Promise<{
   return {
     tool: 'territory_portfolio_summary',
     data: {
-      available, total, byStatus, byRegulatoryStatus, withoutManager, withMotoPassenger, withMotoExpress,
+      available, total, byStatus, byRegulatoryStatus, withoutManager, withoutManagerCities,
+      withMotoPassenger, withMotoExpress,
       regulatoryChecklist, regulatoryProtocols, insuranceCoverages, cityLandings, attentionCities,
       referenceTime: refResult.rows[0]?.ref ?? new Date().toISOString(),
     },

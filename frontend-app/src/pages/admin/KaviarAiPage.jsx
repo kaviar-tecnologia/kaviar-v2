@@ -40,6 +40,7 @@ export default function KaviarAiPage() {
   const [managerForm, setManagerForm] = useState({ name: '', email: '' });
   const [managerResult, setManagerResult] = useState(null); // { name, email, tempPassword, territory, status }
   const [landingDialog, setLandingDialog] = useState(null); // { city, uf }
+  const [territoryDialog, setTerritoryDialog] = useState(null); // { city, uf }
   const [actionLoading, setActionLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const regulatoryAbortRef = useRef({ cancelled: false, timer: null });
@@ -65,17 +66,28 @@ export default function KaviarAiPage() {
   }, [messages, scrollToBottom]);
 
   // ── Ações territoriais ──────────────────────────────────────────────────
-  const handleCreateTerritory = async (city, uf) => {
-    if (!isSuperAdmin) return;
+  const handleCreateTerritory = async () => {
+    if (!isSuperAdmin || !territoryDialog) return;
+
+    const { city, uf } = territoryDialog;
     setActionLoading(true);
+    setError('');
+
     try {
-      const res = await api.post('/api/admin/ai/territory/create', { city, uf });
+      const res = await api.post('/api/admin/ai/territory/create', {
+        city,
+        uf,
+        confirmation: 'CRIAR_TERRITORIO',
+      });
+
       if (res.data.success) {
         setMessages(prev => [...prev, {
           role: 'assistant',
           content: `✓ Território "${res.data.data.name}" criado com status: planning.\nID: ${res.data.data.id}`,
           toolsUsed: ['territory_onboarding_status'],
         }]);
+
+        setTerritoryDialog(null);
       }
     } catch (err) {
       const msg = err?.response?.data?.error || 'Erro ao criar território.';
@@ -433,7 +445,12 @@ export default function KaviarAiPage() {
                       sx={{ color: '#B8942E', borderColor: '#B8942E', fontSize: 11, textTransform: 'none' }}
                       onClick={() => {
                         const match = msg.content.match(/Território\s+(.+?)\/([A-Z]{2})\s+não/);
-                        if (match) handleCreateTerritory(match[1].trim(), match[2]);
+                        if (match) {
+                          setTerritoryDialog({
+                            city: match[1].trim(),
+                            uf: match[2],
+                          });
+                        }
                       }}>
                       Criar território
                     </Button>
@@ -598,6 +615,57 @@ export default function KaviarAiPage() {
           </Box>
         </Container>
       </Box>
+
+      {/* Dialog confirmação de criação do território */}
+      <Dialog
+        open={!!territoryDialog}
+        onClose={() => setTerritoryDialog(null)}
+        PaperProps={{
+          sx: {
+            bgcolor: '#1A1A1F',
+            color: '#E5E7EB',
+            minWidth: 360,
+          },
+        }}
+      >
+        <DialogTitle sx={{ color: '#FFD700', fontSize: 16 }}>
+          Confirmar criação do território
+        </DialogTitle>
+
+        <DialogContent>
+          <Typography sx={{ color: '#E5E7EB', fontSize: 13, mb: 1.5 }}>
+            {territoryDialog
+              ? `${territoryDialog.city}/${territoryDialog.uf}`
+              : ''}
+          </Typography>
+
+          <Typography sx={{ color: '#9CA3AF', fontSize: 12 }}>
+            Esta ação criará um registro real de território no KAVIAR.
+          </Typography>
+
+          <Typography sx={{ color: '#6B7280', fontSize: 11, mt: 1.5 }}>
+            O território será criado em planning e permanecerá inativo.
+            Isso não libera corridas nem ativa a operação.
+          </Typography>
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={() => setTerritoryDialog(null)}
+            sx={{ color: '#6B7280' }}
+          >
+            Cancelar
+          </Button>
+
+          <Button
+            onClick={handleCreateTerritory}
+            disabled={actionLoading}
+            sx={{ color: '#B8942E' }}
+          >
+            Criar território
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Dialog confirmação de liberação da landing */}
       <Dialog

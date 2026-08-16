@@ -283,11 +283,22 @@ describe('pesquisa regulatória', () => {
 
 describe('criação de território — regras', () => {
   it('endpoint exige confirmação (não é automático via tool)', () => {
-    // As tools são read-only. Criação requer POST separado com confirmação frontend.
+    // As tools são read-only. Criação requer POST separado + confirmação explícita.
     const tools = getRegisteredTools();
     for (const tool of tools) {
       expect(tool.readOnly).toBe(true);
     }
+
+    const routeSrc = require('fs').readFileSync(
+      require('path').resolve(__dirname, '../src/routes/admin-ai.ts'), 'utf8'
+    );
+    const pageSrc = require('fs').readFileSync(
+      require('path').resolve(__dirname, '../..', 'frontend-app/src/pages/admin/KaviarAiPage.jsx'), 'utf8'
+    );
+
+    expect(routeSrc).toContain("confirmation !== 'CRIAR_TERRITORIO'");
+    expect(pageSrc).toContain("confirmation: 'CRIAR_TERRITORIO'");
+    expect(pageSrc).toContain('Confirmar criação do território');
   });
 
   it('território nunca nasce active (rota usa planning)', async () => {

@@ -149,7 +149,15 @@ router.get('/territory/regulatory-search/:responseId', requireSuperAdmin, async 
 // ── Territorial: Criar território em planning ────────────────────────────────
 router.post('/territory/create', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const { city, uf } = req.body;
+    const { city, uf, confirmation } = req.body;
+
+    if (confirmation !== 'CRIAR_TERRITORIO') {
+      return res.status(400).json({
+        success: false,
+        error: 'Confirmação CRIAR_TERRITORIO obrigatória.',
+      });
+    }
+
     if (!city || !uf || typeof city !== 'string' || typeof uf !== 'string' || uf.trim().length !== 2) {
       return res.status(400).json({ success: false, error: 'city e uf (2 letras) são obrigatórios.' });
     }

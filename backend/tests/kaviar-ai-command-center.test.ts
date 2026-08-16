@@ -278,11 +278,24 @@ describe('territory_portfolio_summary', () => {
     expect(r.toolsToCall).toContain('territory_portfolio_summary');
   });
 
+  it('"Quais territórios estão sem gestor?" roteia para portfolio sem exigir Cidade/UF', () => {
+    const r = routeByRules('Quais territórios estão sem gestor?');
+    expect(r.toolsToCall).toEqual(['territory_portfolio_summary']);
+  });
+
   it('retorna portfólio completo com checklist, protocolos, seguros e landings', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{ status: 'active', cnt: 3 }, { status: 'preparation', cnt: 5 }, { status: 'planning', cnt: 2 }] })
       .mockResolvedValueOnce({ rows: [{ regulatory_status: 'approved', cnt: 3 }, { regulatory_status: 'not_evaluated', cnt: 7 }] })
-      .mockResolvedValueOnce({ rows: [{ without_manager: 4, moto_passenger: 2, moto_express: 1 }] })
+      .mockResolvedValueOnce({ rows: [{
+        without_manager: 4,
+        moto_passenger: 2,
+        moto_express: 1,
+        without_manager_cities: [
+          { city: 'Santa Cruz das Palmeiras', uf: 'SP', status: 'planning', isActive: false },
+          { city: 'Campinas', uf: 'SP', status: 'active', isActive: true },
+        ],
+      }] })
       .mockResolvedValueOnce({ rows: [{ cnt: 3 }] }) // checklist
       .mockResolvedValueOnce({ rows: [{ cnt: 5 }] }) // protocols
       .mockResolvedValueOnce({ rows: [{ cnt: 2 }] }) // insurance
@@ -295,6 +308,10 @@ describe('territory_portfolio_summary', () => {
     expect(r.data.total).toBe(10);
     expect(r.data.byStatus['active']).toBe(3);
     expect(r.data.withoutManager).toBe(4);
+    expect(r.data.withoutManagerCities).toEqual([
+      { city: 'Santa Cruz das Palmeiras', uf: 'SP', status: 'planning', isActive: false },
+      { city: 'Campinas', uf: 'SP', status: 'active', isActive: true },
+    ]);
     expect(r.data.regulatoryChecklist).toEqual({ available: true, pending: 3 });
     expect(r.data.regulatoryProtocols).toEqual({ available: true, pending: 5 });
     expect(r.data.insuranceCoverages).toEqual({ available: true, pending: 2 });
@@ -313,8 +330,8 @@ describe('territory_portfolio_summary', () => {
 // ══════════════════════════════════════════════════════════════════════════════
 
 describe('command center — registry', () => {
-  it('registry contém 17 ferramentas', () => {
-    expect(getRegisteredTools()).toHaveLength(18);
+  it('registry contém 26 ferramentas', () => {
+    expect(getRegisteredTools()).toHaveLength(26);
   });
 
   it('todas as 6 novas tools são readOnly', () => {
