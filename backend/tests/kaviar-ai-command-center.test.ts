@@ -312,6 +312,12 @@ describe('territory_portfolio_summary', () => {
       { city: 'Santa Cruz das Palmeiras', uf: 'SP', status: 'planning', isActive: false },
       { city: 'Campinas', uf: 'SP', status: 'active', isActive: true },
     ]);
+
+    const managerSql = String(mockQuery.mock.calls[2][0]);
+    expect(managerSql).toContain('manager_admin.is_active = true');
+    expect(managerSql).toContain('managed_t.parent_id = t.id');
+    expect(managerSql).toContain("t2.status <> 'inactive'");
+    expect(managerSql).toContain('managed_t2.parent_id = t2.id');
     expect(r.data.regulatoryChecklist).toEqual({ available: true, pending: 3 });
     expect(r.data.regulatoryProtocols).toEqual({ available: true, pending: 5 });
     expect(r.data.insuranceCoverages).toEqual({ available: true, pending: 2 });

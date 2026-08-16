@@ -641,7 +641,24 @@ export async function getTerritoryPortfolioSummary(): Promise<{
     }>(`
       SELECT
         COUNT(*) FILTER (WHERE NOT EXISTS (
-          SELECT 1 FROM territory_manager_assignments tma WHERE tma.territory_id = t.id AND tma.status = 'active' AND tma.ended_at IS NULL
+          SELECT 1
+          FROM territory_manager_assignments tma
+          JOIN admins manager_admin
+            ON manager_admin.id = tma.admin_id
+           AND manager_admin.is_active = true
+          WHERE tma.status = 'active'
+            AND tma.ended_at IS NULL
+            AND (
+              tma.territory_id = t.id
+              OR EXISTS (
+                SELECT 1
+                FROM operational_territories managed_t
+                WHERE managed_t.id = tma.territory_id
+                  AND managed_t.parent_id = t.id
+                  AND managed_t.level = 'region'
+                  AND managed_t.is_active = true
+              )
+            )
         ))::int AS without_manager,
         COUNT(*) FILTER (WHERE t.moto_passenger_enabled = true)::int AS moto_passenger,
         COUNT(*) FILTER (WHERE t.moto_express_enabled = true)::int AS moto_express,
@@ -662,12 +679,26 @@ export async function getTerritoryPortfolioSummary(): Promise<{
             SELECT t2.id, t2.city_name, t2.uf, t2.status, t2.is_active
             FROM operational_territories t2
             WHERE t2.level = 'city'
+              AND t2.status <> 'inactive'
               AND NOT EXISTS (
                 SELECT 1
                 FROM territory_manager_assignments tma2
-                WHERE tma2.territory_id = t2.id
-                  AND tma2.status = 'active'
+                JOIN admins manager_admin2
+                  ON manager_admin2.id = tma2.admin_id
+                 AND manager_admin2.is_active = true
+                WHERE tma2.status = 'active'
                   AND tma2.ended_at IS NULL
+                  AND (
+                    tma2.territory_id = t2.id
+                    OR EXISTS (
+                      SELECT 1
+                      FROM operational_territories managed_t2
+                      WHERE managed_t2.id = tma2.territory_id
+                        AND managed_t2.parent_id = t2.id
+                        AND managed_t2.level = 'region'
+                        AND managed_t2.is_active = true
+                    )
+                  )
               )
             ORDER BY t2.is_active DESC, t2.uf, t2.city_name
             LIMIT 50

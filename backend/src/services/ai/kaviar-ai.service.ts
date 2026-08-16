@@ -154,7 +154,15 @@ function formatTerritoryOnboarding(data: TerritoryOnboardingStatusData): string 
   parts.push(`Território: ${t.name}`);
   parts.push(`Status: ${t.status}`);
   parts.push(`Regulatório: ${t.regulatory_status}`);
-  parts.push(`Gestor: ${data.manager ? data.manager.name : 'Nenhum vinculado'}`);
+  if (data.manager) {
+    const scope =
+      data.manager.territory_level === 'region'
+        ? ` (${data.manager.territory_name})`
+        : '';
+    parts.push(`Tem gestor: Sim — ${data.manager.name}${scope}`);
+  } else {
+    parts.push('Tem gestor: Não');
+  }
   if (t.moto_express_enabled) parts.push('Moto Express: habilitado');
   if (t.moto_passenger_enabled) parts.push('Moto Passageiro: habilitado');
   if (data.pendencies.length > 0) {

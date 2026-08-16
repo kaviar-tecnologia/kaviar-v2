@@ -198,6 +198,9 @@ export type TerritoryOnboardingStatusData = {
     email: string;
     role: string;
     status: string;
+    territory_id: string;
+    territory_name: string;
+    territory_level: string;
   } | null;
   pendencies: string[];
 };
@@ -250,6 +253,7 @@ export async function getTerritoryOnboardingStatus(
     WHERE LOWER(city_name) = LOWER($1)
       AND UPPER(uf) = $2
       AND level = 'city'
+    ORDER BY is_active DESC, created_at DESC
     LIMIT 1
   `, [normalizedCity, normalizedUf]);
 
@@ -267,21 +271,46 @@ export async function getTerritoryOnboardingStatus(
     };
   }
 
-  // Busca gestor vinculado (manager assignment ativo)
+  // Busca gestor ativo na cidade OU em uma região filha ativa.
   const managerResult = await pool.query<{
     id: string;
     name: string;
     email: string;
     role: string;
     status: string;
+    territory_id: string;
+    territory_name: string;
+    territory_level: string;
   }>(`
-    SELECT a.id, a.name, a.email, a.role,
-           tma.status
+    SELECT
+      a.id,
+      a.name,
+      a.email,
+      a.role,
+      tma.status,
+      tma.territory_id,
+      managed_t.name AS territory_name,
+      managed_t.level AS territory_level
     FROM territory_manager_assignments tma
-    INNER JOIN admins a ON a.id = tma.admin_id
-    WHERE tma.territory_id = $1
-      AND tma.status = 'active'
+    INNER JOIN admins a
+      ON a.id = tma.admin_id
+     AND a.is_active = true
+    INNER JOIN operational_territories managed_t
+      ON managed_t.id = tma.territory_id
+    WHERE tma.status = 'active'
       AND tma.ended_at IS NULL
+      AND (
+        tma.territory_id = $1
+        OR (
+          managed_t.parent_id = $1
+          AND managed_t.level = 'region'
+          AND managed_t.is_active = true
+        )
+      )
+    ORDER BY
+      CASE WHEN tma.territory_id = $1 THEN 0 ELSE 1 END,
+      managed_t.name,
+      a.name
     LIMIT 1
   `, [territory.id]);
 
@@ -306,7 +335,7 @@ export async function getTerritoryOnboardingStatus(
       FROM operator_profiles
       WHERE admin_id = $1 AND territory_id = $2
       LIMIT 1
-    `, [manager.id, territory.id]);
+    `, [manager.id, manager.territory_id]);
     const profile = profileResult.rows[0];
     if (profile) {
       if (!profile.is_active) pendencies.push('Perfil do gestor inativo.');
@@ -351,6 +380,7 @@ export async function getTerritoryActivationReadiness(
     WHERE LOWER(city_name) = LOWER($1)
       AND UPPER(uf) = $2
       AND level = 'city'
+    ORDER BY is_active DESC, created_at DESC
     LIMIT 1
   `, [normalizedCity, normalizedUf]);
 
@@ -381,8 +411,22 @@ export async function getTerritoryActivationReadiness(
   // Gestor
   const managerResult = await pool.query<{ cnt: number }>(`
     SELECT COUNT(*)::int AS cnt
-    FROM territory_manager_assignments
-    WHERE territory_id = $1 AND status = 'active' AND ended_at IS NULL
+    FROM territory_manager_assignments tma
+    INNER JOIN admins a
+      ON a.id = tma.admin_id
+     AND a.is_active = true
+    INNER JOIN operational_territories managed_t
+      ON managed_t.id = tma.territory_id
+    WHERE tma.status = 'active'
+      AND tma.ended_at IS NULL
+      AND (
+        tma.territory_id = $1
+        OR (
+          managed_t.parent_id = $1
+          AND managed_t.level = 'region'
+          AND managed_t.is_active = true
+        )
+      )
   `, [territory.id]);
 
   if ((managerResult.rows[0]?.cnt ?? 0) === 0) {
@@ -396,8 +440,25 @@ export async function getTerritoryActivationReadiness(
     }>(`
       SELECT op.is_active, op.contract_status, op.document_status
       FROM territory_manager_assignments tma
-      INNER JOIN operator_profiles op ON op.admin_id = tma.admin_id AND op.territory_id = tma.territory_id
-      WHERE tma.territory_id = $1 AND tma.status = 'active' AND tma.ended_at IS NULL
+      INNER JOIN admins a
+        ON a.id = tma.admin_id
+       AND a.is_active = true
+      INNER JOIN operational_territories managed_t
+        ON managed_t.id = tma.territory_id
+      INNER JOIN operator_profiles op
+        ON op.admin_id = tma.admin_id
+       AND op.territory_id = tma.territory_id
+      WHERE tma.status = 'active'
+        AND tma.ended_at IS NULL
+        AND (
+          tma.territory_id = $1
+          OR (
+            managed_t.parent_id = $1
+            AND managed_t.level = 'region'
+            AND managed_t.is_active = true
+          )
+        )
+      ORDER BY CASE WHEN tma.territory_id = $1 THEN 0 ELSE 1 END
       LIMIT 1
     `, [territory.id]);
 
