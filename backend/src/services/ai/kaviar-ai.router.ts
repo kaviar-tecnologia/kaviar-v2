@@ -314,7 +314,11 @@ export function routeByRules(question: string): KaviarAiRouteResult {
   }
 
   // ── Territorial onboarding ────────────────────────────────────────────
+  const hasExplicitCityUf =
+    /(?:\/\s*[A-Za-z]{2}\b|[-–]\s+[A-Za-z]{2}\b|\(\s*[A-Za-z]{2}\s*\))/.test(question);
+
   const hasTerritoryContext =
+    hasExplicitCityUf ||
     q.includes('cidade') ||
     q.includes('território') ||
     q.includes('territorio') ||
