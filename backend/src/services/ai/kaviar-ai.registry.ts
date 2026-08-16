@@ -20,6 +20,7 @@ import {
   getEmergencyOperationsSummary,
   getTerritoryPortfolioSummary,
 } from './kaviar-ai.command-center';
+import { getDriverCityLandings } from './kaviar-ai.city-landings';
 import { getKnowledgeAnswer } from './kaviar-ai.knowledge';
 import { getDriverRatingsSummary } from './kaviar-ai.driver-ratings';
 import { getComplianceSummary, getExcellenceSealSummary } from './kaviar-ai.compliance-seal';
@@ -114,6 +115,22 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     allowedRoles: ['SUPER_ADMIN'],
     execute: (args) => getTerritoryActivationReadiness(args?.city ?? '', args?.uf ?? ''),
   },
+  {
+    name: 'driver_city_landings',
+    description:
+      'Consulta as landing pages reais de captação de motoristas por cidade, incluindo URL, status público e se estão habilitadas.',
+    readOnly: true,
+    argSchema: {
+      type: 'object',
+      properties: {
+        question: { type: 'string', description: 'Pergunta original para localizar cidade e filtros.' },
+      },
+      required: [],
+    },
+    allowedRoles: ['SUPER_ADMIN'],
+    execute: getDriverCityLandings,
+  },
+
   // ── Pacote Administrativo Inteligente v1 ────────────────────────────────
   {
     name: 'daily_briefing',

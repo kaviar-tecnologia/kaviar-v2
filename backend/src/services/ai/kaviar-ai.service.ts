@@ -30,6 +30,7 @@ import type { KnowledgeAnswerData } from './kaviar-ai.knowledge';
 import type { DriverRatingsSummaryData } from './kaviar-ai.driver-ratings';
 import type { ComplianceSummaryData, ExcellenceSealSummaryData } from './kaviar-ai.compliance-seal';
 import type { OperationsOverviewData, PersonLookupData, DriverDetailData, SealHistoryData } from './kaviar-ai.central-ops';
+import type { DriverCityLandingsData } from './kaviar-ai.city-landings';
 import { executeTool, canRoleExecuteTool } from './kaviar-ai.registry';
 import { routeQuestion } from './kaviar-ai.router';
 
@@ -435,6 +436,8 @@ const FORMATTERS: Record<KaviarAiToolName, (data: unknown) => string> = {
     formatTerritoryOnboarding(data as TerritoryOnboardingStatusData),
   territory_activation_readiness: (data) =>
     formatTerritoryReadiness(data as TerritoryActivationReadinessData),
+  driver_city_landings: (data) =>
+    formatDriverCityLandings(data as DriverCityLandingsData),
   daily_briefing: (data) =>
     formatDailyBriefing(data as DailyBriefingData),
   rides_operations: (data) =>
@@ -517,6 +520,37 @@ const FORMATTERS: Record<KaviarAiToolName, (data: unknown) => string> = {
 };
 
 // ── Formatters Command Center ───────────────────────────────────────────────
+
+function formatDriverCityLandings(data: DriverCityLandingsData): string {
+  if (!data.available) {
+    return 'Landing pages de motoristas: não foi possível consultar.';
+  }
+
+  if (data.items.length === 0) {
+    return 'Nenhuma landing page de motoristas correspondente foi encontrada.';
+  }
+
+  if (data.items.length === 1) {
+    const item = data.items[0];
+    return [
+      `📍 Landing de Motoristas — ${item.city}/${item.state}`,
+      `Status público: ${item.publicStatus}`,
+      `Landing: ${item.landingEnabled ? 'ativa' : 'desativada'}`,
+      `URL: ${item.url}`,
+    ].join('\n');
+  }
+
+  const parts: string[] = [];
+  parts.push(`📍 Landing Pages de Motoristas — ${data.active} ativas de ${data.total} cadastradas`);
+
+  for (const item of data.items) {
+    parts.push(
+      `• ${item.city}/${item.state} — ${item.publicStatus} — ${item.landingEnabled ? 'ativa' : 'desativada'} — ${item.url}`
+    );
+  }
+
+  return parts.join('\n');
+}
 
 function formatPlatformCatalog(data: PlatformCatalogData): string {
   const parts: string[] = [];
@@ -851,6 +885,8 @@ export async function askKaviarAi(
       args = { section: parseCompanySection(question) };
     } else if (toolName === 'platform_catalog') {
       args = { section: parseCatalogSection(question) };
+    } else if (toolName === 'driver_city_landings') {
+      args = { question };
     } else if (toolName === 'knowledge_answer') {
       args = { question, role };
     } else if (toolName === 'person_lookup') {

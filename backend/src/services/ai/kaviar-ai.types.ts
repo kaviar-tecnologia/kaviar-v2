@@ -23,7 +23,8 @@ export type KaviarAiToolName =
   | 'operations_overview'
   | 'person_lookup'
   | 'driver_detail'
-  | 'seal_history';
+  | 'seal_history'
+  | 'driver_city_landings';
 
 export type KaviarAiRequest = {
   userId: string;
