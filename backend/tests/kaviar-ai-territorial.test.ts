@@ -14,6 +14,7 @@ vi.mock('openai', () => ({
 import { getTerritoryOnboardingStatus, getTerritoryActivationReadiness } from '../src/services/ai/kaviar-ai.tools';
 import { getRegisteredTools, executeTool } from '../src/services/ai/kaviar-ai.registry';
 import { routeByRules } from '../src/services/ai/kaviar-ai.router';
+import { parseCityUf } from '../src/services/ai/kaviar-ai.service';
 import { searchRegulatoryRequirements } from '../src/services/ai/kaviar-ai.regulatory-search';
 
 describe('territory_onboarding_status', () => {
@@ -201,6 +202,17 @@ describe('registry — novas tools registradas', () => {
 
   it('executeTool rejeita ferramenta inexistente', async () => {
     await expect(executeTool('activate_territory')).rejects.toThrow('não está registrada');
+  });
+});
+
+describe('parseCityUf — perguntas de gestor', () => {
+  it.each([
+    ['Tem gestor em Rio de Janeiro/RJ?', 'Rio de Janeiro', 'RJ'],
+    ['Tem um gestor em Tambaú/SP?', 'Tambaú', 'SP'],
+    ['Existe gestor na cidade de Itaperuna/RJ?', 'Itaperuna', 'RJ'],
+    ['Há gestora em Campinas/SP?', 'Campinas', 'SP'],
+  ])('extrai corretamente cidade/UF de: %s', (question, city, uf) => {
+    expect(parseCityUf(question)).toEqual({ city, uf });
   });
 });
 

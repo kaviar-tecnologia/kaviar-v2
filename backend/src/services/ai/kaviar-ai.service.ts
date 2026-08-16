@@ -752,7 +752,7 @@ function formatDriverRatingsSummary(data: DriverRatingsSummaryData): string {
 
 // ── Extração de city/uf da pergunta ─────────────────────────────────────────
 
-function parseCityUf(question: string): { city: string; uf: string } | null {
+export function parseCityUf(question: string): { city: string; uf: string } | null {
   let match = question.match(/(.+?)\s*\/\s*([A-Za-z]{2})(?:\s|$|[.,!?])/);
   if (!match) match = question.match(/(.+?)\s+[-–]\s+([A-Za-z]{2})(?:\s|$|[.,!?])/);
   if (!match) match = question.match(/(.+?)\s*\(\s*([A-Za-z]{2})\s*\)/);
@@ -766,6 +766,8 @@ function parseCityUf(question: string): { city: string; uf: string } | null {
   // Remove frases de comando, preservando o nome real da cidade.
   // Ex.: "Qual é o status de Nova Iguaçu/RJ" -> "Nova Iguaçu".
   const prefixes = [
+    /^(?:tem|há|ha|existe)\s+(?:(?:um|uma)\s+)?gestor(?:a)?\s+(?:(?:na|no)\s+cidade\s+de\s+|(?:em|na|no|de|da|do)\s+)/i,
+
     /^(?:(?:qual|quais)(?:\s+é|\s+e)?\s+(?:(?:o|a)\s+)?)?(?:status|situação|situacao)\s+(?:de|da|do|em)\s+/i,
 
     /^(?:quero\s+)?(?:abrir|cadastrar|criar)\s+(?:(?:(?:uma|um|a|o)\s+)?(?:(?:nova|novo)\s+)?(?:cidade|território|territorio)\s+)?(?:(?:de|da|do|em|para)\s+)?/i,
