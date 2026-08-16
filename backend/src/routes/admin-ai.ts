@@ -26,6 +26,16 @@ function generateSecurePassword(): string {
   return chars.join('');
 }
 
+
+function toCityLandingSlug(city: string, uf: string): string {
+  return `${city}-${uf}`
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 const router = Router();
 
 router.use(authenticateAdmin);
@@ -258,6 +268,130 @@ router.post('/territory/create-manager', requireSuperAdmin, async (req: Request,
     });
   } catch (error: any) {
     return res.status(500).json({ success: false, error: 'Erro ao cadastrar gestor.' });
+  }
+});
+
+
+// ── Territorial: Liberar landing de motoristas ──────────────────────────────
+router.post('/territory/landing/enable', requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { city, uf, confirmation } = req.body;
+
+    // Dupla trava: conversa nunca escreve sozinha.
+    if (confirmation !== 'LIBERAR_LANDING') {
+      return res.status(400).json({
+        success: false,
+        error: 'Confirmação LIBERAR_LANDING obrigatória.',
+      });
+    }
+
+    if (
+      !city ||
+      !uf ||
+      typeof city !== 'string' ||
+      typeof uf !== 'string' ||
+      uf.trim().length !== 2
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: 'city e uf (2 letras) são obrigatórios.',
+      });
+    }
+
+    const normalizedCity = city.trim();
+    const normalizedUf = uf.trim().toUpperCase();
+
+    // A landing só pode ser liberada para um território já cadastrado.
+    const territory = await prisma.operational_territories.findFirst({
+      where: {
+        city_name: { equals: normalizedCity, mode: 'insensitive' },
+        uf: normalizedUf,
+        level: 'city',
+      },
+    });
+
+    if (!territory) {
+      return res.status(404).json({
+        success: false,
+        error: `Território ${normalizedCity}/${normalizedUf} não encontrado.`,
+      });
+    }
+
+    const canonicalCity = territory.city_name || normalizedCity;
+    const canonicalUf = territory.uf || normalizedUf;
+    const slug = toCityLandingSlug(canonicalCity, canonicalUf);
+
+    const existing = await prisma.driver_city_landings.findFirst({
+      where: {
+        OR: [
+          { slug },
+          {
+            city: { equals: canonicalCity, mode: 'insensitive' },
+            state: canonicalUf,
+          },
+        ],
+      },
+    });
+
+    const adminId = (req as any).admin.id;
+    const alreadyEnabled = existing?.landing_enabled === true;
+
+    const landing = existing
+      ? await prisma.driver_city_landings.update({
+          where: { id: existing.id },
+          data: {
+            landing_enabled: true,
+            updated_by_admin_id: adminId,
+          },
+        })
+      : await prisma.driver_city_landings.create({
+          data: {
+            city: canonicalCity,
+            state: canonicalUf,
+            slug,
+            public_status: 'IMPLANTACAO',
+            landing_enabled: true,
+            created_by_admin_id: adminId,
+            updated_by_admin_id: adminId,
+          },
+        });
+
+    const ctx = auditCtx(req);
+    audit({
+      adminId: ctx.adminId,
+      adminEmail: ctx.adminEmail,
+      action: 'enable_driver_city_landing',
+      entityType: 'driver_city_landing',
+      entityId: landing.id,
+      newValue: {
+        city: landing.city,
+        state: landing.state,
+        slug: landing.slug,
+        landing_enabled: true,
+        source: 'chat_kaviar',
+      },
+      ipAddress: ctx.ip,
+    });
+
+    return res.status(existing ? 200 : 201).json({
+      success: true,
+      data: {
+        id: landing.id,
+        city: landing.city,
+        state: landing.state,
+        slug: landing.slug,
+        public_status: landing.public_status,
+        landing_enabled: landing.landing_enabled,
+        already_enabled: alreadyEnabled,
+        url: `https://kaviar.com.br/motorista/cidade/${landing.slug}`,
+      },
+    });
+  } catch (error: any) {
+    console.error('[KAVIAR_AI_LANDING_ENABLE]', error?.message || error);
+    return res.status(500).json({
+      success: false,
+      error: 'Erro ao liberar landing.',
+    });
   }
 });
 

@@ -243,6 +243,20 @@ export function routeByRules(question: string): KaviarAiRouteResult {
       q.includes('motorista') &&
       (q.includes('cidade') || q.includes('cadastrar') || q.includes('recrut')));
 
+  const hasDriverCityLandingAction =
+    hasDriverCityLandingContext &&
+    (
+      /\b(liberar|libere|habilitar|habilite|ativar|ative)\b/.test(q) ||
+      q.includes('criar landing') ||
+      q.includes('cadastrar landing')
+    );
+
+  if (hasDriverCityLandingAction) {
+    return {
+      toolsToCall: ['territory_onboarding_status', 'driver_city_landings'],
+    };
+  }
+
   if (hasDriverCityLandingContext) {
     return { toolsToCall: ['driver_city_landings'] };
   }

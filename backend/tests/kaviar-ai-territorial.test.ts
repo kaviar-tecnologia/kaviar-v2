@@ -140,9 +140,9 @@ describe('territory_activation_readiness', () => {
 });
 
 describe('registry — novas tools registradas', () => {
-  it('registry contém 10 ferramentas', () => {
+  it('registry contém 26 ferramentas', () => {
     const tools = getRegisteredTools();
-    expect(tools).toHaveLength(25);
+    expect(tools).toHaveLength(26);
   });
 
   it('3 ferramentas antigas continuam registradas', () => {
@@ -803,5 +803,40 @@ describe('pesquisa regulatória — guarda determinística de confidence', () =>
 
     const r = await searchRegulatoryRequirements('Cidade', 'MG');
     expect(r.confidence).toBe('NEEDS_HUMAN_REVIEW');
+  });
+});
+
+describe('Chat KAVIAR — liberação segura de landing', () => {
+  const routeSrc = require('fs').readFileSync(
+    require('path').resolve(__dirname, '../src/routes/admin-ai.ts'),
+    'utf8'
+  );
+
+  it('exige SUPER_ADMIN e confirmação explícita', () => {
+    expect(routeSrc).toContain(
+      "router.post('/territory/landing/enable', requireSuperAdmin"
+    );
+    expect(routeSrc).toContain(
+      "confirmation !== 'LIBERAR_LANDING'"
+    );
+  });
+
+  it('não ativa o território ao liberar landing', () => {
+    const section =
+      routeSrc.split("'/territory/landing/enable'")[1]
+        ?.split('export default router')[0] || '';
+
+    expect(section).toContain('landing_enabled: true');
+    expect(section).not.toContain("status: 'active'");
+    expect(section).not.toContain('is_active: true');
+  });
+
+  it('registra auditoria da ação', () => {
+    expect(routeSrc).toContain(
+      "action: 'enable_driver_city_landing'"
+    );
+    expect(routeSrc).toContain(
+      "source: 'chat_kaviar'"
+    );
   });
 });
