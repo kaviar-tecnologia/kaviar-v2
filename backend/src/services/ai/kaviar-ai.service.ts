@@ -664,7 +664,19 @@ function formatTerritoryPortfolioSummary(data: TerritoryPortfolioSummaryData): s
   if (statusEntries.length > 0) parts.push('Por status: ' + statusEntries.map(([s, c]) => `${s}: ${c}`).join(', '));
   const regEntries = Object.entries(data.byRegulatoryStatus);
   if (regEntries.length > 0) parts.push('Regulatório: ' + regEntries.map(([s, c]) => `${s}: ${c}`).join(', '));
-  parts.push(`Sem gestor: ${data.withoutManager} | Moto passageiro: ${data.withMotoPassenger} | Moto express: ${data.withMotoExpress}`);
+  parts.push(`Sem gestor (territórios ativos): ${data.withoutManager} | Moto passageiro: ${data.withMotoPassenger} | Moto express: ${data.withMotoExpress}`);
+
+  parts.push('');
+  if (data.withoutManagerCities.length > 0) {
+    parts.push('Territórios sem gestor:');
+    for (const c of data.withoutManagerCities) {
+      parts.push(
+        `  • ${c.city}/${c.uf} — ${c.status} — ${c.isActive ? 'ativo' : 'inativo'}`
+      );
+    }
+  } else {
+    parts.push('Territórios sem gestor: nenhum.');
+  }
 
   if (data.regulatoryChecklist.available && data.regulatoryChecklist.pending > 0) parts.push(`Checklist regulatório pendente: ${data.regulatoryChecklist.pending}`);
   if (data.regulatoryProtocols.available && data.regulatoryProtocols.pending > 0) parts.push(`Protocolos regulatórios pendentes: ${data.regulatoryProtocols.pending}`);

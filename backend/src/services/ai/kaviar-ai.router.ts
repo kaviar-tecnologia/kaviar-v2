@@ -305,10 +305,29 @@ export function routeByRules(question: string): KaviarAiRouteResult {
   }
 
   // ── Territory portfolio summary ───────────────────────────────────────
+  const hasTerritoriesPlural =
+    q.includes('territórios') || q.includes('territorios');
+
+  const asksWithoutManager =
+    q.includes('gestor') &&
+    (
+      q.includes('sem gestor') ||
+      q.includes('sem um gestor') ||
+      q.includes('nenhum gestor') ||
+      q.includes('não tem gestor') ||
+      q.includes('nao tem gestor') ||
+      q.includes('não têm gestor') ||
+      q.includes('nao têm gestor')
+    );
+
+  if (hasTerritoriesPlural && asksWithoutManager) {
+    return { toolsToCall: ['territory_portfolio_summary'] };
+  }
+
   if (
     (q.includes('portfólio') || q.includes('portfolio')) && q.includes('territór') ||
     q.includes('quantos territórios') || q.includes('quantos territorios') ||
-    (q.includes('territórios') || q.includes('territorios')) && (q.includes('por status') || q.includes('panorama') || q.includes('resumo'))
+    hasTerritoriesPlural && (q.includes('por status') || q.includes('panorama') || q.includes('resumo'))
   ) {
     return { toolsToCall: ['territory_portfolio_summary'] };
   }
