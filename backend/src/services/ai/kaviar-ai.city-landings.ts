@@ -65,13 +65,24 @@ export async function getDriverCityLandings(
       return question.includes(city) || question.includes(slug);
     });
 
-    if (cityMatches.length > 0) {
-      items = cityMatches;
-    }
-
     const tokens = new Set(
       question.split(/[^a-z0-9]+/).filter(Boolean)
     );
+
+    const listIntent =
+      ['quais', 'listar', 'liste', 'todas', 'todos'].some((token) =>
+        tokens.has(token)
+      ) || tokens.has('landings');
+
+    const specificLookupIntent =
+      /\blanding(?: page)?\s+(?:de|da|do|em|para)\b/.test(question) ||
+      (/\b(?:link|url)\b/.test(question) && question.includes('landing'));
+
+    if (cityMatches.length > 0) {
+      items = cityMatches;
+    } else if (specificLookupIntent && !listIntent) {
+      items = [];
+    }
 
     const activeOnly = [
       'ativa',
