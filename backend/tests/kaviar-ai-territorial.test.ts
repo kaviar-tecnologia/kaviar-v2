@@ -398,6 +398,36 @@ describe('Fix 1: parseCityUf + args passados à tool', () => {
     expect(firstCall[1][1]).toBe('RJ');
   });
 
+  it('"Qual é o status de Santa Cruz das Palmeiras/SP?" extrai a cidade corretamente', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    const r = await askKaviarAi({
+      userId: 'admin-1',
+      question: 'Qual é o status de Santa Cruz das Palmeiras/SP?',
+      role: 'SUPER_ADMIN',
+    });
+
+    expect(r.toolsUsed).toContain('territory_onboarding_status');
+
+    const firstCall = mockQuery.mock.calls[0];
+    expect(firstCall[1][0]).toBe('Santa Cruz das Palmeiras');
+    expect(firstCall[1][1]).toBe('SP');
+  });
+
+  it('preserva Nova em "Qual é o status de Nova Iguaçu/RJ?"', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    await askKaviarAi({
+      userId: 'admin-1',
+      question: 'Qual é o status de Nova Iguaçu/RJ?',
+      role: 'SUPER_ADMIN',
+    });
+
+    const firstCall = mockQuery.mock.calls[0];
+    expect(firstCall[1][0]).toBe('Nova Iguaçu');
+    expect(firstCall[1][1]).toBe('RJ');
+  });
+
   it('pergunta territorial sem city/uf retorna mensagem de orientação', async () => {
     const r = await askKaviarAi({ userId: 'admin-1', question: 'Quero abrir uma cidade nova', role: 'SUPER_ADMIN' });
     expect(r.answer).toContain('Informe a cidade e a UF');

@@ -733,14 +733,6 @@ function formatDriverRatingsSummary(data: DriverRatingsSummaryData): string {
 // ── Extração de city/uf da pergunta ─────────────────────────────────────────
 
 function parseCityUf(question: string): { city: string; uf: string } | null {
-  const STOP_WORDS = new Set([
-    'quero', 'abrir', 'cadastrar', 'como', 'verificar', 'criar',
-    'está', 'status', 'cidade', 'território', 'territorio', 'nova', 'novo',
-    'liberar', 'libere', 'ativar', 'ative', 'habilitar', 'habilite',
-    'landing', 'page', 'página', 'pagina',
-    'a', 'o', 'uma', 'um', 'de', 'da', 'do', 'em', 'para'
-  ]);
-
   let match = question.match(/(.+?)\s*\/\s*([A-Za-z]{2})(?:\s|$|[.,!?])/);
   if (!match) match = question.match(/(.+?)\s+[-–]\s+([A-Za-z]{2})(?:\s|$|[.,!?])/);
   if (!match) match = question.match(/(.+?)\s*\(\s*([A-Za-z]{2})\s*\)/);
@@ -749,11 +741,28 @@ function parseCityUf(question: string): { city: string; uf: string } | null {
   const uf = match[2].trim().toUpperCase();
   if (uf.length !== 2) return null;
 
-  const words = match[1].trim().split(/\s+/);
-  while (words.length > 0 && STOP_WORDS.has(words[0].toLowerCase())) {
-    words.shift();
+  let city = match[1].trim();
+
+  // Remove frases de comando, preservando o nome real da cidade.
+  // Ex.: "Qual é o status de Nova Iguaçu/RJ" -> "Nova Iguaçu".
+  const prefixes = [
+    /^(?:(?:qual|quais)(?:\s+é|\s+e)?\s+(?:(?:o|a)\s+)?)?(?:status|situação|situacao)\s+(?:de|da|do|em)\s+/i,
+
+    /^(?:quero\s+)?(?:abrir|cadastrar|criar)\s+(?:(?:(?:uma|um|a|o)\s+)?(?:(?:nova|novo)\s+)?(?:cidade|território|territorio)\s+)?(?:(?:de|da|do|em|para)\s+)?/i,
+
+    /^(?:liberar|libere|habilitar|habilite|ativar|ative)\s+(?:(?:a|o)\s+)?(?:(?:landing(?:\s+page)?|página|pagina)\s+)?(?:(?:de|da|do|em|para)\s+)?/i,
+
+    /^(?:como\s+está|como\s+esta|verificar|verifique|veja)\s+(?:(?:o|a)\s+)?(?:(?:status|situação|situacao)\s+)?(?:(?:de|da|do|em|para)\s+)?/i,
+  ];
+
+  for (const prefix of prefixes) {
+    const cleaned = city.replace(prefix, '').trim();
+    if (cleaned !== city) {
+      city = cleaned;
+      break;
+    }
   }
-  const city = words.join(' ').trim();
+
   if (city.length < 2) return null;
 
   return { city, uf };
