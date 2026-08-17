@@ -688,7 +688,9 @@ function formatTerritoryManagerCoverage(
       ? 'COMPLETE — cobertura homologada pela KAVIAR'
       : data.coverageStatus === 'AWAITING_REVIEW'
         ? 'AWAITING_REVIEW — dados carregados, aguardando homologação'
-        : 'NOT_LOADED — cobertura ainda não carregada/homologada';
+        : data.officialNeighborhoods > 0
+          ? 'NOT_LOADED — há dados cadastrados, mas a completude ainda não foi revisada/homologada'
+          : 'NOT_LOADED — cobertura ainda não carregada/homologada';
 
   parts.push(`Cobertura territorial: ${coverageDescription}`);
   parts.push(`Bairros oficiais ativos: ${data.officialNeighborhoods}`);
@@ -770,7 +772,9 @@ function formatTerritoryManagerCoverage(
     );
   } else {
     parts.push(
-      '⚠️ Recomendação provisória: a cobertura territorial ainda não foi carregada/homologada como completa.'
+      data.officialNeighborhoods > 0
+        ? '⚠️ Recomendação provisória: há dados territoriais cadastrados, mas a completude ainda não foi revisada/homologada.'
+        : '⚠️ Recomendação provisória: a cobertura territorial ainda não foi carregada/homologada como completa.'
     );
   }
 
@@ -884,6 +888,7 @@ export function parseCityUf(question: string): { city: string; uf: string } | nu
     /^(?:quantos?)\s+gestores?\s+(?:temos?|existem?|faltam?|há|ha)\s+(?:em|na|no|de|da|do)\s+/i,
     /^(?:quem\s+são|quem\s+sao)\s+(?:os\s+)?gestores?\s+(?:em|na|no|de|da|do)\s+/i,
     /^(?:quais\s+)?regiões?\s+(?:em|na|no|de|da|do)\s+/i,
+    /^(?:como\s+está|como\s+esta)\s+(?:a\s+)?cobertura\s+(?:de\s+)?gestores?\s+(?:em|na|no|de|da|do)\s+/i,
     /^(?:como\s+está|como\s+esta)\s+(?:a\s+)?gestão\s+(?:em|na|no|de|da|do)\s+/i,
     /^(?:tem|há|ha|existe)\s+(?:(?:um|uma)\s+)?gestor(?:a)?\s+(?:(?:na|no)\s+cidade\s+de\s+|(?:em|na|no|de|da|do)\s+)/i,
 

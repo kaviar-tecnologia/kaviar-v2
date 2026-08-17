@@ -779,6 +779,15 @@ describe('Fix 1: parseCityUf + args passados à tool', () => {
     expect(firstCall[1][1]).toBe('RJ');
   });
 
+  it('extrai Tambaú em pergunta de cobertura de gestores', () => {
+    expect(
+      parseCityUf('Como está a cobertura de gestores em Tambaú/SP?')
+    ).toEqual({
+      city: 'Tambaú',
+      uf: 'SP',
+    });
+  });
+
   it('pergunta territorial sem city/uf retorna mensagem de orientação', async () => {
     const r = await askKaviarAi({ userId: 'admin-1', question: 'Quero abrir uma cidade nova', role: 'SUPER_ADMIN' });
     expect(r.answer).toContain('Informe a cidade e a UF');
@@ -922,6 +931,22 @@ describe('Fix 3: senha segura', () => {
     const newValueContent = auditMatch ? auditMatch[1] : '';
     expect(newValueContent).not.toContain('password');
     expect(newValueContent).not.toContain('temp_password');
+  });
+});
+
+describe('territory_manager_coverage — apresentação Fase 2', () => {
+  it('não descreve NOT_LOADED com bairros existentes como ausência de dados', () => {
+    const serviceSrc = require('fs').readFileSync(
+      require('path').resolve(
+        __dirname,
+        '../src/services/ai/kaviar-ai.service.ts'
+      ),
+      'utf8'
+    );
+
+    expect(serviceSrc).toContain(
+      'NOT_LOADED — há dados cadastrados, mas a completude ainda não foi revisada/homologada'
+    );
   });
 });
 
