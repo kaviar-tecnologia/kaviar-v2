@@ -12,6 +12,7 @@ vi.mock('openai', () => ({
 }));
 
 import { getTerritoryOnboardingStatus, getTerritoryActivationReadiness } from '../src/services/ai/kaviar-ai.tools';
+import { getTerritoryManagerCoverage } from '../src/services/ai/kaviar-ai.command-center';
 import { getRegisteredTools, executeTool } from '../src/services/ai/kaviar-ai.registry';
 import { routeByRules } from '../src/services/ai/kaviar-ai.router';
 import { parseCityUf } from '../src/services/ai/kaviar-ai.service';
@@ -177,10 +178,198 @@ describe('territory_activation_readiness', () => {
   });
 });
 
+describe('territory_manager_coverage', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('calcula Tambaú com 21 bairros, 2 regiões e 1 gestor como +1 recomendado', async () => {
+    mockQuery
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 'tambau-city',
+          name: 'Tambaù',
+          status: 'active',
+          is_active: true,
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ official_neighborhoods: 21 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          { id: 'r1', name: 'Tambaú Centro/Pitas' },
+          { id: 'r2', name: 'Tambaú Sombra' },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          admin_id: 'm1',
+          manager_name: 'Maria Isabel Goes',
+          territory_id: 'r1',
+          territory_name: 'Tambaú Centro/Pitas',
+          territory_level: 'region',
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ ref: '2026-08-16 20:00' }],
+      });
+
+    const result = await getTerritoryManagerCoverage({
+      city: 'Tambaú',
+      uf: 'SP',
+    });
+
+    expect(result.tool).toBe('territory_manager_coverage');
+    expect(result.data.found).toBe(true);
+    expect(result.data.officialNeighborhoods).toBe(21);
+    expect(result.data.activeRegions).toBe(2);
+    expect(result.data.managers).toHaveLength(1);
+    expect(result.data.recommendedManagers).toBe(2);
+    expect(result.data.additionalManagers).toBe(1);
+    expect(result.data.hasRoomForMoreManagers).toBe(true);
+    expect(result.data.uncoveredRegions.map(r => r.name))
+      .toEqual(['Tambaú Sombra']);
+    expect(result.data.provisional).toBe(true);
+  });
+
+  it('calcula Rio com 172 bairros, 17 regiões e 2 gestores como +7 recomendados', async () => {
+    mockQuery
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 'rio-city',
+          name: 'Rio de Janeiro',
+          status: 'active',
+          is_active: true,
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ official_neighborhoods: 172 }],
+      })
+      .mockResolvedValueOnce({
+        rows: Array.from({ length: 17 }, (_, i) => ({
+          id: `r${i + 1}`,
+          name: `Região ${i + 1}`,
+        })),
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            admin_id: 'fernanda',
+            manager_name: 'Fernanda Goes',
+            territory_id: 'r1',
+            territory_name: 'Barra da Tijuca',
+            territory_level: 'region',
+          },
+          {
+            admin_id: 'paula',
+            manager_name: 'Paula Raquel',
+            territory_id: 'r2',
+            territory_name: 'Zona Sul',
+            territory_level: 'region',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ ref: '2026-08-16 21:00' }],
+      });
+
+    const result = await getTerritoryManagerCoverage({
+      city: 'Rio de Janeiro',
+      uf: 'RJ',
+    });
+
+    expect(result.data.found).toBe(true);
+    expect(result.data.officialNeighborhoods).toBe(172);
+    expect(result.data.activeRegions).toBe(17);
+    expect(result.data.managers).toHaveLength(2);
+
+    expect(result.data.recommendedByNeighborhoods).toBe(9);
+    expect(result.data.recommendedManagers).toBe(9);
+    expect(result.data.additionalManagers).toBe(7);
+    expect(result.data.hasRoomForMoreManagers).toBe(true);
+
+    expect(result.data.uncoveredRegions).toHaveLength(15);
+    expect(result.data.provisional).toBe(true);
+  });
+
+  it('agrupa várias regiões do mesmo gestor sem duplicar o gestor', async () => {
+    mockQuery
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 'city-1',
+          name: 'Cidade Teste',
+          status: 'active',
+          is_active: true,
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ official_neighborhoods: 40 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          { id: 'r1', name: 'Centro' },
+          { id: 'r2', name: 'Zona Norte' },
+          { id: 'r3', name: 'Zona Oeste' },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            admin_id: 'gestor-1',
+            manager_name: 'João Gestor',
+            territory_id: 'r1',
+            territory_name: 'Centro',
+            territory_level: 'region',
+          },
+          {
+            admin_id: 'gestor-1',
+            manager_name: 'João Gestor',
+            territory_id: 'r2',
+            territory_name: 'Zona Norte',
+            territory_level: 'region',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ ref: '2026-08-16 21:00' }],
+      });
+
+    const result = await getTerritoryManagerCoverage({
+      city: 'Cidade Teste',
+      uf: 'SP',
+    });
+
+    expect(result.data.managers).toHaveLength(1);
+    expect(result.data.managers[0].name).toBe('João Gestor');
+    expect(result.data.managers[0].territories).toEqual([
+      { id: 'r1', name: 'Centro', level: 'region' },
+      { id: 'r2', name: 'Zona Norte', level: 'region' },
+    ]);
+
+    expect(result.data.uncoveredRegions).toEqual([
+      { id: 'r3', name: 'Zona Oeste' },
+    ]);
+  });
+
+  it('é somente leitura', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    await getTerritoryManagerCoverage({
+      city: 'Campinas',
+      uf: 'SP',
+    });
+
+    const sql = String(mockQuery.mock.calls[0][0]).toUpperCase();
+    expect(sql).toContain('SELECT');
+    expect(sql).not.toContain('INSERT');
+    expect(sql).not.toContain('UPDATE');
+    expect(sql).not.toContain('DELETE');
+  });
+});
+
 describe('registry — novas tools registradas', () => {
-  it('registry contém 26 ferramentas', () => {
+  it('registry contém 27 ferramentas', () => {
     const tools = getRegisteredTools();
-    expect(tools).toHaveLength(26);
+    expect(tools).toHaveLength(27);
   });
 
   it('3 ferramentas antigas continuam registradas', () => {
@@ -193,9 +382,15 @@ describe('registry — novas tools registradas', () => {
   it('novas ferramentas estão registradas e readOnly', () => {
     const tools = getRegisteredTools();
     const onb = tools.find(t => t.name === 'territory_onboarding_status');
+    const coverage = tools.find(t => t.name === 'territory_manager_coverage');
     const rdy = tools.find(t => t.name === 'territory_activation_readiness');
+
     expect(onb).toBeDefined();
     expect(onb!.readOnly).toBe(true);
+
+    expect(coverage).toBeDefined();
+    expect(coverage!.readOnly).toBe(true);
+
     expect(rdy).toBeDefined();
     expect(rdy!.readOnly).toBe(true);
   });
@@ -211,6 +406,10 @@ describe('parseCityUf — perguntas de gestor', () => {
     ['Tem um gestor em Tambaú/SP?', 'Tambaú', 'SP'],
     ['Existe gestor na cidade de Itaperuna/RJ?', 'Itaperuna', 'RJ'],
     ['Há gestora em Campinas/SP?', 'Campinas', 'SP'],
+    ['Como está a gestão de Rio de Janeiro/RJ?', 'Rio de Janeiro', 'RJ'],
+    ['Quantos gestores temos no Rio de Janeiro/RJ?', 'Rio de Janeiro', 'RJ'],
+    ['Tem espaço para mais gestores no Tambaú/SP?', 'Tambaú', 'SP'],
+    ['Quais regiões de Tambaú/SP estão sem gestor?', 'Tambaú', 'SP'],
   ])('extrai corretamente cidade/UF de: %s', (question, city, uf) => {
     expect(parseCityUf(question)).toEqual({ city, uf });
   });
@@ -222,9 +421,19 @@ describe('routeByRules — territorial', () => {
     expect(r.toolsToCall).toContain('territory_onboarding_status');
   });
 
-  it('detecta pergunta individual "Tem gestor em Cidade/UF?"', () => {
+  it('roteia pergunta individual de gestor para cobertura', () => {
     const r = routeByRules('Tem gestor em Rio de Janeiro/RJ?');
-    expect(r.toolsToCall).toContain('territory_onboarding_status');
+    expect(r.toolsToCall).toEqual(['territory_manager_coverage']);
+  });
+
+  it('roteia pergunta sobre capacidade adicional de gestores', () => {
+    const r = routeByRules('Tem espaço para mais gestores em Tambaú/SP?');
+    expect(r.toolsToCall).toEqual(['territory_manager_coverage']);
+  });
+
+  it('roteia pergunta sobre regiões sem gestor', () => {
+    const r = routeByRules('Quais regiões de Rio de Janeiro/RJ estão sem gestor?');
+    expect(r.toolsToCall).toEqual(['territory_manager_coverage']);
   });
 
   it('detecta "cadastrar gestor na cidade"', () => {

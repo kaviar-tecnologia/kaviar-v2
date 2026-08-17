@@ -19,6 +19,7 @@ import {
   getDriverPipelineSummary,
   getEmergencyOperationsSummary,
   getTerritoryPortfolioSummary,
+  getTerritoryManagerCoverage,
 } from './kaviar-ai.command-center';
 import { getDriverCityLandings } from './kaviar-ai.city-landings';
 import { getKnowledgeAnswer } from './kaviar-ai.knowledge';
@@ -98,6 +99,22 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     },
     allowedRoles: ['SUPER_ADMIN'],
     execute: (args) => getTerritoryOnboardingStatus(args?.city ?? '', args?.uf ?? ''),
+  },
+  {
+    name: 'territory_manager_coverage',
+    description:
+      'Consulta a cobertura de gestores de uma cidade: bairros oficiais, regiões ativas, gestores atuais, regiões sem gestor específico e recomendação provisória de capacidade. Requer city e uf.',
+    readOnly: true,
+    argSchema: {
+      type: 'object',
+      properties: {
+        city: { type: 'string', description: 'Nome da cidade' },
+        uf: { type: 'string', description: 'Sigla do estado (2 letras)' },
+      },
+      required: ['city', 'uf'],
+    },
+    allowedRoles: ['SUPER_ADMIN'],
+    execute: getTerritoryManagerCoverage,
   },
   {
     name: 'territory_activation_readiness',

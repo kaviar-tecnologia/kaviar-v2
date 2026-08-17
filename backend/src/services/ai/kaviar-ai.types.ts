@@ -3,6 +3,7 @@ export type KaviarAiToolName =
   | 'drivers_documents_pending'
   | 'finance_due_obligations'
   | 'territory_onboarding_status'
+  | 'territory_manager_coverage'
   | 'territory_activation_readiness'
   | 'daily_briefing'
   | 'rides_operations'
