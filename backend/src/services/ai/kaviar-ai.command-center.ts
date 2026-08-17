@@ -881,6 +881,7 @@ export async function getTerritoryManagerCoverage(
       name: string;
       status: string;
       is_active: boolean;
+      city_name: string;
       coverage_status: string;
     }>(`
       SELECT
@@ -888,6 +889,7 @@ export async function getTerritoryManagerCoverage(
         name,
         status,
         is_active,
+        COALESCE(city_name, name) AS city_name,
         coverage_status
       FROM operational_territories
       WHERE level = 'city'
@@ -921,14 +923,30 @@ export async function getTerritoryManagerCoverage(
       refResult,
     ] = await Promise.all([
       pool.query<{ official_neighborhoods: number }>(`
-        SELECT
-          COUNT(*) FILTER (
-            WHERE is_active = true
-              AND area_type = 'BAIRRO_OFICIAL'
-          )::int AS official_neighborhoods
-        FROM neighborhoods
-        WHERE LOWER(city) = LOWER($1)
-      `, [city]),
+        SELECT COUNT(*)::int AS official_neighborhoods
+        FROM neighborhoods n
+        WHERE n.is_active = true
+          AND n.area_type = 'BAIRRO_OFICIAL'
+          AND (
+            n.territory_id = $1
+            OR n.territory_id IN (
+              SELECT child.id
+              FROM operational_territories child
+              WHERE child.parent_id = $1
+                AND child.level = 'region'
+            )
+            OR (
+              n.territory_id IS NULL
+              AND LOWER(n.city) = LOWER($2)
+              AND (
+                SELECT COUNT(*)
+                FROM operational_territories same_city
+                WHERE same_city.level = 'city'
+                  AND LOWER(COALESCE(same_city.city_name, same_city.name)) = LOWER($2)
+              ) = 1
+            )
+          )
+      `, [territory.id, territory.city_name]),
 
       pool.query<{ id: string; name: string }>(`
         SELECT id, name

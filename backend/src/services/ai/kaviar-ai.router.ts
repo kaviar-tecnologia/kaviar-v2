@@ -336,6 +336,21 @@ export function routeByRules(question: string): KaviarAiRouteResult {
   const hasManagerCoverageCityUf =
     /(?:\/\s*[A-Za-z]{2}\b|[-–]\s+[A-Za-z]{2}\b|\(\s*[A-Za-z]{2}\s*\))/.test(question);
 
+  const hasCoverageGovernanceIntent =
+    hasManagerCoverageCityUf &&
+    (q.includes('cobertura') || q.includes('cobertura territorial')) &&
+    (
+      q.includes('homolog') ||
+      q.includes('revis') ||
+      q.includes('completa') ||
+      q.includes('complete') ||
+      q.includes('reabr')
+    );
+
+  if (hasCoverageGovernanceIntent) {
+    return { toolsToCall: ['territory_manager_coverage'] };
+  }
+
   const hasManagerCoverageIntent =
     hasManagerCoverageCityUf &&
     (

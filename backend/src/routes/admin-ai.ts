@@ -9,6 +9,11 @@ import { createOpenAiProviderIfConfigured } from '../services/ai/kaviar-ai.opena
 import { startRegulatorySearch, retrieveRegulatorySearch, classifyRegulatorySearchError } from '../services/ai/kaviar-ai.regulatory-search';
 import { prisma } from '../lib/prisma';
 import { audit, auditCtx } from '../utils/audit';
+import {
+  isCoverageStatus,
+  resolveCoverageNotes,
+  resolveCoverageTransition,
+} from '../services/ai/kaviar-ai.territory-coverage-governance';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 
@@ -402,5 +407,280 @@ router.post('/territory/landing/enable', requireSuperAdmin, async (req: Request,
     });
   }
 });
+
+
+// ── Territorial: Governança da cobertura territorial ────────────────────────
+router.post(
+  '/territory/coverage/status',
+  requireSuperAdmin,
+  async (req: Request, res: Response) => {
+    try {
+      const {
+        city,
+        uf,
+        expected_status,
+        target_status,
+        confirmation,
+        notes,
+      } = req.body ?? {};
+
+      if (
+        typeof city !== 'string' ||
+        typeof uf !== 'string' ||
+        !city.trim() ||
+        uf.trim().length !== 2
+      ) {
+        return res.status(400).json({
+          success: false,
+          error: 'city e uf (2 letras) são obrigatórios.',
+        });
+      }
+
+      if (
+        !isCoverageStatus(expected_status) ||
+        !isCoverageStatus(target_status)
+      ) {
+        return res.status(400).json({
+          success: false,
+          error: 'expected_status e target_status são obrigatórios e válidos.',
+        });
+      }
+
+      const normalizedCity = city.trim();
+      const normalizedUf = uf.trim().toUpperCase();
+      const normalizedNotes =
+        typeof notes === 'string' ? notes.trim() : '';
+
+      if (normalizedNotes.length > 1000) {
+        return res.status(400).json({
+          success: false,
+          error: 'notes deve ter no máximo 1000 caracteres.',
+        });
+      }
+
+      const territory = await prisma.operational_territories.findFirst({
+        where: {
+          level: 'city',
+          uf: normalizedUf,
+          OR: [
+            {
+              city_name: {
+                equals: normalizedCity,
+                mode: 'insensitive',
+              },
+            },
+            {
+              name: {
+                equals: normalizedCity,
+                mode: 'insensitive',
+              },
+            },
+          ],
+        },
+        orderBy: [
+          { is_active: 'desc' },
+          { created_at: 'desc' },
+        ],
+      });
+
+      if (!territory) {
+        return res.status(404).json({
+          success: false,
+          error: `Território ${normalizedCity}/${normalizedUf} não encontrado.`,
+        });
+      }
+
+      if (!isCoverageStatus(territory.coverage_status)) {
+        return res.status(409).json({
+          success: false,
+          error: 'Estado atual da cobertura territorial é inválido.',
+        });
+      }
+
+      const currentStatus = territory.coverage_status;
+
+      // Protege confirmação feita sobre informação antiga.
+      if (currentStatus !== expected_status) {
+        return res.status(409).json({
+          success: false,
+          code: 'COVERAGE_STATUS_CONFLICT',
+          error:
+            `A cobertura mudou de ${expected_status} para ${currentStatus}. ` +
+            'Consulte novamente antes de confirmar.',
+          current_status: currentStatus,
+        });
+      }
+
+      const transition = resolveCoverageTransition(
+        currentStatus,
+        target_status
+      );
+
+      if (!transition) {
+        return res.status(409).json({
+          success: false,
+          code: 'COVERAGE_INVALID_TRANSITION',
+          error:
+            `Transição de ${currentStatus} para ${target_status} não permitida.`,
+        });
+      }
+
+      if (confirmation !== transition.confirmation) {
+        return res.status(400).json({
+          success: false,
+          error:
+            `Confirmação ${transition.confirmation} obrigatória.`,
+        });
+      }
+
+      if (transition.requiresReason && !normalizedNotes) {
+        return res.status(400).json({
+          success: false,
+          error: 'Motivo obrigatório para reabrir uma cobertura homologada.',
+        });
+      }
+
+      const canonicalCity = territory.city_name || normalizedCity;
+
+      const neighborhoodRows = await prisma.$queryRaw<
+        Array<{ official_neighborhoods: number }>
+      >`
+        SELECT COUNT(*)::int AS official_neighborhoods
+        FROM neighborhoods n
+        WHERE n.is_active = true
+          AND n.area_type = 'BAIRRO_OFICIAL'
+          AND (
+            n.territory_id = ${territory.id}
+
+            OR n.territory_id IN (
+              SELECT child.id
+              FROM operational_territories child
+              WHERE child.parent_id = ${territory.id}
+                AND child.level = 'region'
+            )
+
+            OR (
+              n.territory_id IS NULL
+              AND LOWER(n.city) = LOWER(${canonicalCity})
+              AND (
+                SELECT COUNT(*)
+                FROM operational_territories same_city
+                WHERE same_city.level = 'city'
+                  AND LOWER(
+                    COALESCE(same_city.city_name, same_city.name)
+                  ) = LOWER(${canonicalCity})
+              ) = 1
+            )
+          )
+      `;
+
+      const officialNeighborhoods =
+        neighborhoodRows[0]?.official_neighborhoods ?? 0;
+
+      const requiresLoadedCoverage =
+        (
+          currentStatus === 'NOT_LOADED' &&
+          target_status === 'AWAITING_REVIEW'
+        ) ||
+        target_status === 'COMPLETE';
+
+      if (requiresLoadedCoverage && officialNeighborhoods === 0) {
+        return res.status(422).json({
+          success: false,
+          code: 'COVERAGE_WITHOUT_OFFICIAL_NEIGHBORHOODS',
+          error:
+            'Não é possível revisar/homologar cobertura sem bairros oficiais ativos.',
+        });
+      }
+
+      const ctx = auditCtx(req);
+
+      const nextNotes = resolveCoverageNotes(
+        territory.coverage_notes,
+        normalizedNotes
+      );
+
+      const reviewedAt =
+        target_status === 'COMPLETE' ? new Date() : null;
+
+      const reviewedBy =
+        target_status === 'COMPLETE' ? ctx.adminId : null;
+
+      // Compare-and-set: evita sobrescrever alteração concorrente.
+      const changed =
+        await prisma.operational_territories.updateMany({
+          where: {
+            id: territory.id,
+            coverage_status: expected_status,
+          },
+          data: {
+            coverage_status: target_status,
+            coverage_reviewed_at: reviewedAt,
+            coverage_reviewed_by: reviewedBy,
+            coverage_notes: nextNotes,
+          },
+        });
+
+      if (changed.count !== 1) {
+        return res.status(409).json({
+          success: false,
+          code: 'COVERAGE_STATUS_CONFLICT',
+          error:
+            'A cobertura foi alterada por outra operação. Consulte novamente.',
+        });
+      }
+
+      await audit({
+        adminId: ctx.adminId,
+        adminEmail: ctx.adminEmail,
+        action: transition.auditAction,
+        entityType: 'operational_territory',
+        entityId: territory.id,
+        oldValue: {
+          coverage_status: currentStatus,
+          coverage_reviewed_at: territory.coverage_reviewed_at,
+          coverage_reviewed_by: territory.coverage_reviewed_by,
+          coverage_notes: territory.coverage_notes,
+        },
+        newValue: {
+          coverage_status: target_status,
+          coverage_reviewed_at: reviewedAt,
+          coverage_reviewed_by: reviewedBy,
+          coverage_notes: nextNotes,
+          official_neighborhoods: officialNeighborhoods,
+          source: 'chat_kaviar',
+        },
+        reason: normalizedNotes || undefined,
+        ipAddress: ctx.ip,
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          territory_id: territory.id,
+          city: canonicalCity,
+          uf: territory.uf || normalizedUf,
+          previous_status: currentStatus,
+          coverage_status: target_status,
+          official_neighborhoods: officialNeighborhoods,
+          coverage_reviewed_at: reviewedAt,
+          coverage_reviewed_by: reviewedBy,
+          coverage_notes: nextNotes,
+        },
+      });
+    } catch (error: any) {
+      console.error(
+        '[KAVIAR_AI_COVERAGE_STATUS]',
+        error?.message || error
+      );
+
+      return res.status(500).json({
+        success: false,
+        error: 'Erro ao atualizar governança da cobertura territorial.',
+      });
+    }
+  }
+);
+
 
 export default router;

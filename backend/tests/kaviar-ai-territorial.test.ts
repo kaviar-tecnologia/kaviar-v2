@@ -1,3 +1,9 @@
+import {
+  isCoverageStatus,
+  resolveCoverageNotes,
+  resolveCoverageTransition,
+} from '../src/services/ai/kaviar-ai.territory-coverage-governance';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { mockQuery } = vi.hoisted(() => ({ mockQuery: vi.fn() }));
@@ -1273,5 +1279,287 @@ describe('Chat KAVIAR — liberação segura de landing', () => {
     expect(routeSrc).toContain(
       "source: 'chat_kaviar'"
     );
+  });
+});
+
+describe('cobertura territorial — governança Fase 2C', () => {
+  it('roteia homologação e reabertura para cobertura territorial', () => {
+    expect(
+      routeByRules(
+        'Homologue a cobertura territorial de Tambaú/SP como completa'
+      ).toolsToCall
+    ).toEqual(['territory_manager_coverage']);
+
+    expect(
+      routeByRules(
+        'Reabra a cobertura territorial de Tambaú/SP para revisão'
+      ).toolsToCall
+    ).toEqual(['territory_manager_coverage']);
+  });
+
+  it('extrai cidade e UF de comandos de governança', () => {
+    expect(
+      parseCityUf(
+        'Homologue a cobertura territorial de Tambaú/SP como completa'
+      )
+    ).toEqual({
+      city: 'Tambaú',
+      uf: 'SP',
+    });
+
+    expect(
+      parseCityUf(
+        'Reabra a cobertura territorial de Rio de Janeiro/RJ para revisão'
+      )
+    ).toEqual({
+      city: 'Rio de Janeiro',
+      uf: 'RJ',
+    });
+  });
+
+  it('rota exige SUPER_ADMIN e usa a máquina de transição segura', () => {
+    const routeSrc = require('fs').readFileSync(
+      require('path').resolve(
+        __dirname,
+        '../src/routes/admin-ai.ts'
+      ),
+      'utf8'
+    );
+
+    const governanceSrc = require('fs').readFileSync(
+      require('path').resolve(
+        __dirname,
+        '../src/services/ai/kaviar-ai.territory-coverage-governance.ts'
+      ),
+      'utf8'
+    );
+
+    expect(routeSrc).toContain(
+      "'/territory/coverage/status',"
+    );
+    expect(routeSrc).toContain('requireSuperAdmin');
+    expect(routeSrc).toContain('resolveCoverageTransition');
+
+    expect(governanceSrc).toContain(
+      'ENVIAR_COBERTURA_REVISAO'
+    );
+    expect(governanceSrc).toContain(
+      'HOMOLOGAR_COBERTURA'
+    );
+    expect(governanceSrc).toContain(
+      'REABRIR_COBERTURA'
+    );
+  });
+
+  it('usa expected_status e compare-and-set', () => {
+    const routeSrc = require('fs').readFileSync(
+      require('path').resolve(
+        __dirname,
+        '../src/routes/admin-ai.ts'
+      ),
+      'utf8'
+    );
+
+    expect(routeSrc).toContain('expected_status');
+    expect(routeSrc).toContain('updateMany');
+    expect(routeSrc).toContain(
+      'coverage_status: expected_status'
+    );
+    expect(routeSrc).toContain('COVERAGE_STATUS_CONFLICT');
+  });
+
+  it('bloqueia revisão ou homologação sem bairros oficiais', () => {
+    const routeSrc = require('fs').readFileSync(
+      require('path').resolve(
+        __dirname,
+        '../src/routes/admin-ai.ts'
+      ),
+      'utf8'
+    );
+
+    expect(routeSrc).toContain(
+      'COVERAGE_WITHOUT_OFFICIAL_NEIGHBORHOODS'
+    );
+    expect(routeSrc).toContain(
+      'officialNeighborhoods === 0'
+    );
+  });
+
+  it('reabertura exige motivo', () => {
+    const routeSrc = require('fs').readFileSync(
+      require('path').resolve(
+        __dirname,
+        '../src/routes/admin-ai.ts'
+      ),
+      'utf8'
+    );
+
+    expect(routeSrc).toContain(
+      'Motivo obrigatório para reabrir uma cobertura homologada.'
+    );
+  });
+
+  it('registra auditoria das três transições', () => {
+    const routeSrc = require('fs').readFileSync(
+      require('path').resolve(
+        __dirname,
+        '../src/routes/admin-ai.ts'
+      ),
+      'utf8'
+    );
+
+    const governanceSrc = require('fs').readFileSync(
+      require('path').resolve(
+        __dirname,
+        '../src/services/ai/kaviar-ai.territory-coverage-governance.ts'
+      ),
+      'utf8'
+    );
+
+    expect(governanceSrc).toContain(
+      'territory_coverage_submit_review'
+    );
+    expect(governanceSrc).toContain(
+      'territory_coverage_homologate'
+    );
+    expect(governanceSrc).toContain(
+      'territory_coverage_reopen'
+    );
+
+    expect(routeSrc).toContain(
+      'action: transition.auditAction'
+    );
+    expect(routeSrc).toContain('oldValue');
+    expect(routeSrc).toContain('newValue');
+  });
+
+  it('contagem considera cidade, regiões filhas e fallback seguro', () => {
+    const commandCenterSrc = require('fs').readFileSync(
+      require('path').resolve(
+        __dirname,
+        '../src/services/ai/kaviar-ai.command-center.ts'
+      ),
+      'utf8'
+    );
+
+    expect(commandCenterSrc).toContain(
+      'n.territory_id = $1'
+    );
+    expect(commandCenterSrc).toContain(
+      'child.parent_id = $1'
+    );
+    expect(commandCenterSrc).toContain(
+      'n.territory_id IS NULL'
+    );
+    expect(commandCenterSrc).toContain(
+      "same_city.level = 'city'"
+    );
+  });
+
+  it('COMPLETE não é aprovação do quadro de gestores', () => {
+    const serviceSrc = require('fs').readFileSync(
+      require('path').resolve(
+        __dirname,
+        '../src/services/ai/kaviar-ai.service.ts'
+      ),
+      'utf8'
+    );
+
+    expect(serviceSrc).toContain(
+      'COMPLETE homologa somente a base territorial; não aprova quantidade de gestores nem contratação.'
+    );
+  });
+});
+
+describe('cobertura territorial — máquina de estados 2C', () => {
+  it('aceita somente os três estados suportados', () => {
+    expect(isCoverageStatus('NOT_LOADED')).toBe(true);
+    expect(isCoverageStatus('AWAITING_REVIEW')).toBe(true);
+    expect(isCoverageStatus('COMPLETE')).toBe(true);
+
+    expect(isCoverageStatus('ACTIVE')).toBe(false);
+    expect(isCoverageStatus('')).toBe(false);
+    expect(isCoverageStatus(null)).toBe(false);
+  });
+
+  it('define exatamente as três transições permitidas', () => {
+    expect(
+      resolveCoverageTransition(
+        'NOT_LOADED',
+        'AWAITING_REVIEW'
+      )
+    ).toEqual({
+      confirmation: 'ENVIAR_COBERTURA_REVISAO',
+      auditAction: 'territory_coverage_submit_review',
+      requiresReason: false,
+    });
+
+    expect(
+      resolveCoverageTransition(
+        'AWAITING_REVIEW',
+        'COMPLETE'
+      )
+    ).toEqual({
+      confirmation: 'HOMOLOGAR_COBERTURA',
+      auditAction: 'territory_coverage_homologate',
+      requiresReason: false,
+    });
+
+    expect(
+      resolveCoverageTransition(
+        'COMPLETE',
+        'AWAITING_REVIEW'
+      )
+    ).toEqual({
+      confirmation: 'REABRIR_COBERTURA',
+      auditAction: 'territory_coverage_reopen',
+      requiresReason: true,
+    });
+  });
+
+  it('rejeita todas as demais transições', () => {
+    const statuses = [
+      'NOT_LOADED',
+      'AWAITING_REVIEW',
+      'COMPLETE',
+    ] as const;
+
+    const allowed = new Set([
+      'NOT_LOADED->AWAITING_REVIEW',
+      'AWAITING_REVIEW->COMPLETE',
+      'COMPLETE->AWAITING_REVIEW',
+    ]);
+
+    for (const current of statuses) {
+      for (const target of statuses) {
+        const key = `${current}->${target}`;
+
+        if (allowed.has(key)) continue;
+
+        expect(
+          resolveCoverageTransition(current, target)
+        ).toBeNull();
+      }
+    }
+  });
+
+  it('preserva observação existente quando nenhuma nova é enviada', () => {
+    expect(
+      resolveCoverageNotes(
+        'Revisado com base municipal',
+        ''
+      )
+    ).toBe('Revisado com base municipal');
+
+    expect(
+      resolveCoverageNotes(
+        'Observação antiga',
+        'Nova conferência realizada'
+      )
+    ).toBe('Nova conferência realizada');
+
+    expect(
+      resolveCoverageNotes(null, '')
+    ).toBeNull();
   });
 });

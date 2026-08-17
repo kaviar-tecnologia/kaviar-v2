@@ -766,6 +766,9 @@ function formatTerritoryManagerCoverage(
     parts.push(
       '✅ Cobertura territorial homologada pela KAVIAR; a recomendação usa a base marcada como completa.'
     );
+    parts.push(
+      'ℹ️ COMPLETE homologa somente a base territorial; não aprova quantidade de gestores nem contratação.'
+    );
   } else if (data.coverageStatus === 'AWAITING_REVIEW') {
     parts.push(
       '⚠️ Recomendação provisória: os dados estão carregados, mas a cobertura territorial ainda aguarda homologação.'
@@ -884,6 +887,9 @@ export function parseCityUf(question: string): { city: string; uf: string } | nu
   // Remove frases de comando, preservando o nome real da cidade.
   // Ex.: "Qual é o status de Nova Iguaçu/RJ" -> "Nova Iguaçu".
   const prefixes = [
+    /^(?:homologar|homologue|homologa|marcar|marque)\s+(?:a\s+)?cobertura(?:\s+territorial)?\s+(?:de|da|do|em|na|no)\s+/i,
+    /^(?:enviar|envie|mandar|mande)\s+(?:a\s+)?cobertura(?:\s+territorial)?\s+(?:de|da|do|em|na|no)\s+/i,
+    /^(?:reabrir|reabra)\s+(?:a\s+)?cobertura(?:\s+territorial)?\s+(?:de|da|do|em|na|no)\s+/i,
     /^(?:tem|há|ha|existe)\s+espaço\s+para\s+mais\s+gestores?\s+(?:em|na|no|de|da|do)\s+/i,
     /^(?:quantos?)\s+gestores?\s+(?:temos?|existem?|faltam?|há|ha)\s+(?:em|na|no|de|da|do)\s+/i,
     /^(?:quem\s+são|quem\s+sao)\s+(?:os\s+)?gestores?\s+(?:em|na|no|de|da|do)\s+/i,

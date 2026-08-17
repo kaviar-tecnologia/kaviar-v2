@@ -30,6 +30,81 @@ const EXTRA_SUGGESTIONS = [
 
 const MAX_CHARS = 1000;
 
+function getCoverageGovernanceAction(message) {
+  if (!message?.toolsUsed?.includes('territory_manager_coverage')) {
+    return null;
+  }
+
+  const content = message.content || '';
+
+  const locationMatch = content.match(
+    /Cobertura de Gestores —\s*(.+?)\/([A-Z]{2})\b/
+  );
+
+  const statusMatch = content.match(
+    /Cobertura territorial:\s*(NOT_LOADED|AWAITING_REVIEW|COMPLETE)\b/
+  );
+
+  const neighborhoodsMatch = content.match(
+    /Bairros oficiais ativos:\s*(\d+)/
+  );
+
+  if (!locationMatch || !statusMatch) return null;
+
+  const city = locationMatch[1].trim();
+  const uf = locationMatch[2];
+  const expectedStatus = statusMatch[1];
+  const officialNeighborhoods = Number(
+    neighborhoodsMatch?.[1] || 0
+  );
+
+  if (expectedStatus === 'NOT_LOADED') {
+    return {
+      city,
+      uf,
+      expectedStatus,
+      targetStatus: 'AWAITING_REVIEW',
+      confirmation: 'ENVIAR_COBERTURA_REVISAO',
+      buttonLabel: 'Enviar para revisão',
+      title: 'Enviar cobertura para revisão',
+      requiresReason: false,
+      officialNeighborhoods,
+      description:
+        'Os dados cadastrados passarão para revisão humana antes da homologação.',
+    };
+  }
+
+  if (expectedStatus === 'AWAITING_REVIEW') {
+    return {
+      city,
+      uf,
+      expectedStatus,
+      targetStatus: 'COMPLETE',
+      confirmation: 'HOMOLOGAR_COBERTURA',
+      buttonLabel: 'Homologar cobertura',
+      title: 'Homologar cobertura territorial',
+      requiresReason: false,
+      officialNeighborhoods,
+      description:
+        'Confirme somente após revisar a completude dos bairros oficiais cadastrados.',
+    };
+  }
+
+  return {
+    city,
+    uf,
+    expectedStatus,
+    targetStatus: 'AWAITING_REVIEW',
+    confirmation: 'REABRIR_COBERTURA',
+    buttonLabel: 'Reabrir revisão',
+    title: 'Reabrir cobertura territorial',
+    requiresReason: true,
+    officialNeighborhoods,
+    description:
+      'A cobertura deixará de ser homologada e voltará a ser provisória até nova revisão.',
+  };
+}
+
 export default function KaviarAiPage() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -41,6 +116,8 @@ export default function KaviarAiPage() {
   const [managerResult, setManagerResult] = useState(null); // { name, email, tempPassword, territory, status }
   const [landingDialog, setLandingDialog] = useState(null); // { city, uf }
   const [territoryDialog, setTerritoryDialog] = useState(null); // { city, uf }
+  const [coverageDialog, setCoverageDialog] = useState(null);
+  const [coverageNotes, setCoverageNotes] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const regulatoryAbortRef = useRef({ cancelled: false, timer: null });
@@ -160,6 +237,77 @@ export default function KaviarAiPage() {
       const msg =
         err?.response?.data?.error ||
         'Erro ao liberar landing de motoristas.';
+      setError(msg);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCoverageStatusChange = async () => {
+    if (!isSuperAdmin || !coverageDialog) return;
+
+    const notes = coverageNotes.trim();
+
+    if (coverageDialog.requiresReason && !notes) {
+      setError('Informe o motivo para reabrir a cobertura.');
+      return;
+    }
+
+    setActionLoading(true);
+    setError('');
+
+    try {
+      const res = await api.post(
+        '/api/admin/ai/territory/coverage/status',
+        {
+          city: coverageDialog.city,
+          uf: coverageDialog.uf,
+          expected_status: coverageDialog.expectedStatus,
+          target_status: coverageDialog.targetStatus,
+          confirmation: coverageDialog.confirmation,
+          notes,
+        }
+      );
+
+      if (res.data.success) {
+        const d = res.data.data;
+
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content:
+            `✓ Cobertura territorial de ${d.city}/${d.uf} atualizada.\n` +
+            `${d.previous_status} → ${d.coverage_status}\n` +
+            `Bairros oficiais considerados: ${d.official_neighborhoods}`,
+        }]);
+
+        setCoverageDialog(null);
+        setCoverageNotes('');
+
+        // Atualiza a visão do Chat com o estado recém-gravado.
+        try {
+          const refreshed = await askKaviarAi(
+            `Como está a cobertura de gestores em ${d.city}/${d.uf}?`
+          );
+
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: refreshed.answer,
+            toolsUsed: refreshed.toolsUsed,
+          }]);
+        } catch {
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content:
+              '⚠️ A alteração foi concluída, mas não foi possível atualizar ' +
+              'a consulta automaticamente. Consulte a cobertura novamente.',
+          }]);
+        }
+      }
+    } catch (err) {
+      const msg =
+        err?.response?.data?.error ||
+        'Erro ao atualizar governança da cobertura territorial.';
+
       setError(msg);
     } finally {
       setActionLoading(false);
@@ -438,6 +586,64 @@ export default function KaviarAiPage() {
                   </Box>
                 )}
 
+                {/* Governança da cobertura territorial — somente resposta mais recente */}
+                {isSuperAdmin &&
+                  idx === messages.length - 1 &&
+                  msg.role === 'assistant' &&
+                  msg.toolsUsed?.includes('territory_manager_coverage') &&
+                  (() => {
+                    const action = getCoverageGovernanceAction(msg);
+
+                    if (!action) return null;
+
+                    const blockedByMissingNeighborhoods =
+                      action.expectedStatus !== 'COMPLETE' &&
+                      action.officialNeighborhoods === 0;
+
+                    return (
+                      <Box
+                        sx={{
+                          mt: 1.5,
+                          pt: 1,
+                          borderTop: '1px solid rgba(184,148,46,0.15)',
+                        }}
+                      >
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          disabled={
+                            actionLoading ||
+                            blockedByMissingNeighborhoods
+                          }
+                          sx={{
+                            color: '#B8942E',
+                            borderColor: '#B8942E',
+                            fontSize: 11,
+                            textTransform: 'none',
+                          }}
+                          onClick={() => {
+                            setCoverageNotes('');
+                            setCoverageDialog(action);
+                          }}
+                        >
+                          {action.buttonLabel}
+                        </Button>
+
+                        {blockedByMissingNeighborhoods && (
+                          <Typography
+                            sx={{
+                              color: '#FCA5A5',
+                              fontSize: 11,
+                              mt: 0.75,
+                            }}
+                          >
+                            Cadastre bairros oficiais antes de revisar ou homologar.
+                          </Typography>
+                        )}
+                      </Box>
+                    );
+                  })()}
+
                 {/* Ações territoriais (somente SUPER_ADMIN) */}
                 {isSuperAdmin && msg.role === 'assistant' && msg.toolsUsed?.includes('territory_onboarding_status') && msg.content?.includes('não encontrado') && (
                   <Box sx={{ mt: 1.5, pt: 1, borderTop: '1px solid rgba(184,148,46,0.15)', display: 'flex', gap: 1, flexWrap: 'wrap' }}>
@@ -714,6 +920,126 @@ export default function KaviarAiPage() {
             sx={{ color: '#B8942E' }}
           >
             Liberar landing
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog governança da cobertura territorial */}
+      <Dialog
+        open={!!coverageDialog}
+        onClose={() => {
+          if (!actionLoading) {
+            setCoverageDialog(null);
+            setCoverageNotes('');
+          }
+        }}
+        PaperProps={{
+          sx: {
+            bgcolor: '#1A1A1F',
+            color: '#E5E7EB',
+            minWidth: 380,
+          },
+        }}
+      >
+        <DialogTitle sx={{ color: '#FFD700', fontSize: 16 }}>
+          {coverageDialog?.title || 'Cobertura territorial'}
+        </DialogTitle>
+
+        <DialogContent>
+          <Typography
+            sx={{
+              color: '#E5E7EB',
+              fontSize: 13,
+              mb: 1,
+            }}
+          >
+            {coverageDialog
+              ? `${coverageDialog.city}/${coverageDialog.uf}`
+              : ''}
+          </Typography>
+
+          <Typography
+            sx={{
+              color: '#9CA3AF',
+              fontSize: 12,
+              mb: 1,
+            }}
+          >
+            {coverageDialog?.expectedStatus}
+            {' → '}
+            {coverageDialog?.targetStatus}
+          </Typography>
+
+          <Typography
+            sx={{
+              color: '#9CA3AF',
+              fontSize: 12,
+              mb: 2,
+            }}
+          >
+            {coverageDialog?.description}
+          </Typography>
+
+          <TextField
+            fullWidth
+            multiline
+            minRows={2}
+            label={
+              coverageDialog?.requiresReason
+                ? 'Motivo da reabertura'
+                : 'Observação da revisão (opcional)'
+            }
+            value={coverageNotes}
+            required={!!coverageDialog?.requiresReason}
+            onChange={(e) => setCoverageNotes(e.target.value)}
+            inputProps={{ maxLength: 1000 }}
+            sx={{
+              '& .MuiInputLabel-root': { color: '#6B7280' },
+              '& .MuiOutlinedInput-root': {
+                color: '#E5E7EB',
+                '& fieldset': {
+                  borderColor: 'rgba(184,148,46,0.3)',
+                },
+              },
+            }}
+          />
+
+          <Typography
+            sx={{
+              color: '#6B7280',
+              fontSize: 11,
+              mt: 1.5,
+            }}
+          >
+            COMPLETE homologa somente a base territorial.
+            Não aprova quantidade de gestores nem contratação.
+          </Typography>
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setCoverageDialog(null);
+              setCoverageNotes('');
+            }}
+            disabled={actionLoading}
+            sx={{ color: '#6B7280' }}
+          >
+            Cancelar
+          </Button>
+
+          <Button
+            onClick={handleCoverageStatusChange}
+            disabled={
+              actionLoading ||
+              (
+                coverageDialog?.requiresReason &&
+                !coverageNotes.trim()
+              )
+            }
+            sx={{ color: '#B8942E' }}
+          >
+            {coverageDialog?.buttonLabel || 'Confirmar'}
           </Button>
         </DialogActions>
       </Dialog>

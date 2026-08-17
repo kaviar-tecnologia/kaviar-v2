@@ -120,6 +120,45 @@ describe('KaviarAiPage — Chat KAVIAR', () => {
     expect(src).not.toContain('localStorage.setItem');
   });
 
+  it('governança de cobertura usa endpoint protegido por confirmação', () => {
+    expect(src).toContain(
+      '/api/admin/ai/territory/coverage/status'
+    );
+    expect(src).toContain('expected_status');
+    expect(src).toContain('target_status');
+    expect(src).toContain('ENVIAR_COBERTURA_REVISAO');
+    expect(src).toContain('HOMOLOGAR_COBERTURA');
+    expect(src).toContain('REABRIR_COBERTURA');
+  });
+
+  it('mostra ação de cobertura somente na resposta mais recente', () => {
+    expect(src).toContain(
+      'idx === messages.length - 1'
+    );
+    expect(src).toContain(
+      "msg.toolsUsed?.includes('territory_manager_coverage')"
+    );
+  });
+
+  it('reabertura exige motivo e COMPLETE não aprova gestores', () => {
+    expect(src).toContain('Motivo da reabertura');
+    expect(src).toContain('coverageNotes');
+    expect(src).toContain(
+      'COMPLETE homologa somente a base territorial.'
+    );
+    expect(src).toContain(
+      'Não aprova quantidade de gestores nem contratação.'
+    );
+  });
+
+  it('atualiza automaticamente a consulta após governança', () => {
+    expect(src).toContain(
+      'Como está a cobertura de gestores em'
+    );
+    expect(src).toContain('refreshed.answer');
+    expect(src).toContain('refreshed.toolsUsed');
+  });
+
   it('não contém chaves de API ou secrets', () => {
     expect(src).not.toContain('OPENAI_API_KEY');
     expect(src).not.toContain('api.openai.com');
@@ -143,6 +182,7 @@ describe('adminAiService — integração com endpoint', () => {
     expect(src).toContain('Corridas de hoje');
     expect(src).toContain('Documentos de motoristas');
     expect(src).toContain('Obrigações financeiras');
+    expect(src).toContain('Cobertura de gestores');
   });
 
   it('não contém secrets', () => {
@@ -212,7 +252,9 @@ describe('KaviarAiPage — pesquisa regulatória error handling', () => {
     expect(searchSection).toContain('setActionLoading(false)');
   });
 
-  it('timeout da chamada regulatória permanece 65000', () => {
-    expect(src).toContain('timeout: 65000');
+  it('pesquisa regulatória mantém timeouts do fluxo assíncrono', () => {
+    expect(src).toContain('MAX_POLL_MS = 180000');
+    expect(src).toContain('timeout: 15000');
+    expect(src).toContain('timeout: 10000');
   });
 });
