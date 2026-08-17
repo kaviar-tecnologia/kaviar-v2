@@ -804,6 +804,7 @@ export type TerritoryManagerCoverageData = {
     status: string;
     isActive: boolean;
   } | null;
+  coverageStatus: 'NOT_LOADED' | 'AWAITING_REVIEW' | 'COMPLETE';
   officialNeighborhoods: number;
   activeRegions: number;
   managers: {
@@ -828,7 +829,6 @@ export type TerritoryManagerCoverageData = {
   }[];
   neighborhoodsPerManager: number;
   recommendedByNeighborhoods: number | null;
-  regionCapacity: number;
   recommendedManagers: number | null;
   additionalManagers: number | null;
   hasRoomForMoreManagers: boolean | null;
@@ -854,13 +854,13 @@ export async function getTerritoryManagerCoverage(
     city,
     uf,
     territory: null,
+    coverageStatus: 'NOT_LOADED',
     officialNeighborhoods: 0,
     activeRegions: 0,
     managers: [],
     uncoveredRegions: [],
     neighborhoodsPerManager: 20,
     recommendedByNeighborhoods: null,
-    regionCapacity: 0,
     recommendedManagers: null,
     additionalManagers: null,
     hasRoomForMoreManagers: null,
@@ -881,12 +881,14 @@ export async function getTerritoryManagerCoverage(
       name: string;
       status: string;
       is_active: boolean;
+      coverage_status: string;
     }>(`
       SELECT
         id,
         name,
         status,
-        is_active
+        is_active,
+        coverage_status
       FROM operational_territories
       WHERE level = 'city'
         AND UPPER(uf) = UPPER($2)
@@ -896,6 +898,14 @@ export async function getTerritoryManagerCoverage(
     `, [city, uf]);
 
     const territory = territoryResult.rows[0];
+
+    const coverageStatus:
+      'NOT_LOADED' | 'AWAITING_REVIEW' | 'COMPLETE' =
+        territory?.coverage_status === 'COMPLETE'
+          ? 'COMPLETE'
+          : territory?.coverage_status === 'AWAITING_REVIEW'
+            ? 'AWAITING_REVIEW'
+            : 'NOT_LOADED';
 
     if (!territory) {
       return {
@@ -1041,15 +1051,9 @@ export async function getTerritoryManagerCoverage(
           )
         : null;
 
-    // Se ainda não houver regiões, a própria cidade permite ao menos
-    // uma posição de gestor. Havendo regiões, elas limitam a quantidade
-    // operacional inicial de gestores.
-    const regionCapacity = Math.max(1, activeRegions);
-
-    const recommendedManagers =
-      recommendedByNeighborhoods === null
-        ? null
-        : Math.min(recommendedByNeighborhoods, regionCapacity);
+    // Fase 2: demanda e regionalização são dimensões independentes.
+    // A quantidade de regiões existentes NÃO reduz a demanda sugerida.
+    const recommendedManagers = recommendedByNeighborhoods;
 
     const additionalManagers =
       recommendedManagers === null
@@ -1074,18 +1078,17 @@ export async function getTerritoryManagerCoverage(
           status: territory.status,
           isActive: territory.is_active,
         },
+        coverageStatus,
         officialNeighborhoods,
         activeRegions,
         managers,
         uncoveredRegions,
         neighborhoodsPerManager,
         recommendedByNeighborhoods,
-        regionCapacity,
         recommendedManagers,
         additionalManagers,
         hasRoomForMoreManagers,
-        // Fase 2 criará a confirmação persistida de cobertura completa.
-        provisional: true,
+        provisional: coverageStatus !== 'COMPLETE',
         referenceTime:
           refResult.rows[0]?.ref ?? new Date().toISOString(),
       },

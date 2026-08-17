@@ -2349,6 +2349,14 @@ model operational_territories {
   regulatory_notes      String?
   regulatory_checked_at DateTime?
   regulatory_checked_by String?
+
+  // Cobertura territorial da cidade:
+  // NOT_LOADED | AWAITING_REVIEW | COMPLETE
+  coverage_status      String    @default("NOT_LOADED")
+  coverage_reviewed_at DateTime?
+  coverage_reviewed_by String?
+  coverage_notes       String?
+
   is_active  Boolean  @default(true)
   moto_express_enabled Boolean @default(false)
   moto_passenger_enabled Boolean @default(false)
