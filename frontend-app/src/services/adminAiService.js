@@ -33,6 +33,7 @@ const TOOL_FRIENDLY_NAMES = {
   drivers_documents_pending: 'Documentos de motoristas',
   finance_due_obligations: 'Obrigações financeiras',
   territory_onboarding_status: 'Status territorial',
+  territory_manager_coverage: 'Cobertura de gestores',
   territory_activation_readiness: 'Prontidão de ativação',
 };
 
