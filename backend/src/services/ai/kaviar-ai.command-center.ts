@@ -939,7 +939,7 @@ export async function getTerritoryManagerCoverage(
               n.territory_id IS NULL
               AND LOWER(n.city) = LOWER($2)
               AND (
-                SELECT COUNT(*)
+                SELECT COUNT(DISTINCT UPPER(same_city.uf))
                 FROM operational_territories same_city
                 WHERE same_city.level = 'city'
                   AND LOWER(COALESCE(same_city.city_name, same_city.name)) = LOWER($2)

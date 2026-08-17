@@ -1454,6 +1454,9 @@ describe('cobertura territorial — governança Fase 2C', () => {
     expect(commandCenterSrc).toContain(
       "same_city.level = 'city'"
     );
+    expect(commandCenterSrc).toContain(
+      'COUNT(DISTINCT UPPER(same_city.uf))'
+    );
   });
 
   it('COMPLETE não é aprovação do quadro de gestores', () => {

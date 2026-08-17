@@ -563,7 +563,7 @@ router.post(
               n.territory_id IS NULL
               AND LOWER(n.city) = LOWER(${canonicalCity})
               AND (
-                SELECT COUNT(*)
+                SELECT COUNT(DISTINCT UPPER(same_city.uf))
                 FROM operational_territories same_city
                 WHERE same_city.level = 'city'
                   AND LOWER(
