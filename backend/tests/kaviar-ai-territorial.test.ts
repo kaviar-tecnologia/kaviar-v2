@@ -189,6 +189,7 @@ describe('territory_manager_coverage', () => {
           name: 'Tambaù',
           status: 'active',
           is_active: true,
+          coverage_status: 'AWAITING_REVIEW',
         }],
       })
       .mockResolvedValueOnce({
@@ -228,6 +229,7 @@ describe('territory_manager_coverage', () => {
     expect(result.data.hasRoomForMoreManagers).toBe(true);
     expect(result.data.uncoveredRegions.map(r => r.name))
       .toEqual(['Tambaú Sombra']);
+    expect(result.data.coverageStatus).toBe('AWAITING_REVIEW');
     expect(result.data.provisional).toBe(true);
   });
 
@@ -239,6 +241,7 @@ describe('territory_manager_coverage', () => {
           name: 'Rio de Janeiro',
           status: 'active',
           is_active: true,
+          coverage_status: 'AWAITING_REVIEW',
         }],
       })
       .mockResolvedValueOnce({
@@ -289,6 +292,80 @@ describe('territory_manager_coverage', () => {
 
     expect(result.data.uncoveredRegions).toHaveLength(15);
     expect(result.data.provisional).toBe(true);
+  });
+
+  it('não limita a demanda pela quantidade de regiões existentes', async () => {
+    mockQuery
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 'city-demand',
+          name: 'Cidade Demanda',
+          status: 'planning',
+          is_active: false,
+          coverage_status: 'AWAITING_REVIEW',
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ official_neighborhoods: 100 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [],
+      })
+      .mockResolvedValueOnce({
+        rows: [],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ ref: '2026-08-16 22:00' }],
+      });
+
+    const result = await getTerritoryManagerCoverage({
+      city: 'Cidade Demanda',
+      uf: 'SP',
+    });
+
+    expect(result.data.activeRegions).toBe(0);
+    expect(result.data.recommendedByNeighborhoods).toBe(5);
+    expect(result.data.recommendedManagers).toBe(5);
+    expect(result.data.additionalManagers).toBe(5);
+    expect(result.data.hasRoomForMoreManagers).toBe(true);
+    expect(result.data.coverageStatus).toBe('AWAITING_REVIEW');
+    expect(result.data.provisional).toBe(true);
+  });
+
+  it('coverage COMPLETE torna a recomendação não provisória', async () => {
+    mockQuery
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 'city-complete',
+          name: 'Cidade Completa',
+          status: 'active',
+          is_active: true,
+          coverage_status: 'COMPLETE',
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ official_neighborhoods: 40 }],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          { id: 'r1', name: 'Região 1' },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ ref: '2026-08-16 22:00' }],
+      });
+
+    const result = await getTerritoryManagerCoverage({
+      city: 'Cidade Completa',
+      uf: 'SP',
+    });
+
+    expect(result.data.recommendedManagers).toBe(2);
+    expect(result.data.coverageStatus).toBe('COMPLETE');
+    expect(result.data.provisional).toBe(false);
   });
 
   it('agrupa várias regiões do mesmo gestor sem duplicar o gestor', async () => {

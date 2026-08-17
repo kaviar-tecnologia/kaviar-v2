@@ -683,6 +683,14 @@ function formatTerritoryManagerCoverage(
   parts.push(
     `Território: ${data.territory.name} (${data.territory.status})`
   );
+  const coverageDescription =
+    data.coverageStatus === 'COMPLETE'
+      ? 'COMPLETE — cobertura homologada pela KAVIAR'
+      : data.coverageStatus === 'AWAITING_REVIEW'
+        ? 'AWAITING_REVIEW — dados carregados, aguardando homologação'
+        : 'NOT_LOADED — cobertura ainda não carregada/homologada';
+
+  parts.push(`Cobertura territorial: ${coverageDescription}`);
   parts.push(`Bairros oficiais ativos: ${data.officialNeighborhoods}`);
   parts.push(`Regiões territoriais ativas: ${data.activeRegions}`);
   parts.push(`Gestores ativos: ${data.managers.length}`);
@@ -718,19 +726,20 @@ function formatTerritoryManagerCoverage(
     );
   } else {
     parts.push(
-      `Recomendação operacional provisória: ${data.recommendedManagers} gestor${data.recommendedManagers === 1 ? '' : 'es'}`
+      `Demanda sugerida${data.provisional ? ' (provisória)' : ''}: ${data.recommendedManagers} gestor${data.recommendedManagers === 1 ? '' : 'es'}`
     );
 
     if (data.hasRoomForMoreManagers) {
       parts.push(
-        `Espaço recomendado para mais gestores: Sim — +${data.additionalManagers}`
+        `Capacidade sugerida adicional: +${data.additionalManagers}`
       );
     } else {
-      parts.push('Espaço recomendado para mais gestores: Não');
+      parts.push('Capacidade sugerida adicional: 0');
     }
   }
 
   parts.push('');
+  parts.push(`Estrutura atual: ${data.activeRegions} regiões territoriais ativas`);
   parts.push(
     `Regiões sem gestor regional específico: ${data.uncoveredRegions.length}`
   );
@@ -748,12 +757,20 @@ function formatTerritoryManagerCoverage(
 
   parts.push('');
   parts.push(
-    `Critério V1: 1 gestor para cada ${data.neighborhoodsPerManager} bairros oficiais, limitado pela capacidade territorial ativa da cidade.`
+    `Critério: 1 gestor para cada ${data.neighborhoodsPerManager} bairros oficiais cadastrados. A quantidade de regiões existentes não reduz a demanda sugerida.`
   );
 
-  if (data.provisional) {
+  if (data.coverageStatus === 'COMPLETE') {
     parts.push(
-      '⚠️ Estimativa provisória: a Fase 2 ainda irá registrar se a cobertura territorial da cidade está completa.'
+      '✅ Cobertura territorial homologada pela KAVIAR; a recomendação usa a base marcada como completa.'
+    );
+  } else if (data.coverageStatus === 'AWAITING_REVIEW') {
+    parts.push(
+      '⚠️ Recomendação provisória: os dados estão carregados, mas a cobertura territorial ainda aguarda homologação.'
+    );
+  } else {
+    parts.push(
+      '⚠️ Recomendação provisória: a cobertura territorial ainda não foi carregada/homologada como completa.'
     );
   }
 
