@@ -336,8 +336,8 @@ describe('territory_portfolio_summary', () => {
 // ══════════════════════════════════════════════════════════════════════════════
 
 describe('command center — registry', () => {
-  it('registry contém 26 ferramentas', () => {
-    expect(getRegisteredTools()).toHaveLength(26);
+  it('registry contém 27 ferramentas', () => {
+    expect(getRegisteredTools()).toHaveLength(27);
   });
 
   it('todas as 6 novas tools são readOnly', () => {

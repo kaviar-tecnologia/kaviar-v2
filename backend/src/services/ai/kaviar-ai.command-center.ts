@@ -787,3 +787,313 @@ export async function getTerritoryPortfolioSummary(): Promise<{
     },
   };
 }
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 7. TERRITORY_MANAGER_COVERAGE
+// ══════════════════════════════════════════════════════════════════════════════
+
+export type TerritoryManagerCoverageData = {
+  available: boolean;
+  found: boolean;
+  city: string;
+  uf: string;
+  territory: {
+    id: string;
+    name: string;
+    status: string;
+    isActive: boolean;
+  } | null;
+  officialNeighborhoods: number;
+  activeRegions: number;
+  managers: {
+    adminId: string;
+    name: string;
+
+    // Campos mantidos por compatibilidade: primeiro assignment encontrado.
+    territoryId: string;
+    territoryName: string;
+    territoryLevel: 'city' | 'region';
+
+    // Cobertura completa do gestor.
+    territories: {
+      id: string;
+      name: string;
+      level: 'city' | 'region';
+    }[];
+  }[];
+  uncoveredRegions: {
+    id: string;
+    name: string;
+  }[];
+  neighborhoodsPerManager: number;
+  recommendedByNeighborhoods: number | null;
+  regionCapacity: number;
+  recommendedManagers: number | null;
+  additionalManagers: number | null;
+  hasRoomForMoreManagers: boolean | null;
+  provisional: boolean;
+  referenceTime: string;
+};
+
+export async function getTerritoryManagerCoverage(
+  args?: Record<string, string>
+): Promise<{
+  tool: 'territory_manager_coverage';
+  data: TerritoryManagerCoverageData;
+}> {
+  const city = (args?.city ?? '').trim();
+  const uf = (args?.uf ?? '').trim().toUpperCase();
+
+  const emptyData = (
+    available: boolean,
+    found: boolean
+  ): TerritoryManagerCoverageData => ({
+    available,
+    found,
+    city,
+    uf,
+    territory: null,
+    officialNeighborhoods: 0,
+    activeRegions: 0,
+    managers: [],
+    uncoveredRegions: [],
+    neighborhoodsPerManager: 20,
+    recommendedByNeighborhoods: null,
+    regionCapacity: 0,
+    recommendedManagers: null,
+    additionalManagers: null,
+    hasRoomForMoreManagers: null,
+    provisional: true,
+    referenceTime: new Date().toISOString(),
+  });
+
+  if (!city || !/^[A-Z]{2}$/.test(uf)) {
+    return {
+      tool: 'territory_manager_coverage',
+      data: emptyData(true, false),
+    };
+  }
+
+  try {
+    const territoryResult = await pool.query<{
+      id: string;
+      name: string;
+      status: string;
+      is_active: boolean;
+    }>(`
+      SELECT
+        id,
+        name,
+        status,
+        is_active
+      FROM operational_territories
+      WHERE level = 'city'
+        AND UPPER(uf) = UPPER($2)
+        AND LOWER(COALESCE(city_name, name)) = LOWER($1)
+      ORDER BY is_active DESC, created_at DESC
+      LIMIT 1
+    `, [city, uf]);
+
+    const territory = territoryResult.rows[0];
+
+    if (!territory) {
+      return {
+        tool: 'territory_manager_coverage',
+        data: emptyData(true, false),
+      };
+    }
+
+    const [
+      neighborhoodResult,
+      regionsResult,
+      assignmentsResult,
+      refResult,
+    ] = await Promise.all([
+      pool.query<{ official_neighborhoods: number }>(`
+        SELECT
+          COUNT(*) FILTER (
+            WHERE is_active = true
+              AND area_type = 'BAIRRO_OFICIAL'
+          )::int AS official_neighborhoods
+        FROM neighborhoods
+        WHERE LOWER(city) = LOWER($1)
+      `, [city]),
+
+      pool.query<{ id: string; name: string }>(`
+        SELECT id, name
+        FROM operational_territories
+        WHERE parent_id = $1
+          AND level = 'region'
+          AND is_active = true
+          AND status <> 'inactive'
+        ORDER BY name
+      `, [territory.id]),
+
+      pool.query<{
+        admin_id: string;
+        manager_name: string;
+        territory_id: string;
+        territory_name: string;
+        territory_level: string;
+      }>(`
+        SELECT
+          a.id AS admin_id,
+          a.name AS manager_name,
+          managed_t.id AS territory_id,
+          managed_t.name AS territory_name,
+          managed_t.level AS territory_level
+        FROM territory_manager_assignments tma
+        JOIN admins a
+          ON a.id = tma.admin_id
+         AND a.is_active = true
+        JOIN operational_territories managed_t
+          ON managed_t.id = tma.territory_id
+        WHERE tma.status = 'active'
+          AND tma.ended_at IS NULL
+          AND (
+            managed_t.id = $1
+            OR (
+              managed_t.parent_id = $1
+              AND managed_t.level = 'region'
+              AND managed_t.is_active = true
+            )
+          )
+        ORDER BY
+          a.name,
+          CASE WHEN managed_t.level = 'city' THEN 0 ELSE 1 END,
+          managed_t.name
+      `, [territory.id]),
+
+      pool.query<{ ref: string }>(`
+        SELECT to_char(
+          NOW() AT TIME ZONE 'America/Sao_Paulo',
+          'YYYY-MM-DD HH24:MI'
+        ) AS ref
+      `),
+    ]);
+
+    const officialNeighborhoods =
+      neighborhoodResult.rows[0]?.official_neighborhoods ?? 0;
+
+    const activeRegions = regionsResult.rows.length;
+
+    // Um gestor conta apenas uma vez, mesmo que possua mais de um assignment.
+    const managerMap = new Map<
+      string,
+      TerritoryManagerCoverageData['managers'][number]
+    >();
+
+    // Para saber quais regiões possuem gestor regional específico,
+    // preservamos todos os assignments.
+    const managedRegionIds = new Set<string>();
+
+    for (const row of assignmentsResult.rows) {
+      if (row.territory_level === 'region') {
+        managedRegionIds.add(row.territory_id);
+      }
+
+      const territoryLevel: 'city' | 'region' =
+        row.territory_level === 'city' ? 'city' : 'region';
+
+      const existingManager = managerMap.get(row.admin_id);
+
+      if (!existingManager) {
+        managerMap.set(row.admin_id, {
+          adminId: row.admin_id,
+          name: row.manager_name,
+          territoryId: row.territory_id,
+          territoryName: row.territory_name,
+          territoryLevel,
+          territories: [{
+            id: row.territory_id,
+            name: row.territory_name,
+            level: territoryLevel,
+          }],
+        });
+      } else if (
+        !existingManager.territories.some(
+          territory => territory.id === row.territory_id
+        )
+      ) {
+        existingManager.territories.push({
+          id: row.territory_id,
+          name: row.territory_name,
+          level: territoryLevel,
+        });
+      }
+    }
+
+    const managers = [...managerMap.values()];
+    const currentManagers = managers.length;
+
+    const uncoveredRegions = regionsResult.rows.filter(
+      region => !managedRegionIds.has(region.id)
+    );
+
+    const neighborhoodsPerManager = 20;
+
+    const recommendedByNeighborhoods =
+      officialNeighborhoods > 0
+        ? Math.max(
+            1,
+            Math.ceil(officialNeighborhoods / neighborhoodsPerManager)
+          )
+        : null;
+
+    // Se ainda não houver regiões, a própria cidade permite ao menos
+    // uma posição de gestor. Havendo regiões, elas limitam a quantidade
+    // operacional inicial de gestores.
+    const regionCapacity = Math.max(1, activeRegions);
+
+    const recommendedManagers =
+      recommendedByNeighborhoods === null
+        ? null
+        : Math.min(recommendedByNeighborhoods, regionCapacity);
+
+    const additionalManagers =
+      recommendedManagers === null
+        ? null
+        : Math.max(0, recommendedManagers - currentManagers);
+
+    const hasRoomForMoreManagers =
+      additionalManagers === null
+        ? null
+        : additionalManagers > 0;
+
+    return {
+      tool: 'territory_manager_coverage',
+      data: {
+        available: true,
+        found: true,
+        city,
+        uf,
+        territory: {
+          id: territory.id,
+          name: territory.name,
+          status: territory.status,
+          isActive: territory.is_active,
+        },
+        officialNeighborhoods,
+        activeRegions,
+        managers,
+        uncoveredRegions,
+        neighborhoodsPerManager,
+        recommendedByNeighborhoods,
+        regionCapacity,
+        recommendedManagers,
+        additionalManagers,
+        hasRoomForMoreManagers,
+        // Fase 2 criará a confirmação persistida de cobertura completa.
+        provisional: true,
+        referenceTime:
+          refResult.rows[0]?.ref ?? new Date().toISOString(),
+      },
+    };
+  } catch {
+    return {
+      tool: 'territory_manager_coverage',
+      data: emptyData(false, false),
+    };
+  }
+}

@@ -332,6 +332,41 @@ export function routeByRules(question: string): KaviarAiRouteResult {
     return { toolsToCall: ['territory_portfolio_summary'] };
   }
 
+  // ── Territory manager coverage ───────────────────────────────────────
+  const hasManagerCoverageCityUf =
+    /(?:\/\s*[A-Za-z]{2}\b|[-–]\s+[A-Za-z]{2}\b|\(\s*[A-Za-z]{2}\s*\))/.test(question);
+
+  const hasManagerCoverageIntent =
+    hasManagerCoverageCityUf &&
+    (
+      q.includes('gestor') ||
+      q.includes('gestora') ||
+      q.includes('gestores') ||
+      q.includes('gestão') ||
+      q.includes('gestao')
+    ) &&
+    (
+      q.includes('tem gestor') ||
+      q.includes('tem um gestor') ||
+      q.includes('há gestor') ||
+      q.includes('ha gestor') ||
+      q.includes('existe gestor') ||
+      q.includes('quem são') ||
+      q.includes('quem sao') ||
+      q.includes('quantos') ||
+      q.includes('espaço') ||
+      q.includes('espaco') ||
+      q.includes('falt') ||
+      q.includes('sem gestor') ||
+      q.includes('cobertura') ||
+      q.includes('como está') ||
+      q.includes('como esta')
+    );
+
+  if (hasManagerCoverageIntent) {
+    return { toolsToCall: ['territory_manager_coverage'] };
+  }
+
   // ── Territorial onboarding ────────────────────────────────────────────
   const hasExplicitCityUf =
     /(?:\/\s*[A-Za-z]{2}\b|[-–]\s+[A-Za-z]{2}\b|\(\s*[A-Za-z]{2}\s*\))/.test(question);

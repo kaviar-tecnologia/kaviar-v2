@@ -25,6 +25,7 @@ import type {
   DriverPipelineSummaryData,
   EmergencyOperationsSummaryData,
   TerritoryPortfolioSummaryData,
+  TerritoryManagerCoverageData,
 } from './kaviar-ai.command-center';
 import type { KnowledgeAnswerData } from './kaviar-ai.knowledge';
 import type { DriverRatingsSummaryData } from './kaviar-ai.driver-ratings';
@@ -442,6 +443,8 @@ const FORMATTERS: Record<KaviarAiToolName, (data: unknown) => string> = {
     formatFinanceDueObligations(data as FinanceDueObligationsData),
   territory_onboarding_status: (data) =>
     formatTerritoryOnboarding(data as TerritoryOnboardingStatusData),
+  territory_manager_coverage: (data) =>
+    formatTerritoryManagerCoverage(data as TerritoryManagerCoverageData),
   territory_activation_readiness: (data) =>
     formatTerritoryReadiness(data as TerritoryActivationReadinessData),
   driver_city_landings: (data) =>
@@ -663,6 +666,100 @@ function formatEmergencyOperationsSummary(data: EmergencyOperationsSummaryData):
   return parts.join('\n');
 }
 
+function formatTerritoryManagerCoverage(
+  data: TerritoryManagerCoverageData
+): string {
+  if (!data.available) {
+    return 'Cobertura de gestores: não foi possível consultar.';
+  }
+
+  if (!data.found || !data.territory) {
+    return `Território ${data.city}/${data.uf} não encontrado no sistema.`;
+  }
+
+  const parts: string[] = [];
+
+  parts.push(`👥 Cobertura de Gestores — ${data.city}/${data.uf}`);
+  parts.push(
+    `Território: ${data.territory.name} (${data.territory.status})`
+  );
+  parts.push(`Bairros oficiais ativos: ${data.officialNeighborhoods}`);
+  parts.push(`Regiões territoriais ativas: ${data.activeRegions}`);
+  parts.push(`Gestores ativos: ${data.managers.length}`);
+
+  if (data.managers.length > 0) {
+    for (const manager of data.managers) {
+      const hasCityScope = manager.territories.some(
+        territory => territory.level === 'city'
+      );
+
+      if (hasCityScope) {
+        parts.push(`  • ${manager.name} — cidade inteira`);
+        continue;
+      }
+
+      const regionNames = manager.territories
+        .filter(territory => territory.level === 'region')
+        .map(territory => territory.name);
+
+      parts.push(
+        `  • ${manager.name} — ${regionNames.length > 0 ? regionNames.join(', ') : manager.territoryName}`
+      );
+    }
+  } else {
+    parts.push('  • Nenhum gestor ativo vinculado.');
+  }
+
+  parts.push('');
+
+  if (data.recommendedManagers === null) {
+    parts.push(
+      'Recomendação de gestores: não calculada — não há bairros oficiais ativos suficientes.'
+    );
+  } else {
+    parts.push(
+      `Recomendação operacional provisória: ${data.recommendedManagers} gestor${data.recommendedManagers === 1 ? '' : 'es'}`
+    );
+
+    if (data.hasRoomForMoreManagers) {
+      parts.push(
+        `Espaço recomendado para mais gestores: Sim — +${data.additionalManagers}`
+      );
+    } else {
+      parts.push('Espaço recomendado para mais gestores: Não');
+    }
+  }
+
+  parts.push('');
+  parts.push(
+    `Regiões sem gestor regional específico: ${data.uncoveredRegions.length}`
+  );
+
+  const visibleRegions = data.uncoveredRegions.slice(0, 20);
+  for (const region of visibleRegions) {
+    parts.push(`  • ${region.name}`);
+  }
+
+  if (data.uncoveredRegions.length > visibleRegions.length) {
+    parts.push(
+      `  • ... e mais ${data.uncoveredRegions.length - visibleRegions.length}`
+    );
+  }
+
+  parts.push('');
+  parts.push(
+    `Critério V1: 1 gestor para cada ${data.neighborhoodsPerManager} bairros oficiais, limitado pela capacidade territorial ativa da cidade.`
+  );
+
+  if (data.provisional) {
+    parts.push(
+      '⚠️ Estimativa provisória: a Fase 2 ainda irá registrar se a cobertura territorial da cidade está completa.'
+    );
+  }
+
+  return parts.join('\n');
+}
+
 function formatTerritoryPortfolioSummary(data: TerritoryPortfolioSummaryData): string {
   if (!data.available) return 'Portfólio de territórios: não foi possível consultar.';
   const parts: string[] = [];
@@ -766,6 +863,11 @@ export function parseCityUf(question: string): { city: string; uf: string } | nu
   // Remove frases de comando, preservando o nome real da cidade.
   // Ex.: "Qual é o status de Nova Iguaçu/RJ" -> "Nova Iguaçu".
   const prefixes = [
+    /^(?:tem|há|ha|existe)\s+espaço\s+para\s+mais\s+gestores?\s+(?:em|na|no|de|da|do)\s+/i,
+    /^(?:quantos?)\s+gestores?\s+(?:temos?|existem?|faltam?|há|ha)\s+(?:em|na|no|de|da|do)\s+/i,
+    /^(?:quem\s+são|quem\s+sao)\s+(?:os\s+)?gestores?\s+(?:em|na|no|de|da|do)\s+/i,
+    /^(?:quais\s+)?regiões?\s+(?:em|na|no|de|da|do)\s+/i,
+    /^(?:como\s+está|como\s+esta)\s+(?:a\s+)?gestão\s+(?:em|na|no|de|da|do)\s+/i,
     /^(?:tem|há|ha|existe)\s+(?:(?:um|uma)\s+)?gestor(?:a)?\s+(?:(?:na|no)\s+cidade\s+de\s+|(?:em|na|no|de|da|do)\s+)/i,
 
     /^(?:(?:qual|quais)(?:\s+é|\s+e)?\s+(?:(?:o|a)\s+)?)?(?:status|situação|situacao)\s+(?:de|da|do|em)\s+/i,
@@ -887,7 +989,11 @@ export async function askKaviarAi(
   const toolsUsed: KaviarAiToolName[] = [];
 
   // Territorial tools need city/uf
-  const territorialTools: KaviarAiToolName[] = ['territory_onboarding_status', 'territory_activation_readiness'];
+  const territorialTools: KaviarAiToolName[] = [
+    'territory_onboarding_status',
+    'territory_manager_coverage',
+    'territory_activation_readiness',
+  ];
   let territorialArgs: Record<string, string> | undefined;
 
   if (authorizedTools.some(t => territorialTools.includes(t))) {
