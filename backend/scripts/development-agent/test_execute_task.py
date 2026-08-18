@@ -323,5 +323,76 @@ class ExecuteTaskContractTests(unittest.TestCase):
         fake_conversation.close.assert_called_once()
 
 
+    def test_normalizes_read_permission_for_changed_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            relative = "backend/src/a.ts"
+            target_file = workspace / relative
+            target_file.parent.mkdir(
+                parents=True
+            )
+            target_file.write_text("teste\n")
+
+            fake_result = unittest.mock.MagicMock()
+            fake_result.exit_code = 0
+
+            fake_workspace = unittest.mock.MagicMock()
+            fake_workspace.execute_command.return_value = (
+                fake_result
+            )
+
+            target.normalize_changed_read_permissions(
+                fake_workspace,
+                workspace,
+                [relative],
+            )
+
+            fake_workspace.execute_command.assert_called_once_with(
+                "chmod o+r -- backend/src/a.ts"
+            )
+
+    def test_permission_normalization_skips_deleted_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+
+            fake_workspace = unittest.mock.MagicMock()
+
+            target.normalize_changed_read_permissions(
+                fake_workspace,
+                workspace,
+                ["backend/src/deleted.ts"],
+            )
+
+            fake_workspace.execute_command.assert_not_called()
+
+    def test_permission_normalization_rejects_symlink(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+
+            outside = workspace / "outside.txt"
+            outside.write_text("fora\n")
+
+            relative = "backend/src/link.ts"
+            link = workspace / relative
+            link.parent.mkdir(
+                parents=True
+            )
+            link.symlink_to(outside)
+
+            fake_workspace = unittest.mock.MagicMock()
+
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "DEVELOPMENT_TASK_SYMLINK_CHANGE_FORBIDDEN",
+            ):
+                target.normalize_changed_read_permissions(
+                    fake_workspace,
+                    workspace,
+                    [relative],
+                )
+
+            fake_workspace.execute_command.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

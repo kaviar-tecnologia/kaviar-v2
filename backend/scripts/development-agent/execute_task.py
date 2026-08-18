@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 import uuid
@@ -232,6 +233,44 @@ def validate_changed_paths(
         )
 
 
+
+def normalize_changed_read_permissions(
+    openhands_workspace: KaviarDockerWorkspace,
+    workspace: Path,
+    changed: list[str],
+) -> None:
+    for relative_path in changed:
+        host_path = workspace / relative_path
+
+        # Arquivo removido não precisa de normalização.
+        if not host_path.exists():
+            continue
+
+        # Fail-closed: não siga links criados pelo agente.
+        if host_path.is_symlink():
+            raise RuntimeError(
+                "DEVELOPMENT_TASK_SYMLINK_CHANGE_FORBIDDEN:"
+                + relative_path
+            )
+
+        if not host_path.is_file():
+            raise RuntimeError(
+                "DEVELOPMENT_TASK_NON_FILE_CHANGE_FORBIDDEN:"
+                + relative_path
+            )
+
+        result = openhands_workspace.execute_command(
+            "chmod o+r -- "
+            + shlex.quote(relative_path)
+        )
+
+        if result.exit_code != 0:
+            raise RuntimeError(
+                "DEVELOPMENT_TASK_PERMISSION_NORMALIZATION_FAILED:"
+                + relative_path
+            )
+
+
 def build_agent_prompt(
     task: str,
     allowed_paths: list[str],
@@ -363,6 +402,43 @@ def execute_request(
             )
         finally:
             conversation.close()
+
+        sandbox_head = run_text(
+            "git",
+            "rev-parse",
+            "HEAD",
+            cwd=workspace,
+        )
+
+        if sandbox_head != initial_head:
+            raise RuntimeError(
+                "DEVELOPMENT_TASK_GIT_HEAD_CHANGED"
+            )
+
+        validate_git_contract(
+            workspace,
+            job_id,
+        )
+
+        sandbox_changed = changed_paths(
+            workspace
+        )
+
+        if not sandbox_changed:
+            raise RuntimeError(
+                "DEVELOPMENT_TASK_NO_CHANGES"
+            )
+
+        validate_changed_paths(
+            sandbox_changed,
+            request["allowed_paths"],
+        )
+
+        normalize_changed_read_permissions(
+            openhands_workspace,
+            workspace,
+            sandbox_changed,
+        )
 
     final_head = run_text(
         "git",
