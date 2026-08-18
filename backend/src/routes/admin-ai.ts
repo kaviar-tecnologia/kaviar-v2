@@ -81,11 +81,17 @@ router.post('/chat', async (req: Request, res: Response) => {
       role: admin.role,
     }, modelProvider);
 
-    return res.json({
+    const responsePayload: Record<string, any> = {
       success: true,
       answer: result.answer,
       toolsUsed: result.toolsUsed,
-    });
+    };
+
+    if (result.developmentProposal) {
+      responsePayload.developmentProposal = result.developmentProposal;
+    }
+
+    return res.json(responsePayload);
   } catch (error) {
     console.error('[KAVIAR_AI] Erro ao processar pergunta');
 
