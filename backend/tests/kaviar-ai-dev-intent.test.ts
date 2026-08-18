@@ -80,6 +80,26 @@ describe('Development Intent Classification & Safety', () => {
       const res = detectDevelopmentIntent('verificar documentos pendentes');
       expect(res.isDevIntent).toBe(false);
     });
+
+    it('ignores informational question about an existing feature', () => {
+      const res = detectDevelopmentIntent('Como funciona a nova feature de cupons?');
+      expect(res.isDevIntent).toBe(false);
+    });
+
+    it('ignores informational question about a backend bug', () => {
+      const res = detectDevelopmentIntent('Existe bug no backend?');
+      expect(res.isDevIntent).toBe(false);
+    });
+
+    it('ignores informational question about unit tests', () => {
+      const res = detectDevelopmentIntent('Quais testes unitários existem?');
+      expect(res.isDevIntent).toBe(false);
+    });
+
+    it('ignores informational question about an existing endpoint', () => {
+      const res = detectDevelopmentIntent('Como funciona o novo endpoint de cupons?');
+      expect(res.isDevIntent).toBe(false);
+    });
   });
 
   describe('Proposal Security Locks', () => {
