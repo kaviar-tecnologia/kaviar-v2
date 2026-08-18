@@ -224,6 +224,8 @@ model admins {
   accountant_invites_revoked                 accountant_invites[]               @relation("invite_revoker")
   accountant_links_created                   accountant_entity_links[]          @relation("link_creator")
   doc_files_uploaded                        accounting_company_document_files[] @relation("doc_file_uploader_admin")
+  development_jobs_requested                 development_jobs[] @relation("development_job_requester")
+  development_jobs_confirmed                 development_jobs[] @relation("development_job_confirmer")
 }
 
 model communities {
@@ -5237,4 +5239,27 @@ model driver_badge_events {
   @@index([driver_id, badge_code, created_at(sort: Desc)])
   @@index([badge_code, event_type])
   @@map("driver_badge_events")
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// KAVIAR Development Agent — Phase 2 persistence
+// ═══════════════════════════════════════════════════════════════════
+
+model development_jobs {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  category              String
+  summary               String
+  status                String    @default("AWAITING_CONFIRMATION")
+  requested_by_admin_id String
+  confirmed_by_admin_id String?
+  confirmed_at          DateTime? @db.Timestamptz
+  created_at            DateTime  @default(now()) @db.Timestamptz
+  updated_at            DateTime  @default(now()) @updatedAt @db.Timestamptz
+
+  requested_by_admin admins  @relation("development_job_requester", fields: [requested_by_admin_id], references: [id], onDelete: Restrict)
+  confirmed_by_admin admins? @relation("development_job_confirmer", fields: [confirmed_by_admin_id], references: [id], onDelete: Restrict)
+
+  @@index([status, created_at])
+  @@index([requested_by_admin_id])
+  @@index([confirmed_by_admin_id])
 }

@@ -5,6 +5,11 @@ import {
   requireSuperAdmin,
 } from '../middlewares/auth';
 import { askKaviarAi } from '../services/ai/kaviar-ai.service';
+import {
+  createDevelopmentJob,
+  confirmDevelopmentJob,
+  DevelopmentJobError,
+} from '../services/ai/kaviar-ai.development-jobs';
 import { createOpenAiProviderIfConfigured } from '../services/ai/kaviar-ai.openai-provider';
 import { startRegulatorySearch, retrieveRegulatorySearch, classifyRegulatorySearchError } from '../services/ai/kaviar-ai.regulatory-search';
 import { prisma } from '../lib/prisma';
@@ -88,7 +93,27 @@ router.post('/chat', async (req: Request, res: Response) => {
     };
 
     if (result.developmentProposal) {
-      responsePayload.developmentProposal = result.developmentProposal;
+      const ctx = auditCtx(req);
+
+      const developmentJob = await createDevelopmentJob(
+        {
+          category: result.developmentProposal.category,
+          summary: result.developmentProposal.summary,
+        },
+        {
+          adminId: admin.id,
+          adminEmail: ctx.adminEmail,
+          role: admin.role,
+          ipAddress: ctx.ip,
+          userAgent: ctx.ua,
+        },
+      );
+
+      responsePayload.developmentProposal = {
+        ...result.developmentProposal,
+        jobId: developmentJob.id,
+        status: developmentJob.status,
+      };
     }
 
     return res.json(responsePayload);
@@ -98,6 +123,55 @@ router.post('/chat', async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       error: 'Não foi possível processar a pergunta.',
+    });
+  }
+});
+
+
+// ── Development Agent: confirmação humana ───────────────────────────────────
+router.post('/dev-jobs/:id/confirm', requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const admin = (req as any).admin;
+    const ctx = auditCtx(req);
+
+    const job = await confirmDevelopmentJob(
+      String(req.params.id ?? ''),
+      {
+        adminId: admin.id,
+        adminEmail: ctx.adminEmail,
+        role: admin.role,
+        ipAddress: ctx.ip,
+        userAgent: ctx.ua,
+      },
+    );
+
+    return res.json({
+      success: true,
+      data: {
+        id: job.id,
+        category: job.category,
+        summary: job.summary,
+        status: job.status,
+        requestedByAdminId: job.requested_by_admin_id,
+        confirmedByAdminId: job.confirmed_by_admin_id,
+        confirmedAt: job.confirmed_at,
+      },
+    });
+  } catch (error) {
+    if (error instanceof DevelopmentJobError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    }
+
+    console.error('[KAVIAR_AI_DEV_JOB_CONFIRM] Erro ao confirmar job');
+
+    return res.status(500).json({
+      success: false,
+      code: 'DEVELOPMENT_JOB_INTERNAL_ERROR',
+      error: 'Não foi possível confirmar o job de desenvolvimento.',
     });
   }
 });
