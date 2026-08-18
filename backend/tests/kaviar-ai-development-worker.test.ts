@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   claimNextDevelopmentJob,
+  finalizeDevelopmentJob,
   heartbeatDevelopmentJob,
 } from '../src/services/ai/kaviar-ai.development-worker';
 
@@ -214,6 +215,57 @@ describe('KAVIAR AI — Development Worker heartbeat', () => {
         workerId: 'worker-b',
       },
       'job-lost',
+    );
+
+    expect(result).toBe(false);
+    expect(query).toHaveBeenCalledOnce();
+  });
+});
+
+describe('KAVIAR AI — Development Worker finalization', () => {
+  it('finalizes a RUNNING job only while the worker still owns it', async () => {
+    const query = vi.fn(async () => ({
+      rows: [{ id: 'job-owned' }],
+    }));
+
+    const result = await finalizeDevelopmentJob(
+      {
+        pool: { query } as any,
+        workerId: 'worker-a',
+      },
+      'job-owned',
+      'SUCCEEDED',
+    );
+
+    expect(result).toBe(true);
+    expect(query).toHaveBeenCalledOnce();
+
+    const [sql, params] = query.mock.calls[0];
+
+    expect(String(sql)).toContain("status = 'RUNNING'");
+    expect(String(sql)).toContain('locked_by = $2');
+    expect(String(sql)).toContain('status = $3');
+    expect(String(sql)).toContain('locked_at = NULL');
+    expect(String(sql)).toContain('locked_by = NULL');
+    expect(params).toEqual([
+      'job-owned',
+      'worker-a',
+      'SUCCEEDED',
+    ]);
+  });
+
+  it('does not finalize after ownership has been lost', async () => {
+    const query = vi.fn(async () => ({
+      rows: [],
+    }));
+
+    const result = await finalizeDevelopmentJob(
+      {
+        pool: { query } as any,
+        workerId: 'worker-old',
+      },
+      'job-reclaimed',
+      'FAILED',
     );
 
     expect(result).toBe(false);
