@@ -1,4 +1,7 @@
 import type { Pool } from 'pg';
+import {
+  normalizeDevelopmentAllowedPaths,
+} from './kaviar-ai.development-scope-contract';
 
 const STALE_LOCK_MINUTES = 15;
 
@@ -11,6 +14,7 @@ export interface ClaimedDevelopmentJob {
   id: string;
   category: string;
   summary: string;
+  allowedPaths: string[];
   status: 'RUNNING';
   attempts: number;
   lockedBy: string;
@@ -110,7 +114,11 @@ export async function claimNextDevelopmentJob(
       SELECT id
       FROM development_jobs
       WHERE
-        status = 'QUEUED'
+        (
+          status = 'QUEUED'
+          AND allowed_paths IS NOT NULL
+          AND scope_resolved_at IS NOT NULL
+        )
         OR (
           status = 'RUNNING'
           AND locked_at IS NOT NULL
@@ -147,6 +155,7 @@ export async function claimNextDevelopmentJob(
         id,
         category,
         summary,
+        allowed_paths,
         status,
         attempts,
         locked_by,
@@ -160,10 +169,16 @@ export async function claimNextDevelopmentJob(
 
     const job = result.rows[0];
 
+    const allowedPaths =
+      normalizeDevelopmentAllowedPaths(
+        job.allowed_paths,
+      );
+
     return {
       id: job.id,
       category: job.category,
       summary: job.summary,
+      allowedPaths,
       status: 'RUNNING',
       attempts: job.attempts,
       lockedBy: job.locked_by,

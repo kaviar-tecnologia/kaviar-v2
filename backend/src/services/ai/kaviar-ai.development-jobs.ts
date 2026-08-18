@@ -1,8 +1,13 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import type { DevelopmentIntentCategory } from './kaviar-ai.types';
+import {
+  DevelopmentScopeContractError,
+  normalizeDevelopmentAllowedPaths,
+} from './kaviar-ai.development-scope-contract';
 
 export type DevelopmentJobStatus =
+  | 'AWAITING_SCOPE'
   | 'AWAITING_CONFIRMATION'
   | 'QUEUED'
   | 'RUNNING'
@@ -41,6 +46,26 @@ const ALLOWED_CATEGORIES = new Set<DevelopmentIntentCategory>([
 ]);
 
 const MAX_SUMMARY_LENGTH = 1000;
+const MAX_SCOPE_RATIONALE_LENGTH = 4000;
+
+
+function validateAllowedPaths(
+  input: unknown,
+): string[] {
+  try {
+    return normalizeDevelopmentAllowedPaths(input);
+  } catch (error) {
+    if (error instanceof DevelopmentScopeContractError) {
+      throw new DevelopmentJobError(
+        error.code,
+        error.message,
+        400,
+      );
+    }
+
+    throw error;
+  }
+}
 
 function requireSuperAdmin(actor: DevelopmentJobActor): void {
   if (actor.role !== 'SUPER_ADMIN') {
@@ -148,7 +173,7 @@ export async function createDevelopmentJob(
       data: {
         category: validated.category,
         summary: validated.summary,
-        status: 'AWAITING_CONFIRMATION',
+        status: 'AWAITING_SCOPE',
         requested_by_admin_id: actor.adminId,
       },
     });
@@ -165,6 +190,107 @@ export async function createDevelopmentJob(
 
     return created;
   });
+}
+
+
+export async function resolveDevelopmentJobScope(
+  jobId: string,
+  workerId: string,
+  input: {
+    allowedPaths: unknown;
+    rationale?: string;
+  },
+) {
+  const id = jobId.trim();
+  const normalizedWorkerId = workerId.trim();
+
+  if (!id) {
+    throw new DevelopmentJobError(
+      'DEVELOPMENT_JOB_INVALID_ID',
+      'ID do job é obrigatório.',
+      400,
+    );
+  }
+
+  if (!normalizedWorkerId) {
+    throw new DevelopmentJobError(
+      'DEVELOPMENT_SCOPE_WORKER_ID_REQUIRED',
+      'Worker de resolução de escopo é obrigatório.',
+      400,
+    );
+  }
+
+  const allowedPaths = validateAllowedPaths(
+    input.allowedPaths,
+  );
+
+  const rationale = (input.rationale ?? '').trim();
+
+  if (
+    rationale.length >
+    MAX_SCOPE_RATIONALE_LENGTH
+  ) {
+    throw new DevelopmentJobError(
+      'DEVELOPMENT_JOB_INVALID_SCOPE',
+      `Justificativa do escopo deve ter no máximo ${MAX_SCOPE_RATIONALE_LENGTH} caracteres.`,
+      400,
+    );
+  }
+
+  const resolvedAt = new Date();
+
+  const updateResult =
+    await prisma.development_jobs.updateMany({
+      where: {
+        id,
+        status: 'AWAITING_SCOPE',
+        locked_by: normalizedWorkerId,
+      },
+      data: {
+        status: 'AWAITING_CONFIRMATION',
+        allowed_paths: allowedPaths,
+        scope_rationale: rationale || null,
+        scope_resolved_at: resolvedAt,
+        locked_at: null,
+        locked_by: null,
+      },
+    });
+
+  if (updateResult.count !== 1) {
+    const existing =
+      await prisma.development_jobs.findUnique({
+        where: { id },
+      });
+
+    if (!existing) {
+      throw new DevelopmentJobError(
+        'DEVELOPMENT_JOB_NOT_FOUND',
+        'Job de desenvolvimento não encontrado.',
+        404,
+      );
+    }
+
+    throw new DevelopmentJobError(
+      'DEVELOPMENT_JOB_SCOPE_NOT_RESOLVABLE',
+      'Este job não está aguardando resolução de escopo.',
+      409,
+    );
+  }
+
+  const resolved =
+    await prisma.development_jobs.findUnique({
+      where: { id },
+    });
+
+  if (!resolved) {
+    throw new DevelopmentJobError(
+      'DEVELOPMENT_JOB_NOT_FOUND',
+      'Job de desenvolvimento não encontrado após resolução de escopo.',
+      404,
+    );
+  }
+
+  return resolved;
 }
 
 export async function confirmDevelopmentJob(
@@ -200,6 +326,16 @@ export async function confirmDevelopmentJob(
       throw new DevelopmentJobError(
         'DEVELOPMENT_JOB_NOT_CONFIRMABLE',
         'Este job não está aguardando confirmação.',
+        409,
+      );
+    }
+
+    validateAllowedPaths(existing.allowed_paths);
+
+    if (!existing.scope_resolved_at) {
+      throw new DevelopmentJobError(
+        'DEVELOPMENT_JOB_SCOPE_REQUIRED',
+        'O escopo precisa ser resolvido antes da confirmação.',
         409,
       );
     }
