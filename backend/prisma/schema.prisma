@@ -5249,7 +5249,10 @@ model development_jobs {
   id                    String    @id @default(dbgenerated("gen_random_uuid()::text"))
   category              String
   summary               String
-  status                String    @default("AWAITING_CONFIRMATION")
+  status                String    @default("AWAITING_SCOPE")
+  allowed_paths         Json?
+  scope_rationale       String?
+  scope_resolved_at     DateTime? @db.Timestamptz
   requested_by_admin_id String
   confirmed_by_admin_id String?
   confirmed_at          DateTime? @db.Timestamptz
