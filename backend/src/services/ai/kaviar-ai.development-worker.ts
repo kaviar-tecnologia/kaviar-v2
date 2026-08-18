@@ -1,0 +1,106 @@
+import type { Pool } from 'pg';
+
+const STALE_LOCK_MINUTES = 15;
+
+export interface DevelopmentWorkerDeps {
+  pool: Pool;
+  workerId: string;
+}
+
+export interface ClaimedDevelopmentJob {
+  id: string;
+  category: string;
+  summary: string;
+  status: 'RUNNING';
+  attempts: number;
+  lockedBy: string;
+  startedAt: Date;
+  lockedAt: Date;
+}
+
+export async function claimNextDevelopmentJob(
+  deps: DevelopmentWorkerDeps,
+): Promise<ClaimedDevelopmentJob | null> {
+  const workerId = deps.workerId.trim();
+
+  if (!workerId) {
+    throw new Error('DEVELOPMENT_WORKER_ID_REQUIRED');
+  }
+
+  const client = await deps.pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const { rows } = await client.query(
+      `
+      SELECT id
+      FROM development_jobs
+      WHERE
+        status = 'QUEUED'
+        OR (
+          status = 'RUNNING'
+          AND locked_at IS NOT NULL
+          AND locked_at <= NOW() - ($1 * INTERVAL '1 minute')
+        )
+      ORDER BY
+        CASE WHEN status = 'QUEUED' THEN 0 ELSE 1 END,
+        created_at ASC
+      LIMIT 1
+      FOR UPDATE SKIP LOCKED
+      `,
+      [STALE_LOCK_MINUTES],
+    );
+
+    const picked = rows[0];
+
+    if (!picked) {
+      await client.query('COMMIT');
+      return null;
+    }
+
+    const result = await client.query(
+      `
+      UPDATE development_jobs
+      SET
+        status = 'RUNNING',
+        started_at = COALESCE(started_at, NOW()),
+        locked_at = NOW(),
+        locked_by = $1,
+        attempts = attempts + 1,
+        updated_at = NOW()
+      WHERE id = $2
+      RETURNING
+        id,
+        category,
+        summary,
+        status,
+        attempts,
+        locked_by,
+        started_at,
+        locked_at
+      `,
+      [workerId, picked.id],
+    );
+
+    await client.query('COMMIT');
+
+    const job = result.rows[0];
+
+    return {
+      id: job.id,
+      category: job.category,
+      summary: job.summary,
+      status: 'RUNNING',
+      attempts: job.attempts,
+      lockedBy: job.locked_by,
+      startedAt: job.started_at,
+      lockedAt: job.locked_at,
+    };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}

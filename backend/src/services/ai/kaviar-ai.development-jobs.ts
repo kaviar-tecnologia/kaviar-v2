@@ -4,7 +4,8 @@ import type { DevelopmentIntentCategory } from './kaviar-ai.types';
 
 export type DevelopmentJobStatus =
   | 'AWAITING_CONFIRMATION'
-  | 'QUEUED';
+  | 'QUEUED'
+  | 'RUNNING';
 
 export interface DevelopmentJobActor {
   adminId: string;
