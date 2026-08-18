@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   claimNextDevelopmentJob,
+  heartbeatDevelopmentJob,
 } from '../src/services/ai/kaviar-ai.development-worker';
 
 function makePool(options?: {
@@ -176,3 +177,47 @@ describe('KAVIAR AI — Development Worker Phase 3', () => {
     expect(fake.release).toHaveBeenCalledOnce();
   });
 });
+
+describe('KAVIAR AI — Development Worker heartbeat', () => {
+  it('renews the lease only while the worker still owns the RUNNING job', async () => {
+    const query = vi.fn(async () => ({
+      rows: [{ id: 'job-owned' }],
+    }));
+
+    const result = await heartbeatDevelopmentJob(
+      {
+        pool: { query } as any,
+        workerId: 'worker-a',
+      },
+      'job-owned',
+    );
+
+    expect(result).toBe(true);
+    expect(query).toHaveBeenCalledOnce();
+
+    const [sql, params] = query.mock.calls[0];
+
+    expect(String(sql)).toContain("status = 'RUNNING'");
+    expect(String(sql)).toContain('locked_by = $2');
+    expect(String(sql)).toContain('locked_at = NOW()');
+    expect(params).toEqual(['job-owned', 'worker-a']);
+  });
+
+  it('returns false when ownership has been lost', async () => {
+    const query = vi.fn(async () => ({
+      rows: [],
+    }));
+
+    const result = await heartbeatDevelopmentJob(
+      {
+        pool: { query } as any,
+        workerId: 'worker-b',
+      },
+      'job-lost',
+    );
+
+    expect(result).toBe(false);
+    expect(query).toHaveBeenCalledOnce();
+  });
+});
+
