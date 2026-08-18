@@ -2,10 +2,12 @@
 
 import sys
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from openhands.workspace import DockerWorkspace
 from kaviar_docker_workspace import KaviarDockerWorkspace
 
 
@@ -67,6 +69,41 @@ class KaviarDockerWorkspaceSecurityTests(unittest.TestCase):
                 forward_env=[],
                 extra_ports=False,
             )
+
+
+    def test_execute_command_defaults_to_workspace_working_dir(self):
+        with patch.object(
+            KaviarDockerWorkspace,
+            "_start_container",
+            return_value=None,
+        ):
+            workspace = KaviarDockerWorkspace(
+                server_image=IMAGE,
+                working_dir="/workspace/project",
+                volumes=[],
+                forward_env=[],
+                extra_ports=False,
+            )
+
+        with patch.object(
+            DockerWorkspace,
+            "execute_command",
+            return_value="COMMAND_OK",
+        ) as parent_execute:
+            result = workspace.execute_command(
+                "pwd",
+            )
+
+        self.assertEqual(
+            result,
+            "COMMAND_OK",
+        )
+
+        parent_execute.assert_called_once_with(
+            "pwd",
+            cwd="/workspace/project",
+            timeout=30.0,
+        )
 
 
 if __name__ == "__main__":
