@@ -34,6 +34,7 @@ import type { OperationsOverviewData, PersonLookupData, DriverDetailData, SealHi
 import type { DriverCityLandingsData } from './kaviar-ai.city-landings';
 import { executeTool, canRoleExecuteTool } from './kaviar-ai.registry';
 import { routeQuestion } from './kaviar-ai.router';
+import { detectDevelopmentIntent } from './kaviar-ai.dev-intent';
 
 function formatBRLDecimal(value: string): string {
   const match = value.match(/^(-?)(\d+)(?:\.(\d{1,2}))?$/);
@@ -992,6 +993,22 @@ export async function askKaviarAi(
     return {
       answer: 'Faça uma pergunta para a KAVIAR IA.',
       toolsUsed: [],
+    };
+  }
+
+  const devIntent = detectDevelopmentIntent(question);
+  if (devIntent.isDevIntent) {
+    if (role !== 'SUPER_ADMIN') {
+      return {
+        answer: 'Acesso negado: a sua role não tem permissão para acionar o Development Agent.',
+        toolsUsed: [],
+      };
+    }
+
+    return {
+      answer: 'Proposta de job de desenvolvimento (' + devIntent.category + ') criada com sucesso. Aguardando confirmação humana.',
+      toolsUsed: [],
+      developmentProposal: devIntent.proposal,
     };
   }
 
