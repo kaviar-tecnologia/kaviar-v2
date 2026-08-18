@@ -10,6 +10,10 @@ import { startPayoutWorkerScheduler, stopPayoutWorkerScheduler } from './service
 import { shouldStartLegacyWorker } from './services/finance/annual-incentive-payout/engine-selection';
 import { startOutboundPaymentWorkerScheduler, stopOutboundPaymentWorkerScheduler } from './services/finance/outbound-payments/worker-scheduler';
 import { startEventWorkerScheduler, stopEventWorkerScheduler } from './services/finance/outbound-payments/event-worker-scheduler';
+import {
+  startDevelopmentAgentWorkerScheduler,
+  stopDevelopmentAgentWorkerScheduler,
+} from './services/ai/kaviar-ai.development-worker-scheduler';
 
 async function startServer() {
   try {
@@ -34,6 +38,7 @@ async function startServer() {
     }
     startOutboundPaymentWorkerScheduler();
     startEventWorkerScheduler();
+    startDevelopmentAgentWorkerScheduler();
 
     // Test database connection (non-blocking startup)
     try {
@@ -64,6 +69,7 @@ async function gracefulShutdown(signal: string) {
   await stopPayoutWorkerScheduler();
   await stopOutboundPaymentWorkerScheduler();
   await stopEventWorkerScheduler();
+  await stopDevelopmentAgentWorkerScheduler();
   await prisma.$disconnect();
   process.exit(0);
 }
