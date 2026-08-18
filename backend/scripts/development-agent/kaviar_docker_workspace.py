@@ -22,6 +22,24 @@ class KaviarDockerWorkspace(DockerWorkspace):
     - container descartável (--rm).
     """
 
+    def execute_command(
+        self,
+        command: str,
+        cwd=None,
+        timeout: float = 30.0,
+    ):
+        effective_cwd = (
+            cwd
+            if cwd is not None
+            else self.working_dir
+        )
+
+        return super().execute_command(
+            command,
+            cwd=effective_cwd,
+            timeout=timeout,
+        )
+
     def _start_container(self, image: str, context) -> None:
         if self.extra_ports:
             raise RuntimeError(
