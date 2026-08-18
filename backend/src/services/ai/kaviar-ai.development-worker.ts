@@ -18,6 +18,39 @@ export interface ClaimedDevelopmentJob {
   lockedAt: Date;
 }
 
+export async function heartbeatDevelopmentJob(
+  deps: DevelopmentWorkerDeps,
+  jobId: string,
+): Promise<boolean> {
+  const workerId = deps.workerId.trim();
+  const normalizedJobId = jobId.trim();
+
+  if (!workerId) {
+    throw new Error('DEVELOPMENT_WORKER_ID_REQUIRED');
+  }
+
+  if (!normalizedJobId) {
+    throw new Error('DEVELOPMENT_JOB_ID_REQUIRED');
+  }
+
+  const result = await deps.pool.query(
+    `
+    UPDATE development_jobs
+    SET
+      locked_at = NOW(),
+      updated_at = NOW()
+    WHERE
+      id = $1
+      AND status = 'RUNNING'
+      AND locked_by = $2
+    RETURNING id
+    `,
+    [normalizedJobId, workerId],
+  );
+
+  return result.rows.length === 1;
+}
+
 export async function claimNextDevelopmentJob(
   deps: DevelopmentWorkerDeps,
 ): Promise<ClaimedDevelopmentJob | null> {
