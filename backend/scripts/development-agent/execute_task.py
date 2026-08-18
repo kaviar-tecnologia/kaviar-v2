@@ -385,6 +385,11 @@ def execute_request(
         workspace
     )
 
+    if not changed:
+        raise RuntimeError(
+            "DEVELOPMENT_TASK_NO_CHANGES"
+        )
+
     validate_changed_paths(
         changed,
         request["allowed_paths"],

@@ -255,5 +255,73 @@ class ExecuteTaskContractTests(unittest.TestCase):
         fake_conversation.close.assert_called_once()
 
 
+    def test_rejects_finished_agent_when_no_changes_exist(self):
+        workspace = Path("/tmp/workspace")
+
+        fake_conversation = unittest.mock.MagicMock()
+        fake_conversation.state.execution_status.value = (
+            "finished"
+        )
+
+        fake_context = unittest.mock.MagicMock()
+        fake_context.__enter__.return_value = (
+            unittest.mock.MagicMock()
+        )
+        fake_context.__exit__.return_value = False
+
+        with patch.dict(
+            target.os.environ,
+            {
+                "GEMINI_API_KEY": "test-only-key",
+            },
+        ), patch.object(
+            target,
+            "validate_git_contract",
+            return_value="agent/job-6cbd1c90aff8",
+        ), patch.object(
+            target,
+            "run_text",
+            side_effect=[
+                "head-same",
+                "",
+                "head-same",
+            ],
+        ), patch.object(
+            target,
+            "changed_paths",
+            return_value=[],
+        ), patch.object(
+            target,
+            "LLM",
+        ), patch.object(
+            target,
+            "get_default_agent",
+        ), patch.object(
+            target,
+            "Conversation",
+            return_value=fake_conversation,
+        ), patch.object(
+            target,
+            "KaviarDockerWorkspace",
+            return_value=fake_context,
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "DEVELOPMENT_TASK_NO_CHANGES",
+            ):
+                target.execute_request(
+                    job_id=JOB_ID,
+                    workspace=workspace,
+                    request={
+                        "task": "Criar arquivo",
+                        "allowed_paths": [
+                            "backend/src/a.ts",
+                        ],
+                    },
+                )
+
+        fake_conversation.close.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
