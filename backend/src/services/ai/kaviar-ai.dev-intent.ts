@@ -79,10 +79,8 @@ export function detectDevelopmentIntent(question: string): DevelopmentIntentResu
       normalized.includes('fix') ||
       normalized.includes('resolver') ||
       normalized.includes('consertar') ||
-      normalized.includes('no backend') ||
-      normalized.includes('no frontend') ||
-      normalized.includes('no codigo') ||
-      normalized.includes('em codigo'));
+      normalized.includes('investigar') ||
+      normalized.includes('analisar'));
 
   const isTechnicalErrorFix =
     normalized.includes('fix no backend') ||
@@ -108,7 +106,6 @@ export function detectDevelopmentIntent(question: string): DevelopmentIntentResu
     (normalized.includes('implementar') ||
       normalized.includes('criar') ||
       normalized.includes('adicionar') ||
-      normalized.includes('nova') ||
       normalized.includes('desenvolver'));
 
   const isEndpointExplicit =
@@ -116,14 +113,23 @@ export function detectDevelopmentIntent(question: string): DevelopmentIntentResu
     (normalized.includes('criar') ||
       normalized.includes('implementar') ||
       normalized.includes('adicionar') ||
-      normalized.includes('alterar') ||
-      normalized.includes('novo'));
+      normalized.includes('alterar'));
 
-  const isUnitTestExplicit =
+  const mentionsExplicitTest =
     normalized.includes('teste unitario') ||
     normalized.includes('testes unitarios') ||
     normalized.includes('teste de integracao') ||
     normalized.includes('testes de integracao');
+
+  const isUnitTestExplicit =
+    mentionsExplicitTest &&
+    (normalized.includes('adicionar') ||
+      normalized.includes('criar') ||
+      normalized.includes('escrever') ||
+      normalized.includes('implementar') ||
+      normalized.includes('ajustar') ||
+      normalized.includes('corrigir') ||
+      normalized.includes('alterar'));
 
   if (isFeatureExplicit || isEndpointExplicit) {
     const category: DevelopmentIntentCategory = 'FEATURE';
