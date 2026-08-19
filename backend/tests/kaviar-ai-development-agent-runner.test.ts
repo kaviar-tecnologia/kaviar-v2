@@ -60,6 +60,10 @@ import {
 } from '../src/services/ai/kaviar-ai.development-worker';
 
 import {
+  claimNextDevelopmentScopeJob,
+} from '../src/services/ai/kaviar-ai.development-scope-worker';
+
+import {
   runDevelopmentJobLifecycle,
 } from '../src/services/ai/kaviar-ai.development-lifecycle';
 
@@ -71,6 +75,10 @@ const claimMock = vi.mocked(
   claimNextDevelopmentJob,
 );
 
+const scopeClaimMock = vi.mocked(
+  claimNextDevelopmentScopeJob,
+);
+
 const lifecycleMock = vi.mocked(
   runDevelopmentJobLifecycle,
 );
@@ -79,6 +87,11 @@ const originalEnv = { ...process.env };
 
 beforeEach(() => {
   vi.clearAllMocks();
+
+  // clearAllMocks limpa chamadas, mas não remove um
+  // mockResolvedValue configurado pelo teste anterior.
+  scopeClaimMock.mockResolvedValue(null);
+  claimMock.mockResolvedValue(null);
 
   process.env.DEVELOPMENT_AGENT_WORKER_ID =
     'runner-test-worker';
@@ -232,28 +245,107 @@ describe('KAVIAR AI — Development Agent runner', () => {
   });
 
 
-  it('runs cleanup only after lifecycle completion', async () => {
-    const events: string[] = [];
+  it('cleans a FAILED execution workspace only after lifecycle completion', async () => {
+    const job = {
+      id: 'job-runner-failed',
+      category: 'BUG_FIX',
+      summary: 'Falha controlada',
+      status: 'RUNNING' as const,
+      attempts: 1,
+      lockedBy: 'runner-test-worker',
+      startedAt: new Date(
+        '2026-08-18T10:00:00Z',
+      ),
+      lockedAt: new Date(
+        '2026-08-18T10:00:01Z',
+      ),
+    };
 
-    const cleanupExecution = vi.fn(async () => {
-      events.push('cleanup');
+    const cleanupExecution = vi.fn(
+      async () => {},
+    );
+
+    claimMock.mockResolvedValueOnce(job);
+
+    lifecycleMock.mockImplementationOnce(
+      async () => {
+        expect(
+          cleanupExecution,
+        ).not.toHaveBeenCalled();
+
+        process.emit('SIGTERM');
+
+        return {
+          status: 'FAILED' as const,
+          error: new Error(
+            'controlled failure',
+          ),
+        };
+      },
+    );
+
+    await runDevelopmentAgentRunner({
+      execute: vi.fn(async () => {}),
+      cleanupExecution,
     });
 
-    // O runner real já é exercitado pelos testes existentes;
-    // aqui verificamos apenas que a dependência de cleanup
-    // continua disponível para a fase de execução.
-    expect(cleanupExecution).not.toHaveBeenCalled();
+    expect(
+      cleanupExecution,
+    ).toHaveBeenCalledOnce();
 
-    events.push('lifecycle-finished');
+    expect(
+      cleanupExecution,
+    ).toHaveBeenCalledWith(job);
+  });
 
-    await cleanupExecution({} as any);
+  it('cleans an OWNERSHIP_LOST execution workspace only after lifecycle completion', async () => {
+    const job = {
+      id: 'job-runner-ownership-lost',
+      category: 'BUG_FIX',
+      summary: 'Ownership perdido',
+      status: 'RUNNING' as const,
+      attempts: 1,
+      lockedBy: 'runner-test-worker',
+      startedAt: new Date(
+        '2026-08-18T10:00:00Z',
+      ),
+      lockedAt: new Date(
+        '2026-08-18T10:00:01Z',
+      ),
+    };
 
-    expect(events).toEqual([
-      'lifecycle-finished',
-      'cleanup',
-    ]);
+    const cleanupExecution = vi.fn(
+      async () => {},
+    );
 
-    expect(cleanupExecution).toHaveBeenCalledOnce();
+    claimMock.mockResolvedValueOnce(job);
+
+    lifecycleMock.mockImplementationOnce(
+      async () => {
+        expect(
+          cleanupExecution,
+        ).not.toHaveBeenCalled();
+
+        process.emit('SIGTERM');
+
+        return {
+          status: 'OWNERSHIP_LOST' as const,
+        };
+      },
+    );
+
+    await runDevelopmentAgentRunner({
+      execute: vi.fn(async () => {}),
+      cleanupExecution,
+    });
+
+    expect(
+      cleanupExecution,
+    ).toHaveBeenCalledOnce();
+
+    expect(
+      cleanupExecution,
+    ).toHaveBeenCalledWith(job);
   });
 
 });

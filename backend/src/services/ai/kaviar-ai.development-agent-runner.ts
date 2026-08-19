@@ -284,7 +284,15 @@ export async function runDevelopmentAgentRunner(
           );
         }
       } finally {
-        if (deps.cleanupExecution) {
+        // Enquanto os commits forem apenas locais, um job
+        // SUCCEEDED precisa preservar o workspace: é nele que
+        // o objeto Git identificado por result_commit_sha existe.
+        //
+        // FAILED / OWNERSHIP_LOST continuam sendo descartáveis.
+        if (
+          result?.status !== 'SUCCEEDED' &&
+          deps.cleanupExecution
+        ) {
           try {
             await deps.cleanupExecution(job);
           } catch (error) {
