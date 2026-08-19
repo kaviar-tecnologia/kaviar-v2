@@ -5,6 +5,7 @@ import { prepareDevelopmentWorkspace } from '../../src/services/ai/kaviar-ai.dev
 import { cleanupDevelopmentWorkspace } from '../../src/services/ai/kaviar-ai.development-workspace-cleanup';
 import { planDevelopmentScope } from '../../src/services/ai/kaviar-ai.development-scope-planner';
 import { executeDevelopmentTask } from '../../src/services/ai/kaviar-ai.development-task-executor';
+import { validateDevelopmentWorkspace } from '../../src/services/ai/kaviar-ai.development-workspace-validator';
 
 const BASE_REPO =
   process.env.DEVELOPMENT_AGENT_BASE_REPO?.trim() ||
@@ -116,12 +117,24 @@ async function main(): Promise<void> {
           signal,
         });
 
-        await executeDevelopmentTask({
-          job,
-          scriptPath: EXECUTE_SCRIPT,
-          jobsRoot: EXECUTION_JOBS_ROOT,
-          geminiApiKey: GEMINI_API_KEY,
-          pythonExecutable: PYTHON_EXECUTABLE,
+        const executionResult =
+          await executeDevelopmentTask({
+            job,
+            scriptPath: EXECUTE_SCRIPT,
+            jobsRoot: EXECUTION_JOBS_ROOT,
+            geminiApiKey: GEMINI_API_KEY,
+            pythonExecutable: PYTHON_EXECUTABLE,
+            signal,
+          });
+
+        await validateDevelopmentWorkspace({
+          workspace: executionResult.workspace,
+          baseBackend: resolve(
+            BASE_REPO,
+            'backend',
+          ),
+          changedPaths:
+            executionResult.changedPaths,
           signal,
         });
       } finally {
