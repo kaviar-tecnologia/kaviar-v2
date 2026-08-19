@@ -6,6 +6,7 @@ import { cleanupDevelopmentWorkspace } from '../../src/services/ai/kaviar-ai.dev
 import { planDevelopmentScope } from '../../src/services/ai/kaviar-ai.development-scope-planner';
 import { executeDevelopmentTask } from '../../src/services/ai/kaviar-ai.development-task-executor';
 import { validateDevelopmentWorkspace } from '../../src/services/ai/kaviar-ai.development-workspace-validator';
+import { commitDevelopmentWorkspace } from '../../src/services/ai/kaviar-ai.development-workspace-committer';
 
 const BASE_REPO =
   process.env.DEVELOPMENT_AGENT_BASE_REPO?.trim() ||
@@ -48,6 +49,11 @@ const PLAN_SCRIPT = resolve(
 const EXECUTE_SCRIPT = resolve(
   BASE_REPO,
   'backend/scripts/development-agent/execute_task.py',
+);
+
+const COMMIT_SCRIPT = resolve(
+  BASE_REPO,
+  'backend/scripts/development-agent/commit_workspace.py',
 );
 
 async function main(): Promise<void> {
@@ -106,61 +112,95 @@ async function main(): Promise<void> {
         pythonExecutable: PYTHON_EXECUTABLE,
       });
 
-      try {
-        await prepareDevelopmentWorkspace({
-          jobId: job.id,
-          scriptPath: PREPARE_SCRIPT,
-          baseRepo: BASE_REPO,
+      await prepareDevelopmentWorkspace({
+        jobId: job.id,
+        scriptPath: PREPARE_SCRIPT,
+        baseRepo: BASE_REPO,
+        jobsRoot: EXECUTION_JOBS_ROOT,
+        sourceBranch: SOURCE_BRANCH,
+        pythonExecutable: PYTHON_EXECUTABLE,
+        signal,
+      });
+
+      const executionResult =
+        await executeDevelopmentTask({
+          job,
+          scriptPath: EXECUTE_SCRIPT,
           jobsRoot: EXECUTION_JOBS_ROOT,
-          sourceBranch: SOURCE_BRANCH,
+          geminiApiKey: GEMINI_API_KEY,
           pythonExecutable: PYTHON_EXECUTABLE,
           signal,
         });
 
-        const executionResult =
-          await executeDevelopmentTask({
-            job,
-            scriptPath: EXECUTE_SCRIPT,
-            jobsRoot: EXECUTION_JOBS_ROOT,
-            geminiApiKey: GEMINI_API_KEY,
-            pythonExecutable: PYTHON_EXECUTABLE,
-            signal,
-          });
+      await validateDevelopmentWorkspace({
+        workspace: executionResult.workspace,
+        baseBackend: resolve(
+          BASE_REPO,
+          'backend',
+        ),
+        changedPaths:
+          executionResult.changedPaths,
+        signal,
+      });
 
-        await validateDevelopmentWorkspace({
-          workspace: executionResult.workspace,
-          baseBackend: resolve(
-            BASE_REPO,
-            'backend',
-          ),
-          changedPaths:
-            executionResult.changedPaths,
+      const commitResult =
+        await commitDevelopmentWorkspace({
+          jobId: job.id,
+          jobsRoot: EXECUTION_JOBS_ROOT,
+          scriptPath: COMMIT_SCRIPT,
+          allowedPaths: job.allowedPaths,
+          pythonExecutable: PYTHON_EXECUTABLE,
           signal,
         });
 
-        return {
-          changedPaths: executionResult.changedPaths,
-          resultSummary:
-            `Execução concluída e validada. ` +
-            `Arquivos alterados: ` +
-            executionResult.changedPaths.join(', ') +
-            `. Branch: ${executionResult.branch}.`,
-        };
-      } finally {
-        try {
-          await cleanupDevelopmentWorkspace({
-            jobId: job.id,
-            jobsRoot: EXECUTION_JOBS_ROOT,
-            scriptPath: CLEANUP_SCRIPT,
-            pythonExecutable: PYTHON_EXECUTABLE,
-          });
-        } catch (error) {
-          console.error(
-            '[DEVELOPMENT_AGENT_EXECUTION_CLEANUP_ERROR]',
-            error,
-          );
-        }
+      const executionChanged =
+        [...executionResult.changedPaths].sort();
+
+      const committedChanged =
+        [...commitResult.changedPaths].sort();
+
+      if (
+        executionChanged.length !==
+          committedChanged.length ||
+        executionChanged.some(
+          (path, index) =>
+            path !== committedChanged[index],
+        )
+      ) {
+        throw new Error(
+          'DEVELOPMENT_COMMIT_CHANGED_PATHS_MISMATCH',
+        );
       }
+
+      if (
+        commitResult.branch !==
+        executionResult.branch
+      ) {
+        throw new Error(
+          'DEVELOPMENT_COMMIT_BRANCH_MISMATCH',
+        );
+      }
+
+      return {
+        changedPaths: commitResult.changedPaths,
+        resultBranch: commitResult.branch,
+        resultCommitSha: commitResult.commitSha,
+        resultSummary:
+          `Execução concluída, validada e commitada. ` +
+          `Arquivos alterados: ` +
+          commitResult.changedPaths.join(', ') +
+          `. Branch: ${commitResult.branch}. ` +
+          `Commit: ${commitResult.commitSha}.`,
+      };
+    },
+
+    cleanupExecution: async (job) => {
+      await cleanupDevelopmentWorkspace({
+        jobId: job.id,
+        jobsRoot: EXECUTION_JOBS_ROOT,
+        scriptPath: CLEANUP_SCRIPT,
+        pythonExecutable: PYTHON_EXECUTABLE,
+      });
     },
   });
 }

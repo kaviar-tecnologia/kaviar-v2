@@ -263,6 +263,8 @@ describe('KAVIAR AI — Development Worker finalization', () => {
       null,
       null,
       null,
+      null,
+      null,
     ]);
   });
 
@@ -298,7 +300,7 @@ describe('KAVIAR AI — Development Worker finalization', () => {
       'result_summary = $5',
     );
     expect(String(sql)).toContain(
-      'error_message = $6',
+      'error_message = $8',
     );
     expect(String(sql)).toContain(
       'completed_at = NOW()',
@@ -312,6 +314,59 @@ describe('KAVIAR AI — Development Worker finalization', () => {
         'backend/tests/example.test.ts',
       ]),
       'Execução validada com sucesso.',
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  it('persists branch and commit SHA on successful finalization', async () => {
+    const query = vi.fn(async () => ({
+      rows: [{ id: 'job-owned' }],
+    }));
+
+    const result = await finalizeDevelopmentJob(
+      {
+        pool: { query } as any,
+        workerId: 'worker-a',
+      },
+      'job-owned',
+      'SUCCEEDED',
+      {
+        changedPaths: [
+          'backend/tests/example.test.ts',
+        ],
+        resultSummary:
+          'Execução concluída.',
+        resultBranch:
+          'agent/job-49a0caa097ad',
+        resultCommitSha:
+          '0123456789abcdef0123456789abcdef01234567',
+      },
+    );
+
+    expect(result).toBe(true);
+
+    const [sql, params] = query.mock.calls[0];
+
+    expect(String(sql)).toContain(
+      'result_branch = $6',
+    );
+
+    expect(String(sql)).toContain(
+      'result_commit_sha = $7',
+    );
+
+    expect(params).toEqual([
+      'job-owned',
+      'worker-a',
+      'SUCCEEDED',
+      JSON.stringify([
+        'backend/tests/example.test.ts',
+      ]),
+      'Execução concluída.',
+      'agent/job-49a0caa097ad',
+      '0123456789abcdef0123456789abcdef01234567',
       null,
     ]);
   });

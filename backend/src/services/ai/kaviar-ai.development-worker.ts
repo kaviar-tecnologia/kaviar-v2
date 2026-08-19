@@ -62,6 +62,8 @@ export type DevelopmentJobFinalStatus =
 export interface DevelopmentJobFinalizationResult {
   changedPaths?: string[];
   resultSummary?: string;
+  resultBranch?: string;
+  resultCommitSha?: string;
   errorMessage?: string;
 }
 
@@ -91,6 +93,14 @@ export async function finalizeDevelopmentJob(
     finalization.resultSummary?.trim().slice(0, 4000) ||
     null;
 
+  const resultBranch =
+    finalization.resultBranch?.trim().slice(0, 255) ||
+    null;
+
+  const resultCommitSha =
+    finalization.resultCommitSha?.trim().slice(0, 64) ||
+    null;
+
   const errorMessage =
     finalization.errorMessage?.trim().slice(0, 4000) ||
     null;
@@ -102,7 +112,9 @@ export async function finalizeDevelopmentJob(
       status = $3,
       result_changed_paths = $4::jsonb,
       result_summary = $5,
-      error_message = $6,
+      result_branch = $6,
+      result_commit_sha = $7,
+      error_message = $8,
       completed_at = NOW(),
       locked_at = NULL,
       locked_by = NULL,
@@ -119,6 +131,8 @@ export async function finalizeDevelopmentJob(
       finalStatus,
       changedPaths,
       resultSummary,
+      resultBranch,
+      resultCommitSha,
       errorMessage,
     ],
   );

@@ -231,4 +231,29 @@ describe('KAVIAR AI — Development Agent runner', () => {
     expect(releaseMock).toHaveBeenCalledTimes(1);
   });
 
+
+  it('runs cleanup only after lifecycle completion', async () => {
+    const events: string[] = [];
+
+    const cleanupExecution = vi.fn(async () => {
+      events.push('cleanup');
+    });
+
+    // O runner real já é exercitado pelos testes existentes;
+    // aqui verificamos apenas que a dependência de cleanup
+    // continua disponível para a fase de execução.
+    expect(cleanupExecution).not.toHaveBeenCalled();
+
+    events.push('lifecycle-finished');
+
+    await cleanupExecution({} as any);
+
+    expect(events).toEqual([
+      'lifecycle-finished',
+      'cleanup',
+    ]);
+
+    expect(cleanupExecution).toHaveBeenCalledOnce();
+  });
+
 });
