@@ -18,6 +18,30 @@ vi.mock('../src/db', () => ({
 }));
 
 vi.mock(
+  '../src/services/ai/kaviar-ai.development-scope-worker',
+  () => ({
+    claimNextDevelopmentScopeJob: vi.fn(
+      async () => null,
+    ),
+    heartbeatDevelopmentScopeJob: vi.fn(
+      async () => true,
+    ),
+    releaseDevelopmentScopeJob: vi.fn(
+      async () => true,
+    ),
+  }),
+);
+
+vi.mock(
+  '../src/services/ai/kaviar-ai.development-jobs',
+  () => ({
+    resolveDevelopmentJobScope: vi.fn(
+      async () => undefined,
+    ),
+  }),
+);
+
+vi.mock(
   '../src/services/ai/kaviar-ai.development-worker',
   () => ({
     claimNextDevelopmentJob: vi.fn(),
@@ -158,4 +182,53 @@ describe('KAVIAR AI — Development Agent runner', () => {
 
     expect(poolEnd).toHaveBeenCalledOnce();
   });
+
+  it('stops after a scope planner failure instead of reclaiming the same job', async () => {
+    const scopeWorker = await import(
+      '../src/services/ai/kaviar-ai.development-scope-worker'
+    );
+
+    const scopeClaimMock = vi.mocked(
+      scopeWorker.claimNextDevelopmentScopeJob,
+    );
+
+    const releaseMock = vi.mocked(
+      scopeWorker.releaseDevelopmentScopeJob,
+    );
+
+    scopeClaimMock.mockResolvedValue({
+      id: 'scope-fail-job',
+      category: 'TEST',
+      summary: 'scope planner failure',
+      status: 'AWAITING_SCOPE',
+      requested_by_admin_id: 'admin-test',
+      confirmed_by_admin_id: null,
+      confirmed_at: null,
+      created_at: new Date(),
+      updated_at: new Date(),
+      started_at: null,
+      locked_at: new Date(),
+      locked_by: 'runner-test-worker',
+      attempts: 0,
+      allowed_paths: null,
+      scope_rationale: null,
+      scope_resolved_at: null,
+    } as any);
+
+    releaseMock.mockResolvedValue(true as any);
+
+    const planScope = vi.fn(async () => {
+      throw new Error('PLANNER_TEST_FAILURE');
+    });
+
+    await runDevelopmentAgentRunner({
+      planScope,
+      execute: vi.fn(async () => {}),
+    });
+
+    expect(planScope).toHaveBeenCalledTimes(1);
+    expect(scopeClaimMock).toHaveBeenCalledTimes(1);
+    expect(releaseMock).toHaveBeenCalledTimes(1);
+  });
+
 });

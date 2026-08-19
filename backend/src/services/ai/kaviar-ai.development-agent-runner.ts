@@ -185,6 +185,8 @@ export async function runDevelopmentAgentRunner(
                   : 'unknown error'
               }`,
           );
+
+          stopping = true;
         } finally {
           if (heartbeatTimer) {
             clearInterval(heartbeatTimer);
