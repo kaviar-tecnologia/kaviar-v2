@@ -18,7 +18,7 @@ function minimalEnvironment(): NodeJS.ProcessEnv {
     LANG: 'C.UTF-8',
     LC_ALL: 'C.UTF-8',
     PYTHONUNBUFFERED: '1',
-    HOME: '/nonexistent',
+    HOME: process.env.DEVELOPMENT_AGENT_HOME?.trim() || '/tmp',
   };
 }
 

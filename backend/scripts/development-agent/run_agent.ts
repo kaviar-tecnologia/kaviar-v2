@@ -96,24 +96,49 @@ async function main(): Promise<void> {
     },
 
     execute: async (job, signal) => {
-      await prepareDevelopmentWorkspace({
+      // Remove apenas um workspace residual do mesmo job.
+      // O cleanup é idempotente e validado pelo jobsRoot.
+      await cleanupDevelopmentWorkspace({
         jobId: job.id,
-        scriptPath: PREPARE_SCRIPT,
-        baseRepo: BASE_REPO,
         jobsRoot: EXECUTION_JOBS_ROOT,
-        sourceBranch: SOURCE_BRANCH,
+        scriptPath: CLEANUP_SCRIPT,
         pythonExecutable: PYTHON_EXECUTABLE,
-        signal,
       });
 
-      await executeDevelopmentTask({
-        job,
-        scriptPath: EXECUTE_SCRIPT,
-        jobsRoot: EXECUTION_JOBS_ROOT,
-        geminiApiKey: GEMINI_API_KEY,
-        pythonExecutable: PYTHON_EXECUTABLE,
-        signal,
-      });
+      try {
+        await prepareDevelopmentWorkspace({
+          jobId: job.id,
+          scriptPath: PREPARE_SCRIPT,
+          baseRepo: BASE_REPO,
+          jobsRoot: EXECUTION_JOBS_ROOT,
+          sourceBranch: SOURCE_BRANCH,
+          pythonExecutable: PYTHON_EXECUTABLE,
+          signal,
+        });
+
+        await executeDevelopmentTask({
+          job,
+          scriptPath: EXECUTE_SCRIPT,
+          jobsRoot: EXECUTION_JOBS_ROOT,
+          geminiApiKey: GEMINI_API_KEY,
+          pythonExecutable: PYTHON_EXECUTABLE,
+          signal,
+        });
+      } finally {
+        try {
+          await cleanupDevelopmentWorkspace({
+            jobId: job.id,
+            jobsRoot: EXECUTION_JOBS_ROOT,
+            scriptPath: CLEANUP_SCRIPT,
+            pythonExecutable: PYTHON_EXECUTABLE,
+          });
+        } catch (error) {
+          console.error(
+            '[DEVELOPMENT_AGENT_EXECUTION_CLEANUP_ERROR]',
+            error,
+          );
+        }
+      }
     },
   });
 }
