@@ -151,6 +151,61 @@ class CommitWorkspaceTests(unittest.TestCase):
                 ],
             )
 
+    def test_clears_residual_staging_before_commit(self) -> None:
+        residual = self.workspace / "README.md"
+        residual.write_text("residual staging\n")
+
+        run(
+            "git",
+            "add",
+            "--",
+            "README.md",
+            cwd=self.workspace,
+        )
+
+        self.target.write_text(
+            "export const value = 2;\n"
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "DEVELOPMENT_COMMIT_UNAUTHORIZED_PATHS",
+        ):
+            commit_workspace(
+                job_id=JOB_ID,
+                jobs_root=self.jobs_root,
+                allowed_paths=[
+                    "backend/tests/example.test.ts",
+                ],
+            )
+
+        staged = run(
+            "git",
+            "diff",
+            "--cached",
+            "--name-only",
+            cwd=self.workspace,
+        )
+
+        self.assertEqual(staged, "")
+
+    def test_rejects_symlink_change(self) -> None:
+        self.target.unlink()
+        self.target.symlink_to("/etc/passwd")
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "DEVELOPMENT_COMMIT_SYMLINK_FORBIDDEN",
+        ):
+            commit_workspace(
+                job_id=JOB_ID,
+                jobs_root=self.jobs_root,
+                allowed_paths=[
+                    "backend/tests/example.test.ts",
+                ],
+            )
+
+
     def test_rejects_wrong_branch(self) -> None:
         run(
             "git",
