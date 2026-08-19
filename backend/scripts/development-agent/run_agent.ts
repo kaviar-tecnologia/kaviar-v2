@@ -137,6 +137,15 @@ async function main(): Promise<void> {
             executionResult.changedPaths,
           signal,
         });
+
+        return {
+          changedPaths: executionResult.changedPaths,
+          resultSummary:
+            `Execução concluída e validada. ` +
+            `Arquivos alterados: ` +
+            executionResult.changedPaths.join(', ') +
+            `. Branch: ${executionResult.branch}.`,
+        };
       } finally {
         try {
           await cleanupDevelopmentWorkspace({

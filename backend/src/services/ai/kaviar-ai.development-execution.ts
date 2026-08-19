@@ -1,6 +1,7 @@
 import type {
   ClaimedDevelopmentJob,
   DevelopmentWorkerDeps,
+  DevelopmentJobFinalizationResult,
 } from './kaviar-ai.development-worker';
 import {
   heartbeatDevelopmentJob,
@@ -9,7 +10,10 @@ import {
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 60_000;
 
 export type DevelopmentExecutionResult =
-  | { status: 'COMPLETED' }
+  | {
+      status: 'COMPLETED';
+      finalization?: DevelopmentJobFinalizationResult;
+    }
   | { status: 'OWNERSHIP_LOST' };
 
 export interface DevelopmentExecutionDeps {
@@ -18,7 +22,7 @@ export interface DevelopmentExecutionDeps {
   execute: (
     job: ClaimedDevelopmentJob,
     signal: AbortSignal,
-  ) => Promise<void>;
+  ) => Promise<DevelopmentJobFinalizationResult | void>;
 
   heartbeat?: typeof heartbeatDevelopmentJob;
   heartbeatIntervalMs?: number;
@@ -60,6 +64,9 @@ export async function executeDevelopmentJobWithHeartbeat(
   let ownershipLost = false;
   let heartbeatError: unknown;
   let executionError: unknown;
+  let executionResult:
+    | DevelopmentJobFinalizationResult
+    | void = undefined;
 
   let timer:
     | ReturnType<typeof setTimeout>
@@ -115,7 +122,7 @@ export async function executeDevelopmentJobWithHeartbeat(
   scheduleHeartbeat();
 
   try {
-    await deps.execute(
+    executionResult = await deps.execute(
       job,
       abortController.signal,
     );
@@ -158,6 +165,13 @@ export async function executeDevelopmentJobWithHeartbeat(
 
   if (!finallyOwned) {
     return { status: 'OWNERSHIP_LOST' };
+  }
+
+  if (executionResult) {
+    return {
+      status: 'COMPLETED',
+      finalization: executionResult,
+    };
   }
 
   return { status: 'COMPLETED' };

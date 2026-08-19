@@ -59,6 +59,7 @@ describe('KAVIAR AI — Development job lifecycle', () => {
       worker,
       'job-lifecycle',
       'SUCCEEDED',
+      {},
     );
   });
 
@@ -92,6 +93,9 @@ describe('KAVIAR AI — Development job lifecycle', () => {
       worker,
       'job-lifecycle',
       'FAILED',
+      {
+        errorMessage: 'agent failed',
+      },
     );
   });
 
@@ -146,6 +150,7 @@ describe('KAVIAR AI — Development job lifecycle', () => {
       worker,
       'job-lifecycle',
       'SUCCEEDED',
+      {},
     );
   });
 });

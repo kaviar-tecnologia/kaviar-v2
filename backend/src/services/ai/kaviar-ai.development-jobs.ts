@@ -293,6 +293,38 @@ export async function resolveDevelopmentJobScope(
   return resolved;
 }
 
+export async function getDevelopmentJob(
+  jobId: string,
+  actor: DevelopmentJobActor,
+) {
+  requireSuperAdmin(actor);
+
+  const id = jobId.trim();
+
+  if (!id) {
+    throw new DevelopmentJobError(
+      'DEVELOPMENT_JOB_INVALID_ID',
+      'ID do job é obrigatório.',
+      400,
+    );
+  }
+
+  const job = await prisma.development_jobs.findUnique({
+    where: { id },
+  });
+
+  if (!job) {
+    throw new DevelopmentJobError(
+      'DEVELOPMENT_JOB_NOT_FOUND',
+      'Job de desenvolvimento não encontrado.',
+      404,
+    );
+  }
+
+  return job;
+}
+
+
 export async function confirmDevelopmentJob(
   jobId: string,
   actor: DevelopmentJobActor,
