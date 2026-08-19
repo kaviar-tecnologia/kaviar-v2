@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 import os
 import sys
+from contextlib import redirect_stdout
 from pathlib import Path
 
 from pydantic import SecretStr
 
 from openhands.sdk import LLM, Conversation
+from openhands.sdk.conversation.response_utils import get_agent_final_response
 from openhands.tools.preset.planning import get_planning_tools
 
 
@@ -105,15 +107,113 @@ def main():
     )
 
     try:
-        conversation.send_message(
-            build_scope_prompt(
-                request["task"]
+        with redirect_stdout(sys.stderr):
+            conversation.send_message(
+                build_scope_prompt(
+                    request["task"]
+                )
+            )
+
+            conversation.run()
+
+        raw_response = get_agent_final_response(
+            conversation.state.events
+        ).strip()
+
+        if not raw_response:
+            raise RuntimeError(
+                "DEVELOPMENT_SCOPE_EMPTY_RESPONSE"
+            )
+
+        try:
+            parsed = json.loads(raw_response)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                "DEVELOPMENT_SCOPE_INVALID_JSON"
+            ) from exc
+
+        if not isinstance(parsed, dict):
+            raise RuntimeError(
+                "DEVELOPMENT_SCOPE_INVALID_OUTPUT"
+            )
+
+        allowed_paths = parsed.get("allowed_paths")
+        rationale = parsed.get("rationale", "")
+
+        if (
+            not isinstance(allowed_paths, list)
+            or not 1 <= len(allowed_paths) <= 20
+            or not all(
+                isinstance(item, str) and item.strip()
+                for item in allowed_paths
+            )
+        ):
+            raise RuntimeError(
+                "DEVELOPMENT_SCOPE_INVALID_ALLOWED_PATHS"
+            )
+
+        if not isinstance(rationale, str):
+            raise RuntimeError(
+                "DEVELOPMENT_SCOPE_INVALID_RATIONALE"
+            )
+
+        workspace_root = Path(
+            request["workspace"]
+        ).resolve()
+
+        normalized_paths = []
+
+        for item in allowed_paths:
+            relative = Path(item.strip())
+
+            if (
+                relative.is_absolute()
+                or ".." in relative.parts
+                or ".git" in relative.parts
+            ):
+                raise RuntimeError(
+                    "DEVELOPMENT_SCOPE_INVALID_PATH"
+                )
+
+            target = (
+                workspace_root / relative
+            ).resolve()
+
+            try:
+                target.relative_to(workspace_root)
+            except ValueError as exc:
+                raise RuntimeError(
+                    "DEVELOPMENT_SCOPE_PATH_ESCAPE"
+                ) from exc
+
+            if not target.is_file():
+                raise RuntimeError(
+                    "DEVELOPMENT_SCOPE_PATH_NOT_FOUND"
+                )
+
+            normalized_paths.append(
+                relative.as_posix()
+            )
+
+        if len(set(normalized_paths)) != len(
+            normalized_paths
+        ):
+            raise RuntimeError(
+                "DEVELOPMENT_SCOPE_DUPLICATE_PATH"
+            )
+
+        result = {
+            "allowed_paths": normalized_paths,
+            "rationale": rationale.strip(),
+        }
+
+        print(
+            json.dumps(
+                result,
+                ensure_ascii=False,
+                separators=(",", ":"),
             )
         )
-
-        conversation.run()
-
-        print(conversation.state.events[-1])
 
     finally:
         conversation.close()
