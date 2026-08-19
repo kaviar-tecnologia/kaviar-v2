@@ -263,6 +263,18 @@ export async function runDevelopmentAgentRunner(
           `Finished job=${job.id} ` +
           `status=${result.status}`,
       );
+
+      if (result.status === 'FAILED') {
+        console.error(
+          `[DEVELOPMENT_AGENT_EXECUTION_ERROR] ` +
+            `job=${job.id} ` +
+            `${
+              result.error instanceof Error
+                ? result.error.message
+                : String(result.error)
+            }`,
+        );
+      }
     }
   } finally {
     process.removeListener('SIGINT', requestStop);
