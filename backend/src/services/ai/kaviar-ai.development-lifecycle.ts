@@ -2,6 +2,7 @@ import type {
   ClaimedDevelopmentJob,
   DevelopmentWorkerDeps,
   DevelopmentJobFinalStatus,
+  DevelopmentJobFinalizationResult,
 } from './kaviar-ai.development-worker';
 import {
   finalizeDevelopmentJob,
@@ -21,7 +22,7 @@ export interface DevelopmentLifecycleDeps {
   execute: (
     job: ClaimedDevelopmentJob,
     signal: AbortSignal,
-  ) => Promise<void>;
+  ) => Promise<DevelopmentJobFinalizationResult | void>;
 
   runWithHeartbeat?: typeof executeDevelopmentJobWithHeartbeat;
   finalize?: typeof finalizeDevelopmentJob;
@@ -31,6 +32,7 @@ async function finalizeOwnedJob(
   job: ClaimedDevelopmentJob,
   deps: DevelopmentLifecycleDeps,
   status: DevelopmentJobFinalStatus,
+  finalization: DevelopmentJobFinalizationResult = {},
 ): Promise<boolean> {
   const finalize =
     deps.finalize ?? finalizeDevelopmentJob;
@@ -39,6 +41,7 @@ async function finalizeOwnedJob(
     deps.worker,
     job.id,
     status,
+    finalization,
   );
 }
 
@@ -67,6 +70,7 @@ export async function runDevelopmentJobLifecycle(
       job,
       deps,
       'SUCCEEDED',
+      execution.finalization ?? {},
     );
 
     if (!finalized) {
@@ -75,10 +79,18 @@ export async function runDevelopmentJobLifecycle(
 
     return { status: 'SUCCEEDED' };
   } catch (error) {
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : String(error);
+
     const finalized = await finalizeOwnedJob(
       job,
       deps,
       'FAILED',
+      {
+        errorMessage,
+      },
     );
 
     if (!finalized) {

@@ -59,10 +59,17 @@ export type DevelopmentJobFinalStatus =
   | 'SUCCEEDED'
   | 'FAILED';
 
+export interface DevelopmentJobFinalizationResult {
+  changedPaths?: string[];
+  resultSummary?: string;
+  errorMessage?: string;
+}
+
 export async function finalizeDevelopmentJob(
   deps: DevelopmentWorkerDeps,
   jobId: string,
   finalStatus: DevelopmentJobFinalStatus,
+  finalization: DevelopmentJobFinalizationResult = {},
 ): Promise<boolean> {
   const workerId = deps.workerId.trim();
   const normalizedJobId = jobId.trim();
@@ -75,11 +82,28 @@ export async function finalizeDevelopmentJob(
     throw new Error('DEVELOPMENT_JOB_ID_REQUIRED');
   }
 
+  const changedPaths =
+    finalization.changedPaths?.length
+      ? JSON.stringify(finalization.changedPaths)
+      : null;
+
+  const resultSummary =
+    finalization.resultSummary?.trim().slice(0, 4000) ||
+    null;
+
+  const errorMessage =
+    finalization.errorMessage?.trim().slice(0, 4000) ||
+    null;
+
   const result = await deps.pool.query(
     `
     UPDATE development_jobs
     SET
       status = $3,
+      result_changed_paths = $4::jsonb,
+      result_summary = $5,
+      error_message = $6,
+      completed_at = NOW(),
       locked_at = NULL,
       locked_by = NULL,
       updated_at = NOW()
@@ -89,7 +113,14 @@ export async function finalizeDevelopmentJob(
       AND locked_by = $2
     RETURNING id
     `,
-    [normalizedJobId, workerId, finalStatus],
+    [
+      normalizedJobId,
+      workerId,
+      finalStatus,
+      changedPaths,
+      resultSummary,
+      errorMessage,
+    ],
   );
 
   return result.rows.length === 1;

@@ -139,8 +139,8 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
-describe('KAVIAR AI — Development Jobs Phase 2 integration', () => {
-  it('SUPER_ADMIN creates an AWAITING_CONFIRMATION job through /chat with atomic audit', async () => {
+describe('KAVIAR AI — Development Jobs integration', () => {
+  it('SUPER_ADMIN creates an AWAITING_SCOPE job through /chat with atomic audit', async () => {
     const response = await request(app)
       .post('/api/admin/ai/chat')
       .set('Authorization', authHeader(ids.superAdmin).Authorization)
@@ -156,7 +156,7 @@ describe('KAVIAR AI — Development Jobs Phase 2 integration', () => {
 
     expect(proposal).toBeDefined();
     expect(proposal.category).toBe('BUG_FIX');
-    expect(proposal.status).toBe('AWAITING_CONFIRMATION');
+    expect(proposal.status).toBe('AWAITING_SCOPE');
     expect(proposal.requiresHumanConfirmation).toBe(true);
     expect(proposal.canMerge).toBe(false);
     expect(proposal.canDeployProduction).toBe(false);
@@ -170,7 +170,7 @@ describe('KAVIAR AI — Development Jobs Phase 2 integration', () => {
 
     expect(persisted).not.toBeNull();
     expect(persisted.category).toBe('BUG_FIX');
-    expect(persisted.status).toBe('AWAITING_CONFIRMATION');
+    expect(persisted.status).toBe('AWAITING_SCOPE');
     expect(persisted.requested_by_admin_id).toBe(ids.superAdmin);
     expect(persisted.confirmed_by_admin_id).toBeNull();
     expect(persisted.confirmed_at).toBeNull();
@@ -183,7 +183,7 @@ describe('KAVIAR AI — Development Jobs Phase 2 integration', () => {
     expect(audits).toHaveLength(1);
     expect(audits[0].admin_id).toBe(ids.superAdmin);
     expect(audits[0].entity_type).toBe('development_job');
-    expect(audits[0].new_value.status).toBe('AWAITING_CONFIRMATION');
+    expect(audits[0].new_value.status).toBe('AWAITING_SCOPE');
     expect(audits[0].new_value.category).toBe('BUG_FIX');
   });
 
@@ -236,7 +236,22 @@ describe('KAVIAR AI — Development Jobs Phase 2 integration', () => {
       where: { id: jobId },
     });
 
-    expect(afterFinance.status).toBe('AWAITING_CONFIRMATION');
+    expect(afterFinance.status).toBe('AWAITING_SCOPE');
+
+    // Simula a etapa já testada separadamente pelo Scope Planner:
+    // escopo resolvido antes da confirmação humana.
+    await prisma.development_jobs.update({
+      where: { id: jobId },
+      data: {
+        status: 'AWAITING_CONFIRMATION',
+        allowed_paths: [
+          'backend/tests/example.test.ts',
+        ],
+        scope_rationale:
+          'Escopo controlado do teste de integração.',
+        scope_resolved_at: new Date(),
+      },
+    });
 
     const confirmResponse = await request(app)
       .post(`/api/admin/ai/dev-jobs/${jobId}/confirm`)
@@ -284,4 +299,75 @@ describe('KAVIAR AI — Development Jobs Phase 2 integration', () => {
 
     expect(auditsAfterDuplicate).toHaveLength(1);
   });
+
+  it('SUPER_ADMIN can read Development Job result and FINANCE cannot', async () => {
+    const created =
+      await prisma.development_jobs.create({
+        data: {
+          category: 'TEST',
+          summary:
+            'Teste de consulta do resultado do Development Job',
+          status: 'SUCCEEDED',
+          requested_by_admin_id: ids.superAdmin,
+          allowed_paths: [
+            'backend/tests/example.test.ts',
+          ],
+          scope_rationale:
+            'Fixture da rota de consulta.',
+          scope_resolved_at: new Date(),
+        },
+      });
+
+    const jobId = created.id;
+
+    await prisma.development_jobs.update({
+      where: { id: jobId },
+      data: {
+        status: 'SUCCEEDED',
+        result_changed_paths: [
+          'backend/tests/example.test.ts',
+        ],
+        result_summary:
+          'Execução concluída e validada.',
+        error_message: null,
+        completed_at: new Date(
+          '2026-08-19T17:00:00.000Z',
+        ),
+      },
+    });
+
+    const financeResponse = await request(app)
+      .get(`/api/admin/ai/dev-jobs/${jobId}`)
+      .set(
+        'Authorization',
+        authHeader(ids.financeAdmin).Authorization,
+      );
+
+    expect(financeResponse.status).toBe(403);
+
+    const response = await request(app)
+      .get(`/api/admin/ai/dev-jobs/${jobId}`)
+      .set(
+        'Authorization',
+        authHeader(ids.superAdmin).Authorization,
+      );
+
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data).toMatchObject({
+      id: jobId,
+      status: 'SUCCEEDED',
+      resultChangedPaths: [
+        'backend/tests/example.test.ts',
+      ],
+      resultSummary:
+        'Execução concluída e validada.',
+      errorMessage: null,
+    });
+
+    expect(
+      response.body.data.completedAt,
+    ).toBeTruthy();
+  });
+
 });

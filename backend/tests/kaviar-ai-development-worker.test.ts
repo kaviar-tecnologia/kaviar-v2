@@ -50,6 +50,9 @@ function makePool(options?: {
             locked_by: 'worker-a',
             started_at: new Date('2026-08-18T04:00:00Z'),
             locked_at: new Date('2026-08-18T04:00:01Z'),
+            allowed_paths: [
+              'backend/src/services/example.ts',
+            ],
           },
         ],
       };
@@ -89,6 +92,9 @@ describe('KAVIAR AI — Development Worker Phase 3', () => {
         locked_by: 'worker-a',
         started_at: new Date('2026-08-18T04:00:00Z'),
         locked_at: new Date('2026-08-18T04:00:01Z'),
+        allowed_paths: [
+          'backend/src/services/example.ts',
+        ],
       },
     });
 
@@ -101,6 +107,9 @@ describe('KAVIAR AI — Development Worker Phase 3', () => {
       id: 'job-queued',
       category: 'BUG_FIX',
       summary: 'Corrigir bug no backend',
+      allowedPaths: [
+        'backend/src/services/example.ts',
+      ],
       status: 'RUNNING',
       attempts: 1,
       lockedBy: 'worker-a',
@@ -251,6 +260,59 @@ describe('KAVIAR AI — Development Worker finalization', () => {
       'job-owned',
       'worker-a',
       'SUCCEEDED',
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  it('persists changed paths, summary and error metadata on finalization', async () => {
+    const query = vi.fn(async () => ({
+      rows: [{ id: 'job-result' }],
+    }));
+
+    const result = await finalizeDevelopmentJob(
+      {
+        pool: { query } as any,
+        workerId: 'worker-a',
+      },
+      'job-result',
+      'SUCCEEDED',
+      {
+        changedPaths: [
+          'backend/tests/example.test.ts',
+        ],
+        resultSummary: 'Execução validada com sucesso.',
+        errorMessage: undefined,
+      },
+    );
+
+    expect(result).toBe(true);
+
+    const [sql, params] = query.mock.calls[0];
+
+    expect(String(sql)).toContain(
+      'result_changed_paths = $4::jsonb',
+    );
+    expect(String(sql)).toContain(
+      'result_summary = $5',
+    );
+    expect(String(sql)).toContain(
+      'error_message = $6',
+    );
+    expect(String(sql)).toContain(
+      'completed_at = NOW()',
+    );
+
+    expect(params).toEqual([
+      'job-result',
+      'worker-a',
+      'SUCCEEDED',
+      JSON.stringify([
+        'backend/tests/example.test.ts',
+      ]),
+      'Execução validada com sucesso.',
+      null,
     ]);
   });
 

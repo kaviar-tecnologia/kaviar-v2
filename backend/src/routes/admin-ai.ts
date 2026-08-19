@@ -8,6 +8,7 @@ import { askKaviarAi } from '../services/ai/kaviar-ai.service';
 import {
   createDevelopmentJob,
   confirmDevelopmentJob,
+  getDevelopmentJob,
   DevelopmentJobError,
 } from '../services/ai/kaviar-ai.development-jobs';
 import { createOpenAiProviderIfConfigured } from '../services/ai/kaviar-ai.openai-provider';
@@ -127,6 +128,58 @@ router.post('/chat', async (req: Request, res: Response) => {
   }
 });
 
+
+// ── Development Agent: consulta de status/resultado ─────────────────────────
+router.get('/dev-jobs/:id', requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const admin = (req as any).admin;
+    const ctx = auditCtx(req);
+
+    const job = await getDevelopmentJob(
+      String(req.params.id ?? ''),
+      {
+        adminId: admin.id,
+        adminEmail: ctx.adminEmail,
+        role: admin.role,
+        ipAddress: ctx.ip,
+        userAgent: ctx.ua,
+      },
+    );
+
+    return res.json({
+      success: true,
+      data: {
+        id: job.id,
+        category: job.category,
+        summary: job.summary,
+        status: job.status,
+        allowedPaths: job.allowed_paths,
+        resultChangedPaths: job.result_changed_paths,
+        resultSummary: job.result_summary,
+        errorMessage: job.error_message,
+        completedAt: job.completed_at,
+      },
+    });
+  } catch (error) {
+    if (error instanceof DevelopmentJobError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    }
+
+    console.error(
+      '[KAVIAR_AI_DEV_JOB_GET] Erro ao consultar job',
+    );
+
+    return res.status(500).json({
+      success: false,
+      code: 'DEVELOPMENT_JOB_INTERNAL_ERROR',
+      error: 'Não foi possível consultar o job de desenvolvimento.',
+    });
+  }
+});
 
 // ── Development Agent: confirmação humana ───────────────────────────────────
 router.post('/dev-jobs/:id/confirm', requireSuperAdmin, async (req: Request, res: Response) => {
