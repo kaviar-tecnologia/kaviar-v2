@@ -14,6 +14,7 @@ import type {
 } from './kaviar-ai.development-scope-planner';
 import type {
   ClaimedDevelopmentJob,
+  DevelopmentJobFinalizationResult,
 } from './kaviar-ai.development-worker';
 import {
   runDevelopmentJobLifecycle,
@@ -35,6 +36,10 @@ export interface DevelopmentAgentRunnerDeps {
   execute: (
     job: ClaimedDevelopmentJob,
     signal: AbortSignal,
+  ) => Promise<DevelopmentJobFinalizationResult | void>;
+
+  cleanupExecution?: (
+    job: ClaimedDevelopmentJob,
   ) => Promise<void>;
 }
 
@@ -247,33 +252,49 @@ export async function runDevelopmentAgentRunner(
           `attempt=${job.attempts}`,
       );
 
-      const result = await runDevelopmentJobLifecycle(
-        job,
-        {
-          worker: {
-            pool,
-            workerId,
+      let result;
+
+      try {
+        result = await runDevelopmentJobLifecycle(
+          job,
+          {
+            worker: {
+              pool,
+              workerId,
+            },
+            execute: deps.execute,
           },
-          execute: deps.execute,
-        },
-      );
-
-      console.log(
-        `[DEVELOPMENT_AGENT_RUNNER] ` +
-          `Finished job=${job.id} ` +
-          `status=${result.status}`,
-      );
-
-      if (result.status === 'FAILED') {
-        console.error(
-          `[DEVELOPMENT_AGENT_EXECUTION_ERROR] ` +
-            `job=${job.id} ` +
-            `${
-              result.error instanceof Error
-                ? result.error.message
-                : String(result.error)
-            }`,
         );
+
+        console.log(
+          `[DEVELOPMENT_AGENT_RUNNER] ` +
+            `Finished job=${job.id} ` +
+            `status=${result.status}`,
+        );
+
+        if (result.status === 'FAILED') {
+          console.error(
+            `[DEVELOPMENT_AGENT_EXECUTION_ERROR] ` +
+              `job=${job.id} ` +
+              `${
+                result.error instanceof Error
+                  ? result.error.message
+                  : String(result.error)
+              }`,
+          );
+        }
+      } finally {
+        if (deps.cleanupExecution) {
+          try {
+            await deps.cleanupExecution(job);
+          } catch (error) {
+            console.error(
+              `[DEVELOPMENT_AGENT_EXECUTION_CLEANUP_ERROR] ` +
+                `job=${job.id}`,
+              error,
+            );
+          }
+        }
       }
     }
   } finally {
