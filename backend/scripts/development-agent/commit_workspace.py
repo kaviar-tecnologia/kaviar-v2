@@ -16,12 +16,23 @@ def run(
     *args: str,
     cwd: Path,
 ) -> str:
+    env = {
+        "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "HOME": "/tmp",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_TERMINAL_PROMPT": "0",
+    }
+
     result = subprocess.run(
         list(args),
         cwd=cwd,
         check=True,
         text=True,
         capture_output=True,
+        env=env,
     )
     return result.stdout.strip()
 
@@ -30,11 +41,22 @@ def run_nul(
     *args: str,
     cwd: Path,
 ) -> list[str]:
+    env = {
+        "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "HOME": "/tmp",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_TERMINAL_PROMPT": "0",
+    }
+
     result = subprocess.run(
         list(args),
         cwd=cwd,
         check=True,
         capture_output=True,
+        env=env,
     )
 
     return [
@@ -188,6 +210,16 @@ def commit_workspace(
             "DEVELOPMENT_COMMIT_BRANCH_INVALID"
         )
 
+    # Fail-closed: nunca herdar staging residual.
+    run(
+        "git",
+        "reset",
+        "--mixed",
+        "HEAD",
+        "--",
+        cwd=workspace,
+    )
+
     changed = changed_paths(workspace)
 
     if not changed:
@@ -204,6 +236,23 @@ def commit_workspace(
             "DEVELOPMENT_COMMIT_UNAUTHORIZED_PATHS:"
             + ",".join(unauthorized)
         )
+
+    for relative_path in changed:
+        candidate = workspace / relative_path
+
+        # Arquivo removido é permitido; symlink não.
+        if candidate.exists() or candidate.is_symlink():
+            if candidate.is_symlink():
+                raise RuntimeError(
+                    "DEVELOPMENT_COMMIT_SYMLINK_FORBIDDEN:"
+                    + relative_path
+                )
+
+            if not candidate.is_file():
+                raise RuntimeError(
+                    "DEVELOPMENT_COMMIT_NON_FILE_FORBIDDEN:"
+                    + relative_path
+                )
 
     # Nunca usar `git add .`.
     run(
@@ -230,6 +279,38 @@ def commit_workspace(
     if staged != changed:
         raise RuntimeError(
             "DEVELOPMENT_COMMIT_STAGED_PATHS_MISMATCH"
+        )
+
+    branch_before_commit = run(
+        "git",
+        "branch",
+        "--show-current",
+        cwd=workspace,
+    )
+
+    if branch_before_commit != expected:
+        raise RuntimeError(
+            "DEVELOPMENT_COMMIT_BRANCH_DRIFT"
+        )
+
+    staged_before_commit = sorted(
+        set(
+            run_nul(
+                "git",
+                "diff",
+                "--cached",
+                "--name-only",
+                "--no-renames",
+                "-z",
+                "--",
+                cwd=workspace,
+            )
+        )
+    )
+
+    if staged_before_commit != changed:
+        raise RuntimeError(
+            "DEVELOPMENT_COMMIT_STAGED_PATHS_DRIFT"
         )
 
     message = (
