@@ -4,7 +4,8 @@ import {
   normalizeDevelopmentAllowedPaths,
 } from './kaviar-ai.development-scope-contract';
 
-const MAX_PROCESS_OUTPUT_BYTES = 64 * 1024;
+const MAX_STDOUT_BYTES = 64 * 1024;
+const MAX_STDERR_TAIL_CHARS = 16_384;
 const MAX_SCOPE_RATIONALE_LENGTH = 4000;
 
 export interface DevelopmentScopePlan {
@@ -36,7 +37,7 @@ function minimalPlannerEnvironment(
     LANG: 'C.UTF-8',
     LC_ALL: 'C.UTF-8',
     PYTHONUNBUFFERED: '1',
-    HOME: '/nonexistent',
+    HOME: process.env.DEVELOPMENT_AGENT_HOME?.trim() || '/tmp',
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_CONFIG_GLOBAL: '/dev/null',
     GEMINI_API_KEY: geminiApiKey,
@@ -50,7 +51,23 @@ function parsePlannerOutput(
   let parsed: ScopePlannerOutput;
 
   try {
-    parsed = JSON.parse(raw) as ScopePlannerOutput;
+    const candidate = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .reverse()
+      .find(
+        (line) =>
+          line.startsWith('{') &&
+          line.endsWith('}'),
+      );
+
+    if (!candidate) {
+      throw new Error(
+        'DEVELOPMENT_SCOPE_PLANNER_INVALID_JSON',
+      );
+    }
+
+    parsed = JSON.parse(candidate) as ScopePlannerOutput;
   } catch {
     throw new Error(
       'DEVELOPMENT_SCOPE_PLANNER_INVALID_JSON',
@@ -141,7 +158,6 @@ export function planDevelopmentScope(
 
     let stdout = '';
     let stderr = '';
-    let outputTooLarge = false;
     let settled = false;
 
     const rejectOnce = (error: Error) => {
@@ -151,27 +167,15 @@ export function planDevelopmentScope(
     };
 
     child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString('utf8');
-
-      if (
-        Buffer.byteLength(stdout, 'utf8') >
-        MAX_PROCESS_OUTPUT_BYTES
-      ) {
-        outputTooLarge = true;
-        child.kill('SIGKILL');
-      }
+      stdout = (stdout + chunk.toString('utf8')).slice(
+        -MAX_STDOUT_BYTES,
+      );
     });
 
     child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf8');
-
-      if (
-        Buffer.byteLength(stderr, 'utf8') >
-        MAX_PROCESS_OUTPUT_BYTES
-      ) {
-        outputTooLarge = true;
-        child.kill('SIGKILL');
-      }
+      stderr = (stderr + chunk.toString('utf8')).slice(
+        -MAX_STDERR_TAIL_CHARS,
+      );
     });
 
     child.once('error', (error) => {
@@ -180,15 +184,6 @@ export function planDevelopmentScope(
 
     child.once('close', (code, signal) => {
       if (settled) return;
-
-      if (outputTooLarge) {
-        rejectOnce(
-          new Error(
-            'DEVELOPMENT_SCOPE_PLANNER_OUTPUT_TOO_LARGE',
-          ),
-        );
-        return;
-      }
 
       if (code !== 0) {
         rejectOnce(
