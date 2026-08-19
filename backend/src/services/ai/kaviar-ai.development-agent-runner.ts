@@ -1,6 +1,17 @@
 import { hostname } from 'node:os';
 import { pool } from '../../db';
 import { claimNextDevelopmentJob } from './kaviar-ai.development-worker';
+import {
+  claimNextDevelopmentScopeJob,
+  heartbeatDevelopmentScopeJob,
+  releaseDevelopmentScopeJob,
+} from './kaviar-ai.development-scope-worker';
+import {
+  resolveDevelopmentJobScope,
+} from './kaviar-ai.development-jobs';
+import type {
+  DevelopmentScopePlan,
+} from './kaviar-ai.development-scope-planner';
 import type {
   ClaimedDevelopmentJob,
 } from './kaviar-ai.development-worker';
@@ -12,6 +23,15 @@ const DEFAULT_POLL_INTERVAL_MS = 30_000;
 const MIN_POLL_INTERVAL_MS = 5_000;
 
 export interface DevelopmentAgentRunnerDeps {
+  planScope: (
+    job: {
+      id: string;
+      category: string;
+      summary: string;
+    },
+    signal: AbortSignal,
+  ) => Promise<DevelopmentScopePlan>;
+
   execute: (
     job: ClaimedDevelopmentJob,
     signal: AbortSignal,
@@ -66,6 +86,114 @@ export async function runDevelopmentAgentRunner(
 
   try {
     while (!stopping) {
+      const scopeJob =
+        await claimNextDevelopmentScopeJob({
+          pool,
+          workerId,
+        });
+
+      if (scopeJob) {
+        console.log(
+          `[DEVELOPMENT_AGENT_RUNNER] ` +
+            `Claimed scope job=${scopeJob.id} ` +
+            `category=${scopeJob.category}`,
+        );
+
+        const abortController =
+          new AbortController();
+
+        let heartbeatTimer:
+          | ReturnType<typeof setInterval>
+          | null = null;
+
+        try {
+          heartbeatTimer = setInterval(
+            async () => {
+              try {
+                const owned =
+                  await heartbeatDevelopmentScopeJob(
+                    {
+                      pool,
+                      workerId,
+                    },
+                    scopeJob.id,
+                  );
+
+                if (!owned) {
+                  abortController.abort(
+                    new Error(
+                      'DEVELOPMENT_SCOPE_OWNERSHIP_LOST',
+                    ),
+                  );
+                }
+              } catch (error) {
+                abortController.abort(
+                  error instanceof Error
+                    ? error
+                    : new Error(
+                        'DEVELOPMENT_SCOPE_HEARTBEAT_FAILED',
+                      ),
+                );
+              }
+            },
+            60_000,
+          );
+
+          const plan = await deps.planScope(
+            scopeJob,
+            abortController.signal,
+          );
+
+          if (abortController.signal.aborted) {
+            throw (
+              abortController.signal.reason ??
+              new Error(
+                'DEVELOPMENT_SCOPE_ABORTED',
+              )
+            );
+          }
+
+          await resolveDevelopmentJobScope(
+            scopeJob.id,
+            workerId,
+            {
+              allowedPaths: plan.allowedPaths,
+              rationale: plan.rationale,
+            },
+          );
+
+          console.log(
+            `[DEVELOPMENT_AGENT_RUNNER] ` +
+              `Scope resolved job=${scopeJob.id} ` +
+              `paths=${plan.allowedPaths.length}`,
+          );
+        } catch (error) {
+          await releaseDevelopmentScopeJob(
+            {
+              pool,
+              workerId,
+            },
+            scopeJob.id,
+          );
+
+          console.error(
+            `[DEVELOPMENT_AGENT_SCOPE_ERROR] ` +
+              `job=${scopeJob.id} ` +
+              `${
+                error instanceof Error
+                  ? error.message
+                  : 'unknown error'
+              }`,
+          );
+        } finally {
+          if (heartbeatTimer) {
+            clearInterval(heartbeatTimer);
+          }
+        }
+
+        continue;
+      }
+
       const job = await claimNextDevelopmentJob({
         pool,
         workerId,

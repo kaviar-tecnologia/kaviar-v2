@@ -8,6 +8,7 @@ import os
 import shlex
 import subprocess
 import sys
+from contextlib import redirect_stdout
 import uuid
 from pathlib import Path
 from typing import Any
@@ -388,14 +389,15 @@ def execute_request(
         )
 
         try:
-            conversation.send_message(
-                build_agent_prompt(
-                    request["task"],
-                    request["allowed_paths"],
+            with redirect_stdout(sys.stderr):
+                conversation.send_message(
+                    build_agent_prompt(
+                        request["task"],
+                        request["allowed_paths"],
+                    )
                 )
-            )
 
-            conversation.run()
+                conversation.run()
 
             status = execution_status_value(
                 conversation
