@@ -4,7 +4,8 @@ import type {
   ClaimedDevelopmentJob,
 } from './kaviar-ai.development-worker';
 
-const MAX_PROCESS_OUTPUT_BYTES = 64 * 1024;
+const MAX_STDOUT_BYTES = 64 * 1024;
+const MAX_STDERR_TAIL_CHARS = 16_384;
 
 export interface DevelopmentTaskExecutionResult {
   jobId: string;
@@ -43,7 +44,7 @@ function minimalExecutorEnvironment(
     LANG: 'C.UTF-8',
     LC_ALL: 'C.UTF-8',
     PYTHONUNBUFFERED: '1',
-    HOME: '/nonexistent',
+    HOME: process.env.DEVELOPMENT_AGENT_HOME?.trim() || '/tmp',
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_CONFIG_GLOBAL: '/dev/null',
     GEMINI_API_KEY: geminiApiKey,
@@ -58,7 +59,23 @@ function parseExecutionOutput(
   let parsed: RawExecutionOutput;
 
   try {
-    parsed = JSON.parse(raw) as RawExecutionOutput;
+    const candidate = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .reverse()
+      .find(
+        (line) =>
+          line.startsWith('{') &&
+          line.endsWith('}'),
+      );
+
+    if (!candidate) {
+      throw new Error(
+        'DEVELOPMENT_TASK_EXECUTOR_INVALID_JSON',
+      );
+    }
+
+    parsed = JSON.parse(candidate) as RawExecutionOutput;
   } catch {
     throw new Error(
       'DEVELOPMENT_TASK_EXECUTOR_INVALID_JSON',
@@ -164,7 +181,6 @@ export function executeDevelopmentTask(
 
     let stdout = '';
     let stderr = '';
-    let outputTooLarge = false;
     let settled = false;
 
     const rejectOnce = (error: Error) => {
@@ -174,27 +190,15 @@ export function executeDevelopmentTask(
     };
 
     child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString('utf8');
-
-      if (
-        Buffer.byteLength(stdout, 'utf8') >
-        MAX_PROCESS_OUTPUT_BYTES
-      ) {
-        outputTooLarge = true;
-        child.kill('SIGKILL');
-      }
+      stdout = (stdout + chunk.toString('utf8')).slice(
+        -MAX_STDOUT_BYTES,
+      );
     });
 
     child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf8');
-
-      if (
-        Buffer.byteLength(stderr, 'utf8') >
-        MAX_PROCESS_OUTPUT_BYTES
-      ) {
-        outputTooLarge = true;
-        child.kill('SIGKILL');
-      }
+      stderr = (stderr + chunk.toString('utf8')).slice(
+        -MAX_STDERR_TAIL_CHARS,
+      );
     });
 
     child.once('error', (error) => {
@@ -204,21 +208,18 @@ export function executeDevelopmentTask(
     child.once('close', (code, signal) => {
       if (settled) return;
 
-      if (outputTooLarge) {
-        rejectOnce(
-          new Error(
-            'DEVELOPMENT_TASK_EXECUTOR_OUTPUT_TOO_LARGE',
-          ),
-        );
-        return;
-      }
-
       if (code !== 0) {
         rejectOnce(
           new Error(
             `DEVELOPMENT_TASK_EXECUTOR_FAILED` +
               ` code=${String(code)}` +
-              ` signal=${String(signal)}`,
+              ` signal=${String(signal)}` +
+              (stderr.trim()
+                ? ` stderr_tail=${stderr
+                    .trim()
+                    .replace(/\\s+/g, ' ')
+                    .slice(-2000)}`
+                : ''),
           ),
         );
         return;
