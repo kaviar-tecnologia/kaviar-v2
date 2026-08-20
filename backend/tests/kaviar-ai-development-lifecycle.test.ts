@@ -63,6 +63,60 @@ describe('KAVIAR AI — Development job lifecycle', () => {
     );
   });
 
+  it('preserves development commit metadata when finalizing SUCCEEDED execution', async () => {
+    const runWithHeartbeat = vi.fn(async () => ({
+      status: 'COMPLETED' as const,
+      finalization: {
+        changedPaths: [
+          'backend/src/services/example.ts',
+        ],
+        resultBranch:
+          'agent/job-lifecycle-test',
+        resultCommitSha:
+          '5ca6ccca859994d4d176cbfff0fb7444a72ccab5',
+        resultSummary:
+          'Execução concluída e commitada.',
+      },
+    }));
+
+    const finalize = vi.fn(async () => true);
+    const execute = vi.fn(async () => {});
+
+    const result = await runDevelopmentJobLifecycle(
+      makeJob(),
+      {
+        worker,
+        execute,
+        runWithHeartbeat,
+        finalize,
+      },
+    );
+
+    expect(result).toEqual({
+      status: 'SUCCEEDED',
+    });
+
+    expect(finalize).toHaveBeenCalledOnce();
+
+    expect(finalize).toHaveBeenCalledWith(
+      worker,
+      'job-lifecycle',
+      'SUCCEEDED',
+      {
+        changedPaths: [
+          'backend/src/services/example.ts',
+        ],
+        resultBranch:
+          'agent/job-lifecycle-test',
+        resultCommitSha:
+          '5ca6ccca859994d4d176cbfff0fb7444a72ccab5',
+        resultSummary:
+          'Execução concluída e commitada.',
+      },
+    );
+  });
+
+
   it('finalizes FAILED when execution throws while ownership remains valid', async () => {
     const failure = new Error('agent failed');
 
