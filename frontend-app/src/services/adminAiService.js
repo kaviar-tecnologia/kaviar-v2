@@ -26,6 +26,48 @@ export async function askKaviarAi(question) {
   };
 }
 
+// ── Development Jobs API ─────────────────────────────────────────────────────
+
+/**
+ * Lista development jobs ativos.
+ * @returns {Promise<Array>}
+ */
+export async function listDevJobs() {
+  const response = await api.get(`${AI_BASE_PATH}/dev-jobs`);
+  if (!response.data?.success) {
+    throw new Error(response.data?.error || 'Erro ao listar dev jobs.');
+  }
+  return response.data.data;
+}
+
+/**
+ * Busca detalhes de um development job.
+ * @param {string} id
+ * @returns {Promise<Object>}
+ */
+export async function getDevJob(id) {
+  const response = await api.get(`${AI_BASE_PATH}/dev-jobs/${id}`);
+  if (!response.data?.success) {
+    throw new Error(response.data?.error || 'Erro ao buscar dev job.');
+  }
+  return response.data.data;
+}
+
+/**
+ * Confirma execução de um development job em AWAITING_CONFIRMATION.
+ * @param {string} id
+ * @returns {Promise<Object>}
+ */
+export async function confirmDevJob(id) {
+  const response = await api.post(`${AI_BASE_PATH}/dev-jobs/${id}/confirm`, {
+    confirmation: 'CONFIRMAR_EXECUCAO',
+  });
+  if (!response.data?.success) {
+    throw new Error(response.data?.error || 'Erro ao confirmar dev job.');
+  }
+  return response.data.data;
+}
+
 /**
  * Confirma execução de um job de desenvolvimento.
  *
