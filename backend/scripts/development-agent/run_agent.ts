@@ -7,6 +7,7 @@ import { planDevelopmentScope } from '../../src/services/ai/kaviar-ai.developmen
 import { executeDevelopmentTask } from '../../src/services/ai/kaviar-ai.development-task-executor';
 import { validateDevelopmentWorkspace } from '../../src/services/ai/kaviar-ai.development-workspace-validator';
 import { commitDevelopmentWorkspace } from '../../src/services/ai/kaviar-ai.development-workspace-committer';
+import { publishDevelopmentJobResult } from '../../src/services/ai/kaviar-ai.development-publish-orchestrator';
 
 const BASE_REPO =
   process.env.DEVELOPMENT_AGENT_BASE_REPO?.trim() ||
@@ -30,6 +31,10 @@ const SOURCE_BRANCH =
 
 const GEMINI_API_KEY =
   process.env.GEMINI_API_KEY?.trim() || '';
+
+const PUBLISH_ENABLED =
+  process.env.DEVELOPMENT_AGENT_PUBLISH_ENABLED ===
+  'true';
 
 const PREPARE_SCRIPT = resolve(
   BASE_REPO,
@@ -179,6 +184,28 @@ async function main(): Promise<void> {
         throw new Error(
           'DEVELOPMENT_COMMIT_BRANCH_MISMATCH',
         );
+      }
+
+      if (PUBLISH_ENABLED) {
+        const publishResult =
+          await publishDevelopmentJobResult({
+            jobId: job.id,
+            workspace: commitResult.workspace,
+            resultBranch: commitResult.branch,
+            resultCommitSha:
+              commitResult.commitSha,
+            changedPaths:
+              commitResult.changedPaths,
+          });
+
+        if (
+          publishResult.remoteSha !==
+          commitResult.commitSha
+        ) {
+          throw new Error(
+            'DEVELOPMENT_PUBLISH_SHA_MISMATCH',
+          );
+        }
       }
 
       return {
