@@ -4,8 +4,8 @@ import {
   CircularProgress, Alert, InputAdornment, Button, Dialog, DialogTitle,
   DialogContent, DialogActions,
 } from '@mui/material';
-import { Send, SmartToy, Person, Lock } from '@mui/icons-material';
-import { askKaviarAi, getToolFriendlyNames } from '../../services/adminAiService';
+import { Send, SmartToy, Person, Lock, Code, CheckCircle, Error as ErrorIcon } from '@mui/icons-material';
+import { askKaviarAi, getToolFriendlyNames, listDevJobs, getDevJob, confirmDevJob } from '../../services/adminAiService';
 import api from '../../api';
 
 const SUGGESTIONS = [
@@ -29,6 +29,31 @@ const EXTRA_SUGGESTIONS = [
 ];
 
 const MAX_CHARS = 1000;
+
+// ── Dev-jobs helpers ─────────────────────────────────────────────────────────
+function formatDevJobStatus(status) {
+  const map = {
+    AWAITING_SCOPE: 'Analisando escopo',
+    AWAITING_CONFIRMATION: 'Aguardando confirmação',
+    QUEUED: 'Na fila',
+    RUNNING: 'Executando',
+    SUCCEEDED: 'Concluído',
+    FAILED: 'Falhou',
+  };
+  return map[status] || status;
+}
+
+function getDevJobStatusColor(status) {
+  const colors = {
+    AWAITING_SCOPE: { bg: 'rgba(184,148,46,0.1)', text: '#B8942E', border: 'rgba(184,148,46,0.3)' },
+    AWAITING_CONFIRMATION: { bg: 'rgba(251,191,36,0.1)', text: '#FBBF24', border: 'rgba(251,191,36,0.3)' },
+    QUEUED: { bg: 'rgba(107,114,128,0.1)', text: '#9CA3AF', border: 'rgba(107,114,128,0.3)' },
+    RUNNING: { bg: 'rgba(96,165,250,0.1)', text: '#60A5FA', border: 'rgba(96,165,250,0.3)' },
+    SUCCEEDED: { bg: 'rgba(52,211,153,0.1)', text: '#34D399', border: 'rgba(52,211,153,0.3)' },
+    FAILED: { bg: 'rgba(252,165,165,0.1)', text: '#FCA5A5', border: 'rgba(252,165,165,0.3)' },
+  };
+  return colors[status] || colors.QUEUED;
+}
 
 function getCoverageGovernanceAction(message) {
   if (!message?.toolsUsed?.includes('territory_manager_coverage')) {
@@ -119,20 +144,95 @@ export default function KaviarAiPage() {
   const [coverageDialog, setCoverageDialog] = useState(null);
   const [coverageNotes, setCoverageNotes] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [devJobs, setDevJobs] = useState([]);
+  const [selectedJob, setSelectedJob] = useState(null);
+  const [devJobsLoading, setDevJobsLoading] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState(null);
   const messagesEndRef = useRef(null);
   const regulatoryAbortRef = useRef({ cancelled: false, timer: null });
+  const devJobsPollRef = useRef(null);
+
+  const adminData = localStorage.getItem('kaviar_admin_data');
+  const admin = adminData ? JSON.parse(adminData) : null;
+  const isSuperAdmin = admin?.role === 'SUPER_ADMIN';
 
   // Cleanup polling on unmount
   useEffect(() => {
     return () => {
       regulatoryAbortRef.current.cancelled = true;
       if (regulatoryAbortRef.current.timer) clearTimeout(regulatoryAbortRef.current.timer);
+      if (devJobsPollRef.current) clearInterval(devJobsPollRef.current);
     };
   }, []);
 
-  const adminData = localStorage.getItem('kaviar_admin_data');
-  const admin = adminData ? JSON.parse(adminData) : null;
-  const isSuperAdmin = admin?.role === 'SUPER_ADMIN';
+  // Dev-jobs polling
+  const fetchDevJobs = useCallback(async () => {
+    try {
+      const jobs = await listDevJobs();
+      setDevJobs(jobs);
+    } catch {
+      // Silently ignore — panel just won't update
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    fetchDevJobs();
+    devJobsPollRef.current = setInterval(fetchDevJobs, 15000);
+    return () => {
+      if (devJobsPollRef.current) clearInterval(devJobsPollRef.current);
+    };
+  }, [fetchDevJobs, isSuperAdmin]);
+
+  // Auto-poll selected job when it's in a non-terminal state
+  useEffect(() => {
+    if (!selectedJob) return;
+    if (['SUCCEEDED', 'FAILED'].includes(selectedJob.status)) return;
+    const interval = setInterval(() => pollSelectedJob(selectedJob.id), 5000);
+    return () => clearInterval(interval);
+  }, [selectedJob?.id, selectedJob?.status, pollSelectedJob]);
+
+  // Poll selected job detail
+  const pollSelectedJob = useCallback(async (jobId) => {
+    try {
+      const job = await getDevJob(jobId);
+      setSelectedJob(job);
+      // Stop polling if terminal
+      if (['SUCCEEDED', 'FAILED'].includes(job.status)) return;
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleSelectJob = async (jobId) => {
+    setDevJobsLoading(true);
+    try {
+      const job = await getDevJob(jobId);
+      setSelectedJob(job);
+    } catch {
+      setError('Erro ao carregar detalhes do job.');
+    } finally {
+      setDevJobsLoading(false);
+    }
+  };
+
+  const handleConfirmJob = async () => {
+    if (!confirmDialog) return;
+    setActionLoading(true);
+    try {
+      await confirmDevJob(confirmDialog.id);
+      setConfirmDialog(null);
+      // Refresh
+      await fetchDevJobs();
+      if (selectedJob?.id === confirmDialog.id) {
+        await pollSelectedJob(confirmDialog.id);
+      }
+    } catch (err) {
+      setError(err?.message || 'Erro ao confirmar job.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -454,6 +554,121 @@ export default function KaviarAiPage() {
           />
         </Container>
       </Box>
+
+      {/* Development Jobs Panel */}
+      {isSuperAdmin && devJobs.length > 0 && (
+        <Box sx={{ borderBottom: '1px solid rgba(107,114,128,0.15)', px: 3, py: 1.5 }}>
+          <Container maxWidth="md">
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+              <Code sx={{ fontSize: 16, color: '#6B7280' }} />
+              <Typography sx={{ color: '#9CA3AF', fontSize: 12, fontWeight: 600 }}>
+                Development Jobs
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+              {devJobs.map((job) => (
+                <Chip
+                  key={job.id}
+                  label={`${job.title || job.id.slice(0, 8)} — ${formatDevJobStatus(job.status)}`}
+                  size="small"
+                  onClick={() => handleSelectJob(job.id)}
+                  sx={{
+                    bgcolor: getDevJobStatusColor(job.status).bg,
+                    color: getDevJobStatusColor(job.status).text,
+                    border: `1px solid ${getDevJobStatusColor(job.status).border}`,
+                    fontSize: 11,
+                    cursor: 'pointer',
+                    '&:hover': { opacity: 0.8 },
+                  }}
+                />
+              ))}
+            </Box>
+          </Container>
+        </Box>
+      )}
+
+      {/* Selected Job Detail */}
+      {selectedJob && (
+        <Box sx={{ borderBottom: '1px solid rgba(107,114,128,0.15)', px: 3, py: 2 }}>
+          <Container maxWidth="md">
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <Box sx={{ flex: 1 }}>
+                <Typography sx={{ color: '#E5E7EB', fontSize: 14, fontWeight: 600, mb: 0.5 }}>
+                  {selectedJob.title || 'Development Job'}
+                </Typography>
+                <Typography sx={{ color: '#9CA3AF', fontSize: 12, mb: 1 }}>
+                  Status: {formatDevJobStatus(selectedJob.status)}
+                  {selectedJob.branch_name && ` · Branch: ${selectedJob.branch_name}`}
+                </Typography>
+                {selectedJob.status === 'AWAITING_SCOPE' && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <CircularProgress size={12} sx={{ color: '#B8942E' }} />
+                    <Typography sx={{ color: '#B8942E', fontSize: 12 }}>
+                      Analisando escopo...
+                    </Typography>
+                  </Box>
+                )}
+                {selectedJob.status === 'AWAITING_CONFIRMATION' && selectedJob.scope_summary && (
+                  <Box sx={{ mt: 1 }}>
+                    <Typography sx={{ color: '#9CA3AF', fontSize: 11, mb: 0.5 }}>Escopo:</Typography>
+                    <Typography sx={{ color: '#E5E7EB', fontSize: 12, whiteSpace: 'pre-wrap', mb: 1 }}>
+                      {selectedJob.scope_summary}
+                    </Typography>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      disabled={actionLoading}
+                      onClick={() => setConfirmDialog(selectedJob)}
+                      sx={{ color: '#B8942E', borderColor: '#B8942E', fontSize: 11, textTransform: 'none' }}
+                    >
+                      Confirmar execução
+                    </Button>
+                  </Box>
+                )}
+                {selectedJob.status === 'QUEUED' && (
+                  <Typography sx={{ color: '#6B7280', fontSize: 12 }}>
+                    Aguardando runner...
+                  </Typography>
+                )}
+                {selectedJob.status === 'RUNNING' && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <CircularProgress size={12} sx={{ color: '#60A5FA' }} />
+                    <Typography sx={{ color: '#60A5FA', fontSize: 12 }}>
+                      Executando...
+                    </Typography>
+                  </Box>
+                )}
+                {selectedJob.status === 'SUCCEEDED' && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <CheckCircle sx={{ fontSize: 14, color: '#34D399' }} />
+                    <Typography sx={{ color: '#34D399', fontSize: 12 }}>
+                      Concluído
+                      {selectedJob.pr_url && (
+                        <> · <a href={selectedJob.pr_url} target="_blank" rel="noopener noreferrer" style={{ color: '#60A5FA' }}>Ver PR</a></>
+                      )}
+                    </Typography>
+                  </Box>
+                )}
+                {selectedJob.status === 'FAILED' && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <ErrorIcon sx={{ fontSize: 14, color: '#FCA5A5' }} />
+                    <Typography sx={{ color: '#FCA5A5', fontSize: 12 }}>
+                      Falhou{selectedJob.error_message && `: ${selectedJob.error_message}`}
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+              <Button
+                size="small"
+                onClick={() => setSelectedJob(null)}
+                sx={{ color: '#6B7280', fontSize: 11, textTransform: 'none', minWidth: 'auto' }}
+              >
+                ✕
+              </Button>
+            </Box>
+          </Container>
+        </Box>
+      )}
 
       {/* Messages area */}
       <Box sx={{ flex: 1, overflow: 'auto', py: 3 }}>
@@ -1094,6 +1309,38 @@ export default function KaviarAiPage() {
           <Button onClick={() => { navigator.clipboard?.writeText(managerResult?.tempPassword || ''); }}
             sx={{ color: '#B8942E', fontSize: 12 }}>Copiar senha</Button>
           <Button onClick={() => setManagerResult(null)} sx={{ color: '#6B7280' }}>Fechar</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog confirmação de execução do Development Job */}
+      <Dialog
+        open={!!confirmDialog}
+        onClose={() => !actionLoading && setConfirmDialog(null)}
+        PaperProps={{ sx: { bgcolor: '#1A1A1F', color: '#E5E7EB', minWidth: 360 } }}
+      >
+        <DialogTitle sx={{ color: '#FFD700', fontSize: 16 }}>
+          Confirmar execução
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ color: '#E5E7EB', fontSize: 13, mb: 1 }}>
+            {confirmDialog?.title || 'Development Job'}
+          </Typography>
+          {confirmDialog?.scope_summary && (
+            <Typography sx={{ color: '#9CA3AF', fontSize: 12, mb: 1.5, whiteSpace: 'pre-wrap' }}>
+              {confirmDialog.scope_summary}
+            </Typography>
+          )}
+          <Typography sx={{ color: '#6B7280', fontSize: 11 }}>
+            Após confirmação, o job entrará na fila e será executado pelo runner da EC2.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDialog(null)} disabled={actionLoading} sx={{ color: '#6B7280' }}>
+            Cancelar
+          </Button>
+          <Button onClick={handleConfirmJob} disabled={actionLoading} sx={{ color: '#B8942E' }}>
+            Confirmar execução
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

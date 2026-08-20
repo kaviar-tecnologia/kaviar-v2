@@ -1,0 +1,41 @@
+[Unit]
+Description=KAVIAR Development Agent Runner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/kaviar-workspaces/kaviar-v2/backend
+
+# Load secrets from external EnvironmentFile (no secrets in unit file)
+EnvironmentFile=/home/ubuntu/kaviar-agent-runtime/database.env
+EnvironmentFile=/home/ubuntu/kaviar-agent-runtime/gemini.env
+
+# Static configuration
+Environment=DEVELOPMENT_AGENT_SOURCE_BRANCH=main
+Environment=DEVELOPMENT_AGENT_PUBLISH_ENABLED=false
+Environment=DEVELOPMENT_AGENT_WORKER_INTERVAL_MS=30000
+Environment=DEVELOPMENT_AGENT_WORKER_ENABLED=true
+Environment=NODE_ENV=production
+
+ExecStart=/usr/bin/npx tsx scripts/development-agent/run_agent.ts
+
+# Restart on failure with backoff
+Restart=on-failure
+RestartSec=10
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+# Resource limits
+LimitNOFILE=65536
+TimeoutStopSec=30
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kaviar-dev-agent
+
+[Install]
+WantedBy=multi-user.target
