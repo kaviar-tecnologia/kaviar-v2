@@ -22,6 +22,7 @@ export async function askKaviarAi(question) {
   return {
     answer: response.data.answer,
     toolsUsed: response.data.toolsUsed || [],
+    developmentProposal: response.data.developmentProposal || null,
   };
 }
 
@@ -64,6 +65,24 @@ export async function confirmDevJob(id) {
   if (!response.data?.success) {
     throw new Error(response.data?.error || 'Erro ao confirmar dev job.');
   }
+  return response.data.data;
+}
+
+/**
+ * Confirma execução de um job de desenvolvimento.
+ *
+ * @param {string} jobId
+ */
+export async function confirmDevelopmentJob(jobId) {
+  const response = await api.post(`${AI_BASE_PATH}/dev-jobs/${jobId}/confirm`);
+
+  if (!response.data?.success) {
+    const msg = response.data?.error || 'Erro ao confirmar job de desenvolvimento.';
+    const err = new Error(msg);
+    err.status = response.status;
+    throw err;
+  }
+
   return response.data.data;
 }
 

@@ -27,6 +27,22 @@ export type KaviarAiToolName =
   | 'seal_history'
   | 'driver_city_landings';
 
+export type DevelopmentIntentCategory =
+  | 'BUG_FIX'
+  | 'FEATURE'
+  | 'REFACTOR'
+  | 'CODE_CHANGE';
+
+export type DevelopmentProposal = {
+  category: DevelopmentIntentCategory;
+  summary: string;
+  status: 'AWAITING_CONFIRMATION';
+  requiresHumanConfirmation: true;
+  canMerge: false;
+  canDeployProduction: false;
+  canAccessProductionDatabase: false;
+};
+
 export type KaviarAiRequest = {
   userId: string;
   question: string;
@@ -41,4 +57,5 @@ export type KaviarAiToolResult = {
 export type KaviarAiResponse = {
   answer: string;
   toolsUsed: KaviarAiToolName[];
+  developmentProposal?: DevelopmentProposal;
 };

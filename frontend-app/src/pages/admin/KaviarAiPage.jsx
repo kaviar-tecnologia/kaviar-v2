@@ -274,6 +274,37 @@ export default function KaviarAiPage() {
     }
   };
 
+  const handleConfirmDevelopmentJob = async (jobId) => {
+    if (!isSuperAdmin || !jobId) return;
+
+    setActionLoading(true);
+    setError('');
+
+    try {
+      const confirmed = await confirmDevelopmentJob(jobId);
+
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.developmentProposal?.jobId === jobId
+            ? {
+                ...msg,
+                developmentProposal: {
+                  ...msg.developmentProposal,
+                  status: confirmed.status,
+                  confirmedAt: confirmed.confirmedAt,
+                },
+              }
+            : msg
+        )
+      );
+    } catch (err) {
+      const msg = err?.response?.data?.error || err?.message || 'Erro ao confirmar job de desenvolvimento.';
+      setError(msg);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleCreateManager = async () => {
     if (!isSuperAdmin || !managerDialog) return;
     const { name, email } = managerForm;
@@ -499,7 +530,12 @@ export default function KaviarAiPage() {
       const result = await askKaviarAi(question);
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: result.answer, toolsUsed: result.toolsUsed },
+        {
+          role: 'assistant',
+          content: result.answer,
+          toolsUsed: result.toolsUsed,
+          developmentProposal: result.developmentProposal,
+        },
       ]);
     } catch (err) {
       const status = err?.response?.status || err?.status;
@@ -781,6 +817,53 @@ export default function KaviarAiPage() {
                 >
                   {msg.content}
                 </Typography>
+
+                {/* Development Agent approval */}
+                {msg.developmentProposal && (
+                  <Box
+                    sx={{
+                      mt: 1.5,
+                      pt: 1.5,
+                      borderTop: '1px solid rgba(184,148,46,0.2)',
+                    }}
+                  >
+                    <Typography sx={{ color: '#B8942E', fontSize: 12, fontWeight: 600 }}>
+                      Proposta de desenvolvimento
+                    </Typography>
+
+                    <Typography sx={{ color: '#D1D5DB', fontSize: 12, mt: 0.5 }}>
+                      {msg.developmentProposal.category}
+                    </Typography>
+
+                    <Typography sx={{ color: '#9CA3AF', fontSize: 12, mt: 0.5 }}>
+                      {msg.developmentProposal.summary}
+                    </Typography>
+
+                    <Typography sx={{ color: '#6B7280', fontSize: 11, mt: 0.5 }}>
+                      Status: {msg.developmentProposal.status}
+                    </Typography>
+
+                    {msg.developmentProposal.status === 'AWAITING_SCOPE' && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        disabled={actionLoading}
+                        sx={{
+                          mt: 1,
+                          color: '#B8942E',
+                          borderColor: '#B8942E',
+                          fontSize: 11,
+                          textTransform: 'none',
+                        }}
+                        onClick={() =>
+                          handleConfirmDevelopmentJob(msg.developmentProposal.jobId)
+                        }
+                      >
+                        Confirmar execução
+                      </Button>
+                    )}
+                  </Box>
+                )}
 
                 {/* Tools used */}
                 {msg.toolsUsed && msg.toolsUsed.length > 0 && (
