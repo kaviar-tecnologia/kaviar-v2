@@ -5,6 +5,7 @@ on:
     paths:
       - 'frontend-app/**'
       - 'backend/src/**'
+      - 'backend/tests/**'
       - 'backend/prisma/**'
       - 'scripts/**'
       - '.github/workflows/finance-e2e-integrated.yml'
