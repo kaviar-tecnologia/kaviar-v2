@@ -348,4 +348,62 @@ describe('KAVIAR AI — Development Agent runner', () => {
     ).toHaveBeenCalledWith(job);
   });
 
+
+  it('preserves SUCCEEDED execution commit metadata without cleanup', async () => {
+    const job = {
+      id: 'job-runner-success-metadata',
+      category: 'FEATURE',
+      summary: 'Teste metadata de commit',
+      status: 'RUNNING' as const,
+      attempts: 1,
+      lockedBy: 'runner-test-worker',
+      startedAt: new Date(
+        '2026-08-18T10:00:00Z',
+      ),
+      lockedAt: new Date(
+        '2026-08-18T10:00:01Z',
+      ),
+    };
+
+    const cleanupExecution = vi.fn(
+      async () => {},
+    );
+
+    claimMock.mockResolvedValueOnce(job);
+
+    lifecycleMock.mockImplementationOnce(
+      async () => {
+        process.emit('SIGTERM');
+
+        return {
+          status: 'SUCCEEDED' as const,
+          finalization: {
+            changedPaths: [
+              'backend/src/services/example.ts',
+            ],
+            resultBranch:
+              'agent/job-runner-success-metadata',
+            resultCommitSha:
+              '5ca6ccca859994d4d176cbfff0fb7444a72ccab5',
+            resultSummary:
+              'Execução validada e commitada.',
+          },
+        };
+      },
+    );
+
+    await runDevelopmentAgentRunner({
+      execute: vi.fn(async () => {}),
+      cleanupExecution,
+    });
+
+    expect(
+      cleanupExecution,
+    ).not.toHaveBeenCalled();
+
+    expect(
+      lifecycleMock,
+    ).toHaveBeenCalledOnce();
+  });
+
 });
