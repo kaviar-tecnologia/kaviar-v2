@@ -10,7 +10,7 @@ const AI_BASE_PATH = '/api/admin/ai';
  * @returns {Promise<{ answer: string, toolsUsed: string[], developmentProposal: object|null }>}
  */
 export async function askKaviarAi(question) {
-  const response = await api.post(`${AI_BASE_PATH}/chat`, { question });
+  const response = await api.post(`${AI_BASE_PATH}/chat`, { question }, { timeout: 45000 });
 
   if (!response.data?.success) {
     const msg = response.data?.error || 'Erro desconhecido da KAVIAR IA.';
