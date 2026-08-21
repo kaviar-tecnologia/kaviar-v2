@@ -982,6 +982,7 @@ export async function askKaviarAi(
 ): Promise<KaviarAiResponse> {
   const question = request.question.trim();
   const role = request.role;
+  const history = request.history;
 
   // Fail-closed: role MUST come from the authenticated middleware, never body
   if (!role || !ALLOWED_CHAT_ROLES.has(role)) {
@@ -1059,6 +1060,7 @@ export async function askKaviarAi(
         documentType: draftingIntent.documentType,
         factualContext: factualContext.trim(),
         currentDate: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+        history,
       });
 
       return {
@@ -1079,7 +1081,7 @@ export async function askKaviarAi(
     // Generative fallback: only when mode is NOT 'rules' and provider supports it
     if (getRouterMode() !== 'rules' && provider && 'answerGeneral' in provider) {
       try {
-        const answer = await (provider as unknown as KaviarAiDraftingComposer).answerGeneral(question);
+        const answer = await (provider as unknown as KaviarAiDraftingComposer).answerGeneral(question, history);
         return { answer, toolsUsed: [] };
       } catch {
         return {
@@ -1199,7 +1201,7 @@ export async function askKaviarAi(
     const kData = knowledgeResultData as KnowledgeAnswerData | undefined;
     if (kData && kData.available && kData.noMatch) {
       try {
-        const answer = await (provider as unknown as KaviarAiDraftingComposer).answerGeneral(question);
+        const answer = await (provider as unknown as KaviarAiDraftingComposer).answerGeneral(question, history);
         return { answer, toolsUsed: [] };
       } catch {
         return {

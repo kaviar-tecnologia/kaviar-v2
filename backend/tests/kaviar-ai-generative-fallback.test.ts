@@ -160,7 +160,7 @@ describe('askKaviarAi — generative fallback (hybrid routing)', () => {
     expect(result.answer).toBe('A KAVIAR é uma plataforma de mobilidade comunitária.');
     expect(result.toolsUsed).toEqual([]);
     expect(mockProvider.answerGeneral).toHaveBeenCalledTimes(1);
-    expect(mockProvider.answerGeneral).toHaveBeenCalledWith('posso parcelar uma corrida no cartão?');
+    expect(mockProvider.answerGeneral).toHaveBeenCalledWith('posso parcelar uma corrida no cartão?', undefined);
     // compose should NOT be called (not drafting)
     expect(mockProvider.compose).not.toHaveBeenCalled();
   });

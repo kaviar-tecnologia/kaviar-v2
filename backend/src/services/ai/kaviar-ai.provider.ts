@@ -64,6 +64,8 @@ export interface KaviarAiDraftingContext {
   factualContext: string;
   /** Data atual do servidor em formato DD/MM/YYYY (America/Sao_Paulo) */
   currentDate: string;
+  /** Histórico conversacional recente (max 6 mensagens, opcional) */
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>;
 }
 
 /**
@@ -99,5 +101,5 @@ export interface KaviarAiDraftingComposer {
    * @returns Resposta textual read-only.
    * @throws se o provider não estiver disponível/configurado.
    */
-  answerGeneral(question: string): Promise<string>;
+  answerGeneral(question: string, history?: Array<{ role: 'user' | 'assistant'; content: string }>): Promise<string>;
 }

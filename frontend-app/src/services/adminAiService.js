@@ -7,10 +7,15 @@ const AI_BASE_PATH = '/api/admin/ai';
  * Somente leitura — não cria, altera ou exclui dados.
  *
  * @param {string} question - Pergunta do administrador (max 1000 chars)
+ * @param {{ role: string, content: string }[]} [history] - Histórico recente (max 6 mensagens)
  * @returns {Promise<{ answer: string, toolsUsed: string[], developmentProposal: object|null }>}
  */
-export async function askKaviarAi(question) {
-  const response = await api.post(`${AI_BASE_PATH}/chat`, { question }, { timeout: 45000 });
+export async function askKaviarAi(question, history) {
+  const body = { question };
+  if (Array.isArray(history) && history.length > 0) {
+    body.history = history;
+  }
+  const response = await api.post(`${AI_BASE_PATH}/chat`, body, { timeout: 45000 });
 
   if (!response.data?.success) {
     const msg = response.data?.error || 'Erro desconhecido da KAVIAR IA.';

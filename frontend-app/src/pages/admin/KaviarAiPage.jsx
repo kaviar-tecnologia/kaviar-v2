@@ -135,6 +135,8 @@ export default function KaviarAiPage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [processingStatus, setProcessingStatus] = useState('');
+  const processingTimerRef = useRef(null);
   const [showExtra, setShowExtra] = useState(false);
   const [managerDialog, setManagerDialog] = useState(null); // { territoryId, territoryName }
   const [managerForm, setManagerForm] = useState({ name: '', email: '' });
@@ -563,17 +565,73 @@ export default function KaviarAiPage() {
     }
   };
 
+  const PROCESSING_CYCLE_MESSAGES = [
+    'Consultando dados disponíveis...',
+    'Analisando informações...',
+    'Preparando resposta...',
+  ];
+
+  const getInitialProcessingStatus = (q) => {
+    const lower = q.toLowerCase();
+    if (lower.includes('cnpj') || lower.includes('razão social') || lower.includes('razao social') || lower.includes('dados da empresa') || lower.includes('capital social')) {
+      return 'Consultando dados institucionais da KAVIAR...';
+    }
+    if (lower.includes('regulat') || lower.includes('prefeitura') || lower.includes('cidade') || lower.includes('município') || lower.includes('municipio')) {
+      return 'Verificando informações regulatórias...';
+    }
+    if (lower.includes('ofício') || lower.includes('oficio') || lower.includes('e-mail') || lower.includes('email') || lower.includes('comunicado') || lower.includes('rascunho') || lower.includes('redija') || lower.includes('escreva') || lower.includes('prepare')) {
+      return 'Preparando rascunho...';
+    }
+    if (lower.includes('código') || lower.includes('codigo') || lower.includes('correção') || lower.includes('correcao') || lower.includes('bug') || lower.includes('feature') || lower.includes('endpoint') || lower.includes('refator')) {
+      return 'Analisando solicitação de desenvolvimento...';
+    }
+    return 'Entendendo sua solicitação...';
+  };
+
+  const startProcessingCycle = (question) => {
+    setProcessingStatus(getInitialProcessingStatus(question));
+    let cycleIndex = 0;
+    processingTimerRef.current = setInterval(() => {
+      setProcessingStatus(PROCESSING_CYCLE_MESSAGES[cycleIndex % PROCESSING_CYCLE_MESSAGES.length]);
+      cycleIndex++;
+    }, 4000);
+  };
+
+  const stopProcessingCycle = () => {
+    if (processingTimerRef.current) {
+      clearInterval(processingTimerRef.current);
+      processingTimerRef.current = null;
+    }
+    setProcessingStatus('');
+  };
+
   const handleSend = async (questionOverride) => {
     const question = (questionOverride || input).trim();
     if (!question || loading) return;
+
+    // Extract recent history (max 6 messages, text only) BEFORE adding new user message
+    const MAX_HISTORY = 6;
+    const MAX_HISTORY_CHARS = 4000;
+    const recentHistory = [];
+    let totalChars = 0;
+    const slice = messages.slice(-MAX_HISTORY);
+    for (const msg of slice) {
+      if ((msg.role === 'user' || msg.role === 'assistant') && msg.content) {
+        const content = msg.content.slice(0, 1000);
+        if (totalChars + content.length > MAX_HISTORY_CHARS) break;
+        recentHistory.push({ role: msg.role, content });
+        totalChars += content.length;
+      }
+    }
 
     setError('');
     setInput('');
     setMessages((prev) => [...prev, { role: 'user', content: question }]);
     setLoading(true);
+    startProcessingCycle(question);
 
     try {
-      const result = await askKaviarAi(question);
+      const result = await askKaviarAi(question, recentHistory);
       setMessages((prev) => [
         ...prev,
         {
@@ -602,6 +660,7 @@ export default function KaviarAiPage() {
       setMessages((prev) => prev.slice(0, -1));
     } finally {
       setLoading(false);
+      stopProcessingCycle();
     }
   };
 
@@ -1144,7 +1203,7 @@ export default function KaviarAiPage() {
               </Box>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <CircularProgress size={16} sx={{ color: '#B8942E' }} />
-                <Typography sx={{ color: '#6B7280', fontSize: 13 }}>Consultando...</Typography>
+                <Typography sx={{ color: '#6B7280', fontSize: 13 }}>{processingStatus || 'Consultando...'}</Typography>
               </Box>
             </Box>
           )}
