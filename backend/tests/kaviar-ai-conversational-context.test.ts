@@ -24,7 +24,7 @@ describe('askKaviarAi — conversational context', () => {
     delete process.env.KAVIAR_AI_ROUTER_MODE;
   });
 
-  it('assistente oferece checklist → usuário responde "quero" → modelo recebe contexto', async () => {
+  it('assistente oferece checklist → "quero" → modelo recebe instrução explícita de executar oferta', async () => {
     const mockProvider: KaviarAiModelProvider & { compose: any; answerGeneral: any } = {
       decide: vi.fn().mockResolvedValue({ toolsToCall: [] }),
       compose: vi.fn(),
@@ -43,13 +43,11 @@ describe('askKaviarAi — conversational context', () => {
 
     expect(result.answer).toContain('Checklist');
     expect(mockProvider.answerGeneral).toHaveBeenCalledTimes(1);
-    // Verify history was passed to answerGeneral
-    expect(mockProvider.answerGeneral).toHaveBeenCalledWith(
-      'quero',
-      expect.arrayContaining([
-        expect.objectContaining({ role: 'assistant', content: expect.stringContaining('checklist') }),
-      ]),
-    );
+    // Verify the FIRST argument is the deterministic instruction, not just "quero"
+    const passedQuestion = mockProvider.answerGeneral.mock.calls[0][0];
+    expect(passedQuestion).toContain('O usuário aceitou a última oferta textual do assistente');
+    expect(passedQuestion).toContain('Execute diretamente a oferta');
+    expect(passedQuestion).not.toBe('quero');
   });
 
   it('"continue" após resposta longa → modelo recebe histórico para entender referente', async () => {
@@ -275,7 +273,11 @@ describe('askKaviarAi — offer acceptance vs. continuation', () => {
     // Should produce the checklist directly
     expect(result.answer).toContain('Checklist');
     expect(mockProvider.answerGeneral).toHaveBeenCalledTimes(1);
-    // Verify history with the offer is passed
+    // Verify deterministic instruction was sent
+    const passedQuestion = mockProvider.answerGeneral.mock.calls[0][0];
+    expect(passedQuestion).toContain('O usuário aceitou a última oferta textual do assistente');
+    expect(passedQuestion).toContain('Execute diretamente a oferta');
+    // History with the offer is still passed
     const passedHistory = mockProvider.answerGeneral.mock.calls[0][1];
     expect(passedHistory).toBeDefined();
     expect(passedHistory[passedHistory.length - 1].content).toContain('posso transformar');
@@ -367,5 +369,78 @@ describe('sanitizeHistory — backend validation', () => {
     const history = [{ role: 'user', content: '  hello world  ' }];
     const result = sanitizeHistory(history)!;
     expect(result[0].content).toBe('hello world');
+  });
+});
+
+// ── resolveOfferAcceptance unit tests ─────────────────────────────────────
+
+import { resolveOfferAcceptance } from '../src/services/ai/kaviar-ai.service';
+
+describe('resolveOfferAcceptance — deterministic detection', () => {
+  it('detects "quero" after assistant offer with "posso transformar"', () => {
+    const history = [
+      { role: 'assistant' as const, content: 'Se quiser, posso transformar isso em um checklist.' },
+    ];
+    const result = resolveOfferAcceptance('quero', history);
+    expect(result).not.toBeNull();
+    expect(result).toContain('O usuário aceitou a última oferta textual');
+    expect(result).toContain('Execute diretamente');
+  });
+
+  it('detects "sim" after assistant offer with "posso montar"', () => {
+    const history = [
+      { role: 'assistant' as const, content: 'Posso montar um resumo. Quer?' },
+    ];
+    const result = resolveOfferAcceptance('sim', history);
+    expect(result).not.toBeNull();
+    expect(result).toContain('Execute diretamente');
+  });
+
+  it('does NOT detect "continue" as offer acceptance', () => {
+    const history = [
+      { role: 'assistant' as const, content: 'Posso criar um checklist. Quer?' },
+    ];
+    const result = resolveOfferAcceptance('continue', history);
+    expect(result).toBeNull();
+  });
+
+  it('does NOT detect "continua" as offer acceptance', () => {
+    const history = [
+      { role: 'assistant' as const, content: 'Posso gerar um relatório.' },
+    ];
+    const result = resolveOfferAcceptance('continua', history);
+    expect(result).toBeNull();
+  });
+
+  it('does NOT trigger when assistant message has no offer', () => {
+    const history = [
+      { role: 'assistant' as const, content: 'A KAVIAR opera em diversas cidades do Brasil.' },
+    ];
+    const result = resolveOfferAcceptance('quero', history);
+    expect(result).toBeNull();
+  });
+
+  it('does NOT trigger when question is not a short affirmative', () => {
+    const history = [
+      { role: 'assistant' as const, content: 'Posso transformar em checklist.' },
+    ];
+    const result = resolveOfferAcceptance('quais cidades vocês operam?', history);
+    expect(result).toBeNull();
+  });
+
+  it('returns null with empty history', () => {
+    expect(resolveOfferAcceptance('quero', [])).toBeNull();
+    expect(resolveOfferAcceptance('quero', undefined)).toBeNull();
+  });
+
+  it('uses the LAST assistant message for offer detection', () => {
+    const history = [
+      { role: 'assistant' as const, content: 'Posso criar algo.' },
+      { role: 'user' as const, content: 'outra coisa' },
+      { role: 'assistant' as const, content: 'Entendi, sem oferta aqui.' },
+    ];
+    const result = resolveOfferAcceptance('quero', history);
+    // Last assistant msg has no offer → null
+    expect(result).toBeNull();
   });
 });
