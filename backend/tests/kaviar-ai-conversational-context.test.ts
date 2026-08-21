@@ -45,8 +45,10 @@ describe('askKaviarAi — conversational context', () => {
     expect(mockProvider.answerGeneral).toHaveBeenCalledTimes(1);
     // Verify the FIRST argument is the deterministic instruction, not just "quero"
     const passedQuestion = mockProvider.answerGeneral.mock.calls[0][0];
-    expect(passedQuestion).toContain('O usuário aceitou a última oferta textual do assistente');
-    expect(passedQuestion).toContain('Execute diretamente a oferta');
+    expect(passedQuestion).toContain('O usuário aceitou esta oferta textual do assistente');
+    expect(passedQuestion).toContain('posso transformar isso em um checklist prático de abertura de operação');
+    expect(passedQuestion).toContain('Execute exatamente essa oferta');
+    expect(passedQuestion).toContain('Não resuma novamente');
     expect(passedQuestion).not.toBe('quero');
   });
 
@@ -273,10 +275,11 @@ describe('askKaviarAi — offer acceptance vs. continuation', () => {
     // Should produce the checklist directly
     expect(result.answer).toContain('Checklist');
     expect(mockProvider.answerGeneral).toHaveBeenCalledTimes(1);
-    // Verify deterministic instruction was sent
+    // Verify deterministic instruction contains the LITERAL offer
     const passedQuestion = mockProvider.answerGeneral.mock.calls[0][0];
-    expect(passedQuestion).toContain('O usuário aceitou a última oferta textual do assistente');
-    expect(passedQuestion).toContain('Execute diretamente a oferta');
+    expect(passedQuestion).toContain('O usuário aceitou esta oferta textual do assistente');
+    expect(passedQuestion).toContain('posso transformar isso em um checklist prático de abertura de cidade');
+    expect(passedQuestion).toContain('Execute exatamente essa oferta');
     // History with the offer is still passed
     const passedHistory = mockProvider.answerGeneral.mock.calls[0][1];
     expect(passedHistory).toBeDefined();
@@ -377,23 +380,29 @@ describe('sanitizeHistory — backend validation', () => {
 import { resolveOfferAcceptance } from '../src/services/ai/kaviar-ai.service';
 
 describe('resolveOfferAcceptance — deterministic detection', () => {
-  it('detects "quero" after assistant offer with "posso transformar"', () => {
+  it('detects "quero" after assistant offer — includes literal offer text', () => {
     const history = [
-      { role: 'assistant' as const, content: 'Se quiser, posso transformar isso em um checklist.' },
+      { role: 'assistant' as const, content: 'Se quiser, posso transformar isso em um checklist prático de abertura de cidade.' },
     ];
     const result = resolveOfferAcceptance('quero', history);
     expect(result).not.toBeNull();
-    expect(result).toContain('O usuário aceitou a última oferta textual');
-    expect(result).toContain('Execute diretamente');
+    expect(result).toContain('O usuário aceitou esta oferta textual do assistente');
+    // Must contain the LITERAL offer text
+    expect(result).toContain('posso transformar isso em um checklist prático de abertura de cidade');
+    expect(result).toContain('Execute exatamente essa oferta');
+    expect(result).toContain('Não resuma novamente');
+    expect(result).toContain('não repita a oferta');
   });
 
-  it('detects "sim" after assistant offer with "posso montar"', () => {
+  it('detects "sim" after assistant offer — includes literal offer text', () => {
     const history = [
-      { role: 'assistant' as const, content: 'Posso montar um resumo. Quer?' },
+      { role: 'assistant' as const, content: 'Posso montar um resumo executivo. Quer?' },
     ];
     const result = resolveOfferAcceptance('sim', history);
     expect(result).not.toBeNull();
-    expect(result).toContain('Execute diretamente');
+    // Must contain the literal offer
+    expect(result).toContain('Posso montar um resumo executivo.');
+    expect(result).toContain('Execute exatamente essa oferta');
   });
 
   it('does NOT detect "continue" as offer acceptance', () => {

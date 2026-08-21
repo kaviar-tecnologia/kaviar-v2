@@ -1030,8 +1030,14 @@ export function resolveOfferAcceptance(
   const hasOffer = OFFER_PATTERNS.some(p => lower.includes(p));
   if (!hasOffer) return null;
 
-  // Return explicit instruction to execute the offered action
-  return `O usuário aceitou a última oferta textual do assistente. Execute diretamente a oferta mais recente agora. Não repita a oferta nem apresente novas opções. Pedido original do usuário: "${question}"`;
+  // Extract the sentence containing the offer for explicit inclusion
+  const sentences = lastAssistant.content.split(/(?<=[.!?])\s+/);
+  const offerSentence = sentences.find(s =>
+    OFFER_PATTERNS.some(p => s.toLowerCase().includes(p))
+  ) || lastAssistant.content;
+
+  // Return explicit instruction with the literal offer text
+  return `O usuário aceitou esta oferta textual do assistente: "${offerSentence.trim()}" Execute exatamente essa oferta agora usando o conteúdo anterior da conversa como matéria-prima. Não resuma novamente, não repita a oferta e não apresente novas opções.`;
 }
 
 // ── Roles permitidas no Chat KAVIAR ─────────────────────────────────────
