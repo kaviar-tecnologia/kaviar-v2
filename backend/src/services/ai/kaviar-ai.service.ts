@@ -1106,6 +1106,7 @@ export async function askKaviarAi(
 
   const answers: string[] = [];
   const toolsUsed: KaviarAiToolName[] = [];
+  let knowledgeResultData: unknown = undefined;
 
   // Territorial tools need city/uf
   const territorialTools: KaviarAiToolName[] = [
@@ -1166,6 +1167,10 @@ export async function askKaviarAi(
     answers.push(formatted);
     toolsUsed.push(result.tool as KaviarAiToolName);
 
+    if (toolName === 'knowledge_answer') {
+      knowledgeResultData = result.data;
+    }
+
     // Auto-chain: if person_lookup found exactly 1 driver, also get driver_detail
     if (toolName === 'person_lookup') {
       const lookupData = result.data as any;
@@ -1176,6 +1181,31 @@ export async function askKaviarAi(
           answers.push(detailFormatter(detailResult.data));
           toolsUsed.push('driver_detail');
         }
+      }
+    }
+  }
+
+  // ── knowledge_answer noMatch fallback ───────────────────────────────────
+  // If the only tool was knowledge_answer and it found no approved content,
+  // fall back to answerGeneral in model mode (rules mode preserves current behavior).
+  if (
+    toolsUsed.length === 1 &&
+    toolsUsed[0] === 'knowledge_answer' &&
+    getRouterMode() !== 'rules' &&
+    provider && 'answerGeneral' in provider
+  ) {
+    // Structural check: noMatch === true means no approved articles found.
+    // available === false or noMatch === false means DB/tool error — do NOT fallback.
+    const kData = knowledgeResultData as KnowledgeAnswerData | undefined;
+    if (kData && kData.available && kData.noMatch) {
+      try {
+        const answer = await (provider as unknown as KaviarAiDraftingComposer).answerGeneral(question);
+        return { answer, toolsUsed: [] };
+      } catch {
+        return {
+          answer: 'Não foi possível processar a pergunta no momento. Tente novamente.',
+          toolsUsed: [],
+        };
       }
     }
   }

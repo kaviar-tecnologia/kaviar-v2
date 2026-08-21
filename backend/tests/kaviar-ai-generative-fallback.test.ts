@@ -262,3 +262,113 @@ describe('askKaviarAi — generative fallback (hybrid routing)', () => {
     expect(result.answer).toContain('Ainda não sei responder');
   });
 });
+
+// ── knowledge_answer noMatch → answerGeneral fallback ─────────────────────
+
+describe('askKaviarAi — knowledge_answer noMatch fallback', () => {
+  beforeEach(() => {
+    mockQuery.mockReset();
+  });
+
+  afterEach(() => {
+    mockQuery.mockReset();
+    delete process.env.KAVIAR_AI_ROUTER_MODE;
+  });
+
+  it('knowledge_answer encontra artigo aprovado + mode=model → resposta aprovada, answerGeneral 0 chamadas', async () => {
+    process.env.KAVIAR_AI_ROUTER_MODE = 'model';
+
+    // Simulate knowledge_answer finding an article (full-text search returns results)
+    mockQuery.mockResolvedValueOnce({
+      rows: [{
+        slug: 'visao-geral-kaviar',
+        title: 'Visão geral da KAVIAR',
+        version: 1,
+        content_md: 'A KAVIAR é uma plataforma brasileira de mobilidade comunitária.',
+        rank: 0.9,
+      }],
+    });
+
+    const mockProvider: KaviarAiModelProvider & { compose: any; answerGeneral: any } = {
+      decide: vi.fn(),
+      compose: vi.fn(),
+      answerGeneral: vi.fn(),
+    };
+
+    const result = await askKaviarAi(
+      { userId: 'admin-1', question: 'explique o processo de dispatch', role: 'SUPER_ADMIN' },
+      mockProvider,
+    );
+
+    // Should have used knowledge_answer tool and NOT called answerGeneral
+    expect(result.toolsUsed).toContain('knowledge_answer');
+    expect(mockProvider.answerGeneral).not.toHaveBeenCalled();
+    // The answer should contain the article content (either synthesized or raw snippet)
+    expect(result.answer).toContain('KAVIAR');
+  });
+
+  it('knowledge_answer sem resultado + mode=model → chama answerGeneral uma vez', async () => {
+    process.env.KAVIAR_AI_ROUTER_MODE = 'model';
+
+    // Simulate knowledge_answer finding no articles (empty result set)
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    const mockProvider: KaviarAiModelProvider & { compose: any; answerGeneral: any } = {
+      decide: vi.fn(),
+      compose: vi.fn(),
+      answerGeneral: vi.fn().mockResolvedValue('Resposta generativa sobre mobilidade urbana.'),
+    };
+
+    const result = await askKaviarAi(
+      { userId: 'admin-1', question: 'explique de forma simples quais são os cuidados ao iniciar operação em uma nova cidade', role: 'SUPER_ADMIN' },
+      mockProvider,
+    );
+
+    expect(result.answer).toBe('Resposta generativa sobre mobilidade urbana.');
+    expect(result.toolsUsed).toEqual([]);
+    expect(mockProvider.answerGeneral).toHaveBeenCalledTimes(1);
+  });
+
+  it('knowledge_answer sem resultado + mode=rules → mensagem atual, answerGeneral 0 chamadas', async () => {
+    process.env.KAVIAR_AI_ROUTER_MODE = 'rules';
+
+    // Simulate knowledge_answer finding no articles
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    const mockProvider: KaviarAiModelProvider & { compose: any; answerGeneral: any } = {
+      decide: vi.fn(),
+      compose: vi.fn(),
+      answerGeneral: vi.fn(),
+    };
+
+    const result = await askKaviarAi(
+      { userId: 'admin-1', question: 'explique algo conceitual sobre mobilidade', role: 'SUPER_ADMIN' },
+      mockProvider,
+    );
+
+    expect(result.answer).toContain('Não foi encontrada informação aprovada');
+    expect(mockProvider.answerGeneral).not.toHaveBeenCalled();
+  });
+
+  it('erro real de knowledge_answer (DB failure) → não mascara como vazio', async () => {
+    process.env.KAVIAR_AI_ROUTER_MODE = 'model';
+
+    // Simulate a real DB error
+    mockQuery.mockRejectedValueOnce(new Error('connection refused'));
+
+    const mockProvider: KaviarAiModelProvider & { compose: any; answerGeneral: any } = {
+      decide: vi.fn(),
+      compose: vi.fn(),
+      answerGeneral: vi.fn(),
+    };
+
+    const result = await askKaviarAi(
+      { userId: 'admin-1', question: 'explique algo conceitual', role: 'SUPER_ADMIN' },
+      mockProvider,
+    );
+
+    // Should return the DB error message, NOT call answerGeneral
+    expect(result.answer).toContain('não foi possível consultar');
+    expect(mockProvider.answerGeneral).not.toHaveBeenCalled();
+  });
+});
