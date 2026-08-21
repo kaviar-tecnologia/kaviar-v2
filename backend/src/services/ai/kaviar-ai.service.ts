@@ -972,6 +972,70 @@ function parseCompanySection(question: string): string {
 
 // ── Roles permitidas no Chat KAVIAR ─────────────────────────────────────────
 
+// ── Detecção determinística de aceitação de oferta ─────────────────────────
+
+const OFFER_PATTERNS = [
+  'posso transformar',
+  'posso montar',
+  'posso criar',
+  'posso resumir',
+  'posso gerar',
+  'posso preparar',
+  'posso fazer',
+  'posso elaborar',
+  'quer que eu faça',
+  'quer que eu monte',
+  'quer que eu crie',
+  'quer que eu prepare',
+  'quer que eu gere',
+  'quer que eu resuma',
+  'quer que eu transforme',
+];
+
+const AFFIRMATIVE_SHORT = new Set([
+  'quero', 'sim', 'pode', 'faça', 'faca', 'ok', 'por favor',
+  'pode sim', 'quero sim', 'sim por favor', 'claro', 'bora',
+  'manda', 'vai', 'show', 'perfeito', 'isso', 'gostaria',
+]);
+
+/**
+ * Detects when the user gives a short affirmative to the assistant's last explicit text offer.
+ * Returns an explicit instruction string if detected, or null otherwise.
+ * This makes the intent deterministic rather than relying on model interpretation.
+ *
+ * Does NOT apply to: "continue", "continua" (those mean continuation).
+ */
+export function resolveOfferAcceptance(
+  question: string,
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>
+): string | null {
+  if (!history || history.length === 0) return null;
+
+  const q = question.trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  // "continue/continua" is NOT offer acceptance
+  if (q === 'continue' || q === 'continua' || q === 'prossiga') return null;
+
+  // Check if question is a short affirmative
+  if (!AFFIRMATIVE_SHORT.has(q)) return null;
+
+  // Find the last assistant message
+  const lastAssistant = [...history].reverse().find(m => m.role === 'assistant');
+  if (!lastAssistant) return null;
+
+  const lower = lastAssistant.content.toLowerCase();
+
+  // Check if the assistant's message contains an explicit offer
+  const hasOffer = OFFER_PATTERNS.some(p => lower.includes(p));
+  if (!hasOffer) return null;
+
+  // Return explicit instruction to execute the offered action
+  return `O usuário aceitou a última oferta textual do assistente. Execute diretamente a oferta mais recente agora. Não repita a oferta nem apresente novas opções. Pedido original do usuário: "${question}"`;
+}
+
+// ── Roles permitidas no Chat KAVIAR ─────────────────────────────────────
+
 const ALLOWED_CHAT_ROLES = new Set(['SUPER_ADMIN', 'FINANCE']);
 
 // ── Função principal ───────────────────────────────────────────────────────
@@ -1081,7 +1145,8 @@ export async function askKaviarAi(
     // Generative fallback: only when mode is NOT 'rules' and provider supports it
     if (getRouterMode() !== 'rules' && provider && 'answerGeneral' in provider) {
       try {
-        const answer = await (provider as unknown as KaviarAiDraftingComposer).answerGeneral(question, history);
+        const effectiveQuestion = resolveOfferAcceptance(question, history) ?? question;
+        const answer = await (provider as unknown as KaviarAiDraftingComposer).answerGeneral(effectiveQuestion, history);
         return { answer, toolsUsed: [] };
       } catch {
         return {
@@ -1201,7 +1266,8 @@ export async function askKaviarAi(
     const kData = knowledgeResultData as KnowledgeAnswerData | undefined;
     if (kData && kData.available && kData.noMatch) {
       try {
-        const answer = await (provider as unknown as KaviarAiDraftingComposer).answerGeneral(question, history);
+        const effectiveQuestion = resolveOfferAcceptance(question, history) ?? question;
+        const answer = await (provider as unknown as KaviarAiDraftingComposer).answerGeneral(effectiveQuestion, history);
         return { answer, toolsUsed: [] };
       } catch {
         return {
