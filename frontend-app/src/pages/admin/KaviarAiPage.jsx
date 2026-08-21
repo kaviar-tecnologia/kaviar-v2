@@ -192,6 +192,50 @@ export default function KaviarAiPage() {
     return () => clearInterval(interval);
   }, [selectedJob?.id, selectedJob?.status, pollSelectedJob]);
 
+  // Poll developmentProposal jobs in chat messages to detect state transitions
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+
+    const NON_TERMINAL = ['AWAITING_SCOPE', 'AWAITING_CONFIRMATION', 'QUEUED', 'RUNNING'];
+
+    const pollProposals = async () => {
+      const currentMessages = messagesRef.current;
+      const activeProposals = currentMessages
+        .filter((m) => m.developmentProposal && NON_TERMINAL.includes(m.developmentProposal.status))
+        .map((m) => m.developmentProposal);
+
+      for (const proposal of activeProposals) {
+        try {
+          const job = await getDevJob(proposal.jobId);
+          if (job.status !== proposal.status) {
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.developmentProposal?.jobId === proposal.jobId
+                  ? {
+                      ...msg,
+                      developmentProposal: {
+                        ...msg.developmentProposal,
+                        status: job.status,
+                        allowedPaths: job.allowedPaths,
+                      },
+                    }
+                  : msg
+              )
+            );
+          }
+        } catch {
+          // ignore individual poll errors
+        }
+      }
+    };
+
+    const interval = setInterval(pollProposals, 8000);
+    return () => clearInterval(interval);
+  }, [isSuperAdmin]);
+
   // Poll selected job detail
   const pollSelectedJob = useCallback(async (jobId) => {
     try {
@@ -281,7 +325,7 @@ export default function KaviarAiPage() {
     setError('');
 
     try {
-      const confirmed = await confirmDevelopmentJob(jobId);
+      const confirmed = await confirmDevJob(jobId);
 
       setMessages((prev) =>
         prev.map((msg) =>
@@ -297,6 +341,8 @@ export default function KaviarAiPage() {
             : msg
         )
       );
+      // Also refresh the jobs panel
+      await fetchDevJobs();
     } catch (err) {
       const msg = err?.response?.data?.error || err?.message || 'Erro ao confirmar job de desenvolvimento.';
       setError(msg);
@@ -840,10 +886,19 @@ export default function KaviarAiPage() {
                     </Typography>
 
                     <Typography sx={{ color: '#6B7280', fontSize: 11, mt: 0.5 }}>
-                      Status: {msg.developmentProposal.status}
+                      Status: {formatDevJobStatus(msg.developmentProposal.status)}
                     </Typography>
 
                     {msg.developmentProposal.status === 'AWAITING_SCOPE' && (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
+                        <CircularProgress size={12} sx={{ color: '#B8942E' }} />
+                        <Typography sx={{ color: '#B8942E', fontSize: 11 }}>
+                          Analisando escopo...
+                        </Typography>
+                      </Box>
+                    )}
+
+                    {msg.developmentProposal.status === 'AWAITING_CONFIRMATION' && (
                       <Button
                         size="small"
                         variant="outlined"
@@ -861,6 +916,39 @@ export default function KaviarAiPage() {
                       >
                         Confirmar execução
                       </Button>
+                    )}
+
+                    {msg.developmentProposal.status === 'QUEUED' && (
+                      <Typography sx={{ color: '#6B7280', fontSize: 11, mt: 1 }}>
+                        Aguardando runner...
+                      </Typography>
+                    )}
+
+                    {msg.developmentProposal.status === 'RUNNING' && (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
+                        <CircularProgress size={12} sx={{ color: '#60A5FA' }} />
+                        <Typography sx={{ color: '#60A5FA', fontSize: 11 }}>
+                          Executando...
+                        </Typography>
+                      </Box>
+                    )}
+
+                    {msg.developmentProposal.status === 'SUCCEEDED' && (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
+                        <CheckCircle sx={{ fontSize: 14, color: '#34D399' }} />
+                        <Typography sx={{ color: '#34D399', fontSize: 11 }}>
+                          Concluído
+                        </Typography>
+                      </Box>
+                    )}
+
+                    {msg.developmentProposal.status === 'FAILED' && (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
+                        <ErrorIcon sx={{ fontSize: 14, color: '#FCA5A5' }} />
+                        <Typography sx={{ color: '#FCA5A5', fontSize: 11 }}>
+                          Falhou
+                        </Typography>
+                      </Box>
                     )}
                   </Box>
                 )}

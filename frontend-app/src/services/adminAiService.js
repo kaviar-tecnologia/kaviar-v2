@@ -7,7 +7,7 @@ const AI_BASE_PATH = '/api/admin/ai';
  * Somente leitura — não cria, altera ou exclui dados.
  *
  * @param {string} question - Pergunta do administrador (max 1000 chars)
- * @returns {Promise<{ answer: string, toolsUsed: string[] }>}
+ * @returns {Promise<{ answer: string, toolsUsed: string[], developmentProposal: object|null }>}
  */
 export async function askKaviarAi(question) {
   const response = await api.post(`${AI_BASE_PATH}/chat`, { question });
@@ -29,7 +29,7 @@ export async function askKaviarAi(question) {
 // ── Development Jobs API ─────────────────────────────────────────────────────
 
 /**
- * Lista development jobs ativos.
+ * Lista development jobs ativos (AWAITING_SCOPE, AWAITING_CONFIRMATION, QUEUED, RUNNING).
  * @returns {Promise<Array>}
  */
 export async function listDevJobs() {
@@ -55,34 +55,20 @@ export async function getDevJob(id) {
 
 /**
  * Confirma execução de um development job em AWAITING_CONFIRMATION.
+ * O backend valida que o job está em AWAITING_CONFIRMATION e transiciona para QUEUED.
+ * Não requer body — autenticação e RBAC são suficientes.
+ *
  * @param {string} id
  * @returns {Promise<Object>}
  */
 export async function confirmDevJob(id) {
-  const response = await api.post(`${AI_BASE_PATH}/dev-jobs/${id}/confirm`, {
-    confirmation: 'CONFIRMAR_EXECUCAO',
-  });
-  if (!response.data?.success) {
-    throw new Error(response.data?.error || 'Erro ao confirmar dev job.');
-  }
-  return response.data.data;
-}
-
-/**
- * Confirma execução de um job de desenvolvimento.
- *
- * @param {string} jobId
- */
-export async function confirmDevelopmentJob(jobId) {
-  const response = await api.post(`${AI_BASE_PATH}/dev-jobs/${jobId}/confirm`);
-
+  const response = await api.post(`${AI_BASE_PATH}/dev-jobs/${id}/confirm`);
   if (!response.data?.success) {
     const msg = response.data?.error || 'Erro ao confirmar job de desenvolvimento.';
     const err = new Error(msg);
     err.status = response.status;
     throw err;
   }
-
   return response.data.data;
 }
 
