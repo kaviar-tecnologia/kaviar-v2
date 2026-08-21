@@ -62,6 +62,8 @@ export interface KaviarAiDraftingContext {
   documentType: string;
   /** Dados factuais obtidos das ferramentas, já formatados como texto */
   factualContext: string;
+  /** Data atual do servidor em formato DD/MM/YYYY (America/Sao_Paulo) */
+  currentDate: string;
 }
 
 /**

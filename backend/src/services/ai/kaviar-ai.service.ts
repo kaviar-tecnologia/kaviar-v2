@@ -1058,6 +1058,7 @@ export async function askKaviarAi(
         question,
         documentType: draftingIntent.documentType,
         factualContext: factualContext.trim(),
+        currentDate: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
       });
 
       return {
