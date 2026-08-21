@@ -629,7 +629,7 @@ jobs:
           set -euo pipefail
 
           echo "== npm ci =="
-          timeout 10m npm ci
+          timeout 10m npm ci --foreground-scripts
 
           echo "== prisma generate =="
           timeout 2m ./node_modules/.bin/prisma generate --schema=prisma/schema.prisma
