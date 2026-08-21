@@ -170,6 +170,48 @@ describe('askKaviarAi — drafting integration', () => {
       expect.objectContaining({
         question: 'prepare um ofício',
         documentType: 'oficio',
+        currentDate: expect.stringMatching(/^\d{2}\/\d{2}\/\d{4}$/),
+      }),
+    );
+  });
+
+  it('"prepare um ofício" passes current date and keeps [COMPLETAR] for missing info', async () => {
+    const mockProvider: KaviarAiModelProvider & { compose: any } = {
+      decide: vi.fn(),
+      compose: vi.fn().mockResolvedValue('drafted text'),
+    };
+
+    await askKaviarAi(
+      { userId: 'admin-1', question: 'prepare um ofício da KAVIAR', role: 'SUPER_ADMIN' },
+      mockProvider,
+    );
+
+    // currentDate must be today in DD/MM/YYYY
+    const today = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    expect(mockProvider.compose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentDate: today,
+      }),
+    );
+  });
+
+  it('"prepare um ofício para a Prefeitura de Campinas/SP" passes user-provided info in question', async () => {
+    const mockProvider: KaviarAiModelProvider & { compose: any } = {
+      decide: vi.fn(),
+      compose: vi.fn().mockResolvedValue('Ofício para Campinas/SP'),
+    };
+
+    await askKaviarAi(
+      { userId: 'admin-1', question: 'prepare um ofício para a Prefeitura de Campinas/SP', role: 'SUPER_ADMIN' },
+      mockProvider,
+    );
+
+    // The question with explicit destination is passed to compose
+    expect(mockProvider.compose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        question: 'prepare um ofício para a Prefeitura de Campinas/SP',
+        documentType: 'oficio',
+        currentDate: expect.stringMatching(/^\d{2}\/\d{2}\/\d{4}$/),
       }),
     );
   });
@@ -322,6 +364,7 @@ describe('askKaviarAi — drafting integration', () => {
         question: 'prepare um ofício com os dados da empresa KAVIAR',
         documentType: 'oficio',
         factualContext: expect.stringContaining('67.783.601/0001-99'),
+        currentDate: expect.stringMatching(/^\d{2}\/\d{2}\/\d{4}$/),
       }),
     );
   });
