@@ -690,12 +690,16 @@ export default function KaviarAiPage() {
                     </Typography>
                   </Box>
                 )}
-                {selectedJob.status === 'AWAITING_CONFIRMATION' && selectedJob.scope_summary && (
+                {selectedJob.status === 'AWAITING_CONFIRMATION' && (
                   <Box sx={{ mt: 1 }}>
-                    <Typography sx={{ color: '#9CA3AF', fontSize: 11, mb: 0.5 }}>Escopo:</Typography>
-                    <Typography sx={{ color: '#E5E7EB', fontSize: 12, whiteSpace: 'pre-wrap', mb: 1 }}>
-                      {selectedJob.scope_summary}
-                    </Typography>
+                    {selectedJob.scope_summary && (
+                      <>
+                        <Typography sx={{ color: '#9CA3AF', fontSize: 11, mb: 0.5 }}>Escopo:</Typography>
+                        <Typography sx={{ color: '#E5E7EB', fontSize: 12, whiteSpace: 'pre-wrap', mb: 1 }}>
+                          {selectedJob.scope_summary}
+                        </Typography>
+                      </>
+                    )}
                     <Button
                       size="small"
                       variant="outlined"
