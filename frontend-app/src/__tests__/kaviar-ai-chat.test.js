@@ -192,6 +192,55 @@ describe('adminAiService — integração com endpoint', () => {
   });
 });
 
+describe('KaviarAiPage — Processing Status UX', () => {
+  const src = readFileSync(resolve(__dirname, '../pages/admin/KaviarAiPage.jsx'), 'utf8');
+
+  it('processingStatus state exists and is shown during loading', () => {
+    expect(src).toContain('processingStatus');
+    expect(src).toContain('setProcessingStatus');
+    expect(src).toContain("processingStatus || 'Consultando...'");
+  });
+
+  it('specific status for regulatório/cidade', () => {
+    expect(src).toContain('Verificando informações regulatórias...');
+  });
+
+  it('specific status for drafting', () => {
+    expect(src).toContain('Preparando rascunho...');
+  });
+
+  it('specific status for development', () => {
+    expect(src).toContain('Analisando solicitação de desenvolvimento...');
+  });
+
+  it('specific status for institutional data', () => {
+    expect(src).toContain('Consultando dados institucionais da KAVIAR...');
+  });
+
+  it('generic fallback status', () => {
+    expect(src).toContain('Entendendo sua solicitação...');
+  });
+
+  it('status disappears after completion (stopProcessingCycle in finally)', () => {
+    expect(src).toContain('stopProcessingCycle');
+    // Verify stopProcessingCycle is called in the finally block
+    expect(src).toMatch(/finally\s*\{[^}]*stopProcessingCycle/s);
+  });
+
+  it('cycling messages exist for ongoing processing', () => {
+    expect(src).toContain('Consultando dados disponíveis...');
+    expect(src).toContain('Analisando informações...');
+    expect(src).toContain('Preparando resposta...');
+  });
+
+  it('does not expose internal reasoning or secrets', () => {
+    expect(src).not.toContain('chain-of-thought');
+    expect(src).not.toContain('prompt');
+    expect(src).not.toContain('SQL');
+    expect(src).not.toContain('DATABASE_URL');
+  });
+});
+
 describe('AdminApp — rota e menu Chat KAVIAR', () => {
   const src = readFileSync(resolve(__dirname, '../components/admin/AdminApp.jsx'), 'utf8');
 
