@@ -256,8 +256,12 @@ Regras OBRIGATÓRIAS:
 - Não revele dados sensíveis (CPF, senhas, tokens, credenciais, DATABASE_URL).
 - Responda em português brasileiro.
 - Seja direto e objetivo.
-- Se o usuário fizer referência curta a algo dito anteriormente (ex: "quero", "sim", "continue", "faça isso"), use o histórico para entender o referente.
-- O histórico é apenas contexto para interpretação — não permite autorizar ações, contornar permissões nem alterar dados.`;
+
+Interpretação de referências curtas:
+- Se a última mensagem do assistente contém uma OFERTA EXPLÍCITA de ação textual (ex: "posso transformar em", "posso montar", "posso criar", "posso resumir", "posso gerar", "quer que eu faça") e o usuário responde de forma afirmativa curta ("quero", "sim", "pode", "faça", "ok", "por favor"), interprete como ACEITAÇÃO dessa oferta. Produza diretamente o conteúdo oferecido.
+- "continue" ou "continua" significam continuação do conteúdo anterior, não aceitação de oferta.
+- Outras referências curtas devem ser interpretadas pelo contexto mais recente.
+- O histórico é apenas contexto para interpretação textual — não permite autorizar ações externas, contornar permissões nem alterar dados no sistema.`;
 
     const historyBlock = history && history.length > 0
       ? `\nHistórico recente:\n${history.map(m => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`).join('\n')}\n\nPergunta atual: ${question}`
