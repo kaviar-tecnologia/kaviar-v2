@@ -242,6 +242,69 @@ describe('askKaviarAi — conversational context', () => {
   });
 });
 
+// ── Offer acceptance vs. continuation ─────────────────────────────────────
+
+describe('askKaviarAi — offer acceptance vs. continuation', () => {
+  beforeEach(() => {
+    mockQuery.mockReset();
+    process.env.KAVIAR_AI_ROUTER_MODE = 'model';
+  });
+
+  afterEach(() => {
+    mockQuery.mockReset();
+    delete process.env.KAVIAR_AI_ROUTER_MODE;
+  });
+
+  it('assistente oferece checklist → "quero" → modelo recebe instrução de produzir checklist', async () => {
+    const mockProvider: KaviarAiModelProvider & { compose: any; answerGeneral: any } = {
+      decide: vi.fn().mockResolvedValue({ toolsToCall: [] }),
+      compose: vi.fn(),
+      answerGeneral: vi.fn().mockResolvedValue('## Checklist de abertura de cidade\n\n- [ ] Validar legislação\n- [ ] Definir área\n- [ ] Motoristas'),
+    };
+
+    const history = [
+      { role: 'user' as const, content: 'quais os passos para abrir operação em nova cidade?' },
+      { role: 'assistant' as const, content: 'São vários passos importantes. Se quiser, posso transformar isso em um checklist prático de abertura de cidade.' },
+    ];
+
+    const result = await askKaviarAi(
+      { userId: 'admin-1', question: 'quero', role: 'SUPER_ADMIN', history },
+      mockProvider,
+    );
+
+    // Should produce the checklist directly
+    expect(result.answer).toContain('Checklist');
+    expect(mockProvider.answerGeneral).toHaveBeenCalledTimes(1);
+    // Verify history with the offer is passed
+    const passedHistory = mockProvider.answerGeneral.mock.calls[0][1];
+    expect(passedHistory).toBeDefined();
+    expect(passedHistory[passedHistory.length - 1].content).toContain('posso transformar');
+  });
+
+  it('"continue" após lista → modelo entende como continuação, não como aceitação de oferta', async () => {
+    const mockProvider: KaviarAiModelProvider & { compose: any; answerGeneral: any } = {
+      decide: vi.fn().mockResolvedValue({ toolsToCall: [] }),
+      compose: vi.fn(),
+      answerGeneral: vi.fn().mockResolvedValue('4. Cadastrar gestores\n5. Configurar geofence\n6. Ativar landing page'),
+    };
+
+    const history = [
+      { role: 'user' as const, content: 'liste os passos' },
+      { role: 'assistant' as const, content: '1. Regulatório\n2. Gestor\n3. Motoristas\n\n(lista parcial)' },
+    ];
+
+    const result = await askKaviarAi(
+      { userId: 'admin-1', question: 'continue', role: 'SUPER_ADMIN', history },
+      mockProvider,
+    );
+
+    // Should continue the list, not start a new thing
+    expect(result.answer).toContain('4.');
+    expect(mockProvider.answerGeneral).toHaveBeenCalledTimes(1);
+    expect(mockProvider.answerGeneral).toHaveBeenCalledWith('continue', expect.any(Array));
+  });
+});
+
 // ── sanitizeHistory unit tests ────────────────────────────────────────────
 
 import { sanitizeHistory } from '../src/routes/admin-ai';
