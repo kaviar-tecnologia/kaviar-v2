@@ -3,6 +3,8 @@ import type {
   KaviarAiModelProvider,
   KaviarAiModelContext,
   KaviarAiModelDecision,
+  KaviarAiDraftingComposer,
+  KaviarAiDraftingContext,
 } from './kaviar-ai.provider';
 
 /**
@@ -78,7 +80,7 @@ const DECISION_JSON_SCHEMA = {
  * - No máximo 1 retry automático;
  * - Saída limitada a 256 tokens.
  */
-export class OpenAiProvider implements KaviarAiModelProvider {
+export class OpenAiProvider implements KaviarAiModelProvider, KaviarAiDraftingComposer {
   private client: OpenAI;
   private model: string;
   private maxOutputTokens: number;
@@ -166,6 +168,66 @@ Decida quais ferramentas devem ser chamadas.`;
     // A validação runtime completa é feita pelo router (validateModelDecision).
     // Aqui retornamos o parsed diretamente — o router garante fail-closed.
     return parsed as KaviarAiModelDecision;
+  }
+
+  // ── Drafting Composer ───────────────────────────────────────────────────
+
+  async compose(context: KaviarAiDraftingContext): Promise<string> {
+    const instructions = `Você é o redator interno da KAVIAR — plataforma brasileira de mobilidade comunitária.
+
+Sua ÚNICA responsabilidade é redigir o texto solicitado pelo usuário usando os dados factuais fornecidos.
+
+Regras:
+- Redija o texto no formato solicitado (ofício, e-mail, comunicado, carta, notificação, relatório).
+- Use APENAS dados factuais fornecidos no contexto. Nunca invente dados, números, CNPJs ou nomes.
+- Se dados insuficientes forem fornecidos, indique [COMPLETAR] nos campos que precisam ser preenchidos.
+- O texto é um RASCUNHO para revisão humana. Deixe claro ao final: "--- Rascunho gerado pela KAVIAR IA. Revisar antes de uso."
+- Não envie e-mail, não crie registro, não altere banco, não execute NENHUMA ação.
+- Não inclua dados sensíveis (CPF, senha, token, credencial).
+- Responda em português brasileiro formal.`;
+
+    const userInput = `Pedido do usuário: "${context.question}"
+
+Tipo de documento: ${context.documentType}
+
+Dados factuais disponíveis:
+${context.factualContext || '(nenhum dado factual adicional disponível)'}
+
+Redija o texto solicitado.`;
+
+    const response = await this.client.responses.create({
+      model: this.model,
+      instructions,
+      input: userInput,
+      reasoning: {
+        effort: 'medium',
+      },
+      max_output_tokens: 2048,
+      store: false,
+    });
+
+    if (response.status === 'incomplete') {
+      const reason = response.incomplete_details?.reason ?? 'unknown';
+      throw new Error(
+        `[kaviar-ai-openai] Composição incompleta (reason: ${reason}).`
+      );
+    }
+
+    if (response.status === 'failed') {
+      throw new Error(
+        '[kaviar-ai-openai] O modelo falhou ao gerar a composição.'
+      );
+    }
+
+    const outputText = response.output_text;
+
+    if (!outputText) {
+      throw new Error(
+        '[kaviar-ai-openai] Resposta vazia do modelo. Nenhuma composição disponível.'
+      );
+    }
+
+    return outputText;
   }
 }
 

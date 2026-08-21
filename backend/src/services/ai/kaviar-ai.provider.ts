@@ -46,3 +46,41 @@ export interface KaviarAiModelProvider {
    */
   decide(context: KaviarAiModelContext): Promise<KaviarAiModelDecision>;
 }
+
+// ── Drafting Composer (contrato separado, não altera KaviarAiModelProvider) ──
+
+/**
+ * Contexto fornecido ao composer para geração de texto de redação.
+ *
+ * NUNCA deve conter: DATABASE_URL, JWT_SECRET, senhas, tokens,
+ * credenciais, chaves privadas ou dados sensíveis de infraestrutura.
+ */
+export interface KaviarAiDraftingContext {
+  /** Pedido original do usuário (ex: "prepare um ofício...") */
+  question: string;
+  /** Tipo de documento solicitado */
+  documentType: string;
+  /** Dados factuais obtidos das ferramentas, já formatados como texto */
+  factualContext: string;
+}
+
+/**
+ * Interface para composição de textos (drafting).
+ *
+ * Contrato separado de KaviarAiModelProvider para não quebrar
+ * implementações e mocks existentes que só implementam decide().
+ *
+ * Responsabilidades:
+ * - Gerar texto de redação usando contexto factual como base;
+ * - NÃO executar ações externas (enviar e-mail, criar registro, etc.);
+ * - NÃO inventar dados factuais — usar apenas o que foi fornecido.
+ */
+export interface KaviarAiDraftingComposer {
+  /**
+   * Compõe um texto (rascunho) a partir do pedido e do contexto factual.
+   *
+   * @returns Texto redigido pronto para revisão humana.
+   * @throws se o provider não estiver disponível/configurado.
+   */
+  compose(context: KaviarAiDraftingContext): Promise<string>;
+}
