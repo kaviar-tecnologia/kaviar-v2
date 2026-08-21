@@ -2,6 +2,8 @@
 Description=KAVIAR Development Agent Runner
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -19,14 +21,13 @@ Environment=DEVELOPMENT_AGENT_PUBLISH_ENABLED=false
 Environment=DEVELOPMENT_AGENT_WORKER_INTERVAL_MS=30000
 Environment=DEVELOPMENT_AGENT_WORKER_ENABLED=true
 Environment=NODE_ENV=production
+Environment=PATH=/home/ubuntu/.nvm/versions/node/v22.23.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-ExecStart=/usr/bin/npx tsx scripts/development-agent/run_agent.ts
+ExecStart=/home/ubuntu/.nvm/versions/node/v22.23.2/bin/npx tsx scripts/development-agent/run_agent.ts
 
 # Restart on failure with backoff
 Restart=on-failure
 RestartSec=10
-StartLimitIntervalSec=300
-StartLimitBurst=5
 
 # Resource limits
 LimitNOFILE=65536
