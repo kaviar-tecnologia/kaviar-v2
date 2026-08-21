@@ -567,13 +567,28 @@ export default function KaviarAiPage() {
     const question = (questionOverride || input).trim();
     if (!question || loading) return;
 
+    // Extract recent history (max 6 messages, text only) BEFORE adding new user message
+    const MAX_HISTORY = 6;
+    const MAX_HISTORY_CHARS = 4000;
+    const recentHistory = [];
+    let totalChars = 0;
+    const slice = messages.slice(-MAX_HISTORY);
+    for (const msg of slice) {
+      if ((msg.role === 'user' || msg.role === 'assistant') && msg.content) {
+        const content = msg.content.slice(0, 1000);
+        if (totalChars + content.length > MAX_HISTORY_CHARS) break;
+        recentHistory.push({ role: msg.role, content });
+        totalChars += content.length;
+      }
+    }
+
     setError('');
     setInput('');
     setMessages((prev) => [...prev, { role: 'user', content: question }]);
     setLoading(true);
 
     try {
-      const result = await askKaviarAi(question);
+      const result = await askKaviarAi(question, recentHistory);
       setMessages((prev) => [
         ...prev,
         {

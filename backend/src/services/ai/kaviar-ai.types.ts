@@ -47,6 +47,7 @@ export type KaviarAiRequest = {
   userId: string;
   question: string;
   role: string;
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>;
 };
 
 export type KaviarAiToolResult = {

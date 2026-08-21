@@ -37,6 +37,39 @@ function generateSecurePassword(): string {
   return chars.join('');
 }
 
+const MAX_HISTORY_ITEMS = 6;
+const MAX_HISTORY_CONTENT_LENGTH = 1000;
+
+/**
+ * Validates and sanitizes conversation history from the client.
+ * Returns undefined if input is invalid or empty.
+ * Strips any fields beyond role/content. Enforces limits.
+ */
+function sanitizeHistory(
+  raw: unknown
+): Array<{ role: 'user' | 'assistant'; content: string }> | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+
+  const result: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+
+  for (const item of raw.slice(-MAX_HISTORY_ITEMS)) {
+    if (
+      item &&
+      typeof item === 'object' &&
+      (item.role === 'user' || item.role === 'assistant') &&
+      typeof item.content === 'string' &&
+      item.content.trim().length > 0
+    ) {
+      result.push({
+        role: item.role,
+        content: item.content.trim().slice(0, MAX_HISTORY_CONTENT_LENGTH),
+      });
+    }
+  }
+
+  return result.length > 0 ? result : undefined;
+}
+
 
 function toCityLandingSlug(city: string, uf: string): string {
   return `${city}-${uf}`
@@ -85,6 +118,7 @@ router.post('/chat', async (req: Request, res: Response) => {
       userId: admin.id,
       question,
       role: admin.role,
+      history: sanitizeHistory(req.body?.history),
     }, modelProvider);
 
     const responsePayload: Record<string, any> = {
