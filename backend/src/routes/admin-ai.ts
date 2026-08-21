@@ -129,6 +129,37 @@ router.post('/chat', async (req: Request, res: Response) => {
 });
 
 
+// ── Development Agent: listagem de jobs ativos ──────────────────────────────
+router.get('/dev-jobs', requireSuperAdmin, async (_req: Request, res: Response) => {
+  try {
+    const jobs = await prisma.development_jobs.findMany({
+      where: {
+        status: { in: ['AWAITING_SCOPE', 'AWAITING_CONFIRMATION', 'QUEUED', 'RUNNING'] },
+      },
+      orderBy: { created_at: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        category: true,
+        summary: true,
+        status: true,
+        created_at: true,
+        scope_resolved_at: true,
+        confirmed_at: true,
+        error_message: true,
+      },
+    });
+
+    return res.json({ success: true, data: jobs });
+  } catch (error) {
+    console.error('[KAVIAR_AI_DEV_JOBS_LIST] Erro ao listar jobs');
+    return res.status(500).json({
+      success: false,
+      error: 'Não foi possível listar jobs de desenvolvimento.',
+    });
+  }
+});
+
 // ── Development Agent: consulta de status/resultado ─────────────────────────
 router.get('/dev-jobs/:id', requireSuperAdmin, async (req: Request, res: Response) => {
   try {
