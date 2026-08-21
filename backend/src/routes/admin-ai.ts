@@ -39,18 +39,21 @@ function generateSecurePassword(): string {
 
 const MAX_HISTORY_ITEMS = 6;
 const MAX_HISTORY_CONTENT_LENGTH = 1000;
+const MAX_HISTORY_TOTAL_LENGTH = 4000;
 
 /**
  * Validates and sanitizes conversation history from the client.
  * Returns undefined if input is invalid or empty.
  * Strips any fields beyond role/content. Enforces limits.
+ * Preserves most recent messages when total length exceeds MAX_HISTORY_TOTAL_LENGTH.
+ * @internal Exported for testing only.
  */
-function sanitizeHistory(
+export function sanitizeHistory(
   raw: unknown
 ): Array<{ role: 'user' | 'assistant'; content: string }> | undefined {
   if (!Array.isArray(raw) || raw.length === 0) return undefined;
 
-  const result: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  const validated: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
   for (const item of raw.slice(-MAX_HISTORY_ITEMS)) {
     if (
@@ -60,11 +63,24 @@ function sanitizeHistory(
       typeof item.content === 'string' &&
       item.content.trim().length > 0
     ) {
-      result.push({
+      validated.push({
         role: item.role,
         content: item.content.trim().slice(0, MAX_HISTORY_CONTENT_LENGTH),
       });
     }
+  }
+
+  if (validated.length === 0) return undefined;
+
+  // Enforce total character limit, keeping most recent messages
+  const result: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  let totalChars = 0;
+
+  for (let i = validated.length - 1; i >= 0; i--) {
+    const len = validated[i].content.length;
+    if (totalChars + len > MAX_HISTORY_TOTAL_LENGTH) break;
+    result.unshift(validated[i]);
+    totalChars += len;
   }
 
   return result.length > 0 ? result : undefined;

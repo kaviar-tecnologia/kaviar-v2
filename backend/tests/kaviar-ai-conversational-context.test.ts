@@ -241,3 +241,68 @@ describe('askKaviarAi — conversational context', () => {
     expect(mockProvider.compose).not.toHaveBeenCalled();
   });
 });
+
+// ── sanitizeHistory unit tests ────────────────────────────────────────────
+
+import { sanitizeHistory } from '../src/routes/admin-ai';
+
+describe('sanitizeHistory — backend validation', () => {
+  it('returns undefined for non-array', () => {
+    expect(sanitizeHistory(null)).toBeUndefined();
+    expect(sanitizeHistory('hello')).toBeUndefined();
+    expect(sanitizeHistory(123)).toBeUndefined();
+    expect(sanitizeHistory({})).toBeUndefined();
+  });
+
+  it('returns undefined for empty array', () => {
+    expect(sanitizeHistory([])).toBeUndefined();
+  });
+
+  it('limits to 6 messages', () => {
+    const history = Array.from({ length: 10 }, (_, i) => ({
+      role: i % 2 === 0 ? 'user' : 'assistant',
+      content: `msg ${i}`,
+    }));
+    const result = sanitizeHistory(history)!;
+    expect(result.length).toBeLessThanOrEqual(6);
+  });
+
+  it('limits individual message to 1000 chars', () => {
+    const history = [{ role: 'user', content: 'x'.repeat(2000) }];
+    const result = sanitizeHistory(history)!;
+    expect(result[0].content.length).toBeLessThanOrEqual(1000);
+  });
+
+  it('enforces total 4000 chars limit, keeping most recent', () => {
+    // 6 messages of 900 chars each = 5400 total, exceeds 4000
+    const history = Array.from({ length: 6 }, (_, i) => ({
+      role: i % 2 === 0 ? 'user' : 'assistant',
+      content: `${'a'.repeat(899)}${i}`, // 900 chars each
+    }));
+    const result = sanitizeHistory(history)!;
+    const totalChars = result.reduce((sum, m) => sum + m.content.length, 0);
+    expect(totalChars).toBeLessThanOrEqual(4000);
+    // Should keep the most recent messages (higher indices)
+    expect(result[result.length - 1].content).toContain('5');
+  });
+
+  it('strips invalid items without failing', () => {
+    const history = [
+      { role: 'user', content: 'valid' },
+      { role: 'hacker', content: 'invalid role' },
+      { role: 'user', content: '' }, // empty
+      null,
+      { role: 'assistant', content: 'also valid' },
+    ];
+    const result = sanitizeHistory(history)!;
+    expect(result).toHaveLength(2);
+    expect(result[0].content).toBe('valid');
+    expect(result[1].content).toBe('also valid');
+  });
+
+  it('trims whitespace from content', () => {
+    const history = [{ role: 'user', content: '  hello world  ' }];
+    const result = sanitizeHistory(history)!;
+    expect(result[0].content).toBe('hello world');
+  });
+});
