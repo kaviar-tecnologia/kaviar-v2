@@ -33,7 +33,7 @@ import type { ComplianceSummaryData, ExcellenceSealSummaryData } from './kaviar-
 import type { OperationsOverviewData, PersonLookupData, DriverDetailData, SealHistoryData } from './kaviar-ai.central-ops';
 import type { DriverCityLandingsData } from './kaviar-ai.city-landings';
 import { executeTool, canRoleExecuteTool } from './kaviar-ai.registry';
-import { routeQuestion } from './kaviar-ai.router';
+import { routeQuestion, getRouterMode } from './kaviar-ai.router';
 import { detectDevelopmentIntent } from './kaviar-ai.dev-intent';
 import { detectDraftingIntent } from './kaviar-ai.drafting-intent';
 import type { KaviarAiDraftingComposer } from './kaviar-ai.provider';
@@ -1076,6 +1076,19 @@ export async function askKaviarAi(
   const route = await routeQuestion(question, provider);
 
   if (route.toolsToCall.length === 0) {
+    // Generative fallback: only when mode is NOT 'rules' and provider supports it
+    if (getRouterMode() !== 'rules' && provider && 'answerGeneral' in provider) {
+      try {
+        const answer = await (provider as unknown as KaviarAiDraftingComposer).answerGeneral(question);
+        return { answer, toolsUsed: [] };
+      } catch {
+        return {
+          answer: 'Não foi possível processar a pergunta no momento. Tente novamente.',
+          toolsUsed: [],
+        };
+      }
+    }
+
     return {
       answer: `Ainda não sei responder: "${question}".`,
       toolsUsed: [],

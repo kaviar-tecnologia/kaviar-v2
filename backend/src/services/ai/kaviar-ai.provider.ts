@@ -85,4 +85,19 @@ export interface KaviarAiDraftingComposer {
    * @throws se o provider não estiver disponível/configurado.
    */
   compose(context: KaviarAiDraftingContext): Promise<string>;
+
+  /**
+   * Responde uma pergunta geral de forma read-only quando nenhuma
+   * ferramenta determinística se aplica.
+   *
+   * Regras:
+   * - Estritamente read-only: não executa ações, não altera dados.
+   * - Não inventa dados operacionais (corridas, financeiro, etc.).
+   * - Pode responder perguntas conceituais, de orientação ou explicativas.
+   * - Se não souber, diz que não tem informação suficiente.
+   *
+   * @returns Resposta textual read-only.
+   * @throws se o provider não estiver disponível/configurado.
+   */
+  answerGeneral(question: string): Promise<string>;
 }
