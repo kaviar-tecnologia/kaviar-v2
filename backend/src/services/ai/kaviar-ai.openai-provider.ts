@@ -236,6 +236,50 @@ Redija o texto solicitado.`;
 
     return outputText;
   }
+
+  // ── Generative Fallback (read-only) ─────────────────────────────────────
+
+  async answerGeneral(question: string): Promise<string> {
+    const instructions = `Você é o assistente administrativo da KAVIAR — plataforma brasileira de mobilidade comunitária.
+
+Responda de forma útil, concisa e segura à pergunta do usuário.
+
+Regras OBRIGATÓRIAS:
+- Estritamente READ-ONLY: não execute ações, não crie registros, não altere dados, não envie mensagens.
+- Não invente dados operacionais (corridas, receita, motoristas, leads, obrigações). Se a pergunta exigir dados vivos, diga que não possui essa informação no momento.
+- Pode responder perguntas conceituais, de orientação, explicações gerais e dúvidas sobre processos.
+- Se não souber responder com segurança, diga "Não tenho informação suficiente para responder a essa pergunta."
+- Não revele dados sensíveis (CPF, senhas, tokens, credenciais, DATABASE_URL).
+- Responda em português brasileiro.
+- Seja direto e objetivo.`;
+
+    const response = await this.client.responses.create({
+      model: this.model,
+      instructions,
+      input: question,
+      reasoning: {
+        effort: 'low',
+      },
+      max_output_tokens: 1024,
+      store: false,
+    });
+
+    if (response.status === 'incomplete' || response.status === 'failed') {
+      throw new Error(
+        '[kaviar-ai-openai] Falha ao gerar resposta geral.'
+      );
+    }
+
+    const outputText = response.output_text;
+
+    if (!outputText) {
+      throw new Error(
+        '[kaviar-ai-openai] Resposta vazia do modelo.'
+      );
+    }
+
+    return outputText;
+  }
 }
 
 /**
