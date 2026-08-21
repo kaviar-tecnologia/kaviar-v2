@@ -35,6 +35,8 @@ import type { DriverCityLandingsData } from './kaviar-ai.city-landings';
 import { executeTool, canRoleExecuteTool } from './kaviar-ai.registry';
 import { routeQuestion } from './kaviar-ai.router';
 import { detectDevelopmentIntent } from './kaviar-ai.dev-intent';
+import { detectDraftingIntent } from './kaviar-ai.drafting-intent';
+import type { KaviarAiDraftingComposer } from './kaviar-ai.provider';
 
 function formatBRLDecimal(value: string): string {
   const match = value.match(/^(-?)(\d+)(?:\.(\d{1,2}))?$/);
@@ -1010,6 +1012,64 @@ export async function askKaviarAi(
       toolsUsed: [],
       developmentProposal: devIntent.proposal,
     };
+  }
+
+  // ── Drafting intent (redação) — após dev-intent, antes do routing ────
+  const draftingIntent = detectDraftingIntent(question);
+  if (draftingIntent.isDrafting) {
+    // Check if provider supports compose (KaviarAiDraftingComposer)
+    const composer = provider && 'compose' in provider
+      ? (provider as unknown as KaviarAiDraftingComposer)
+      : undefined;
+
+    if (!composer) {
+      return {
+        answer: 'Redação requer modelo de linguagem configurado. Entre em contato com o administrador do sistema.',
+        toolsUsed: [],
+      };
+    }
+
+    // Gather factual context from relevant tools
+    let factualContext = '';
+    const toolsUsed: KaviarAiToolName[] = [];
+
+    for (const toolName of draftingIntent.toolsForContext) {
+      if (!canRoleExecuteTool(role, toolName)) continue;
+
+      let args: Record<string, string> | undefined;
+      if (toolName === 'company_profile') {
+        args = { section: 'full' };
+      }
+
+      try {
+        const result = await executeTool(toolName, args);
+        const formatter = FORMATTERS[result.tool as KaviarAiToolName];
+        if (formatter) {
+          factualContext += formatter(result.data) + '\n\n';
+        }
+        toolsUsed.push(result.tool as KaviarAiToolName);
+      } catch {
+        // Tool failure is non-fatal for drafting; compose with whatever is available
+      }
+    }
+
+    try {
+      const composedText = await composer.compose({
+        question,
+        documentType: draftingIntent.documentType,
+        factualContext: factualContext.trim(),
+      });
+
+      return {
+        answer: composedText,
+        toolsUsed,
+      };
+    } catch {
+      return {
+        answer: 'Não foi possível gerar o rascunho. Tente novamente.',
+        toolsUsed,
+      };
+    }
   }
 
   const route = await routeQuestion(question, provider);
