@@ -184,6 +184,18 @@ export default function KaviarAiPage() {
     };
   }, [fetchDevJobs, isSuperAdmin]);
 
+  // Poll selected job detail
+  const pollSelectedJob = useCallback(async (jobId) => {
+    try {
+      const job = await getDevJob(jobId);
+      setSelectedJob(job);
+      // Stop polling if terminal
+      if (['SUCCEEDED', 'FAILED'].includes(job.status)) return;
+    } catch {
+      // ignore
+    }
+  }, []);
+
   // Auto-poll selected job when it's in a non-terminal state
   useEffect(() => {
     if (!selectedJob) return;
@@ -235,18 +247,6 @@ export default function KaviarAiPage() {
     const interval = setInterval(pollProposals, 8000);
     return () => clearInterval(interval);
   }, [isSuperAdmin]);
-
-  // Poll selected job detail
-  const pollSelectedJob = useCallback(async (jobId) => {
-    try {
-      const job = await getDevJob(jobId);
-      setSelectedJob(job);
-      // Stop polling if terminal
-      if (['SUCCEEDED', 'FAILED'].includes(job.status)) return;
-    } catch {
-      // ignore
-    }
-  }, []);
 
   const handleSelectJob = async (jobId) => {
     setDevJobsLoading(true);
