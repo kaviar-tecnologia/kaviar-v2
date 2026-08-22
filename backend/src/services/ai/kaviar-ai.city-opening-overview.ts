@@ -4,7 +4,12 @@
  * Estritamente read-only.
  */
 import { pool } from '../../db';
-import { executeTool } from './kaviar-ai.registry';
+import {
+  getTerritoryOnboardingStatus,
+  getTerritoryActivationReadiness,
+} from './kaviar-ai.tools';
+import { getTerritoryManagerCoverage } from './kaviar-ai.command-center';
+import { getDriverCityLandings } from './kaviar-ai.city-landings';
 import type {
   TerritoryOnboardingStatusData,
   TerritoryActivationReadinessData,
@@ -49,7 +54,8 @@ export type CityOpeningOverviewData = {
   };
   drivers: {
     available: boolean;
-    count: number;
+    total: number;
+    operationalCount: number;
     byStatus: Record<string, number>;
   };
   leads: {
@@ -105,8 +111,8 @@ function determineNextAction(data: CityOpeningOverviewData): string {
   }
 
   // 6. Motoristas abaixo do mínimo operacional
-  if (data.drivers.available && data.drivers.count < MIN_DRIVERS_FOR_TERRITORY_ACTIVATION) {
-    return `Recrutar motoristas até atingir o mínimo operacional de ${MIN_DRIVERS_FOR_TERRITORY_ACTIVATION}.`;
+  if (data.drivers.available && data.drivers.operationalCount < MIN_DRIVERS_FOR_TERRITORY_ACTIVATION) {
+    return `Recrutar motoristas até atingir o mínimo operacional de ${MIN_DRIVERS_FOR_TERRITORY_ACTIVATION} aptos.`;
   }
 
   // 7. Drivers indisponíveis — não é possível confirmar
@@ -142,7 +148,7 @@ export async function getCityOpeningOverview(
         regulatory: { available: false, status: null, notes: null },
         manager: { available: false, hasManager: false, managerName: null, coverageStatus: null, activeManagers: 0 },
         landing: { available: false, enabled: false, url: null, publicStatus: null },
-        drivers: { available: false, count: 0, byStatus: {} },
+        drivers: { available: false, total: 0, operationalCount: 0, byStatus: {} },
         leads: { available: false, total: 0, byStatus: {} },
         activation: { available: false, ready: false, operationalReady: false, reasons: ['Cidade ou UF inválida.'] },
         pendencies: ['Cidade ou UF inválida.'],
@@ -151,12 +157,12 @@ export async function getCityOpeningOverview(
     };
   }
 
-  // Execute tools in parallel for performance
+  // Call tools directly (not via registry) to avoid circular import
   const [onboardingResult, readinessResult, coverageResult, landingResult] = await Promise.all([
-    executeTool('territory_onboarding_status', { city, uf }).catch(() => null),
-    executeTool('territory_activation_readiness', { city, uf }).catch(() => null),
-    executeTool('territory_manager_coverage', { city, uf }).catch(() => null),
-    executeTool('driver_city_landings', { question: `landing ${city}/${uf}` }).catch(() => null),
+    getTerritoryOnboardingStatus(city, uf).catch(() => null),
+    getTerritoryActivationReadiness(city, uf).catch(() => null),
+    getTerritoryManagerCoverage({ city, uf }).catch(() => null),
+    getDriverCityLandings({ question: `landing ${city}/${uf}` }).catch(() => null),
   ]);
 
   const onboarding = onboardingResult?.data as TerritoryOnboardingStatusData | null;
@@ -167,8 +173,9 @@ export async function getCityOpeningOverview(
   // Extract territory ID for driver/lead queries
   const territoryId = onboarding?.territory?.id ?? null;
 
-  // Simple per-city driver count
-  let drivers: CityOpeningOverviewData['drivers'] = { available: false, count: 0, byStatus: {} };
+  // Simple per-city driver count (by status)
+  // Status 'approved' = motorista apto/ativo para operar
+  let drivers: CityOpeningOverviewData['drivers'] = { available: false, total: 0, operationalCount: 0, byStatus: {} };
   if (territoryId) {
     try {
       const driverResult = await pool.query<{ status: string; cnt: number }>(`
@@ -186,9 +193,10 @@ export async function getCityOpeningOverview(
         byStatus[row.status] = row.cnt;
         total += row.cnt;
       }
-      drivers = { available: true, count: total, byStatus };
+      const operationalCount = byStatus['approved'] ?? 0;
+      drivers = { available: true, total, operationalCount, byStatus };
     } catch {
-      drivers = { available: false, count: 0, byStatus: {} };
+      drivers = { available: false, total: 0, operationalCount: 0, byStatus: {} };
     }
   }
 
@@ -259,7 +267,7 @@ export async function getCityOpeningOverview(
     operationalReady: (() => {
       if (!readiness?.ready) return false;
       if (!drivers.available) return null; // cannot confirm without driver data
-      return drivers.count >= MIN_DRIVERS_FOR_TERRITORY_ACTIVATION;
+      return drivers.operationalCount >= MIN_DRIVERS_FOR_TERRITORY_ACTIVATION;
     })(),
     reasons: readiness?.reasons ?? [],
   };
@@ -271,8 +279,8 @@ export async function getCityOpeningOverview(
   if (!landingData.enabled && territoryData.found) {
     pendencies.push('Landing page de motoristas não habilitada.');
   }
-  if (drivers.available && drivers.count < MIN_DRIVERS_FOR_TERRITORY_ACTIVATION) {
-    pendencies.push(`Motoristas abaixo do mínimo operacional de ${MIN_DRIVERS_FOR_TERRITORY_ACTIVATION} (atual: ${drivers.count}).`);
+  if (drivers.available && drivers.operationalCount < MIN_DRIVERS_FOR_TERRITORY_ACTIVATION) {
+    pendencies.push(`Motoristas aptos abaixo do mínimo operacional de ${MIN_DRIVERS_FOR_TERRITORY_ACTIVATION} (atual: ${drivers.operationalCount}).`);
   }
 
   const result: CityOpeningOverviewData = {

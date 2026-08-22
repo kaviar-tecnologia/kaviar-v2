@@ -237,7 +237,7 @@ describe('city_opening_overview — operationalReady threshold via formatted out
 
   // Helper: mock a territory that readiness=true (approved, has manager, etc.)
   // but vary driver count
-  function mockReadyTerritoryWithDrivers(driverCount: number) {
+  function mockReadyTerritoryWithDrivers(approvedCount: number, pendingCount = 0) {
     // territory_onboarding_status: found, approved, has manager
     mockQuery
       .mockResolvedValueOnce({ rows: [{ id: 't1', name: 'Test — SP', level: 'city', status: 'active', uf: 'SP', city_name: 'Test', regulatory_status: 'approved', regulatory_notes: null, moto_express_enabled: false, moto_passenger_enabled: false }] })
@@ -253,13 +253,18 @@ describe('city_opening_overview — operationalReady threshold via formatted out
       .mockResolvedValueOnce({ rows: [] }) // uncovered
       // driver_city_landings
       .mockResolvedValueOnce({ rows: [{ city: 'Test', state: 'SP', slug: 'test-sp', public_status: 'ATIVO', landing_enabled: true }] })
-      // drivers per territory
-      .mockResolvedValueOnce({ rows: driverCount > 0 ? [{ status: 'active', cnt: driverCount }] : [] })
+      // drivers per territory (approved + pending)
+      .mockResolvedValueOnce({
+        rows: [
+          ...(approvedCount > 0 ? [{ status: 'approved', cnt: approvedCount }] : []),
+          ...(pendingCount > 0 ? [{ status: 'pending', cnt: pendingCount }] : []),
+        ],
+      })
       // leads per territory
       .mockResolvedValueOnce({ rows: [{ status: 'NEW', cnt: 2 }] });
   }
 
-  it('readiness true + 0 motoristas → NÃO', async () => {
+  it('readiness true + 0 motoristas aptos → NÃO', async () => {
     mockReadyTerritoryWithDrivers(0);
     const result = await askKaviarAi(
       { userId: 'a', question: 'Podemos ativar Test/SP?', role: 'SUPER_ADMIN' },
@@ -269,7 +274,7 @@ describe('city_opening_overview — operationalReady threshold via formatted out
     expect(result.answer).toContain('mínimo operacional');
   });
 
-  it('readiness true + 2 motoristas → NÃO', async () => {
+  it('readiness true + 2 motoristas aptos → NÃO', async () => {
     mockReadyTerritoryWithDrivers(2);
     const result = await askKaviarAi(
       { userId: 'a', question: 'Podemos ativar Test/SP?', role: 'SUPER_ADMIN' },
@@ -278,7 +283,7 @@ describe('city_opening_overview — operationalReady threshold via formatted out
     expect(result.answer).toContain('2/3');
   });
 
-  it('readiness true + 3 motoristas → SIM', async () => {
+  it('readiness true + 3 motoristas aptos → SIM', async () => {
     mockReadyTerritoryWithDrivers(3);
     const result = await askKaviarAi(
       { userId: 'a', question: 'Podemos ativar Test/SP?', role: 'SUPER_ADMIN' },
@@ -287,13 +292,40 @@ describe('city_opening_overview — operationalReady threshold via formatted out
     expect(result.answer).toContain('3/3');
   });
 
-  it('readiness true + 5 motoristas → SIM', async () => {
+  it('readiness true + 5 motoristas aptos → SIM', async () => {
     mockReadyTerritoryWithDrivers(5);
     const result = await askKaviarAi(
       { userId: 'a', question: 'Podemos ativar Test/SP?', role: 'SUPER_ADMIN' },
     );
     expect(result.answer).toContain('✅ SIM');
     expect(result.answer).toContain('5/3');
+  });
+
+  it('readiness true + 2 aptos + 5 pending → NÃO (pending não conta)', async () => {
+    mockReadyTerritoryWithDrivers(2, 5);
+    const result = await askKaviarAi(
+      { userId: 'a', question: 'Podemos ativar Test/SP?', role: 'SUPER_ADMIN' },
+    );
+    expect(result.answer).toContain('❌ NÃO');
+    expect(result.answer).toContain('2/3');
+  });
+
+  it('readiness true + 0 aptos + 3 pending → NÃO (pending não conta)', async () => {
+    mockReadyTerritoryWithDrivers(0, 3);
+    const result = await askKaviarAi(
+      { userId: 'a', question: 'Podemos ativar Test/SP?', role: 'SUPER_ADMIN' },
+    );
+    expect(result.answer).toContain('❌ NÃO');
+    expect(result.answer).toContain('0/3');
+  });
+
+  it('readiness true + 3 aptos + pending adicionais → SIM', async () => {
+    mockReadyTerritoryWithDrivers(3, 2);
+    const result = await askKaviarAi(
+      { userId: 'a', question: 'Podemos ativar Test/SP?', role: 'SUPER_ADMIN' },
+    );
+    expect(result.answer).toContain('✅ SIM');
+    expect(result.answer).toContain('3/3');
   });
 
   it('readiness false + 5 motoristas → NÃO', async () => {

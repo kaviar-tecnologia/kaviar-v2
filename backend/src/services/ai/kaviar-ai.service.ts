@@ -597,9 +597,10 @@ const FORMATTERS: Record<KaviarAiToolName, (data: unknown) => string> = {
     // Motoristas
     if (d.drivers.available) {
       const statusParts = Object.entries(d.drivers.byStatus).map(([s, c]) => `${s}: ${c}`).join(', ');
-      const minLabel = `${d.drivers.count}/${MIN_DRIVERS_FOR_TERRITORY_ACTIVATION}`;
-      const belowMin = d.drivers.count < MIN_DRIVERS_FOR_TERRITORY_ACTIVATION ? ' ⚠️' : ' ✅';
-      parts.push(`**Motoristas:** ${minLabel}${belowMin}${statusParts ? ` (${statusParts})` : ''}`);
+      const minLabel = `${d.drivers.operationalCount}/${MIN_DRIVERS_FOR_TERRITORY_ACTIVATION}`;
+      const belowMin = d.drivers.operationalCount < MIN_DRIVERS_FOR_TERRITORY_ACTIVATION ? ' ⚠️' : ' ✅';
+      parts.push(`**Motoristas aptos:** ${minLabel}${belowMin}${d.drivers.total > d.drivers.operationalCount ? ` (total cadastrados: ${d.drivers.total})` : ''}`);
+      if (statusParts) parts.push(`  Distribuição: ${statusParts}`);
     } else {
       parts.push('**Motoristas:** Não disponível');
     }
