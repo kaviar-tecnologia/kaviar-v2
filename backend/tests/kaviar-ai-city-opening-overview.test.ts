@@ -90,7 +90,29 @@ describe('getCityOpeningOverview — tool execution', () => {
   });
 });
 
-// ── Integration with askKaviarAi ──────────────────────────────────────────
+// ── Contract status label tests ───────────────────────────────────────────
+
+describe('territory_onboarding_status — contract_status labels', () => {
+  beforeEach(() => { mockQuery.mockReset(); });
+  afterEach(() => { mockQuery.mockReset(); });
+
+  it('contract_status "available" appears as "disponível para assinatura", not raw value', async () => {
+    // Territory found, manager found, profile with contract_status = 'available'
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ id: 't1', name: 'City', level: 'city', status: 'preparation', uf: 'SP', city_name: 'City', regulatory_status: 'approved', regulatory_notes: null, moto_express_enabled: false, moto_passenger_enabled: false }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'a1', name: 'Maria', email: 'm@k.br', role: 'TM', status: 'active', territory_id: 't1', territory_name: 'City', territory_level: 'city' }] })
+      .mockResolvedValueOnce({ rows: [{ is_active: true, contract_status: 'available', document_status: 'verified' }] });
+
+    const { getTerritoryOnboardingStatus } = await import('../src/services/ai/kaviar-ai.tools');
+    const result = await getTerritoryOnboardingStatus('City', 'SP');
+
+    // Must NOT contain raw 'available' as a standalone pendency value
+    const pendencies = result.data.pendencies.join(' ');
+    expect(pendencies).not.toMatch(/: available\./);
+    // Must contain the Portuguese label
+    expect(pendencies).toContain('disponível para assinatura');
+  });
+});
 
 import { MIN_DRIVERS_FOR_TERRITORY_ACTIVATION } from '../src/services/ai/kaviar-ai.city-opening-overview';
 

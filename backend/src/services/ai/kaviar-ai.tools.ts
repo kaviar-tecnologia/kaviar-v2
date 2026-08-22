@@ -339,7 +339,17 @@ export async function getTerritoryOnboardingStatus(
     const profile = profileResult.rows[0];
     if (profile) {
       if (!profile.is_active) pendencies.push('Perfil do gestor inativo.');
-      if (profile.contract_status !== 'signed' && profile.contract_status !== 'not_required') pendencies.push(`Contrato do gestor: ${profile.contract_status}.`);
+      if (profile.contract_status !== 'signed' && profile.contract_status !== 'not_required') {
+        const contractLabels: Record<string, string> = {
+          pending: 'pendente de envio',
+          available: 'disponível para assinatura',
+          delivered: 'entregue, aguardando assinatura',
+          waived: 'dispensado',
+          rejected: 'rejeitado',
+        };
+        const label = contractLabels[profile.contract_status] || profile.contract_status;
+        pendencies.push(`Contrato do gestor: ${label}.`);
+      }
       if (profile.document_status !== 'verified') pendencies.push(`Documentos do gestor: ${profile.document_status}.`);
     }
   }
@@ -468,7 +478,15 @@ export async function getTerritoryActivationReadiness(
     } else {
       if (!profile.is_active) reasons.push('Perfil do gestor inativo.');
       if (profile.contract_status !== 'signed' && profile.contract_status !== 'not_required') {
-        reasons.push(`Contrato do gestor: ${profile.contract_status}.`);
+        const contractLabels: Record<string, string> = {
+          pending: 'pendente de envio',
+          available: 'disponível para assinatura',
+          delivered: 'entregue, aguardando assinatura',
+          waived: 'dispensado',
+          rejected: 'rejeitado',
+        };
+        const label = contractLabels[profile.contract_status] || profile.contract_status;
+        reasons.push(`Contrato do gestor: ${label}.`);
       }
       if (profile.document_status !== 'verified') {
         reasons.push(`Documentos do gestor: ${profile.document_status}.`);
