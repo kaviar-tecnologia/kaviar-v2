@@ -400,3 +400,152 @@ describe('city_opening_overview — operationalReady threshold via formatted out
     expect(result.answer).toContain('AINDA NÃO É POSSÍVEL CONFIRMAR');
   });
 });
+
+// ── City resolution without explicit UF ───────────────────────────────────
+
+describe('city_opening_overview — city resolution without UF', () => {
+  beforeEach(() => {
+    mockQuery.mockReset();
+  });
+
+  afterEach(() => {
+    mockQuery.mockReset();
+    delete process.env.KAVIAR_AI_ROUTER_MODE;
+  });
+
+  it('"O que precisamos fazer para tornar Tambaú mais atraente para motoristas" → resolves Tambaú/SP and passes enriched context to answerGeneral', async () => {
+    process.env.KAVIAR_AI_ROUTER_MODE = 'model';
+
+    // resolveCityFromQuestion: "Tambaú" → found as SP
+    mockQuery.mockResolvedValueOnce({ rows: [{ city_name: 'Tambaú', uf: 'SP' }] });
+
+    const mockProvider: any = {
+      decide: vi.fn().mockResolvedValue({ toolsToCall: [] }),
+      compose: vi.fn(),
+      answerGeneral: vi.fn().mockResolvedValue('Considere landing ativa e divulgação.'),
+    };
+
+    const result = await askKaviarAi(
+      { userId: 'a', question: 'O que precisamos fazer para tornar Tambaú mais atraente para motoristas?', role: 'SUPER_ADMIN' },
+      mockProvider,
+    );
+
+    // Should NOT use city_opening_overview — this is strategic, not status
+    expect(result.toolsUsed).not.toContain('city_opening_overview');
+    // answerGeneral MUST receive enriched question with Tambaú/SP
+    expect(mockProvider.answerGeneral).toHaveBeenCalledTimes(1);
+    const passedQuestion = mockProvider.answerGeneral.mock.calls[0][0];
+    expect(passedQuestion).toContain('Tambaú/SP');
+    expect(passedQuestion).toContain('tornar');
+  });
+
+  it('strategic question with homonymous city → asks for UF', async () => {
+    process.env.KAVIAR_AI_ROUTER_MODE = 'model';
+
+    // resolveCityFromQuestion: "Aurora" → ambiguous (CE + SC)
+    mockQuery.mockResolvedValueOnce({ rows: [{ city_name: 'Aurora', uf: 'CE' }, { city_name: 'Aurora', uf: 'SC' }] });
+
+    const mockProvider: any = {
+      decide: vi.fn().mockResolvedValue({ toolsToCall: [] }),
+      compose: vi.fn(),
+      answerGeneral: vi.fn(),
+    };
+
+    const result = await askKaviarAi(
+      { userId: 'a', question: 'Como tornar Aurora mais atraente para motoristas?', role: 'SUPER_ADMIN' },
+      mockProvider,
+    );
+
+    expect(result.answer).toContain('mais de uma cidade');
+    expect(mockProvider.answerGeneral).not.toHaveBeenCalled();
+  });
+
+  it('strategic question with unknown city → does not invent UF', async () => {
+    process.env.KAVIAR_AI_ROUTER_MODE = 'model';
+
+    // resolveCityFromQuestion: "Xanadu" → not found
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    const mockProvider: any = {
+      decide: vi.fn().mockResolvedValue({ toolsToCall: [] }),
+      compose: vi.fn(),
+      answerGeneral: vi.fn().mockResolvedValue('Resposta sem cidade específica.'),
+    };
+
+    const result = await askKaviarAi(
+      { userId: 'a', question: 'Como tornar Xanadu mais atraente para motoristas?', role: 'SUPER_ADMIN' },
+      mockProvider,
+    );
+
+    // answerGeneral called but WITHOUT city enrichment
+    expect(mockProvider.answerGeneral).toHaveBeenCalledTimes(1);
+    const passedQuestion = mockProvider.answerGeneral.mock.calls[0][0];
+    expect(passedQuestion).not.toContain('Cidade identificada');
+    expect(passedQuestion).not.toContain('/SP');
+  });
+
+  it('"Como está Tambaú para operar?" resolves SP', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ city_name: 'Tambaú', uf: 'SP' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const result = await askKaviarAi(
+      { userId: 'a', question: 'Como está Tambaú para operar?', role: 'SUPER_ADMIN' },
+    );
+
+    expect(result.answer).not.toContain('Informe a cidade e a UF');
+    expect(result.answer).toContain('Tambaú/SP');
+  });
+
+  it('cidade homônima em 2 UFs → pede desambiguação', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ city_name: 'Aurora', uf: 'CE' }, { city_name: 'Aurora', uf: 'SC' }] });
+
+    const result = await askKaviarAi(
+      { userId: 'a', question: 'Podemos ativar Aurora?', role: 'SUPER_ADMIN' },
+    );
+
+    expect(result.answer).toContain('mais de uma cidade');
+    expect(result.answer).toContain('UF');
+  });
+
+  it('cidade inexistente → pede cidade/UF', async () => {
+    // resolveCityFromQuestion: no match for "Xanadu"
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    const result = await askKaviarAi(
+      { userId: 'a', question: 'Como está Xanadu para operar?', role: 'SUPER_ADMIN' },
+    );
+
+    expect(result.answer).toContain('Informe a cidade e a UF');
+  });
+
+  it('"Tambaú/SP" com UF explícita continua funcionando normalmente', async () => {
+    // parseCityUf succeeds → no resolveCityFromQuestion needed
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const result = await askKaviarAi(
+      { userId: 'a', question: 'Como está Tambaú/SP para iniciarmos a operação?', role: 'SUPER_ADMIN' },
+    );
+
+    expect(result.answer).not.toContain('Informe a cidade e a UF');
+    expect(result.answer).toContain('Tambaú/SP');
+    expect(result.toolsUsed).toContain('city_opening_overview');
+  });
+
+  it('status/readiness intent → city_opening_overview; strategic intent → generative (intent separation)', () => {
+    // Verify at routing level
+    const status = routeByRules('Como está Tambaú/SP para operar?');
+    expect(status.toolsToCall).toContain('city_opening_overview');
+
+    const strategic = routeByRules('O que precisamos fazer para tornar Tambaú mais atraente para motoristas?');
+    expect(strategic.toolsToCall).not.toContain('city_opening_overview');
+  });
+});
