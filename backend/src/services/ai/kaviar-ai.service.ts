@@ -32,6 +32,8 @@ import type { DriverRatingsSummaryData } from './kaviar-ai.driver-ratings';
 import type { ComplianceSummaryData, ExcellenceSealSummaryData } from './kaviar-ai.compliance-seal';
 import type { OperationsOverviewData, PersonLookupData, DriverDetailData, SealHistoryData } from './kaviar-ai.central-ops';
 import type { DriverCityLandingsData } from './kaviar-ai.city-landings';
+import type { CityOpeningOverviewData } from './kaviar-ai.city-opening-overview';
+import { MIN_DRIVERS_FOR_TERRITORY_ACTIVATION } from './kaviar-ai.city-opening-overview';
 import { executeTool, canRoleExecuteTool } from './kaviar-ai.registry';
 import { routeQuestion, getRouterMode } from './kaviar-ai.router';
 import { detectDevelopmentIntent } from './kaviar-ai.dev-intent';
@@ -529,6 +531,111 @@ const FORMATTERS: Record<KaviarAiToolName, (data: unknown) => string> = {
     if (!d.available) return 'Histórico do selo: não foi possível consultar.';
     const parts = [`🏆 Histórico do Selo — ${d.referenceTime}`, `Ativos: ${d.totalActive} | Suspensos: ${d.totalSuspended}`];
     if (d.recentEvents.length > 0) { parts.push('', 'Eventos recentes:'); for (const e of d.recentEvents) parts.push(`  • ${e.driverName} — ${e.eventType}${e.reason ? ` (${e.reason})` : ''} — ${e.createdAt.slice(0,10)}`); }
+    return parts.join('\n');
+  },
+  city_opening_overview: (data) => {
+    const d = data as CityOpeningOverviewData;
+    if (!d.available) return 'Visão de abertura de cidade: não foi possível consultar.';
+
+    const parts: string[] = [];
+    parts.push(`## Abertura de cidade — ${d.city}/${d.uf}`);
+    parts.push('');
+
+    // Regulatório
+    if (d.regulatory.available) {
+      const statusMap: Record<string, string> = {
+        approved: '✅ Aprovado',
+        controlled_operation: '✅ Operação controlada',
+        not_evaluated: '⚠️ Não avaliado',
+        blocked: '❌ Bloqueado',
+        suspended: '❌ Suspenso',
+        pending_review: '⏳ Aguardando revisão',
+      };
+      const regLabel = statusMap[d.regulatory.status ?? ''] || d.regulatory.status || 'Não disponível';
+      parts.push(`**Regulatório:** ${regLabel}`);
+      if (d.regulatory.notes) parts.push(`  Notas: ${d.regulatory.notes}`);
+    } else {
+      parts.push('**Regulatório:** Não disponível (território não encontrado)');
+    }
+
+    // Território
+    if (d.territory.found) {
+      const statusMap: Record<string, string> = {
+        active: '✅ Ativo',
+        preparation: '⏳ Preparação',
+        planning: '📋 Planejamento',
+        inactive: '⚠️ Inativo',
+        blocked: '❌ Bloqueado',
+      };
+      parts.push(`**Território:** ${statusMap[d.territory.status ?? ''] || d.territory.status || 'Não disponível'} (${d.territory.name})`);
+    } else {
+      parts.push('**Território:** ❌ Não cadastrado no sistema');
+    }
+
+    // Gestor
+    if (d.manager.available) {
+      if (d.manager.hasManager) {
+        parts.push(`**Gestor territorial:** ✅ ${d.manager.managerName} (${d.manager.activeManagers} ativo${d.manager.activeManagers > 1 ? 's' : ''})`);
+      } else {
+        parts.push('**Gestor territorial:** ❌ Nenhum gestor vinculado');
+      }
+    } else {
+      parts.push('**Gestor territorial:** Não disponível');
+    }
+
+    // Landing
+    if (d.landing.available) {
+      if (d.landing.enabled) {
+        parts.push(`**Landing:** ✅ Ativa — ${d.landing.url || 'URL não disponível'}`);
+      } else {
+        parts.push('**Landing:** ❌ Não habilitada');
+      }
+    } else {
+      parts.push('**Landing:** Não disponível');
+    }
+
+    // Motoristas
+    if (d.drivers.available) {
+      const statusParts = Object.entries(d.drivers.byStatus).map(([s, c]) => `${s}: ${c}`).join(', ');
+      const minLabel = `${d.drivers.operationalCount}/${MIN_DRIVERS_FOR_TERRITORY_ACTIVATION}`;
+      const belowMin = d.drivers.operationalCount < MIN_DRIVERS_FOR_TERRITORY_ACTIVATION ? ' ⚠️' : ' ✅';
+      parts.push(`**Motoristas aptos:** ${minLabel}${belowMin}${d.drivers.total > d.drivers.operationalCount ? ` (total cadastrados: ${d.drivers.total})` : ''}`);
+      if (statusParts) parts.push(`  Distribuição: ${statusParts}`);
+    } else {
+      parts.push('**Motoristas:** Não disponível');
+    }
+
+    // Leads
+    if (d.leads.available) {
+      parts.push(`**Leads/recrutamento:** ${d.leads.total} lead${d.leads.total !== 1 ? 's' : ''}`);
+    } else {
+      parts.push('**Leads/recrutamento:** Não disponível');
+    }
+
+    // Pronto para ativar
+    parts.push('');
+    if (d.activation.available) {
+      if (d.activation.operationalReady === null) {
+        parts.push('**Pronto para ativar:** ⚠️ AINDA NÃO É POSSÍVEL CONFIRMAR (dados de motoristas indisponíveis)');
+      } else {
+        const status = d.activation.operationalReady ? '✅ SIM' : '❌ NÃO';
+        parts.push(`**Pronto para ativar:** ${status}`);
+      }
+    } else {
+      parts.push('**Pronto para ativar:** Ainda não é possível confirmar');
+    }
+
+    // Pendências
+    if (d.pendencies.length > 0) {
+      parts.push('');
+      parts.push('**Pendências:**');
+      for (const p of d.pendencies) parts.push(`- ${p}`);
+    }
+
+    // Próxima ação
+    parts.push('');
+    parts.push(`**Próxima ação recomendada:** ${d.nextAction}`);
+
     return parts.join('\n');
   },
 };
@@ -1204,6 +1311,7 @@ export async function askKaviarAi(
     'territory_onboarding_status',
     'territory_manager_coverage',
     'territory_activation_readiness',
+    'city_opening_overview',
   ];
   let territorialArgs: Record<string, string> | undefined;
 
