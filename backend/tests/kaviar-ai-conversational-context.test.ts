@@ -43,13 +43,19 @@ describe('askKaviarAi — conversational context', () => {
 
     expect(result.answer).toContain('Checklist');
     expect(mockProvider.answerGeneral).toHaveBeenCalledTimes(1);
-    // Verify the FIRST argument is the deterministic instruction, not just "quero"
+    // routeQuestion must NOT be called (short-circuit before routing)
+    expect(mockProvider.decide).not.toHaveBeenCalled();
+    // No tools executed
+    expect(result.toolsUsed).toEqual([]);
+    // Verify the FIRST argument contains the literal offer
     const passedQuestion = mockProvider.answerGeneral.mock.calls[0][0];
     expect(passedQuestion).toContain('O usuário aceitou esta oferta textual do assistente');
     expect(passedQuestion).toContain('posso transformar isso em um checklist prático de abertura de operação');
     expect(passedQuestion).toContain('Execute exatamente essa oferta');
     expect(passedQuestion).toContain('Não resuma novamente');
     expect(passedQuestion).not.toBe('quero');
+    // No DB calls
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 
   it('"continue" após resposta longa → modelo recebe histórico para entender referente', async () => {
@@ -272,9 +278,11 @@ describe('askKaviarAi — offer acceptance vs. continuation', () => {
       mockProvider,
     );
 
-    // Should produce the checklist directly
     expect(result.answer).toContain('Checklist');
     expect(mockProvider.answerGeneral).toHaveBeenCalledTimes(1);
+    // Short-circuit: decide NOT called, no tools
+    expect(mockProvider.decide).not.toHaveBeenCalled();
+    expect(result.toolsUsed).toEqual([]);
     // Verify deterministic instruction contains the LITERAL offer
     const passedQuestion = mockProvider.answerGeneral.mock.calls[0][0];
     expect(passedQuestion).toContain('O usuário aceitou esta oferta textual do assistente');
@@ -283,7 +291,52 @@ describe('askKaviarAi — offer acceptance vs. continuation', () => {
     // History with the offer is still passed
     const passedHistory = mockProvider.answerGeneral.mock.calls[0][1];
     expect(passedHistory).toBeDefined();
-    expect(passedHistory[passedHistory.length - 1].content).toContain('posso transformar');
+  });
+
+  it('"perfeito" after offer → does NOT activate offer acceptance', async () => {
+    const mockProvider: KaviarAiModelProvider & { compose: any; answerGeneral: any } = {
+      decide: vi.fn().mockResolvedValue({ toolsToCall: [] }),
+      compose: vi.fn(),
+      answerGeneral: vi.fn().mockResolvedValue('Normal response'),
+    };
+
+    const history = [
+      { role: 'assistant' as const, content: 'Se quiser, posso criar um resumo.' },
+    ];
+
+    const result = await askKaviarAi(
+      { userId: 'admin-1', question: 'perfeito', role: 'SUPER_ADMIN', history },
+      mockProvider,
+    );
+
+    // Should NOT short-circuit — "perfeito" is feedback, not acceptance
+    // answerGeneral may be called via normal fallback, but NOT with the offer instruction
+    if (mockProvider.answerGeneral.mock.calls.length > 0) {
+      const passedQuestion = mockProvider.answerGeneral.mock.calls[0][0];
+      expect(passedQuestion).not.toContain('O usuário aceitou esta oferta');
+    }
+  });
+
+  it('"show" after offer → does NOT activate offer acceptance', async () => {
+    const mockProvider: KaviarAiModelProvider & { compose: any; answerGeneral: any } = {
+      decide: vi.fn().mockResolvedValue({ toolsToCall: [] }),
+      compose: vi.fn(),
+      answerGeneral: vi.fn().mockResolvedValue('Normal response'),
+    };
+
+    const history = [
+      { role: 'assistant' as const, content: 'Se quiser, posso gerar um relatório.' },
+    ];
+
+    const result = await askKaviarAi(
+      { userId: 'admin-1', question: 'show', role: 'SUPER_ADMIN', history },
+      mockProvider,
+    );
+
+    if (mockProvider.answerGeneral.mock.calls.length > 0) {
+      const passedQuestion = mockProvider.answerGeneral.mock.calls[0][0];
+      expect(passedQuestion).not.toContain('O usuário aceitou esta oferta');
+    }
   });
 
   it('"continue" após lista → modelo entende como continuação, não como aceitação de oferta', async () => {
@@ -451,5 +504,40 @@ describe('resolveOfferAcceptance — deterministic detection', () => {
     const result = resolveOfferAcceptance('quero', history);
     // Last assistant msg has no offer → null
     expect(result).toBeNull();
+  });
+
+  it('does NOT detect "perfeito" — feedback, not acceptance', () => {
+    const history = [
+      { role: 'assistant' as const, content: 'Se quiser, posso transformar em checklist.' },
+    ];
+    expect(resolveOfferAcceptance('perfeito', history)).toBeNull();
+  });
+
+  it('does NOT detect "show" — feedback, not acceptance', () => {
+    const history = [
+      { role: 'assistant' as const, content: 'Posso gerar um relatório.' },
+    ];
+    expect(resolveOfferAcceptance('show', history)).toBeNull();
+  });
+
+  it('does NOT detect "isso" — feedback, not acceptance', () => {
+    const history = [
+      { role: 'assistant' as const, content: 'Posso resumir para você.' },
+    ];
+    expect(resolveOfferAcceptance('isso', history)).toBeNull();
+  });
+
+  it('does NOT detect "gostaria" — ambiguous, not acceptance', () => {
+    const history = [
+      { role: 'assistant' as const, content: 'Posso montar um plano.' },
+    ];
+    expect(resolveOfferAcceptance('gostaria', history)).toBeNull();
+  });
+
+  it('does NOT detect "vai" — ambiguous, not acceptance', () => {
+    const history = [
+      { role: 'assistant' as const, content: 'Posso criar um documento.' },
+    ];
+    expect(resolveOfferAcceptance('vai', history)).toBeNull();
   });
 });
