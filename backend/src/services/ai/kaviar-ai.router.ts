@@ -383,7 +383,8 @@ export function routeByRules(question: string): KaviarAiRouteResult {
   }
 
   // ── City opening overview (consolidated view) ──────────────────────────
-  // Must come BEFORE individual territorial rules to catch "como está X/UF para operar"
+  // Routes when opening/activation intent is detected. City resolution (with or without /UF)
+  // is handled by the service layer via resolveCityFromQuestion.
   {
     const hasCityUfPattern = /(?:\/\s*[A-Za-z]{2}\b|[-–]\s+[A-Za-z]{2}\b|\(\s*[A-Za-z]{2}\s*\))/.test(question);
     const hasOpeningIntent =
@@ -391,11 +392,12 @@ export function routeByRules(question: string): KaviarAiRouteResult {
       (q.includes('pronta para operar') || q.includes('pronto para operar') || q.includes('pronta para ativar') || q.includes('pronto para ativar')) ||
       (q.includes('o que falta') && (q.includes('abrir') || q.includes('operar') || q.includes('iniciar') || q.includes('ativar'))) ||
       (q.includes('podemos ativar') || q.includes('podemos abrir') || q.includes('podemos iniciar') || q.includes('podemos operar')) ||
-      (q.includes('quais pendências') || q.includes('quais pendencias')) && (q.includes('iniciar') || q.includes('operar') || q.includes('abrir') || q.includes('ativar')) ||
-      (q.includes('visão operacional') || q.includes('visao operacional')) && hasCityUfPattern ||
-      (q.includes('abertura') && (q.includes('cidade') || hasCityUfPattern));
+      ((q.includes('quais pendências') || q.includes('quais pendencias')) && (q.includes('iniciar') || q.includes('operar') || q.includes('abrir') || q.includes('ativar'))) ||
+      ((q.includes('visão operacional') || q.includes('visao operacional')) && hasCityUfPattern) ||
+      (q.includes('abertura') && (q.includes('cidade') || hasCityUfPattern)) ||
+      (q.includes('precisamos') && (q.includes('para iniciar') || q.includes('para operar') || q.includes('para abrir')));
 
-    if (hasCityUfPattern && hasOpeningIntent) {
+    if (hasOpeningIntent) {
       return { toolsToCall: ['city_opening_overview'] };
     }
   }

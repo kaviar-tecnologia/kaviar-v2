@@ -1,3 +1,4 @@
+import { pool } from '../../db';
 import type {
   KaviarAiRequest,
   KaviarAiResponse,
@@ -1031,6 +1032,58 @@ export function parseCityUf(question: string): { city: string; uf: string } | nu
   return { city, uf };
 }
 
+// ── Resolução de cidade sem UF explícita ────────────────────────────────────
+
+/**
+ * Attempts to resolve a city name from the question by matching against
+ * known operational_territories in the database.
+ *
+ * Returns:
+ * - { city, uf } if exactly one territory matches
+ * - 'ambiguous' if multiple UFs match the same city name
+ * - null if no match found
+ *
+ * Read-only. Does not create or alter data.
+ */
+async function resolveCityFromQuestion(
+  question: string
+): Promise<{ city: string; uf: string } | 'ambiguous' | null> {
+  // Extract potential city names: words starting with uppercase (2+ chars)
+  // that are not common Portuguese words
+  const words = question.match(/[A-ZÀ-Ú][a-záàâãéèêíïóôõúç]+(?:\s+(?:d[aeo]s?|e)\s+[A-ZÀ-Ú][a-záàâãéèêíïóôõúç]+)*/g);
+  if (!words || words.length === 0) return null;
+
+  // Try each candidate (longest first for compound names like "Santa Cruz das Palmeiras")
+  const candidates = [...new Set(words)].sort((a, b) => b.length - a.length);
+
+  for (const candidate of candidates) {
+    if (candidate.length < 3) continue;
+    // Skip common Portuguese words that start with uppercase (beginning of sentence)
+    const skipWords = new Set(['Como', 'Qual', 'Quais', 'Para', 'Onde', 'Quando', 'Porque', 'Podemos', 'Precisamos', 'Ainda', 'Sobre', 'Toda', 'Toda', 'Fazer', 'Tornar', 'Mais']);
+    if (skipWords.has(candidate)) continue;
+
+    try {
+      const result = await pool.query<{ city_name: string; uf: string }>(`
+        SELECT DISTINCT city_name, uf
+        FROM operational_territories
+        WHERE level = 'city'
+          AND LOWER(city_name) = LOWER($1)
+      `, [candidate]);
+
+      if (result.rows.length === 1) {
+        return { city: result.rows[0].city_name, uf: result.rows[0].uf };
+      }
+      if (result.rows.length > 1) {
+        return 'ambiguous';
+      }
+    } catch {
+      // DB error — continue trying other candidates
+    }
+  }
+
+  return null;
+}
+
 // ── Extração de período da pergunta ─────────────────────────────────────────
 
 function parsePeriod(question: string): 'today' | 'week' | 'month' {
@@ -1318,13 +1371,25 @@ export async function askKaviarAi(
 
   if (authorizedTools.some(t => territorialTools.includes(t))) {
     const parsed = parseCityUf(question);
-    if (!parsed) {
-      return {
-        answer: 'Informe a cidade e a UF, por exemplo: Pirassununga/SP.',
-        toolsUsed: [],
-      };
+    if (parsed) {
+      territorialArgs = parsed;
+    } else {
+      // Try to resolve city without explicit UF from known territories
+      const resolved = await resolveCityFromQuestion(question);
+      if (resolved === 'ambiguous') {
+        return {
+          answer: 'Encontrei mais de uma cidade com esse nome em UFs diferentes. Informe a UF, por exemplo: Tambaú/SP.',
+          toolsUsed: [],
+        };
+      }
+      if (!resolved) {
+        return {
+          answer: 'Informe a cidade e a UF, por exemplo: Pirassununga/SP.',
+          toolsUsed: [],
+        };
+      }
+      territorialArgs = resolved;
     }
-    territorialArgs = parsed;
   }
 
   // Period-based tools
