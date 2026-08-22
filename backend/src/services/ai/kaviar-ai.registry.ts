@@ -26,6 +26,7 @@ import { getKnowledgeAnswer } from './kaviar-ai.knowledge';
 import { getDriverRatingsSummary } from './kaviar-ai.driver-ratings';
 import { getComplianceSummary, getExcellenceSealSummary } from './kaviar-ai.compliance-seal';
 import { getOperationsOverview, getPersonLookup, getDriverDetail, getSealHistory } from './kaviar-ai.central-ops';
+import { getCityOpeningOverview } from './kaviar-ai.city-opening-overview';
 
 /**
  * Schema de argumentos de uma ferramenta da KAVIAR IA.
@@ -344,6 +345,21 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     argSchema: { type: 'object', properties: {}, required: [] },
     allowedRoles: ['SUPER_ADMIN'],
     execute: getSealHistory,
+  },
+  {
+    name: 'city_opening_overview',
+    description: 'Visão operacional consolidada de abertura de cidade: regulatório, território, gestor, landing, motoristas, leads, prontidão e próxima ação. Requer city e uf.',
+    readOnly: true,
+    argSchema: {
+      type: 'object',
+      properties: {
+        city: { type: 'string', description: 'Nome da cidade' },
+        uf: { type: 'string', description: 'Sigla do estado (2 letras)' },
+      },
+      required: ['city', 'uf'],
+    },
+    allowedRoles: ['SUPER_ADMIN'],
+    execute: getCityOpeningOverview,
   },
 ] as const;
 

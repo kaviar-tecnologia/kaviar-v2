@@ -25,7 +25,8 @@ export type KaviarAiToolName =
   | 'person_lookup'
   | 'driver_detail'
   | 'seal_history'
-  | 'driver_city_landings';
+  | 'driver_city_landings'
+  | 'city_opening_overview';
 
 export type DevelopmentIntentCategory =
   | 'BUG_FIX'

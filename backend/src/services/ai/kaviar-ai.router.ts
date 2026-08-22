@@ -382,6 +382,24 @@ export function routeByRules(question: string): KaviarAiRouteResult {
     return { toolsToCall: ['territory_manager_coverage'] };
   }
 
+  // ── City opening overview (consolidated view) ──────────────────────────
+  // Must come BEFORE individual territorial rules to catch "como está X/UF para operar"
+  {
+    const hasCityUfPattern = /(?:\/\s*[A-Za-z]{2}\b|[-–]\s+[A-Za-z]{2}\b|\(\s*[A-Za-z]{2}\s*\))/.test(question);
+    const hasOpeningIntent =
+      (q.includes('como est') && (q.includes('para iniciar') || q.includes('para operar') || q.includes('para abrir') || q.includes('para ativar'))) ||
+      (q.includes('pronta para operar') || q.includes('pronto para operar') || q.includes('pronta para ativar') || q.includes('pronto para ativar')) ||
+      (q.includes('o que falta') && (q.includes('abrir') || q.includes('operar') || q.includes('iniciar') || q.includes('ativar'))) ||
+      (q.includes('podemos ativar') || q.includes('podemos abrir') || q.includes('podemos iniciar') || q.includes('podemos operar')) ||
+      (q.includes('quais pendências') || q.includes('quais pendencias')) && (q.includes('iniciar') || q.includes('operar') || q.includes('abrir') || q.includes('ativar')) ||
+      (q.includes('visão operacional') || q.includes('visao operacional')) && hasCityUfPattern ||
+      (q.includes('abertura') && (q.includes('cidade') || hasCityUfPattern));
+
+    if (hasCityUfPattern && hasOpeningIntent) {
+      return { toolsToCall: ['city_opening_overview'] };
+    }
+  }
+
   // ── Territorial onboarding ────────────────────────────────────────────
   const hasExplicitCityUf =
     /(?:\/\s*[A-Za-z]{2}\b|[-–]\s+[A-Za-z]{2}\b|\(\s*[A-Za-z]{2}\s*\))/.test(question);
