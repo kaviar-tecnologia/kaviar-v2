@@ -35,6 +35,7 @@ import type { OperationsOverviewData, PersonLookupData, DriverDetailData, SealHi
 import type { DriverCityLandingsData } from './kaviar-ai.city-landings';
 import type { CityOpeningOverviewData } from './kaviar-ai.city-opening-overview';
 import { MIN_DRIVERS_FOR_TERRITORY_ACTIVATION } from './kaviar-ai.city-opening-overview';
+import { getCityOpeningOverview } from './kaviar-ai.city-opening-overview';
 import { executeTool, canRoleExecuteTool } from './kaviar-ai.registry';
 import { routeQuestion, getRouterMode } from './kaviar-ai.router';
 import { detectDevelopmentIntent } from './kaviar-ai.dev-intent';
@@ -1200,6 +1201,35 @@ export function resolveOfferAcceptance(
   return `O usuário aceitou esta oferta textual do assistente: "${offerSentence.trim()}" Execute exatamente essa oferta agora usando o conteúdo anterior da conversa como matéria-prima. Não resuma novamente, não repita a oferta e não apresente novas opções.`;
 }
 
+// ── Detecção de intenção estratégica sobre cidade ─────────────────────────
+
+/**
+ * Detects strategic/recommendation questions about a specific city.
+ * These should NOT be routed to city_opening_overview as a final formatted response,
+ * but should use its data as context for a generative strategic answer.
+ *
+ * Examples:
+ * - "Como tornar Tambaú mais atraente para motoristas?"
+ * - "O que podemos fazer para atrair mais motoristas em Tambaú?"
+ * - "Como melhorar o recrutamento de motoristas em Tambaú?"
+ * - "Que estratégia usar para aumentar a oferta em Tambaú?"
+ */
+export function detectStrategicCityIntent(question: string): boolean {
+  const q = question.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  // Must have strategic/recommendation verb/phrase
+  const hasStrategicIntent =
+    (q.includes('tornar') && q.includes('atraente')) ||
+    (q.includes('atrair') && (q.includes('motorista') || q.includes('parceiro'))) ||
+    (q.includes('melhorar') && (q.includes('recrutamento') || q.includes('captacao') || q.includes('captação'))) ||
+    (q.includes('estrategia') && (q.includes('motorista') || q.includes('cidade') || q.includes('operacao'))) ||
+    (q.includes('aumentar') && (q.includes('oferta') || q.includes('motorista'))) ||
+    (q.includes('precisamos') && q.includes('tornar'));
+
+  return hasStrategicIntent;
+}
+
 // ── Roles permitidas no Chat KAVIAR ─────────────────────────────────────
 
 const ALLOWED_CHAT_ROLES = new Set(['SUPER_ADMIN', 'FINANCE']);
@@ -1262,6 +1292,63 @@ export async function askKaviarAi(
         answer: 'Não foi possível processar a pergunta no momento. Tente novamente.',
         toolsUsed: [],
       };
+    }
+  }
+
+  // ── Strategic city intent (recomendação sobre cidade) ──────────────────
+  // Detects strategic/recommendation questions about a specific city.
+  // Uses city_opening_overview data as CONTEXT for a generative answer,
+  // NOT as the final response. Prevents model from selecting multiple tools.
+  const strategicCityIntent = detectStrategicCityIntent(question);
+  if (
+    strategicCityIntent &&
+    getRouterMode() !== 'rules' &&
+    provider && 'answerGeneral' in provider
+  ) {
+    const cityResolved = await resolveCityFromQuestion(question);
+    if (cityResolved === 'ambiguous') {
+      return {
+        answer: 'Encontrei mais de uma cidade com esse nome em UFs diferentes. Informe a UF, por exemplo: Tambaú/SP.',
+        toolsUsed: [],
+      };
+    }
+    if (cityResolved) {
+      // RBAC: same authorization as the city_opening_overview tool
+      if (!canRoleExecuteTool(role, 'city_opening_overview')) {
+        return {
+          answer: 'Você não tem permissão para acessar essas informações.',
+          toolsUsed: [],
+        };
+      }
+
+      try {
+        // Get consolidated city data as context (not for direct display)
+        const overviewResult = await getCityOpeningOverview({ city: cityResolved.city, uf: cityResolved.uf });
+        const overviewData = overviewResult.data;
+
+        // Build concise context from overview data
+        const contextParts: string[] = [];
+        contextParts.push(`Cidade: ${cityResolved.city}/${cityResolved.uf}`);
+        if (overviewData.regulatory.available) contextParts.push(`Regulatório: ${overviewData.regulatory.status}`);
+        if (overviewData.territory.found) contextParts.push(`Território: ${overviewData.territory.status}`);
+        if (overviewData.manager.available) contextParts.push(`Gestor: ${overviewData.manager.hasManager ? overviewData.manager.managerName : 'nenhum'}`);
+        if (overviewData.landing.available) contextParts.push(`Landing: ${overviewData.landing.enabled ? 'ativa' : 'não habilitada'}`);
+        if (overviewData.drivers.available) contextParts.push(`Motoristas aptos: ${overviewData.drivers.operationalCount}/${MIN_DRIVERS_FOR_TERRITORY_ACTIVATION} (total: ${overviewData.drivers.total})`);
+        if (overviewData.leads.available) contextParts.push(`Leads: ${overviewData.leads.total}`);
+        if (overviewData.activation.available) contextParts.push(`Pronta para ativação: ${overviewData.activation.operationalReady === true ? 'sim' : 'não'}`);
+        if (overviewData.pendencies.length > 0) contextParts.push(`Pendências: ${overviewData.pendencies.join('; ')}`);
+
+        const cityContext = contextParts.join('\n');
+        const enrichedQuestion = `[Dados operacionais reais de ${cityResolved.city}/${cityResolved.uf}]\n${cityContext}\n\n[Pergunta do usuário]\n${question}\n\nResponda com recomendações estratégicas práticas baseadas nos dados acima. Não repita os dados em formato de relatório.`;
+
+        const answer = await (provider as unknown as KaviarAiDraftingComposer).answerGeneral(enrichedQuestion, history);
+        return { answer, toolsUsed: [] };
+      } catch {
+        return {
+          answer: 'Não foi possível processar a pergunta no momento. Tente novamente.',
+          toolsUsed: [],
+        };
+      }
     }
   }
 

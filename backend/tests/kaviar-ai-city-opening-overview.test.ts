@@ -413,16 +413,33 @@ describe('city_opening_overview — city resolution without UF', () => {
     delete process.env.KAVIAR_AI_ROUTER_MODE;
   });
 
-  it('"O que precisamos fazer para tornar Tambaú mais atraente para motoristas" → resolves Tambaú/SP and passes enriched context to answerGeneral', async () => {
+  it('"O que precisamos fazer para tornar Tambaú mais atraente para motoristas" → short-circuits with city data context', async () => {
     process.env.KAVIAR_AI_ROUTER_MODE = 'model';
 
-    // resolveCityFromQuestion: "Tambaú" → found as SP
+    // resolveCityFromQuestion: "Tambaú" → SP
     mockQuery.mockResolvedValueOnce({ rows: [{ city_name: 'Tambaú', uf: 'SP' }] });
 
+    // getCityOpeningOverview internal calls
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ id: 't1', name: 'Tambaú — SP', level: 'city', status: 'preparation', uf: 'SP', city_name: 'Tambaú', regulatory_status: 'approved', regulatory_notes: null, moto_express_enabled: false, moto_passenger_enabled: false }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'a1', name: 'Gestor', email: 'g@k.br', role: 'TM', status: 'active', territory_id: 't1', territory_name: 'Tambaú', territory_level: 'city' }] })
+      .mockResolvedValueOnce({ rows: [{ is_active: true, contract_status: 'signed', document_status: 'verified' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 't1', name: 'Tambaú', status: 'preparation', regulatory_status: 'approved', moto_passenger_enabled: false }] })
+      .mockResolvedValueOnce({ rows: [{ cnt: 1 }] })
+      .mockResolvedValueOnce({ rows: [{ is_active: true, contract_status: 'signed', document_status: 'verified' }] })
+      .mockResolvedValueOnce({ rows: [{ id: 't1', name: 'Tambaú', level: 'city', status: 'preparation', is_active: true, coverage_status: 'NOT_LOADED' }] })
+      .mockResolvedValueOnce({ rows: [{ official_neighborhoods: 2 }] })
+      .mockResolvedValueOnce({ rows: [{ active_regions: 0 }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'a1', name: 'Gestor', admin_id: 'a1', territory_id: 't1', territory_name: 'Tambaú', territory_level: 'city' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ city: 'Tambaú', state: 'SP', slug: 'tambau-sp', public_status: 'IMPLANTACAO', landing_enabled: true }] })
+      .mockResolvedValueOnce({ rows: [] }) // 0 drivers
+      .mockResolvedValueOnce({ rows: [] }); // 0 leads
+
     const mockProvider: any = {
-      decide: vi.fn().mockResolvedValue({ toolsToCall: [] }),
+      decide: vi.fn(),
       compose: vi.fn(),
-      answerGeneral: vi.fn().mockResolvedValue('Considere landing ativa e divulgação.'),
+      answerGeneral: vi.fn().mockResolvedValue('Para atrair motoristas, divulgue a landing.'),
     };
 
     const result = await askKaviarAi(
@@ -430,13 +447,17 @@ describe('city_opening_overview — city resolution without UF', () => {
       mockProvider,
     );
 
-    // Should NOT use city_opening_overview — this is strategic, not status
-    expect(result.toolsUsed).not.toContain('city_opening_overview');
-    // answerGeneral MUST receive enriched question with Tambaú/SP
+    // NOT raw city_opening_overview formatter output
+    expect(result.toolsUsed).toEqual([]);
+    expect(result.answer).not.toContain('## Abertura de cidade');
+    // answerGeneral called with city operational context
     expect(mockProvider.answerGeneral).toHaveBeenCalledTimes(1);
     const passedQuestion = mockProvider.answerGeneral.mock.calls[0][0];
     expect(passedQuestion).toContain('Tambaú/SP');
+    expect(passedQuestion).toContain('Motoristas aptos: 0/3');
     expect(passedQuestion).toContain('tornar');
+    // decide NOT called (short-circuit before router)
+    expect(mockProvider.decide).not.toHaveBeenCalled();
   });
 
   it('strategic question with homonymous city → asks for UF', async () => {
@@ -482,6 +503,52 @@ describe('city_opening_overview — city resolution without UF', () => {
     const passedQuestion = mockProvider.answerGeneral.mock.calls[0][0];
     expect(passedQuestion).not.toContain('Cidade identificada');
     expect(passedQuestion).not.toContain('/SP');
+  });
+
+  it('unauthorized role (LEAD_AGENT) with strategic city question → access denied, no data leaked', async () => {
+    process.env.KAVIAR_AI_ROUTER_MODE = 'model';
+
+    // resolveCityFromQuestion would find Tambaú
+    mockQuery.mockResolvedValueOnce({ rows: [{ city_name: 'Tambaú', uf: 'SP' }] });
+
+    const mockProvider: any = {
+      decide: vi.fn(),
+      compose: vi.fn(),
+      answerGeneral: vi.fn(),
+    };
+
+    const result = await askKaviarAi(
+      { userId: 'a', question: 'O que precisamos fazer para tornar Tambaú mais atraente para motoristas?', role: 'LEAD_AGENT' },
+      mockProvider,
+    );
+
+    // Should get access denied at the top (LEAD_AGENT not in ALLOWED_CHAT_ROLES)
+    expect(result.answer).toContain('Acesso negado');
+    // answerGeneral must NOT be called
+    expect(mockProvider.answerGeneral).not.toHaveBeenCalled();
+    // No DB queries for city data beyond the initial role check
+  });
+
+  it('FINANCE role with strategic city question → access denied (city_opening_overview is SUPER_ADMIN only)', async () => {
+    process.env.KAVIAR_AI_ROUTER_MODE = 'model';
+
+    // resolveCityFromQuestion finds Tambaú
+    mockQuery.mockResolvedValueOnce({ rows: [{ city_name: 'Tambaú', uf: 'SP' }] });
+
+    const mockProvider: any = {
+      decide: vi.fn(),
+      compose: vi.fn(),
+      answerGeneral: vi.fn(),
+    };
+
+    const result = await askKaviarAi(
+      { userId: 'a', question: 'O que precisamos fazer para tornar Tambaú mais atraente para motoristas?', role: 'FINANCE' },
+      mockProvider,
+    );
+
+    // FINANCE can use the chat but city_opening_overview is SUPER_ADMIN only
+    expect(result.answer).toContain('permissão');
+    expect(mockProvider.answerGeneral).not.toHaveBeenCalled();
   });
 
   it('"Como está Tambaú para operar?" resolves SP', async () => {
