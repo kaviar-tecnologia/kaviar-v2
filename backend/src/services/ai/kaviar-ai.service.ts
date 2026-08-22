@@ -1330,8 +1330,23 @@ export async function askKaviarAi(
   if (route.toolsToCall.length === 0) {
     // Generative fallback: only when mode is NOT 'rules' and provider supports it
     if (getRouterMode() !== 'rules' && provider && 'answerGeneral' in provider) {
+      // Enrich with city context if a known city is mentioned without explicit /UF
+      let enrichedQuestion = question;
+      if (!question.match(/\/\s*[A-Za-z]{2}\b/)) {
+        const cityResolved = await resolveCityFromQuestion(question);
+        if (cityResolved === 'ambiguous') {
+          return {
+            answer: 'Encontrei mais de uma cidade com esse nome em UFs diferentes. Informe a UF, por exemplo: Tambaú/SP.',
+            toolsUsed: [],
+          };
+        }
+        if (cityResolved) {
+          enrichedQuestion = `[Cidade identificada no sistema: ${cityResolved.city}/${cityResolved.uf}]\n\n${question}`;
+        }
+      }
+
       try {
-        const answer = await (provider as unknown as KaviarAiDraftingComposer).answerGeneral(question, history);
+        const answer = await (provider as unknown as KaviarAiDraftingComposer).answerGeneral(enrichedQuestion, history);
         return { answer, toolsUsed: [] };
       } catch {
         return {

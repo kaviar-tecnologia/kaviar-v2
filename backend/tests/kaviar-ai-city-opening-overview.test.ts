@@ -413,13 +413,16 @@ describe('city_opening_overview — city resolution without UF', () => {
     delete process.env.KAVIAR_AI_ROUTER_MODE;
   });
 
-  it('"O que precisamos fazer para tornar Tambaú mais atraente para motoristas" → strategic question goes to generative, not city_opening_overview', async () => {
+  it('"O que precisamos fazer para tornar Tambaú mais atraente para motoristas" → resolves Tambaú/SP and passes enriched context to answerGeneral', async () => {
     process.env.KAVIAR_AI_ROUTER_MODE = 'model';
+
+    // resolveCityFromQuestion: "Tambaú" → found as SP
+    mockQuery.mockResolvedValueOnce({ rows: [{ city_name: 'Tambaú', uf: 'SP' }] });
 
     const mockProvider: any = {
       decide: vi.fn().mockResolvedValue({ toolsToCall: [] }),
       compose: vi.fn(),
-      answerGeneral: vi.fn().mockResolvedValue('Para atrair motoristas em Tambaú/SP, considere: landing ativa, incentivos, divulgação local.'),
+      answerGeneral: vi.fn().mockResolvedValue('Considere landing ativa e divulgação.'),
     };
 
     const result = await askKaviarAi(
@@ -429,8 +432,56 @@ describe('city_opening_overview — city resolution without UF', () => {
 
     // Should NOT use city_opening_overview — this is strategic, not status
     expect(result.toolsUsed).not.toContain('city_opening_overview');
-    // Should go to generative fallback
-    expect(mockProvider.answerGeneral).toHaveBeenCalled();
+    // answerGeneral MUST receive enriched question with Tambaú/SP
+    expect(mockProvider.answerGeneral).toHaveBeenCalledTimes(1);
+    const passedQuestion = mockProvider.answerGeneral.mock.calls[0][0];
+    expect(passedQuestion).toContain('Tambaú/SP');
+    expect(passedQuestion).toContain('tornar');
+  });
+
+  it('strategic question with homonymous city → asks for UF', async () => {
+    process.env.KAVIAR_AI_ROUTER_MODE = 'model';
+
+    // resolveCityFromQuestion: "Aurora" → ambiguous (CE + SC)
+    mockQuery.mockResolvedValueOnce({ rows: [{ city_name: 'Aurora', uf: 'CE' }, { city_name: 'Aurora', uf: 'SC' }] });
+
+    const mockProvider: any = {
+      decide: vi.fn().mockResolvedValue({ toolsToCall: [] }),
+      compose: vi.fn(),
+      answerGeneral: vi.fn(),
+    };
+
+    const result = await askKaviarAi(
+      { userId: 'a', question: 'Como tornar Aurora mais atraente para motoristas?', role: 'SUPER_ADMIN' },
+      mockProvider,
+    );
+
+    expect(result.answer).toContain('mais de uma cidade');
+    expect(mockProvider.answerGeneral).not.toHaveBeenCalled();
+  });
+
+  it('strategic question with unknown city → does not invent UF', async () => {
+    process.env.KAVIAR_AI_ROUTER_MODE = 'model';
+
+    // resolveCityFromQuestion: "Xanadu" → not found
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    const mockProvider: any = {
+      decide: vi.fn().mockResolvedValue({ toolsToCall: [] }),
+      compose: vi.fn(),
+      answerGeneral: vi.fn().mockResolvedValue('Resposta sem cidade específica.'),
+    };
+
+    const result = await askKaviarAi(
+      { userId: 'a', question: 'Como tornar Xanadu mais atraente para motoristas?', role: 'SUPER_ADMIN' },
+      mockProvider,
+    );
+
+    // answerGeneral called but WITHOUT city enrichment
+    expect(mockProvider.answerGeneral).toHaveBeenCalledTimes(1);
+    const passedQuestion = mockProvider.answerGeneral.mock.calls[0][0];
+    expect(passedQuestion).not.toContain('Cidade identificada');
+    expect(passedQuestion).not.toContain('/SP');
   });
 
   it('"Como está Tambaú para operar?" resolves SP', async () => {
