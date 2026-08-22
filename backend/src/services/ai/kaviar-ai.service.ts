@@ -38,6 +38,7 @@ import { executeTool, canRoleExecuteTool } from './kaviar-ai.registry';
 import { routeQuestion, getRouterMode } from './kaviar-ai.router';
 import { detectDevelopmentIntent } from './kaviar-ai.dev-intent';
 import { detectDraftingIntent } from './kaviar-ai.drafting-intent';
+import { searchKnowledgeSemantic } from './kaviar-ai.knowledge-semantic';
 import type { KaviarAiDraftingComposer } from './kaviar-ai.provider';
 
 function formatBRLDecimal(value: string): string {
@@ -1397,6 +1398,23 @@ export async function askKaviarAi(
     // available === false or noMatch === false means DB/tool error — do NOT fallback.
     const kData = knowledgeResultData as KnowledgeAnswerData | undefined;
     if (kData && kData.available && kData.noMatch) {
+      // ── Semantic search before ungrounded fallback ────────────────────
+      try {
+        const semantic = await searchKnowledgeSemantic(question, role);
+        if (semantic.available && semantic.matched && semantic.snippets.length > 0) {
+          // Use answerGeneral with grounding context from approved articles
+          const groundedContext = semantic.snippets.join('\n\n');
+          const citationsText = semantic.citations.map(c => `• ${c.title} (${c.slug} v${c.version})`).join('\n');
+          const groundedQuestion = `Responda à seguinte pergunta usando SOMENTE as informações dos trechos aprovados abaixo. Se os trechos não contiverem resposta suficiente, diga que não encontrou informação aprovada suficiente. Não invente.\n\nPergunta: ${question}\n\nTrechos aprovados:\n${groundedContext}`;
+          const answer = await (provider as unknown as KaviarAiDraftingComposer).answerGeneral(groundedQuestion, history);
+          const withCitations = `${answer}\n\nFontes:\n${citationsText}`;
+          return { answer: withCitations, toolsUsed: ['knowledge_answer'] };
+        }
+      } catch {
+        // Semantic search failure is non-fatal; fall through to ungrounded fallback
+      }
+
+      // ── Ungrounded generative fallback (no semantic match) ────────────
       try {
         const answer = await (provider as unknown as KaviarAiDraftingComposer).answerGeneral(question, history);
         return { answer, toolsUsed: [] };
