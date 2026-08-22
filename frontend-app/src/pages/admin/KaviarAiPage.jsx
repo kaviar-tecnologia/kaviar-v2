@@ -617,7 +617,11 @@ export default function KaviarAiPage() {
     const slice = messages.slice(-MAX_HISTORY);
     for (const msg of slice) {
       if ((msg.role === 'user' || msg.role === 'assistant') && msg.content) {
-        const content = msg.content.slice(0, 1000);
+        const content = msg.content.length <= 1000
+          ? msg.content
+          : msg.role === 'assistant'
+            ? msg.content.slice(-1000)
+            : msg.content.slice(0, 1000);
         if (totalChars + content.length > MAX_HISTORY_CHARS) break;
         recentHistory.push({ role: msg.role, content });
         totalChars += content.length;
