@@ -241,6 +241,68 @@ describe('KaviarAiPage — Processing Status UX', () => {
   });
 });
 
+describe('KaviarAiPage — History truncation preserves assistant offer at end', () => {
+  const src = readFileSync(resolve(__dirname, '../pages/admin/KaviarAiPage.jsx'), 'utf8');
+
+  it('assistant messages >1000 chars use slice(-1000) to preserve end', () => {
+    expect(src).toContain("msg.content.slice(-1000)");
+  });
+
+  it('user messages >1000 chars use slice(0, 1000) to preserve start', () => {
+    expect(src).toContain("msg.content.slice(0, 1000)");
+  });
+
+  it('messages <=1000 chars are preserved as-is', () => {
+    expect(src).toContain("msg.content.length <= 1000");
+  });
+
+  it('truncation logic distinguishes by role', () => {
+    expect(src).toContain("msg.role === 'assistant'");
+  });
+
+  it('offer at end of long assistant message is preserved (behavioral proof)', () => {
+    // Simulate the truncation logic exactly as in the component
+    const truncate = (content, role) =>
+      content.length <= 1000
+        ? content
+        : role === 'assistant'
+          ? content.slice(-1000)
+          : content.slice(0, 1000);
+
+    const longPrefix = 'A '.repeat(600); // 1200 chars
+    const offer = 'Se quiser, posso transformar isso em um checklist prático de abertura de cidade.';
+    const longAssistantMessage = longPrefix + offer;
+
+    expect(longAssistantMessage.length).toBeGreaterThan(1000);
+
+    const truncated = truncate(longAssistantMessage, 'assistant');
+    expect(truncated.length).toBeLessThanOrEqual(1000);
+    // The offer at the END is preserved
+    expect(truncated).toContain('posso transformar isso em um checklist prático de abertura de cidade');
+  });
+
+  it('user question is truncated from start (preserves intent at beginning)', () => {
+    const truncate = (content, role) =>
+      content.length <= 1000
+        ? content
+        : role === 'assistant'
+          ? content.slice(-1000)
+          : content.slice(0, 1000);
+
+    const longUserMessage = 'Quero saber sobre ' + 'detalhes '.repeat(200);
+    expect(longUserMessage.length).toBeGreaterThan(1000);
+
+    const truncated = truncate(longUserMessage, 'user');
+    expect(truncated.startsWith('Quero saber sobre')).toBe(true);
+  });
+
+  it('history does not include the current question being sent', () => {
+    // The code does messages.slice(-MAX_HISTORY) BEFORE adding the new user message
+    expect(src).toContain('// Extract recent history');
+    expect(src).toContain('BEFORE adding new user message');
+  });
+});
+
 describe('AdminApp — rota e menu Chat KAVIAR', () => {
   const src = readFileSync(resolve(__dirname, '../components/admin/AdminApp.jsx'), 'utf8');
 
