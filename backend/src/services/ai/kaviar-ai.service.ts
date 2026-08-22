@@ -994,8 +994,7 @@ const OFFER_PATTERNS = [
 
 const AFFIRMATIVE_SHORT = new Set([
   'quero', 'sim', 'pode', 'faça', 'faca', 'ok', 'por favor',
-  'pode sim', 'quero sim', 'sim por favor', 'claro', 'bora',
-  'manda', 'vai', 'show', 'perfeito', 'isso', 'gostaria',
+  'pode sim', 'quero sim', 'sim por favor', 'claro', 'bora', 'manda',
 ]);
 
 /**
@@ -1085,6 +1084,26 @@ export async function askKaviarAi(
     };
   }
 
+  // ── Offer acceptance short-circuit (read-only) ─────────────────────────
+  // Must be AFTER devIntent (cannot bypass development confirmation)
+  // and BEFORE routeQuestion (so "quero" is not misrouted by keyword rules).
+  const acceptedOffer = resolveOfferAcceptance(question, history);
+  if (
+    acceptedOffer &&
+    getRouterMode() !== 'rules' &&
+    provider && 'answerGeneral' in provider
+  ) {
+    try {
+      const answer = await (provider as unknown as KaviarAiDraftingComposer).answerGeneral(acceptedOffer, history);
+      return { answer, toolsUsed: [] };
+    } catch {
+      return {
+        answer: 'Não foi possível processar a pergunta no momento. Tente novamente.',
+        toolsUsed: [],
+      };
+    }
+  }
+
   // ── Drafting intent (redação) — após dev-intent, antes do routing ────
   const draftingIntent = detectDraftingIntent(question);
   if (draftingIntent.isDrafting) {
@@ -1151,8 +1170,7 @@ export async function askKaviarAi(
     // Generative fallback: only when mode is NOT 'rules' and provider supports it
     if (getRouterMode() !== 'rules' && provider && 'answerGeneral' in provider) {
       try {
-        const effectiveQuestion = resolveOfferAcceptance(question, history) ?? question;
-        const answer = await (provider as unknown as KaviarAiDraftingComposer).answerGeneral(effectiveQuestion, history);
+        const answer = await (provider as unknown as KaviarAiDraftingComposer).answerGeneral(question, history);
         return { answer, toolsUsed: [] };
       } catch {
         return {
@@ -1272,8 +1290,7 @@ export async function askKaviarAi(
     const kData = knowledgeResultData as KnowledgeAnswerData | undefined;
     if (kData && kData.available && kData.noMatch) {
       try {
-        const effectiveQuestion = resolveOfferAcceptance(question, history) ?? question;
-        const answer = await (provider as unknown as KaviarAiDraftingComposer).answerGeneral(effectiveQuestion, history);
+        const answer = await (provider as unknown as KaviarAiDraftingComposer).answerGeneral(question, history);
         return { answer, toolsUsed: [] };
       } catch {
         return {
