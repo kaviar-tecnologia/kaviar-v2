@@ -40,6 +40,7 @@ import { executeTool, canRoleExecuteTool } from './kaviar-ai.registry';
 import { routeQuestion, getRouterMode } from './kaviar-ai.router';
 import { orchestrate, classifyIntent } from './kaviar-ai.orchestrator';
 import { classifyDriverIntent, refineDriverTools, formatConsolidatedPending } from './kaviar-ai.driver-intent';
+import { classifyFinanceIntent, formatFinancePendingSummary, formatFinanceOverdue, formatFinanceDueSoon } from './kaviar-ai.finance-intent';
 import { detectDevelopmentIntent } from './kaviar-ai.dev-intent';
 import { detectDraftingIntent } from './kaviar-ai.drafting-intent';
 import { searchKnowledgeSemantic } from './kaviar-ai.knowledge-semantic';
@@ -1426,6 +1427,20 @@ export async function askKaviarAi(
     route.toolsToCall = driverPreferred;
   }
 
+  // ── Finance intent routing: fill gap when rules don't match FINANCE questions ─
+  if (route.toolsToCall.length === 0 && classifyIntent(question) === 'FINANCE') {
+    const financeSub = classifyFinanceIntent(question);
+    const financePreferred: KaviarAiToolName[] =
+      financeSub === 'FINANCE_OVERDUE' || financeSub === 'FINANCE_DUE_SOON'
+        ? ['finance_due_obligations'] :
+      financeSub === 'FINANCE_REVENUE'
+        ? ['rides_summary_today'] :
+      financeSub === 'FINANCE_INCENTIVE'
+        ? ['annual_incentive_summary'] :
+      ['finance_accounting_brief'];
+    route.toolsToCall = financePreferred;
+  }
+
   if (route.toolsToCall.length === 0) {
     // Generative fallback: only when mode is NOT 'rules' and provider supports it
     if (getRouterMode() !== 'rules' && provider && 'answerGeneral' in provider) {
@@ -1528,6 +1543,75 @@ export async function askKaviarAi(
     // For other specific sub-intents, narrow the tool list
     if (refinedTools.length > 0 && refinedTools.length < authorizedTools.length) {
       authorizedTools = refinedTools;
+    }
+  }
+
+  // ── Finance semantic refinement ────────────────────────────────────────
+  if (overallIntent === 'FINANCE') {
+    const financeSubIntent = classifyFinanceIntent(question);
+
+    if (financeSubIntent === 'FINANCE_PENDING_GENERAL') {
+      // Canonical source: finance_accounting_brief (contains overdue + due_soon + result)
+      if (!canRoleExecuteTool(role, 'finance_accounting_brief')) {
+        return {
+          answer: 'Você não tem permissão para acessar essas informações.',
+          toolsUsed: [],
+        };
+      }
+
+      try {
+        const result = await executeTool('finance_accounting_brief', { period: 'month' });
+        const answer = formatFinancePendingSummary(result.data as FinanceAccountingBriefData);
+        return { answer, toolsUsed: ['finance_accounting_brief'] };
+      } catch {
+        return {
+          answer: 'Não foi possível consultar as pendências financeiras no momento. Tente novamente.',
+          toolsUsed: [],
+        };
+      }
+    }
+
+    // Specific overdue/due-soon questions use the canonical obligations source
+    // and a sub-intent-specific formatter so unrelated obligation horizons are not mixed.
+    if (financeSubIntent === 'FINANCE_OVERDUE' || financeSubIntent === 'FINANCE_DUE_SOON') {
+      const correctTool: KaviarAiToolName = 'finance_due_obligations';
+
+      if (!canRoleExecuteTool(role, correctTool)) {
+        return {
+          answer: 'Você não tem permissão para acessar essas informações.',
+          toolsUsed: [],
+        };
+      }
+
+      try {
+        const result = await executeTool(correctTool);
+        const data = result.data as FinanceDueObligationsData;
+        const answer = financeSubIntent === 'FINANCE_OVERDUE'
+          ? formatFinanceOverdue(data)
+          : formatFinanceDueSoon(data);
+
+        return { answer, toolsUsed: [correctTool] };
+      } catch {
+        return {
+          answer: 'Não foi possível consultar as obrigações financeiras no momento. Tente novamente.',
+          toolsUsed: [],
+        };
+      }
+    } else if (financeSubIntent === 'FINANCE_REVENUE') {
+      const revTools = authorizedTools.filter(t =>
+        t === 'rides_summary_today' || t === 'rides_operations'
+      );
+      if (revTools.length > 0) {
+        authorizedTools = revTools.slice(0, 1);
+      }
+    } else if (financeSubIntent === 'FINANCE_INCENTIVE') {
+      if (authorizedTools.includes('annual_incentive_summary')) {
+        authorizedTools = ['annual_incentive_summary'];
+      }
+    } else if (financeSubIntent === 'FINANCE_ACCOUNTING') {
+      if (authorizedTools.includes('finance_accounting_brief')) {
+        authorizedTools = ['finance_accounting_brief'];
+      }
     }
   }
 

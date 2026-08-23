@@ -205,6 +205,21 @@ export function classifyIntent(question: string): KaviarAiIntent {
     return 'FINANCE';
   }
 
+  // "pendência financeira" / "faturamos" / "receita"
+  if (
+    (q.includes('pendencia') || q.includes('pendencias')) &&
+    (q.includes('financeira') || q.includes('financeiro'))
+  ) {
+    return 'FINANCE';
+  }
+
+  if (
+    q.includes('fatur') || q.includes('receita das corridas') ||
+    (q.includes('receita') && !q.includes('motorista'))
+  ) {
+    return 'FINANCE';
+  }
+
   // REGULATORY — regulatory status
   if (
     q.includes('regulatorio') || q.includes('regulatoria') ||
