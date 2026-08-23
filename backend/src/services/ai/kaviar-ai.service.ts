@@ -43,6 +43,10 @@ import { classifyDriverIntent, refineDriverTools, formatConsolidatedPending } fr
 import { classifyFinanceIntent, formatFinancePendingSummary, formatFinanceOverdue, formatFinanceDueSoon } from './kaviar-ai.finance-intent';
 import { classifyCrmIntent, formatCrmIntent } from './kaviar-ai.crm-intent';
 import {
+  classifySupervisorIntent,
+  formatSupervisorActions,
+} from './kaviar-ai.supervisor';
+import {
   classifyCommunicationIntent,
   formatEmailNew,
   formatEmailImportant,
@@ -1428,6 +1432,14 @@ export async function askKaviarAi(
 
   const route = await routeQuestion(question, provider);
 
+  // ── Supervisor routing: action/priority questions use daily briefing ─────
+  if (
+    route.toolsToCall.length === 0 &&
+    classifySupervisorIntent(question) === 'SUPERVISOR_ACTIONS'
+  ) {
+    route.toolsToCall = ['daily_briefing'];
+  }
+
   // ── Driver intent routing: fill gap when rules don't match DRIVERS questions ─
   if (route.toolsToCall.length === 0 && classifyIntent(question) === 'DRIVERS') {
     const driverSub = classifyDriverIntent(question);
@@ -1532,6 +1544,29 @@ export async function askKaviarAi(
       answer: 'Você não tem permissão para acessar essas informações.',
       toolsUsed: [],
     };
+  }
+
+  // ── Supervisor v1 ──────────────────────────────────────────────────────
+  if (
+    classifySupervisorIntent(question) === 'SUPERVISOR_ACTIONS' &&
+    authorizedTools.includes('daily_briefing')
+  ) {
+    try {
+      const result = await executeTool('daily_briefing');
+      const answer = formatSupervisorActions(
+        result.data as DailyBriefingData
+      );
+
+      return {
+        answer,
+        toolsUsed: ['daily_briefing'],
+      };
+    } catch {
+      return {
+        answer: 'Não foi possível montar as prioridades operacionais no momento. Tente novamente.',
+        toolsUsed: [],
+      };
+    }
   }
 
   // ── Driver semantic refinement ─────────────────────────────────────────
