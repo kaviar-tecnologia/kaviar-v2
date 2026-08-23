@@ -157,3 +157,57 @@ describe('Supervisor v1 — routing contract', () => {
     ).toBe('SUPERVISOR_OVERVIEW');
   });
 });
+
+describe('Supervisor v2 — recomendações', () => {
+  it('recomenda ação financeira para obrigação vencida', () => {
+    const answer = formatSupervisorActions(
+      briefing({
+        priority: 'ALTA',
+        highItems: ['2 obrigações financeiras vencidas.'],
+      })
+    );
+
+    expect(answer).toContain(
+      'Ação recomendada: Revisar a pendência financeira e confirmar pagamento ou regularização.'
+    );
+  });
+
+  it('recomenda revisão documental para documentos pendentes', () => {
+    const answer = formatSupervisorActions(
+      briefing({
+        priority: 'ATENÇÃO',
+        attentionItems: ['3 motoristas com documentos pendentes.'],
+      })
+    );
+
+    expect(answer).toContain(
+      'Ação recomendada: Revisar os documentos pendentes e cobrar ou validar o que estiver faltando.'
+    );
+  });
+
+  it('recomenda revisão de aprovação para cadastros aguardando aprovação', () => {
+    const answer = formatSupervisorActions(
+      briefing({
+        priority: 'ATENÇÃO',
+        attentionItems: ['5 motoristas aguardando aprovação.'],
+      })
+    );
+
+    expect(answer).toContain(
+      'Ação recomendada: Revisar os cadastros pendentes e aprovar ou rejeitar os casos válidos.'
+    );
+  });
+
+  it('mantém confirmação humana antes de execução', () => {
+    const answer = formatSupervisorActions(
+      briefing({
+        priority: 'ATENÇÃO',
+        attentionItems: ['1 pendência operacional.'],
+      })
+    );
+
+    expect(answer).toContain(
+      'mediante sua confirmação'
+    );
+  });
+});
