@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyCommunicationIntent,
   formatEmailNew,
+  formatEmailImportant,
   formatEmailSubjects,
   formatEmailRisk,
   formatWhatsAppUnread,
@@ -63,10 +64,18 @@ describe('COMMUNICATION semantic intent', () => {
     ).toBe('COMM_EMAIL_RISK');
   });
 
-  it('does not classify important email as security risk', () => {
+  it('classifies important email without pretending it is security risk', () => {
     expect(
       classifyCommunicationIntent('Tem algum e-mail importante?')
-    ).not.toBe('COMM_EMAIL_RISK');
+    ).toBe('COMM_EMAIL_IMPORTANT');
+
+    expect(formatEmailImportant()).toContain('não possui um critério confiável');
+  });
+
+  it('keeps general WhatsApp questions on the WhatsApp channel', () => {
+    expect(
+      classifyCommunicationIntent('Como está o WhatsApp?')
+    ).toBe('COMM_WHATSAPP_GENERAL');
   });
 
   it('classifies unread WhatsApp questions', () => {

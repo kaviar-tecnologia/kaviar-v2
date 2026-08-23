@@ -5,9 +5,11 @@ export type CommunicationSubIntent =
   | 'COMM_EMAIL_NEW'
   | 'COMM_EMAIL_SUBJECTS'
   | 'COMM_EMAIL_RISK'
+  | 'COMM_EMAIL_IMPORTANT'
   | 'COMM_WHATSAPP_UNREAD'
   | 'COMM_WHATSAPP_URGENT'
   | 'COMM_WHATSAPP_NEW'
+  | 'COMM_WHATSAPP_GENERAL'
   | 'COMM_GENERAL';
 
 function normalize(text: string): string {
@@ -54,7 +56,7 @@ export function classifyCommunicationIntent(
       return 'COMM_WHATSAPP_NEW';
     }
 
-    return 'COMM_GENERAL';
+    return 'COMM_WHATSAPP_GENERAL';
   }
 
   if (
@@ -65,6 +67,15 @@ export function classifyCommunicationIntent(
     q.includes('phishing')
   ) {
     return 'COMM_EMAIL_RISK';
+  }
+
+  if (
+    q.includes('importante') ||
+    q.includes('importantes') ||
+    q.includes('prioritario') ||
+    q.includes('prioritarios')
+  ) {
+    return 'COMM_EMAIL_IMPORTANT';
   }
 
   if (
@@ -95,6 +106,10 @@ export function formatEmailNew(data: InboxSummaryData): string {
   }
 
   return `Há ${data.totalNew} e-mail${data.totalNew === 1 ? '' : 's'} novo${data.totalNew === 1 ? '' : 's'} na caixa de entrada.`;
+}
+
+export function formatEmailImportant(): string {
+  return 'A caixa de entrada não possui um critério confiável de importância. Posso mostrar os assuntos dos e-mails novos ou verificar mensagens com risco de segurança.';
 }
 
 export function formatEmailSubjects(data: InboxSummaryData): string {

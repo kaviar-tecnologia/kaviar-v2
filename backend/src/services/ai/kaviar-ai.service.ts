@@ -45,6 +45,7 @@ import { classifyCrmIntent, formatCrmIntent } from './kaviar-ai.crm-intent';
 import {
   classifyCommunicationIntent,
   formatEmailNew,
+  formatEmailImportant,
   formatEmailSubjects,
   formatEmailRisk,
   formatWhatsAppUnread,
@@ -1711,9 +1712,11 @@ export async function askKaviarAi(
           ? formatEmailSubjects(data)
           : communicationSub === 'COMM_EMAIL_RISK'
             ? formatEmailRisk(data)
-            : communicationSub === 'COMM_EMAIL_NEW'
-              ? formatEmailNew(data)
-              : formatInboxSummary(data);
+            : communicationSub === 'COMM_EMAIL_IMPORTANT'
+              ? formatEmailImportant()
+              : communicationSub === 'COMM_EMAIL_NEW'
+                ? formatEmailNew(data)
+                : formatInboxSummary(data);
 
       return {
         answer,
