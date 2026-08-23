@@ -40,7 +40,7 @@ import { executeTool, canRoleExecuteTool } from './kaviar-ai.registry';
 import { routeQuestion, getRouterMode } from './kaviar-ai.router';
 import { orchestrate, classifyIntent } from './kaviar-ai.orchestrator';
 import { classifyDriverIntent, refineDriverTools, formatConsolidatedPending } from './kaviar-ai.driver-intent';
-import { classifyFinanceIntent, formatFinancePendingSummary } from './kaviar-ai.finance-intent';
+import { classifyFinanceIntent, formatFinancePendingSummary, formatFinanceOverdue, formatFinanceDueSoon } from './kaviar-ai.finance-intent';
 import { detectDevelopmentIntent } from './kaviar-ai.dev-intent';
 import { detectDraftingIntent } from './kaviar-ai.drafting-intent';
 import { searchKnowledgeSemantic } from './kaviar-ai.knowledge-semantic';
@@ -1571,13 +1571,31 @@ export async function askKaviarAi(
       }
     }
 
-    // For specific sub-intents: if model router returned wrong tool, override
+    // Specific overdue/due-soon questions use the canonical obligations source
+    // and a sub-intent-specific formatter so unrelated obligation horizons are not mixed.
     if (financeSubIntent === 'FINANCE_OVERDUE' || financeSubIntent === 'FINANCE_DUE_SOON') {
       const correctTool: KaviarAiToolName = 'finance_due_obligations';
-      if (canRoleExecuteTool(role, correctTool) && !authorizedTools.includes(correctTool)) {
-        authorizedTools = [correctTool];
-      } else if (authorizedTools.includes(correctTool)) {
-        authorizedTools = [correctTool];
+
+      if (!canRoleExecuteTool(role, correctTool)) {
+        return {
+          answer: 'Você não tem permissão para acessar essas informações.',
+          toolsUsed: [],
+        };
+      }
+
+      try {
+        const result = await executeTool(correctTool);
+        const data = result.data as FinanceDueObligationsData;
+        const answer = financeSubIntent === 'FINANCE_OVERDUE'
+          ? formatFinanceOverdue(data)
+          : formatFinanceDueSoon(data);
+
+        return { answer, toolsUsed: [correctTool] };
+      } catch {
+        return {
+          answer: 'Não foi possível consultar as obrigações financeiras no momento. Tente novamente.',
+          toolsUsed: [],
+        };
       }
     } else if (financeSubIntent === 'FINANCE_REVENUE') {
       const revTools = authorizedTools.filter(t =>

@@ -10,6 +10,8 @@ import {
   classifyFinanceIntent,
   refineFinanceTools,
   formatFinancePendingSummary,
+  formatFinanceOverdue,
+  formatFinanceDueSoon,
 } from '../src/services/ai/kaviar-ai.finance-intent';
 import type { FinanceAccountingBriefData } from '../src/services/ai/kaviar-ai.tools';
 import type { KaviarAiToolName } from '../src/services/ai/kaviar-ai.types';
@@ -154,6 +156,41 @@ describe('Finance Intent — FINANCE_OVERDUE', () => {
 
 // ── 3. FINANCE_DUE_SOON ─────────────────────────────────────────────────────
 
+
+describe('Finance Intent — specific response formatting', () => {
+  it('OVERDUE formatter does not include due-soon horizon', () => {
+    const data = {
+      totalPending: 5,
+      totalAmountCents: '150000',
+      overdueCount: 2,
+      overdueAmountCents: '85000',
+      dueSoonCount: 3,
+      dueSoonAmountCents: '65000',
+    };
+
+    const answer = formatFinanceOverdue(data);
+
+    expect(answer).toContain('vencida');
+    expect(answer).not.toContain('próximos 7 dias');
+  });
+
+  it('DUE_SOON formatter does not include overdue obligations', () => {
+    const data = {
+      totalPending: 5,
+      totalAmountCents: '150000',
+      overdueCount: 2,
+      overdueAmountCents: '85000',
+      dueSoonCount: 3,
+      dueSoonAmountCents: '65000',
+    };
+
+    const answer = formatFinanceDueSoon(data);
+
+    expect(answer).toContain('próximos 7 dias');
+    expect(answer).not.toContain('vencida');
+  });
+});
+
 describe('Finance Intent — FINANCE_DUE_SOON', () => {
   it('classifies "O que vence esta semana?" as FINANCE_DUE_SOON', () => {
     expect(classifyFinanceIntent('O que vence esta semana?')).toBe('FINANCE_DUE_SOON');
@@ -294,7 +331,7 @@ describe('Finance Intent — Router wrong tool correction', () => {
     expect(response.toolsUsed).not.toContain('annual_incentive_summary');
     // The tool was called and should format overdue obligations
     expect(response.answer).toContain('2');
-    expect(response.answer).toContain('pendente');
+    expect(response.answer).toContain('vencida');
   });
 });
 

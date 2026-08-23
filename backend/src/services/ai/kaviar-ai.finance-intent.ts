@@ -1,5 +1,5 @@
 import type { KaviarAiToolName } from './kaviar-ai.types';
-import type { FinanceAccountingBriefData } from './kaviar-ai.tools';
+import type { FinanceAccountingBriefData, FinanceDueObligationsData } from './kaviar-ai.tools';
 
 // ── Finance sub-intent types ─────────────────────────────────────────────────
 
@@ -185,6 +185,23 @@ export function formatFinancePendingSummary(data: FinanceAccountingBriefData): s
   }
 
   return parts.join('\n');
+}
+
+
+export function formatFinanceOverdue(data: FinanceDueObligationsData): string {
+  if (data.overdueCount === 0) {
+    return 'Não há obrigações financeiras vencidas.';
+  }
+
+  return `${data.overdueCount} ${data.overdueCount === 1 ? 'obrigação financeira vencida' : 'obrigações financeiras vencidas'}, totalizando ${formatCents(data.overdueAmountCents)}.`;
+}
+
+export function formatFinanceDueSoon(data: FinanceDueObligationsData): string {
+  if (data.dueSoonCount === 0) {
+    return 'Não há obrigações financeiras vencendo nos próximos 7 dias.';
+  }
+
+  return `${data.dueSoonCount} ${data.dueSoonCount === 1 ? 'obrigação financeira vence' : 'obrigações financeiras vencem'} nos próximos 7 dias, totalizando ${formatCents(data.dueSoonAmountCents)}.`;
 }
 
 // ── Helper ───────────────────────────────────────────────────────────────────
