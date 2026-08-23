@@ -1428,6 +1428,11 @@ export async function askKaviarAi(
     route.toolsToCall = driverPreferred;
   }
 
+  // ── CRM intent routing: fill gap when rules don't match CRM questions ──
+  if (route.toolsToCall.length === 0 && classifyIntent(question) === 'CRM') {
+    route.toolsToCall = ['crm_leads_summary'];
+  }
+
   // ── Finance intent routing: fill gap when rules don't match FINANCE questions ─
   if (route.toolsToCall.length === 0 && classifyIntent(question) === 'FINANCE') {
     const financeSub = classifyFinanceIntent(question);

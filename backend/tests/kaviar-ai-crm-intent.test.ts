@@ -54,6 +54,14 @@ describe('CRM semantic intent', () => {
     expect(classifyCrmIntent('Quais territórios têm mais leads?')).toBe('CRM_TERRITORY');
   });
 
+  it('source question requires CRM canonical source', () => {
+    expect(classifyIntent('De onde vieram os leads?')).toBe('CRM');
+  });
+
+  it('territory question requires CRM canonical source', () => {
+    expect(classifyIntent('Quais territórios têm mais leads?')).toBe('CRM');
+  });
+
   it('orchestrator recognizes source question as CRM', () => {
     expect(classifyIntent('De onde vieram os leads?')).toBe('CRM');
   });
