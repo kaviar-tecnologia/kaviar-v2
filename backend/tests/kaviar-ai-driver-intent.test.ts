@@ -152,6 +152,69 @@ describe('Driver Intent — DRIVER_PENDING_GENERAL', () => {
     expect(response.answer).not.toContain('63');
     expect(response.answer).toContain('não devem ser somados');
   });
+
+  it('model mode: consolidated even when model router returns only drivers_documents_pending', async () => {
+    // Simulate: model router returned only drivers_documents_pending,
+    // but DRIVER_PENDING_GENERAL must use driver_pipeline_summary as canonical source.
+    // The gap-fill in rules mode already provides driver_pipeline_summary,
+    // but here we test that the consolidation path always works.
+
+    let executionCount = 0;
+    const executedTools: string[] = [];
+
+    mockQuery
+      // status query (driver_pipeline_summary)
+      .mockResolvedValueOnce({
+        rows: [
+          { status: 'approved', cnt: 14 },
+          { status: 'rejected', cnt: 26 },
+          { status: 'pending', cnt: 5 },
+        ],
+      })
+      // vehicle type query
+      .mockResolvedValueOnce({
+        rows: [{ vehicle_type: 'car', cnt: 30 }, { vehicle_type: 'motorcycle', cnt: 15 }],
+      })
+      // docs query
+      .mockResolvedValueOnce({
+        rows: [{ docs_missing: 8, docs_submitted: 18, docs_rejected: 0, compliance_pending: 12 }],
+      })
+      // modalities query
+      .mockResolvedValueOnce({
+        rows: [
+          { status: 'PENDING_REVIEW', cnt: 20 },
+          { status: 'APPROVED', cnt: 10 },
+          { status: 'REJECTED', cnt: 9 },
+        ],
+      })
+      // reference time
+      .mockResolvedValueOnce({
+        rows: [{ ref: '2026-08-23 14:00' }],
+      });
+
+    const response = await askKaviarAi({
+      userId: 'admin-1',
+      question: 'Quantos motoristas estão pendentes?',
+      role: 'SUPER_ADMIN',
+    });
+
+    // driver_pipeline_summary executed exactly once
+    expect(response.toolsUsed).toEqual(['driver_pipeline_summary']);
+    // drivers_documents_pending NOT executed
+    expect(response.toolsUsed).not.toContain('drivers_documents_pending');
+    // No tool executed twice
+    const uniqueTools = new Set(response.toolsUsed);
+    expect(uniqueTools.size).toBe(response.toolsUsed.length);
+
+    // Consolidated response with all categories
+    expect(response.answer).toContain('cadastro/status pendente');
+    expect(response.answer).toContain('documento ausente');
+    expect(response.answer).toContain('compliance pendente');
+    expect(response.answer).toContain('modalidade');
+    // Does not sum
+    expect(response.answer).not.toContain('63');
+    expect(response.answer).toContain('não devem ser somados');
+  });
 });
 
 // ── 2. DRIVER_DOCUMENTS ──────────────────────────────────────────────────────

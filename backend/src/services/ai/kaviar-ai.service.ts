@@ -1503,24 +1503,25 @@ export async function askKaviarAi(
     const refinedTools = refineDriverTools(driverSubIntent, authorizedTools);
 
     if (driverSubIntent === 'DRIVER_PENDING_GENERAL') {
-      // Consolidated pending: use driver_pipeline_summary and format specially
-      const pipelineTool = refinedTools.includes('driver_pipeline_summary')
-        ? 'driver_pipeline_summary'
-        : refinedTools[0];
+      // Consolidated pending: canonical source is driver_pipeline_summary.
+      // It contains status, docs, compliance and modalities in a single call.
+      // Do NOT substitute another tool silently.
+      if (!canRoleExecuteTool(role, 'driver_pipeline_summary')) {
+        return {
+          answer: 'Você não tem permissão para acessar essas informações.',
+          toolsUsed: [],
+        };
+      }
 
-      if (pipelineTool && canRoleExecuteTool(role, pipelineTool)) {
-        try {
-          const result = await executeTool(pipelineTool);
-          if (pipelineTool === 'driver_pipeline_summary') {
-            const answer = formatConsolidatedPending(result.data as DriverPipelineSummaryData);
-            return { answer, toolsUsed: ['driver_pipeline_summary'] };
-          }
-        } catch {
-          return {
-            answer: 'Não foi possível consultar as pendências de motoristas no momento. Tente novamente.',
-            toolsUsed: [],
-          };
-        }
+      try {
+        const result = await executeTool('driver_pipeline_summary');
+        const answer = formatConsolidatedPending(result.data as DriverPipelineSummaryData);
+        return { answer, toolsUsed: ['driver_pipeline_summary'] };
+      } catch {
+        return {
+          answer: 'Não foi possível consultar as pendências de motoristas no momento. Tente novamente.',
+          toolsUsed: [],
+        };
       }
     }
 
