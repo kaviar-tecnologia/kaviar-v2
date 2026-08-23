@@ -38,7 +38,8 @@ import { MIN_DRIVERS_FOR_TERRITORY_ACTIVATION } from './kaviar-ai.city-opening-o
 import { getCityOpeningOverview } from './kaviar-ai.city-opening-overview';
 import { executeTool, canRoleExecuteTool } from './kaviar-ai.registry';
 import { routeQuestion, getRouterMode } from './kaviar-ai.router';
-import { orchestrate } from './kaviar-ai.orchestrator';
+import { orchestrate, classifyIntent } from './kaviar-ai.orchestrator';
+import { classifyDriverIntent, refineDriverTools, formatConsolidatedPending } from './kaviar-ai.driver-intent';
 import { detectDevelopmentIntent } from './kaviar-ai.dev-intent';
 import { detectDraftingIntent } from './kaviar-ai.drafting-intent';
 import { searchKnowledgeSemantic } from './kaviar-ai.knowledge-semantic';
@@ -1415,6 +1416,16 @@ export async function askKaviarAi(
 
   const route = await routeQuestion(question, provider);
 
+  // ── Driver intent routing: fill gap when rules don't match DRIVERS questions ─
+  if (route.toolsToCall.length === 0 && classifyIntent(question) === 'DRIVERS') {
+    const driverSub = classifyDriverIntent(question);
+    const driverPreferred: KaviarAiToolName[] =
+      driverSub === 'DRIVER_DOCUMENTS' ? ['drivers_documents_pending'] :
+      driverSub === 'DRIVER_RATINGS' ? ['driver_ratings_summary'] :
+      ['driver_pipeline_summary'];
+    route.toolsToCall = driverPreferred;
+  }
+
   if (route.toolsToCall.length === 0) {
     // Generative fallback: only when mode is NOT 'rules' and provider supports it
     if (getRouterMode() !== 'rules' && provider && 'answerGeneral' in provider) {
@@ -1476,12 +1487,47 @@ export async function askKaviarAi(
     };
   }
 
-  const authorizedTools = toolsAfterOrchestrator.filter(t => canRoleExecuteTool(role, t));
+  let authorizedTools = toolsAfterOrchestrator.filter(t => canRoleExecuteTool(role, t));
   if (authorizedTools.length === 0) {
     return {
       answer: 'Você não tem permissão para acessar essas informações.',
       toolsUsed: [],
     };
+  }
+
+  // ── Driver semantic refinement ─────────────────────────────────────────
+  // For DRIVERS intent, refine sub-intent and handle consolidated pending.
+  const overallIntent = classifyIntent(question);
+  if (overallIntent === 'DRIVERS') {
+    const driverSubIntent = classifyDriverIntent(question);
+    const refinedTools = refineDriverTools(driverSubIntent, authorizedTools);
+
+    if (driverSubIntent === 'DRIVER_PENDING_GENERAL') {
+      // Consolidated pending: use driver_pipeline_summary and format specially
+      const pipelineTool = refinedTools.includes('driver_pipeline_summary')
+        ? 'driver_pipeline_summary'
+        : refinedTools[0];
+
+      if (pipelineTool && canRoleExecuteTool(role, pipelineTool)) {
+        try {
+          const result = await executeTool(pipelineTool);
+          if (pipelineTool === 'driver_pipeline_summary') {
+            const answer = formatConsolidatedPending(result.data as DriverPipelineSummaryData);
+            return { answer, toolsUsed: ['driver_pipeline_summary'] };
+          }
+        } catch {
+          return {
+            answer: 'Não foi possível consultar as pendências de motoristas no momento. Tente novamente.',
+            toolsUsed: [],
+          };
+        }
+      }
+    }
+
+    // For other specific sub-intents, narrow the tool list
+    if (refinedTools.length > 0 && refinedTools.length < authorizedTools.length) {
+      authorizedTools = refinedTools;
+    }
   }
 
   const answers: string[] = [];
