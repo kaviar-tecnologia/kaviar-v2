@@ -47,6 +47,11 @@ import {
   formatSupervisorActions,
 } from './kaviar-ai.supervisor';
 import {
+  detectOperationalFindings,
+  formatOperationalFindings,
+  isInconsistencyQuestion,
+} from './kaviar-ai.inconsistency-detector';
+import {
   classifyCommunicationIntent,
   formatEmailNew,
   formatEmailImportant,
@@ -1432,6 +1437,14 @@ export async function askKaviarAi(
 
   const route = await routeQuestion(question, provider);
 
+  // ── Inconsistency Detector v1 ───────────────────────────────────────────
+  if (
+    route.toolsToCall.length === 0 &&
+    isInconsistencyQuestion(question)
+  ) {
+    route.toolsToCall = ['daily_briefing'];
+  }
+
   // ── Supervisor routing: action/priority questions use daily briefing ─────
   if (
     route.toolsToCall.length === 0 &&
@@ -1544,6 +1557,29 @@ export async function askKaviarAi(
       answer: 'Você não tem permissão para acessar essas informações.',
       toolsUsed: [],
     };
+  }
+
+  // ── Inconsistency Detector v1 ───────────────────────────────────────────
+  if (
+    isInconsistencyQuestion(question) &&
+    authorizedTools.includes('daily_briefing')
+  ) {
+    try {
+      const result = await executeTool('daily_briefing');
+      const findings = detectOperationalFindings(
+        result.data as DailyBriefingData
+      );
+
+      return {
+        answer: formatOperationalFindings(findings),
+        toolsUsed: ['daily_briefing'],
+      };
+    } catch {
+      return {
+        answer: 'Não foi possível analisar inconsistências operacionais no momento. Tente novamente.',
+        toolsUsed: [],
+      };
+    }
   }
 
   // ── Supervisor v1 ──────────────────────────────────────────────────────
