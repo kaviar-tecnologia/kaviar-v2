@@ -86,17 +86,17 @@ export function formatCrmIntent(
     case 'CRM_NO_CONTACT':
       return data.noContactCount === 0
         ? 'Não há leads sem contato no período.'
-        : `Há **${data.noContactCount}** lead${data.noContactCount === 1 ? '' : 's'} sem contato no período.`;
+        : `Há ${data.noContactCount} lead${data.noContactCount === 1 ? '' : 's'} sem contato no período.`;
 
     case 'CRM_NEW':
       return data.newCount === 0
         ? `Não há novos leads em ${data.periodLabel}.`
-        : `Há **${data.newCount}** novo${data.newCount === 1 ? ' lead' : 's leads'} em ${data.periodLabel}.`;
+        : `Há ${data.newCount} novo${data.newCount === 1 ? ' lead' : 's leads'} em ${data.periodLabel}.`;
 
     case 'CRM_STALE':
       return data.stale3dCount === 0
         ? 'Não há leads parados há mais de 3 dias.'
-        : `Há **${data.stale3dCount}** lead${data.stale3dCount === 1 ? '' : 's'} parado${data.stale3dCount === 1 ? '' : 's'} há mais de 3 dias.`;
+        : `Há ${data.stale3dCount} lead${data.stale3dCount === 1 ? '' : 's'} parado${data.stale3dCount === 1 ? '' : 's'} há mais de 3 dias.`;
 
     case 'CRM_FUNNEL': {
       const entries = Object.entries(data.byStatus);
