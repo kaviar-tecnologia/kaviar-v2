@@ -42,6 +42,16 @@ import { orchestrate, classifyIntent } from './kaviar-ai.orchestrator';
 import { classifyDriverIntent, refineDriverTools, formatConsolidatedPending } from './kaviar-ai.driver-intent';
 import { classifyFinanceIntent, formatFinancePendingSummary, formatFinanceOverdue, formatFinanceDueSoon } from './kaviar-ai.finance-intent';
 import { classifyCrmIntent, formatCrmIntent } from './kaviar-ai.crm-intent';
+import {
+  classifyCommunicationIntent,
+  formatEmailNew,
+  formatEmailImportant,
+  formatEmailSubjects,
+  formatEmailRisk,
+  formatWhatsAppUnread,
+  formatWhatsAppUrgent,
+  formatWhatsAppNew,
+} from './kaviar-ai.communication-intent';
 import { detectDevelopmentIntent } from './kaviar-ai.dev-intent';
 import { detectDraftingIntent } from './kaviar-ai.drafting-intent';
 import { searchKnowledgeSemantic } from './kaviar-ai.knowledge-semantic';
@@ -1433,6 +1443,14 @@ export async function askKaviarAi(
     route.toolsToCall = ['crm_leads_summary'];
   }
 
+  // ── Communication routing: fill gaps left by deterministic rules ────────
+  if (route.toolsToCall.length === 0 && classifyIntent(question) === 'COMMUNICATION') {
+    const communicationSub = classifyCommunicationIntent(question);
+    route.toolsToCall = communicationSub.startsWith('COMM_WHATSAPP_')
+      ? ['whatsapp_summary']
+      : ['inbox_summary'];
+  }
+
   // ── Finance intent routing: fill gap when rules don't match FINANCE questions ─
   if (route.toolsToCall.length === 0 && classifyIntent(question) === 'FINANCE') {
     const financeSub = classifyFinanceIntent(question);
@@ -1646,6 +1664,67 @@ export async function askKaviarAi(
     } catch {
       return {
         answer: 'Não foi possível consultar os leads do CRM no momento. Tente novamente.',
+        toolsUsed: [],
+      };
+    }
+  }
+
+  // ── Communication semantic refinement ──────────────────────────────────
+  if (overallIntent === 'COMMUNICATION') {
+    const communicationSub = classifyCommunicationIntent(question);
+
+    const isWhatsApp = communicationSub.startsWith('COMM_WHATSAPP_');
+    const communicationTool: KaviarAiToolName =
+      isWhatsApp ? 'whatsapp_summary' : 'inbox_summary';
+
+    if (!canRoleExecuteTool(role, communicationTool)) {
+      return {
+        answer: 'Você não tem permissão para acessar essas informações.',
+        toolsUsed: [],
+      };
+    }
+
+    try {
+      const result = await executeTool(communicationTool);
+
+      if (communicationTool === 'whatsapp_summary') {
+        const data = result.data as WhatsAppSummaryData;
+
+        const answer =
+          communicationSub === 'COMM_WHATSAPP_UNREAD'
+            ? formatWhatsAppUnread(data)
+            : communicationSub === 'COMM_WHATSAPP_URGENT'
+              ? formatWhatsAppUrgent(data)
+              : communicationSub === 'COMM_WHATSAPP_NEW'
+                ? formatWhatsAppNew(data)
+                : formatWhatsAppSummary(data);
+
+        return {
+          answer,
+          toolsUsed: [communicationTool],
+        };
+      }
+
+      const data = result.data as InboxSummaryData;
+
+      const answer =
+        communicationSub === 'COMM_EMAIL_SUBJECTS'
+          ? formatEmailSubjects(data)
+          : communicationSub === 'COMM_EMAIL_RISK'
+            ? formatEmailRisk(data)
+            : communicationSub === 'COMM_EMAIL_IMPORTANT'
+              ? formatEmailImportant()
+              : communicationSub === 'COMM_EMAIL_NEW'
+                ? formatEmailNew(data)
+                : formatInboxSummary(data);
+
+      return {
+        answer,
+        toolsUsed: [communicationTool],
+      };
+    } catch {
+      return {
+        answer: 'Não foi possível consultar as comunicações no momento. Tente novamente.',
         toolsUsed: [],
       };
     }
