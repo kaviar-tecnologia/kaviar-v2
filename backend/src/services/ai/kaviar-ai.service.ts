@@ -38,6 +38,7 @@ import { MIN_DRIVERS_FOR_TERRITORY_ACTIVATION } from './kaviar-ai.city-opening-o
 import { getCityOpeningOverview } from './kaviar-ai.city-opening-overview';
 import { executeTool, canRoleExecuteTool } from './kaviar-ai.registry';
 import { routeQuestion, getRouterMode } from './kaviar-ai.router';
+import { orchestrate } from './kaviar-ai.orchestrator';
 import { detectDevelopmentIntent } from './kaviar-ai.dev-intent';
 import { detectDraftingIntent } from './kaviar-ai.drafting-intent';
 import { searchKnowledgeSemantic } from './kaviar-ai.knowledge-semantic';
@@ -1450,7 +1451,32 @@ export async function askKaviarAi(
   }
 
   // Filter tools by RBAC
-  const authorizedTools = route.toolsToCall.filter(t => canRoleExecuteTool(role, t));
+  // ── Orchestrator: filter/prioritize tools in model mode ────────────────
+  const toolsAfterOrchestrator = getRouterMode() === 'model'
+    ? orchestrate(question, route.toolsToCall).tools
+    : route.toolsToCall;
+
+  // If orchestrator filtered all tools (intent-specific, no relevant tools),
+  // fall back to generative response instead of returning misleading RBAC error.
+  if (toolsAfterOrchestrator.length === 0 && route.toolsToCall.length > 0) {
+    if (provider && 'answerGeneral' in provider) {
+      try {
+        const answer = await (provider as unknown as KaviarAiDraftingComposer).answerGeneral(question, history);
+        return { answer, toolsUsed: [] };
+      } catch {
+        return {
+          answer: 'Não foi possível processar a pergunta no momento. Tente novamente.',
+          toolsUsed: [],
+        };
+      }
+    }
+    return {
+      answer: `Ainda não sei responder: "${question}".`,
+      toolsUsed: [],
+    };
+  }
+
+  const authorizedTools = toolsAfterOrchestrator.filter(t => canRoleExecuteTool(role, t));
   if (authorizedTools.length === 0) {
     return {
       answer: 'Você não tem permissão para acessar essas informações.',
