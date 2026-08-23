@@ -170,10 +170,23 @@ export function classifyIntent(question: string): KaviarAiIntent {
     return 'COMMUNICATION';
   }
 
-  // CRM — leads, funnel
+  // CRM — leads, funnel, source and territory
   if (
     q.includes('lead') &&
-    (q.includes('novo') || q.includes('sem contato') || q.includes('quanto') || q.includes('parado') || q.includes('funil') || q.includes('contato'))
+    (
+      q.includes('novo') ||
+      q.includes('sem contato') ||
+      q.includes('quanto') ||
+      q.includes('parado') ||
+      q.includes('funil') ||
+      q.includes('contato') ||
+      q.includes('origem') ||
+      q.includes('fonte') ||
+      q.includes('vieram') ||
+      q.includes('territorio') ||
+      q.includes('cidade') ||
+      q.includes('como estao')
+    )
   ) {
     return 'CRM';
   }

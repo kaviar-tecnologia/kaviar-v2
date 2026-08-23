@@ -41,6 +41,7 @@ import { routeQuestion, getRouterMode } from './kaviar-ai.router';
 import { orchestrate, classifyIntent } from './kaviar-ai.orchestrator';
 import { classifyDriverIntent, refineDriverTools, formatConsolidatedPending } from './kaviar-ai.driver-intent';
 import { classifyFinanceIntent, formatFinancePendingSummary, formatFinanceOverdue, formatFinanceDueSoon } from './kaviar-ai.finance-intent';
+import { classifyCrmIntent, formatCrmIntent } from './kaviar-ai.crm-intent';
 import { detectDevelopmentIntent } from './kaviar-ai.dev-intent';
 import { detectDraftingIntent } from './kaviar-ai.drafting-intent';
 import { searchKnowledgeSemantic } from './kaviar-ai.knowledge-semantic';
@@ -1427,6 +1428,11 @@ export async function askKaviarAi(
     route.toolsToCall = driverPreferred;
   }
 
+  // ── CRM intent routing: fill gap when rules don't match CRM questions ──
+  if (route.toolsToCall.length === 0 && classifyIntent(question) === 'CRM') {
+    route.toolsToCall = ['crm_leads_summary'];
+  }
+
   // ── Finance intent routing: fill gap when rules don't match FINANCE questions ─
   if (route.toolsToCall.length === 0 && classifyIntent(question) === 'FINANCE') {
     const financeSub = classifyFinanceIntent(question);
@@ -1612,6 +1618,36 @@ export async function askKaviarAi(
       if (authorizedTools.includes('finance_accounting_brief')) {
         authorizedTools = ['finance_accounting_brief'];
       }
+    }
+  }
+
+  // ── CRM semantic refinement ────────────────────────────────────────────
+  if (overallIntent === 'CRM') {
+    const crmTool: KaviarAiToolName = 'crm_leads_summary';
+
+    if (!canRoleExecuteTool(role, crmTool)) {
+      return {
+        answer: 'Você não tem permissão para acessar essas informações.',
+        toolsUsed: [],
+      };
+    }
+
+    try {
+      const result = await executeTool(crmTool, { period: parsePeriod(question) });
+      const answer = formatCrmIntent(
+        classifyCrmIntent(question),
+        result.data as CrmLeadsSummaryData
+      );
+
+      return {
+        answer,
+        toolsUsed: [crmTool],
+      };
+    } catch {
+      return {
+        answer: 'Não foi possível consultar os leads do CRM no momento. Tente novamente.',
+        toolsUsed: [],
+      };
     }
   }
 
