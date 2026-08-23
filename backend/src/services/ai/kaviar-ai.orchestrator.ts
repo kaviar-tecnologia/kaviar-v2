@@ -268,7 +268,7 @@ export function buildPlan(intent: KaviarAiIntent): OrchestratorPlan {
  * 2. If intent is DEVELOPMENT or DRAFTING, no filtering — handled upstream.
  * 3. Otherwise:
  *    a. Keep only tools that belong to the intent's family (preferred).
- *    b. If none survive, keep original (fallback — don't block legitimate tools).
+ *    b. If none survive, return empty so the service can use the generative fallback.
  *    c. Apply maxTools budget by priority order (family order).
  *
  * IMPORTANT:
