@@ -45,6 +45,7 @@ describe('Territory Manager Investigator v1', () => {
         referenceTime: '2026-08-23 23:30',
       },
       history: [],
+      candidates: [],
     };
 
     const answer = formatTerritoryManagerInvestigation(data);
@@ -84,6 +85,7 @@ describe('Territory Manager Investigator v1', () => {
         provisional: false,
         referenceTime: '2026-08-23 23:30',
       },
+      candidates: [],
       history: [{
         assignmentId: 'assignment-1',
         assignmentStatus: 'active',

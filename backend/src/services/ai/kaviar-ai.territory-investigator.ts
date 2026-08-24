@@ -24,6 +24,12 @@ export type TerritoryManagerInvestigationData = {
     territoryLevel: string;
     territoryActive: boolean;
   }[];
+  candidates: {
+    adminId: string;
+    name: string;
+    role: string;
+    activeAssignments: number;
+  }[];
 };
 
 export function isTerritoryManagerInvestigation(question: string): boolean {
@@ -53,6 +59,7 @@ export async function investigateTerritoryManager(
       uf,
       coverage,
       history: [],
+      candidates: [],
     };
   }
 
@@ -99,6 +106,29 @@ export async function investigateTerritoryManager(
     LIMIT 20
   `, [coverage.territory.id]);
 
+  const candidatesResult = await pool.query<{
+    admin_id: string;
+    name: string;
+    role: string;
+    active_assignments: number;
+  }>(`
+    SELECT
+      a.id AS admin_id,
+      a.name,
+      a.role,
+      COUNT(tma.id)::int AS active_assignments
+    FROM admins a
+    LEFT JOIN territory_manager_assignments tma
+      ON tma.admin_id = a.id
+     AND tma.status = 'active'
+     AND tma.ended_at IS NULL
+    WHERE a.is_active = true
+      AND a.role = 'TERRITORIAL_MANAGER'
+    GROUP BY a.id, a.name, a.role
+    ORDER BY active_assignments ASC, a.name ASC
+    LIMIT 5
+  `);
+
   return {
     available: true,
     found: true,
@@ -118,6 +148,12 @@ export async function investigateTerritoryManager(
       territoryName: row.territory_name,
       territoryLevel: row.territory_level,
       territoryActive: row.territory_active,
+    })),
+    candidates: candidatesResult.rows.map(row => ({
+      adminId: row.admin_id,
+      name: row.name,
+      role: row.role,
+      activeAssignments: row.active_assignments,
     })),
   };
 }
@@ -233,6 +269,26 @@ export function formatTerritoryManagerInvestigation(
     }
   } else {
     parts.push('Nenhuma correção de assignment é necessária neste momento.');
+  }
+
+  if (c.managers.length === 0) {
+    parts.push('');
+    parts.push('Candidatos ativos cadastrados:');
+
+    if (data.candidates.length === 0) {
+      parts.push('  • Nenhum TERRITORIAL_MANAGER ativo disponível no cadastro.');
+    } else {
+      for (const candidate of data.candidates) {
+        parts.push(
+          `  • ${candidate.name} — ${candidate.activeAssignments} assignment(s) ativo(s)`
+        );
+      }
+
+      const best = data.candidates[0];
+      parts.push(
+        `Sugestão de análise: ${best.name} aparece como candidato com menor carga atual. A vinculação deve ser confirmada por um administrador.`
+      );
+    }
   }
 
   if (c.coverageStatus !== 'COMPLETE') {
