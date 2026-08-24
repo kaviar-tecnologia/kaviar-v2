@@ -58,6 +58,30 @@ describe('COMMUNICATION semantic intent', () => {
     ).toBe('COMM_EMAIL_SUBJECTS');
   });
 
+  it('understands natural requests to show new emails', () => {
+    expect(
+      classifyCommunicationIntent('me mostre os novos e-mails')
+    ).toBe('COMM_EMAIL_SUBJECTS');
+
+    expect(
+      classifyCommunicationIntent('quais e-mails novos temos?')
+    ).toBe('COMM_EMAIL_SUBJECTS');
+
+    expect(
+      classifyCommunicationIntent('que novos emails temos')
+    ).toBe('COMM_EMAIL_SUBJECTS');
+
+    expect(
+      classifyCommunicationIntent('o que chegou no e-mail?')
+    ).toBe('COMM_EMAIL_SUBJECTS');
+  });
+
+  it('keeps explicit email count questions as count', () => {
+    expect(
+      classifyCommunicationIntent('quantos e-mails novos temos?')
+    ).toBe('COMM_EMAIL_NEW');
+  });
+
   it('classifies email risk questions', () => {
     expect(
       classifyCommunicationIntent('Tem algum e-mail suspeito?')
