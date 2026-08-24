@@ -519,6 +519,27 @@ describe('inbox_summary', () => {
     expect(json).not.toContain('normalized_body');
   });
 
+  it('preserva o id do email para navegação direta pela inbox', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ cnt: 1 }] })
+      .mockResolvedValueOnce({ rows: [
+        {
+          id: 'email-abc-123',
+          subject: 'Re: Cadastro da plataforma KAVIAR',
+          from_name: 'Ouvidoria',
+          from_email: 'ouvidoria@prefeitura.gov.br',
+          received_at: '2026-08-24 10:00',
+          has_attachments: false,
+          attachment_count: 0,
+        },
+      ] });
+
+    const r = await getInboxSummary({ limit: '5' });
+
+    expect(r.data.recent).toHaveLength(1);
+    expect(r.data.recent[0].id).toBe('email-abc-123');
+  });
+
   it('trunca assuntos maiores que 100 caracteres', async () => {
     const longSubject = 'A'.repeat(150);
     mockQuery
