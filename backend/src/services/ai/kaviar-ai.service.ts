@@ -1438,10 +1438,8 @@ export async function askKaviarAi(
   const route = await routeQuestion(question, provider);
 
   // ── Inconsistency Detector v1 ───────────────────────────────────────────
-  if (
-    route.toolsToCall.length === 0 &&
-    isInconsistencyQuestion(question)
-  ) {
+  // Explicit inconsistency requests override generic routes such as person_lookup.
+  if (isInconsistencyQuestion(question)) {
     route.toolsToCall = ['daily_briefing'];
   }
 
