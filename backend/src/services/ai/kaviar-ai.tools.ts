@@ -89,21 +89,25 @@ export async function getDriversDocumentsPending(): Promise<{
     driver_count: number;
   }>(`
     SELECT
-      status,
-      COUNT(DISTINCT driver_id)::int AS driver_count
-    FROM driver_documents
-    WHERE status IN ('SUBMITTED', 'MISSING', 'REJECTED')
-    GROUP BY status
-    ORDER BY status
+      dd.status,
+      COUNT(DISTINCT dd.driver_id)::int AS driver_count
+    FROM driver_documents dd
+    INNER JOIN drivers d ON d.id = dd.driver_id
+    WHERE d.status = 'pending'
+      AND dd.status IN ('SUBMITTED', 'MISSING', 'REJECTED')
+    GROUP BY dd.status
+    ORDER BY dd.status
   `);
 
   // Documentos de compliance pendentes de aprovação admin
   const complianceResult = await pool.query<{
     pending_count: number;
   }>(`
-    SELECT COUNT(DISTINCT driver_id)::int AS pending_count
-    FROM driver_compliance_documents
-    WHERE status = 'pending'
+    SELECT COUNT(DISTINCT dc.driver_id)::int AS pending_count
+    FROM driver_compliance_documents dc
+    INNER JOIN drivers d ON d.id = dc.driver_id
+    WHERE d.status = 'pending'
+      AND dc.status = 'pending'
   `);
 
   const summary: Record<string, number> = {};
@@ -116,9 +120,11 @@ export async function getDriversDocumentsPending(): Promise<{
   const totalResult = await pool.query<{
     total_drivers: number;
   }>(`
-    SELECT COUNT(DISTINCT driver_id)::int AS total_drivers
-    FROM driver_documents
-    WHERE status IN ('SUBMITTED', 'MISSING', 'REJECTED')
+    SELECT COUNT(DISTINCT dd.driver_id)::int AS total_drivers
+    FROM driver_documents dd
+    INNER JOIN drivers d ON d.id = dd.driver_id
+    WHERE d.status = 'pending'
+      AND dd.status IN ('SUBMITTED', 'MISSING', 'REJECTED')
   `);
 
   const driversAffected = totalResult.rows[0]?.total_drivers ?? 0;
@@ -135,29 +141,31 @@ export async function getDriversDocumentsPending(): Promise<{
   }>(`
     SELECT
       COUNT(DISTINCT driver_id) FILTER (
-        WHERE submitted_at >= NOW() - INTERVAL '1 day'
+        WHERE dd.submitted_at >= NOW() - INTERVAL '1 day'
       )::int AS less_than_1_day,
       COUNT(DISTINCT driver_id) FILTER (
-        WHERE submitted_at < NOW() - INTERVAL '1 day'
-          AND submitted_at >= NOW() - INTERVAL '4 days'
+        WHERE dd.submitted_at < NOW() - INTERVAL '1 day'
+          AND dd.submitted_at >= NOW() - INTERVAL '4 days'
       )::int AS days_1_to_3,
       COUNT(DISTINCT driver_id) FILTER (
-        WHERE submitted_at < NOW() - INTERVAL '4 days'
-          AND submitted_at >= NOW() - INTERVAL '8 days'
+        WHERE dd.submitted_at < NOW() - INTERVAL '4 days'
+          AND dd.submitted_at >= NOW() - INTERVAL '8 days'
       )::int AS days_4_to_7,
       COUNT(DISTINCT driver_id) FILTER (
-        WHERE submitted_at < NOW() - INTERVAL '8 days'
+        WHERE dd.submitted_at < NOW() - INTERVAL '8 days'
       )::int AS more_than_7_days,
       COUNT(DISTINCT driver_id) FILTER (
-        WHERE submitted_at IS NULL
+        WHERE dd.submitted_at IS NULL
       )::int AS unknown,
       MAX(
         FLOOR(
-          EXTRACT(EPOCH FROM (NOW() - submitted_at)) / 86400
+          EXTRACT(EPOCH FROM (NOW() - dd.submitted_at)) / 86400
         )
       )::int AS oldest_days
-    FROM driver_documents
-    WHERE status = 'SUBMITTED'
+    FROM driver_documents dd
+    INNER JOIN drivers d ON d.id = dd.driver_id
+    WHERE d.status = 'pending'
+      AND dd.status = 'SUBMITTED'
   `);
 
   // Contagem por tipo de documento. Um motorista pode aparecer em mais de um tipo.
@@ -166,12 +174,14 @@ export async function getDriversDocumentsPending(): Promise<{
     driver_count: number;
   }>(`
     SELECT
-      type,
-      COUNT(DISTINCT driver_id)::int AS driver_count
-    FROM driver_documents
-    WHERE status = 'SUBMITTED'
-    GROUP BY type
-    ORDER BY driver_count DESC, type ASC
+      dd.type,
+      COUNT(DISTINCT dd.driver_id)::int AS driver_count
+    FROM driver_documents dd
+    INNER JOIN drivers d ON d.id = dd.driver_id
+    WHERE d.status = 'pending'
+      AND dd.status = 'SUBMITTED'
+    GROUP BY dd.type
+    ORDER BY driver_count DESC, dd.type ASC
   `);
 
   const age = ageResult.rows[0];
