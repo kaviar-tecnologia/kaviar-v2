@@ -29,11 +29,12 @@ export function formatDriverDocumentsInvestigation(
   documents: DriversDocumentsPendingData,
   pipeline: DriverPipelineSummaryData
 ): string {
-  const missing = documents.summary['MISSING'] ?? pipeline.docsMissing ?? 0;
-  const submitted = documents.summary['SUBMITTED'] ?? pipeline.docsSubmitted ?? 0;
-  const rejected = documents.summary['REJECTED'] ?? pipeline.docsRejected ?? 0;
-  const compliancePending =
-    documents.compliancePending ?? pipeline.compliancePending ?? 0;
+  // drivers_documents_pending is the authoritative operational backlog source.
+  // driver_pipeline_summary may include approved/rejected legacy records.
+  const missing = documents.summary['MISSING'] ?? 0;
+  const submitted = documents.summary['SUBMITTED'] ?? 0;
+  const rejected = documents.summary['REJECTED'] ?? 0;
+  const compliancePending = documents.compliancePending ?? 0;
 
   const total = documents.driversAffected;
   const submittedPct =

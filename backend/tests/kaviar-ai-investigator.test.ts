@@ -191,3 +191,50 @@ describe('Investigador v1.1 — profundidade da fila', () => {
     expect(answer).toContain('um motorista pode possuir mais de um tipo');
   });
 });
+
+describe('Investigador — não mistura legado com fila operacional', () => {
+  it('mostra zeros quando não há motorista pending, mesmo se pipeline contém legado', () => {
+    const answer = formatDriverDocumentsInvestigation(
+      {
+        driversAffected: 0,
+        summary: {},
+        compliancePending: 0,
+        submittedAge: {
+          lessThan1Day: 0,
+          days1To3: 0,
+          days4To7: 0,
+          moreThan7Days: 0,
+          unknown: 0,
+        },
+        submittedByType: {},
+        oldestSubmittedDays: null,
+      },
+      {
+        available: true,
+        total: 45,
+        byStatus: { approved: 14, rejected: 31 },
+        byVehicleType: { CAR: 45 },
+        pendingApproval: 0,
+        docsMissing: 8,
+        docsSubmitted: 18,
+        docsRejected: 0,
+        compliancePending: 12,
+        activeDrivers: 0,
+        suspendedDrivers: 0,
+        modalities: {
+          available: true,
+          pending: 0,
+          approved: 10,
+          rejected: 9,
+        },
+        referenceTime: '2026-08-23 22:30',
+      }
+    );
+
+    expect(answer).toContain('Investigação dos 0 motorista(s)');
+    expect(answer).toContain('0 com documento MISSING');
+    expect(answer).toContain('0 com documento SUBMITTED');
+    expect(answer).toContain('0 com compliance aguardando aprovação');
+    expect(answer).toContain('não há motoristas com pendência documental');
+  });
+});
