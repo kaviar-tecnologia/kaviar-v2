@@ -14,15 +14,16 @@ const SUGGESTIONS = [
   'Como estão as corridas esta semana?',
   'Há motoristas aguardando aprovação?',
   'Quais obrigações financeiras exigem atenção?',
-  'Quanto temos de bônus anual a pagar?',
+  'Quantos e-mails novos chegaram?',
+  'Tem e-mail importante?',
+  'Há mensagens novas no WhatsApp?',
+  'Quantos leads novos tivemos esta semana?',
+  'Quais territórios exigem atenção?',
 ];
 
 const EXTRA_SUGGESTIONS = [
-  'Quais e-mails novos chegaram?',
-  'Há mensagens novas no WhatsApp?',
-  'Quantos leads novos tivemos esta semana?',
+  'Quanto temos de bônus anual a pagar?',
   'Como está o financeiro deste mês?',
-  'Quais territórios exigem atenção?',
   'Quero abrir uma nova cidade',
   'Qual é o CNPJ e o contato da KAVIAR?',
   'Quais módulos existem na plataforma?',
