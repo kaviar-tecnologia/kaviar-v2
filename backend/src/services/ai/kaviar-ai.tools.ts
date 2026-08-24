@@ -1281,6 +1281,11 @@ export async function getInboxSummary(args?: Record<string, string>): Promise<{
   `);
   const totalNew = countResult.rows[0]?.cnt ?? 0;
 
+  // limit >= 30 é reservado à triagem executiva:
+  // inclui os recentes e também mensagens NEW com sinais fortes de negócio,
+  // para que respostas regulatórias/financeiras não desapareçam por antiguidade.
+  const executiveScan = limit >= 30;
+
   const result = await pool.query<{
     subject: string | null;
     from_name: string | null;
@@ -1292,14 +1297,88 @@ export async function getInboxSummary(args?: Record<string, string>): Promise<{
     html_body: string | null;
     normalized_body: string | null;
     raw_headers: unknown;
-  }>(`
-    SELECT subject, from_name, from_email, received_at::text, has_attachments, attachment_count,
-           text_body, html_body, normalized_body, raw_headers
-    FROM inbound_email_messages
-    WHERE status = 'NEW'
-    ORDER BY received_at DESC
-    LIMIT $1
-  `, [limit]);
+  }>(
+    executiveScan
+      ? `
+        WITH recent AS (
+          SELECT id
+          FROM inbound_email_messages
+          WHERE status = 'NEW'
+          ORDER BY received_at DESC
+          LIMIT $1
+        ),
+        operational_priority AS (
+          SELECT id
+          FROM inbound_email_messages
+          WHERE status = 'NEW'
+            AND subject IS NOT NULL
+            AND (
+              subject ~* '^(re|res|fwd|enc)[[:space:]]*:'
+              OR LOWER(subject) LIKE '%prefeitura%'
+              OR LOWER(subject) LIKE '%municipio%'
+              OR LOWER(subject) LIKE '%município%'
+              OR LOWER(subject) LIKE '%secretaria%'
+              OR LOWER(subject) LIKE '%smtr%'
+              OR LOWER(subject) LIKE '%emdec%'
+              OR LOWER(subject) LIKE '%cadastro%'
+              OR LOWER(subject) LIKE '%plataforma%'
+              OR LOWER(subject) LIKE '%autorizacao%'
+              OR LOWER(subject) LIKE '%autorização%'
+              OR LOWER(subject) LIKE '%protocolo%'
+              OR LOWER(subject) LIKE '%regulatorio%'
+              OR LOWER(subject) LIKE '%regulatório%'
+              OR LOWER(subject) LIKE '%pagamento%'
+              OR LOWER(subject) LIKE '%cobranca%'
+              OR LOWER(subject) LIKE '%cobrança%'
+              OR LOWER(subject) LIKE '%vencimento%'
+              OR LOWER(subject) LIKE '%falha%'
+              OR LOWER(subject) LIKE '%falhou%'
+              OR LOWER(subject) LIKE '%bloqueio%'
+              OR LOWER(subject) LIKE '%suspensao%'
+              OR LOWER(subject) LIKE '%suspensão%'
+              OR LOWER(subject) LIKE '%cancelamento%'
+              OR LOWER(subject) LIKE '%urgente%'
+            )
+        ),
+        selected AS (
+          SELECT id FROM recent
+          UNION
+          SELECT id FROM operational_priority
+        )
+        SELECT
+          m.subject,
+          m.from_name,
+          m.from_email,
+          m.received_at::text,
+          m.has_attachments,
+          m.attachment_count,
+          m.text_body,
+          m.html_body,
+          m.normalized_body,
+          m.raw_headers
+        FROM inbound_email_messages m
+        INNER JOIN selected s ON s.id = m.id
+        ORDER BY m.received_at DESC
+      `
+      : `
+        SELECT
+          subject,
+          from_name,
+          from_email,
+          received_at::text,
+          has_attachments,
+          attachment_count,
+          text_body,
+          html_body,
+          normalized_body,
+          raw_headers
+        FROM inbound_email_messages
+        WHERE status = 'NEW'
+        ORDER BY received_at DESC
+        LIMIT $1
+      `,
+    [limit]
+  );
 
   const recent = result.rows.map(row => {
     const risk = evaluateInboundEmailSecurityRisk(row);
