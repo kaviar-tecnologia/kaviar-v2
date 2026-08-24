@@ -917,8 +917,24 @@ export async function getDailyBriefing(): Promise<{
       SELECT
         COUNT(*) FILTER (WHERE status = 'preparation')::int AS preparation,
         COUNT(*) FILTER (WHERE NOT EXISTS (
-          SELECT 1 FROM territory_manager_assignments tma
-          WHERE tma.territory_id = operational_territories.id AND tma.status = 'active' AND tma.ended_at IS NULL
+          SELECT 1
+          FROM territory_manager_assignments tma
+          JOIN admins manager_admin
+            ON manager_admin.id = tma.admin_id
+           AND manager_admin.is_active = true
+          WHERE tma.status = 'active'
+            AND tma.ended_at IS NULL
+            AND (
+              tma.territory_id = operational_territories.id
+              OR EXISTS (
+                SELECT 1
+                FROM operational_territories managed_t
+                WHERE managed_t.id = tma.territory_id
+                  AND managed_t.parent_id = operational_territories.id
+                  AND managed_t.level = 'region'
+                  AND managed_t.is_active = true
+              )
+            )
         ))::int AS without_manager
       FROM operational_territories
       WHERE level = 'city' AND is_active = true

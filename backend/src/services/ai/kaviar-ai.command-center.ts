@@ -679,7 +679,7 @@ export async function getTerritoryPortfolioSummary(): Promise<{
             SELECT t2.id, t2.city_name, t2.uf, t2.status, t2.is_active
             FROM operational_territories t2
             WHERE t2.level = 'city'
-              AND t2.status <> 'inactive'
+              AND t2.is_active = true
               AND NOT EXISTS (
                 SELECT 1
                 FROM territory_manager_assignments tma2
