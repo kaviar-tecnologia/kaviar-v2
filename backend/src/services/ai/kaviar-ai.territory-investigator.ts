@@ -29,6 +29,7 @@ export type TerritoryManagerInvestigationData = {
     name: string;
     role: string;
     activeAssignments: number;
+    territoryCompatible: boolean;
   }[];
 };
 
@@ -111,12 +112,33 @@ export async function investigateTerritoryManager(
     name: string;
     role: string;
     active_assignments: number;
+    territory_compatible: boolean;
   }>(`
+    WITH RECURSIVE territory_ancestors AS (
+      SELECT id, parent_id
+      FROM operational_territories
+      WHERE id = $1
+
+      UNION ALL
+
+      SELECT parent.id, parent.parent_id
+      FROM operational_territories parent
+      JOIN territory_ancestors child
+        ON child.parent_id = parent.id
+    )
     SELECT
       a.id AS admin_id,
       a.name,
       a.role,
-      COUNT(tma.id)::int AS active_assignments
+      COUNT(DISTINCT tma.id)::int AS active_assignments,
+      EXISTS (
+        SELECT 1
+        FROM admin_territory_access ata
+        WHERE ata.admin_id = a.id
+          AND ata.territory_id IN (
+            SELECT id FROM territory_ancestors
+          )
+      ) AS territory_compatible
     FROM admins a
     LEFT JOIN territory_manager_assignments tma
       ON tma.admin_id = a.id
@@ -125,9 +147,12 @@ export async function investigateTerritoryManager(
     WHERE a.is_active = true
       AND a.role = 'TERRITORIAL_MANAGER'
     GROUP BY a.id, a.name, a.role
-    ORDER BY active_assignments ASC, a.name ASC
-    LIMIT 5
-  `);
+    ORDER BY
+      territory_compatible DESC,
+      active_assignments ASC,
+      a.name ASC
+    LIMIT 10
+  `, [coverage.territory.id]);
 
   return {
     available: true,
@@ -154,6 +179,7 @@ export async function investigateTerritoryManager(
       name: row.name,
       role: row.role,
       activeAssignments: row.active_assignments,
+      territoryCompatible: row.territory_compatible,
     })),
   };
 }
@@ -280,14 +306,25 @@ export function formatTerritoryManagerInvestigation(
     } else {
       for (const candidate of data.candidates) {
         parts.push(
-          `  • ${candidate.name} — ${candidate.activeAssignments} assignment(s) ativo(s)`
+          `  • ${candidate.name} — ${candidate.activeAssignments} assignment(s) ativo(s)` +
+          ` — ${candidate.territoryCompatible ? 'escopo territorial compatível' : 'sem escopo territorial compatível'}`
         );
       }
 
-      const best = data.candidates[0];
-      parts.push(
-        `Sugestão de análise: ${best.name} aparece como candidato com menor carga atual. A vinculação deve ser confirmada por um administrador.`
+      const compatible = data.candidates.filter(
+        candidate => candidate.territoryCompatible
       );
+
+      if (compatible.length > 0) {
+        const best = compatible[0];
+        parts.push(
+          `Sugestão de análise: ${best.name} possui escopo territorial compatível e está entre os candidatos de menor carga. A vinculação deve ser confirmada por um administrador.`
+        );
+      } else {
+        parts.push(
+          'Nenhum gestor ativo possui escopo territorial compatível com esta cidade. Não há candidato recomendado automaticamente; revise os acessos territoriais antes de vincular alguém.'
+        );
+      }
     }
   }
 
