@@ -200,16 +200,27 @@ export function formatEmailImportant(data: InboxSummaryData): string {
     return [
       'Não existe uma marcação formal de e-mail importante no KAVIAR.',
       'Entre os e-mails recentes analisados, nenhum apresentou sinal objetivo de prioridade operacional ou risco.',
-    ].join('\\n');
+    ].join('\n');
   }
 
   return [
     'Não existe uma marcação formal de e-mail importante no KAVIAR.',
     'Mas estes e-mails recentes merecem atenção:',
-    ...attention.map(item =>
-      `• ${item.subject} — ${item.fromName || 'remetente não identificado'}${item.riskLevel !== 'LOW' ? ` — risco ${item.riskLevel}` : ''}`
-    ),
-  ].join('\\n');
+    ...attention.map(item => {
+      const rawSender = item.fromName?.trim() || '';
+      const technicalSender =
+        rawSender.startsWith('bounce-') ||
+        rawSender.startsWith('return-') ||
+        /^[0-9a-f-]{20,}$/i.test(rawSender);
+
+      const senderPart =
+        rawSender && !technicalSender
+          ? ` — ${rawSender}`
+          : '';
+
+      return `• ${item.subject}${senderPart}${item.riskLevel !== 'LOW' ? ` — risco ${item.riskLevel}` : ''}`;
+    }),
+  ].join('\n');
 }
 
 export function formatEmailSubjects(data: InboxSummaryData): string {
