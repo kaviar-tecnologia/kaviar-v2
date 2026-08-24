@@ -709,6 +709,7 @@ export type CrmLeadsSummaryData = {
 export type InboxSummaryData = {
   totalNew: number;
   recent: {
+    id?: string;
     subject: string;
     fromName: string;
     receivedAt: string;
@@ -1287,6 +1288,7 @@ export async function getInboxSummary(args?: Record<string, string>): Promise<{
   const executiveScan = limit >= 30;
 
   const result = await pool.query<{
+    id: string;
     subject: string | null;
     from_name: string | null;
     from_email: string;
@@ -1346,6 +1348,7 @@ export async function getInboxSummary(args?: Record<string, string>): Promise<{
           SELECT id FROM operational_priority
         )
         SELECT
+          m.id,
           m.subject,
           m.from_name,
           m.from_email,
@@ -1362,6 +1365,7 @@ export async function getInboxSummary(args?: Record<string, string>): Promise<{
       `
       : `
         SELECT
+          id,
           subject,
           from_name,
           from_email,
@@ -1386,6 +1390,7 @@ export async function getInboxSummary(args?: Record<string, string>): Promise<{
       ? (row.subject.length > 100 ? row.subject.slice(0, 100) + '…' : row.subject)
       : '(sem assunto)';
     return {
+      id: row.id,
       subject,
       fromName: row.from_name || row.from_email.split('@')[0],
       receivedAt: row.received_at,

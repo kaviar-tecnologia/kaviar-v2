@@ -55,6 +55,45 @@ function getDevJobStatusColor(status) {
   return colors[status] || colors.QUEUED;
 }
 
+function renderSafeInternalLinks(content) {
+  if (typeof content !== 'string') return content;
+
+  const regex = /\[Abrir e-mail\]\((\/admin\/inbox\?message=[^)]+)\)/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(content.slice(lastIndex, match.index));
+    }
+
+    const href = match[1];
+
+    parts.push(
+      <a
+        key={`${href}-${match.index}`}
+        href={href}
+        style={{
+          color: '#60A5FA',
+          textDecoration: 'underline',
+          fontWeight: 600,
+        }}
+      >
+        Abrir e-mail
+      </a>
+    );
+
+    lastIndex = regex.lastIndex;
+  }
+
+  if (lastIndex < content.length) {
+    parts.push(content.slice(lastIndex));
+  }
+
+  return parts;
+}
+
 function getCoverageGovernanceAction(message) {
   if (!message?.toolsUsed?.includes('territory_manager_coverage')) {
     return null;
@@ -928,7 +967,9 @@ export default function KaviarAiPage() {
                 <Typography
                   sx={{ color: '#E5E7EB', fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}
                 >
-                  {msg.content}
+                  {msg.role === 'assistant'
+                    ? renderSafeInternalLinks(msg.content)
+                    : msg.content}
                 </Typography>
 
                 {/* Development Agent approval */}

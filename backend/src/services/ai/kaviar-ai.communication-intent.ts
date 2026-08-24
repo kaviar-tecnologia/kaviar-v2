@@ -205,19 +205,69 @@ export function formatEmailImportant(data: InboxSummaryData): string {
     ].join('\n');
   }
 
+  const classify = (item: InboxSummaryData['recent'][number]) => {
+    const subject = normalize(item.subject);
+
+    if (
+      subject.includes('prefeitura') ||
+      subject.includes('municipio') ||
+      subject.includes('secretaria') ||
+      subject.includes('ouvidoria') ||
+      subject.includes('smtr') ||
+      subject.includes('emdec') ||
+      subject.includes('regulament') ||
+      subject.includes('cadastro da plataforma') ||
+      subject.includes('cadastramento') ||
+      subject.includes('autorizacao') ||
+      subject.includes('protocolo')
+    ) return 'Regulatório';
+
+    if (
+      subject.includes('pagamento') ||
+      subject.includes('cobranca') ||
+      subject.includes('honorarios') ||
+      subject.includes('pix') ||
+      subject.includes('cartao') ||
+      subject.includes('vencimento')
+    ) return 'Financeiro';
+
+    if (
+      subject.includes('bloqueio') ||
+      subject.includes('bloquead') ||
+      subject.includes('suspens')
+    ) return 'Conta e serviços';
+
+    if (item.riskLevel === 'HIGH') return 'Segurança';
+
+    return 'Outros';
+  };
+
   const visible = attention.slice(0, 10);
   const hiddenCount = attention.length - visible.length;
+  const order = ['Regulatório', 'Financeiro', 'Conta e serviços', 'Segurança', 'Outros'];
 
-  return [
+  const lines: string[] = [
     'Não existe uma marcação formal de e-mail importante no KAVIAR.',
-    'Mas estes e-mails recentes merecem atenção:',
-    ...visible.map(item => {
+    'Mas estes e-mails merecem atenção:',
+  ];
+
+  for (const category of order) {
+    const items = visible.filter(item => classify(item) === category);
+    if (items.length === 0) continue;
+
+    lines.push('', `${category}:`);
+
+    for (const item of items) {
       const rawSender = item.fromName?.trim() || '';
+      const normalizedSender = rawSender.toLowerCase();
+
       const technicalSender =
-        rawSender.startsWith('bounce-') ||
-        rawSender.startsWith('return-') ||
-        rawSender === 'return' ||
-        rawSender === 'reminders' ||
+        normalizedSender.startsWith('bounce') ||
+        normalizedSender.startsWith('return') ||
+        normalizedSender === 'reminders' ||
+        normalizedSender === 'donotreply' ||
+        normalizedSender === 'do-not-reply' ||
+        normalizedSender === 'noreply' ||
         /^[0-9a-f-]{20,}$/i.test(rawSender);
 
       const senderPart =
@@ -225,12 +275,28 @@ export function formatEmailImportant(data: InboxSummaryData): string {
           ? ` — ${rawSender}`
           : '';
 
-      return `• ${item.subject}${senderPart}${item.riskLevel !== 'LOW' ? ` — risco ${item.riskLevel}` : ''}`;
-    }),
-    ...(hiddenCount > 0
-      ? [`• ... e mais ${hiddenCount} e-mail${hiddenCount === 1 ? '' : 's'} relevante${hiddenCount === 1 ? '' : 's'} não exibido${hiddenCount === 1 ? '' : 's'}.`]
-      : []),
-  ].join('\n');
+      const riskPart =
+        item.riskLevel === 'HIGH'
+          ? ' — risco HIGH'
+          : '';
+
+      const linkPart =
+        item.id
+          ? ` — [Abrir e-mail](/admin/inbox?message=${encodeURIComponent(item.id)})`
+          : '';
+
+      lines.push(`• ${item.subject}${senderPart}${riskPart}${linkPart}`);
+    }
+  }
+
+  if (hiddenCount > 0) {
+    lines.push(
+      '',
+      `• ... e mais ${hiddenCount} e-mail${hiddenCount === 1 ? '' : 's'} relevante${hiddenCount === 1 ? '' : 's'} não exibido${hiddenCount === 1 ? '' : 's'}.`
+    );
+  }
+
+  return lines.join('\n');
 }
 
 export function formatEmailSubjects(data: InboxSummaryData): string {
