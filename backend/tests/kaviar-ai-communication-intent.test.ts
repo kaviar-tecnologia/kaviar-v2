@@ -93,7 +93,9 @@ describe('COMMUNICATION semantic intent', () => {
       classifyCommunicationIntent('Tem algum e-mail importante?')
     ).toBe('COMM_EMAIL_IMPORTANT');
 
-    expect(formatEmailImportant()).toContain('não possui um critério confiável');
+    const answer = formatEmailImportant(INBOX);
+    expect(answer).toContain('Não existe uma marcação formal');
+    expect(answer).toContain('Mensagem suspeita');
   });
 
   it('keeps general WhatsApp questions on the WhatsApp channel', () => {
@@ -126,6 +128,15 @@ describe('COMMUNICATION semantic intent', () => {
     expect(answer).toContain('3');
     expect(answer).not.toContain('AWS Health Event');
     expect(answer).not.toContain('HIGH');
+  });
+
+  it('triages operationally relevant emails without claiming formal importance', () => {
+    const answer = formatEmailImportant(INBOX);
+
+    expect(answer).toContain('Não existe uma marcação formal');
+    expect(answer).toContain('Mensagem suspeita');
+    expect(answer).toContain('risco HIGH');
+    expect(answer).not.toContain('AWS Health Event');
   });
 
   it('formats only email subjects', () => {
