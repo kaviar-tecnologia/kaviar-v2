@@ -65,6 +65,11 @@ import {
   formatWhatsAppUrgent,
   formatWhatsAppNew,
 } from './kaviar-ai.communication-intent';
+import {
+  isTerritoryManagerInvestigation,
+  investigateTerritoryManager,
+  formatTerritoryManagerInvestigation,
+} from './kaviar-ai.territory-investigator';
 import { detectDevelopmentIntent } from './kaviar-ai.dev-intent';
 import { detectDraftingIntent } from './kaviar-ai.drafting-intent';
 import { searchKnowledgeSemantic } from './kaviar-ai.knowledge-semantic';
@@ -1436,6 +1441,57 @@ export async function askKaviarAi(
       return {
         answer: 'Não foi possível gerar o rascunho. Tente novamente.',
         toolsUsed,
+      };
+    }
+  }
+
+  // ── Investigator Territorial v1 ───────────────────────────────────────
+  if (isTerritoryManagerInvestigation(question)) {
+    if (role !== 'SUPER_ADMIN') {
+      return {
+        answer: 'Você não tem permissão para executar esta investigação territorial.',
+        toolsUsed: [],
+      };
+    }
+
+    let territorialArgs = parseCityUf(question);
+
+    if (!territorialArgs) {
+      const resolved = await resolveCityFromQuestion(question);
+
+      if (resolved === 'ambiguous') {
+        return {
+          answer: 'Encontrei mais de uma cidade com esse nome em UFs diferentes. Informe a UF.',
+          toolsUsed: [],
+        };
+      }
+
+      if (resolved) {
+        territorialArgs = resolved;
+      }
+    }
+
+    if (!territorialArgs) {
+      return {
+        answer: 'Informe a cidade e a UF, por exemplo: Salvador/BA.',
+        toolsUsed: [],
+      };
+    }
+
+    try {
+      const investigation = await investigateTerritoryManager(
+        territorialArgs.city,
+        territorialArgs.uf
+      );
+
+      return {
+        answer: formatTerritoryManagerInvestigation(investigation),
+        toolsUsed: ['territory_manager_coverage'],
+      };
+    } catch {
+      return {
+        answer: 'Não foi possível concluir a investigação territorial no momento. Tente novamente.',
+        toolsUsed: [],
       };
     }
   }
