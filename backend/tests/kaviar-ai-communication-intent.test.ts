@@ -149,6 +149,29 @@ describe('COMMUNICATION semantic intent', () => {
     expect(answer).toContain('Nova Iguaçu/RJ');
   });
 
+  it('includes direct inbox link when important email has an id', () => {
+    const inbox: InboxSummaryData = {
+      totalNew: 1,
+      recent: [
+        {
+          id: 'email-nova-iguacu-123',
+          subject: 'Re: Solicitação de orientação para cadastro da plataforma KAVIAR em Nova Iguaçu/RJ',
+          fromName: 'ouvidoria@novaiguacu.rj.gov.br',
+          receivedAt: '2026-08-20 16:07',
+          hasAttachments: false,
+          riskLevel: 'LOW',
+        },
+      ],
+    };
+
+    const answer = formatEmailImportant(inbox);
+
+    expect(answer).toContain('Regulatório:');
+    expect(answer).toContain(
+      '[Abrir e-mail](/admin/inbox?message=email-nova-iguacu-123)'
+    );
+  });
+
   it('triages operationally relevant emails without claiming formal importance', () => {
     const answer = formatEmailImportant(INBOX);
 

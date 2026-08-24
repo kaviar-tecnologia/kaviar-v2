@@ -21,7 +21,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../api';
 
 const PAGE_SIZE = 15;
@@ -219,6 +219,7 @@ function validateEmailList(emails, fieldLabel) {
 
 export default function InstitutionalInboxPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('RECEBIDOS');
 
   const [filters, setFilters] = useState({
@@ -392,12 +393,26 @@ export default function InstitutionalInboxPage() {
     }
   };
 
+  useEffect(() => {
+    const messageId = searchParams.get('message');
+    if (!messageId) return;
+
+    setActiveTab('RECEBIDOS');
+    openDetails(messageId);
+  }, [searchParams]);
+
   const closeDetails = () => {
     setDetailsOpen(false);
     setSelectedEmail(null);
     setDetailsError('');
     resetReplyState();
     setAttachmentDownloadId(null);
+
+    if (searchParams.get('message')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('message');
+      setSearchParams(next, { replace: true });
+    }
   };
 
   const applyStatus = async (status) => {
