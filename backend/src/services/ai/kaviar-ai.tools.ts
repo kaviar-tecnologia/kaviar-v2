@@ -17,6 +17,15 @@ export type DriversDocumentsPendingData = {
   driversAffected: number;
   summary: Record<string, number>;
   compliancePending: number;
+  submittedAge?: {
+    lessThan1Day: number;
+    days1To3: number;
+    days4To7: number;
+    moreThan7Days: number;
+    unknown: number;
+  };
+  submittedByType?: Record<string, number>;
+  oldestSubmittedDays?: number | null;
 };
 
 export type FinanceDueObligationsData = {
@@ -115,12 +124,78 @@ export async function getDriversDocumentsPending(): Promise<{
   const driversAffected = totalResult.rows[0]?.total_drivers ?? 0;
   const compliancePending = complianceResult.rows[0]?.pending_count ?? 0;
 
+  // Investigator v1.1: idade da fila de documentos SUBMITTED.
+  const ageResult = await pool.query<{
+    less_than_1_day: number;
+    days_1_to_3: number;
+    days_4_to_7: number;
+    more_than_7_days: number;
+    unknown: number;
+    oldest_days: number | null;
+  }>(`
+    SELECT
+      COUNT(DISTINCT driver_id) FILTER (
+        WHERE submitted_at >= NOW() - INTERVAL '1 day'
+      )::int AS less_than_1_day,
+      COUNT(DISTINCT driver_id) FILTER (
+        WHERE submitted_at < NOW() - INTERVAL '1 day'
+          AND submitted_at >= NOW() - INTERVAL '4 days'
+      )::int AS days_1_to_3,
+      COUNT(DISTINCT driver_id) FILTER (
+        WHERE submitted_at < NOW() - INTERVAL '4 days'
+          AND submitted_at >= NOW() - INTERVAL '8 days'
+      )::int AS days_4_to_7,
+      COUNT(DISTINCT driver_id) FILTER (
+        WHERE submitted_at < NOW() - INTERVAL '8 days'
+      )::int AS more_than_7_days,
+      COUNT(DISTINCT driver_id) FILTER (
+        WHERE submitted_at IS NULL
+      )::int AS unknown,
+      MAX(
+        FLOOR(
+          EXTRACT(EPOCH FROM (NOW() - submitted_at)) / 86400
+        )
+      )::int AS oldest_days
+    FROM driver_documents
+    WHERE status = 'SUBMITTED'
+  `);
+
+  // Contagem por tipo de documento. Um motorista pode aparecer em mais de um tipo.
+  const typeResult = await pool.query<{
+    type: string;
+    driver_count: number;
+  }>(`
+    SELECT
+      type,
+      COUNT(DISTINCT driver_id)::int AS driver_count
+    FROM driver_documents
+    WHERE status = 'SUBMITTED'
+    GROUP BY type
+    ORDER BY driver_count DESC, type ASC
+  `);
+
+  const age = ageResult.rows[0];
+
+  const submittedByType: Record<string, number> = {};
+  for (const row of typeResult.rows) {
+    submittedByType[row.type] = row.driver_count;
+  }
+
   return {
     tool: 'drivers_documents_pending',
     data: {
       driversAffected,
       summary,
       compliancePending,
+      submittedAge: {
+        lessThan1Day: age?.less_than_1_day ?? 0,
+        days1To3: age?.days_1_to_3 ?? 0,
+        days4To7: age?.days_4_to_7 ?? 0,
+        moreThan7Days: age?.more_than_7_days ?? 0,
+        unknown: age?.unknown ?? 0,
+      },
+      submittedByType,
+      oldestSubmittedDays: age?.oldest_days ?? null,
     },
   };
 }

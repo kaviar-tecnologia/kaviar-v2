@@ -104,11 +104,57 @@ export function formatDriverDocumentsInvestigation(
     );
   }
 
+  const age = documents.submittedAge;
+  const byType = documents.submittedByType ?? {};
+
+  if (age) {
+    parts.push('');
+    parts.push('Idade da fila SUBMITTED:');
+    parts.push(`- Menos de 1 dia: ${age.lessThan1Day} motorista(s).`);
+    parts.push(`- De 1 a 3 dias: ${age.days1To3} motorista(s).`);
+    parts.push(`- De 4 a 7 dias: ${age.days4To7} motorista(s).`);
+    parts.push(`- Mais de 7 dias: ${age.moreThan7Days} motorista(s).`);
+
+    if (age.unknown > 0) {
+      parts.push(`- Sem data de envio registrada: ${age.unknown} motorista(s).`);
+    }
+
+    if (documents.oldestSubmittedDays !== null &&
+        documents.oldestSubmittedDays !== undefined) {
+      parts.push(
+        `- Documento SUBMITTED mais antigo: aproximadamente ${documents.oldestSubmittedDays} dia(s).`
+      );
+    }
+  }
+
+  const rankedTypes = Object.entries(byType)
+    .sort((a, b) => b[1] - a[1]);
+
+  if (rankedTypes.length > 0) {
+    parts.push('');
+    parts.push('Tipos de documento concentrando a fila:');
+
+    for (const [type, count] of rankedTypes.slice(0, 5)) {
+      parts.push(`- ${type}: ${count} motorista(s).`);
+    }
+
+    parts.push(
+      'Observação: um motorista pode possuir mais de um tipo de documento SUBMITTED.'
+    );
+  }
+
   parts.push('');
   parts.push('Próxima verificação recomendada:');
-  parts.push(
-    'Identificar há quanto tempo os documentos estão em SUBMITTED e quais tipos de documento concentram a maior parte da fila.'
-  );
+
+  if (age && age.moreThan7Days > 0) {
+    parts.push(
+      'Priorizar os documentos SUBMITTED há mais de 7 dias e verificar por que ainda não foram revisados.'
+    );
+  } else {
+    parts.push(
+      'Revisar primeiro os tipos de documento com maior concentração e identificar o responsável pela fila de aprovação.'
+    );
+  }
 
   parts.push('');
   parts.push(

@@ -107,3 +107,87 @@ describe('Investigador v1 — contrato de roteamento', () => {
     ).toBe(true);
   });
 });
+
+describe('Investigador v1.1 — profundidade da fila', () => {
+  it('mostra idade da fila e documento mais antigo', () => {
+    const answer = formatDriverDocumentsInvestigation(
+      {
+        driversAffected: 18,
+        summary: { SUBMITTED: 18 },
+        compliancePending: 0,
+        submittedAge: {
+          lessThan1Day: 2,
+          days1To3: 3,
+          days4To7: 4,
+          moreThan7Days: 9,
+          unknown: 0,
+        },
+        submittedByType: {},
+        oldestSubmittedDays: 21,
+      },
+      {
+        available: true,
+        total: 30,
+        byStatus: {},
+        byVehicleType: {},
+        pendingApproval: 0,
+        docsMissing: 0,
+        docsSubmitted: 18,
+        docsRejected: 0,
+        compliancePending: 0,
+        activeDrivers: 12,
+        suspendedDrivers: 0,
+        modalities: {
+          available: true,
+          pending: 0,
+          approved: 0,
+          rejected: 0,
+        },
+        referenceTime: '2026-08-23 21:00',
+      }
+    );
+
+    expect(answer).toContain('Mais de 7 dias: 9');
+    expect(answer).toContain('aproximadamente 21 dia(s)');
+    expect(answer).toContain('Priorizar os documentos SUBMITTED há mais de 7 dias');
+  });
+
+  it('mostra os tipos que concentram a fila', () => {
+    const answer = formatDriverDocumentsInvestigation(
+      {
+        driversAffected: 10,
+        summary: { SUBMITTED: 10 },
+        compliancePending: 0,
+        submittedByType: {
+          CNH: 7,
+          PROFILE_PHOTO: 4,
+          CPF: 2,
+        },
+      },
+      {
+        available: true,
+        total: 15,
+        byStatus: {},
+        byVehicleType: {},
+        pendingApproval: 0,
+        docsMissing: 0,
+        docsSubmitted: 10,
+        docsRejected: 0,
+        compliancePending: 0,
+        activeDrivers: 5,
+        suspendedDrivers: 0,
+        modalities: {
+          available: true,
+          pending: 0,
+          approved: 0,
+          rejected: 0,
+        },
+        referenceTime: '2026-08-23 21:00',
+      }
+    );
+
+    expect(answer).toContain('CNH: 7');
+    expect(answer).toContain('PROFILE_PHOTO: 4');
+    expect(answer).toContain('um motorista pode possuir mais de um tipo');
+  });
+});
