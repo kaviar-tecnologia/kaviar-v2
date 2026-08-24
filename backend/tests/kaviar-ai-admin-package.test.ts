@@ -574,15 +574,33 @@ describe('inbox_summary', () => {
 describe('validação de limites', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('inbox_summary limita a 10', async () => {
+  it('inbox_summary limita a 30', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{ cnt: 0 }] })
       .mockResolvedValueOnce({ rows: [] });
 
-    const r = await getInboxSummary({ limit: '99' });
-    // A query deve ter sido chamada com LIMIT 10
+    await getInboxSummary({ limit: '99' });
+
     const lastCall = mockQuery.mock.calls[1];
-    expect(lastCall[1][0]).toBe(10);
+    expect(lastCall[1][0]).toBe(30);
+  });
+
+  it('inbox_summary usa varredura executiva para limit 30', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ cnt: 1 }] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await getInboxSummary({ limit: '30' });
+
+    const lastCall = mockQuery.mock.calls[1];
+    const sql = String(lastCall[0]);
+
+    expect(lastCall[1][0]).toBe(30);
+    expect(sql).toContain('operational_priority');
+    expect(sql).toContain("status = 'NEW'");
+    expect(sql).toContain('prefeitura');
+    expect(sql).toContain('cadastro');
+    expect(sql).toContain('protocolo');
   });
 
   it('inbox_summary usa mínimo 1', async () => {
