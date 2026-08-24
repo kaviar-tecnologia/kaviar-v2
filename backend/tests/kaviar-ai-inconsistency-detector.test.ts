@@ -167,3 +167,15 @@ describe('Detector v1 — classificação de pergunta', () => {
     ).toBe(false);
   });
 });
+
+describe('Detector v1 — precedência de roteamento', () => {
+  it('reconhece pedido explícito mesmo com verbo encontre', async () => {
+    const { isInconsistencyQuestion } = await import(
+      '../src/services/ai/kaviar-ai.inconsistency-detector'
+    );
+
+    expect(
+      isInconsistencyQuestion('Encontre inconsistências no sistema.')
+    ).toBe(true);
+  });
+});
