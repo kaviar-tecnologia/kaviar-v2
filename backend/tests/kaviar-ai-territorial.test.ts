@@ -450,9 +450,9 @@ describe('territory_manager_coverage', () => {
 });
 
 describe('registry — novas tools registradas', () => {
-  it('registry contém 27 ferramentas', () => {
+  it('registry contém 28 ferramentas', () => {
     const tools = getRegisteredTools();
-    expect(tools).toHaveLength(27);
+    expect(tools).toHaveLength(28);
   });
 
   it('3 ferramentas antigas continuam registradas', () => {
@@ -480,6 +480,16 @@ describe('registry — novas tools registradas', () => {
 
   it('executeTool rejeita ferramenta inexistente', async () => {
     await expect(executeTool('activate_territory')).rejects.toThrow('não está registrada');
+  });
+});
+
+describe('parseCityUf — investigação territorial', () => {
+  it('remove prefixo investigativo antes de cidade/UF', () => {
+    expect(
+      parseCityUf(
+        'Investigue por que Salvador/BA está sem gestor. Verifique se existe gestor cadastrado.'
+      )
+    ).toEqual({ city: 'Salvador', uf: 'BA' });
   });
 });
 

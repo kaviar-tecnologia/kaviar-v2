@@ -1027,6 +1027,7 @@ export function parseCityUf(question: string): { city: string; uf: string } | nu
   // Remove frases de comando, preservando o nome real da cidade.
   // Ex.: "Qual é o status de Nova Iguaçu/RJ" -> "Nova Iguaçu".
   const prefixes = [
+    /^(?:investigue|investigar|verifique|verificar)\s+(?:por\s+que\s+)?/i,
     /^(?:homologar|homologue|homologa|marcar|marque)\s+(?:a\s+)?cobertura(?:\s+territorial)?\s+(?:de|da|do|em|na|no)\s+/i,
     /^(?:enviar|envie|mandar|mande)\s+(?:a\s+)?cobertura(?:\s+territorial)?\s+(?:de|da|do|em|na|no)\s+/i,
     /^(?:reabrir|reabra)\s+(?:a\s+)?cobertura(?:\s+territorial)?\s+(?:de|da|do|em|na|no)\s+/i,
