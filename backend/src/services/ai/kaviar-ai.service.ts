@@ -52,6 +52,10 @@ import {
   isInconsistencyQuestion,
 } from './kaviar-ai.inconsistency-detector';
 import {
+  isDriverDocumentsInvestigation,
+  formatDriverDocumentsInvestigation,
+} from './kaviar-ai.investigator';
+import {
   classifyCommunicationIntent,
   formatEmailNew,
   formatEmailImportant,
@@ -1437,6 +1441,14 @@ export async function askKaviarAi(
 
   const route = await routeQuestion(question, provider);
 
+  // ── Investigator v1 — documentos de motoristas ─────────────────────────
+  if (isDriverDocumentsInvestigation(question)) {
+    route.toolsToCall = [
+      'drivers_documents_pending',
+      'driver_pipeline_summary',
+    ];
+  }
+
   // ── Inconsistency Detector v1 ───────────────────────────────────────────
   // Explicit inconsistency requests override generic routes such as person_lookup.
   if (isInconsistencyQuestion(question)) {
@@ -1555,6 +1567,53 @@ export async function askKaviarAi(
       answer: 'Você não tem permissão para acessar essas informações.',
       toolsUsed: [],
     };
+  }
+
+  // ── Investigator v1 — documentos de motoristas ─────────────────────────
+  if (isDriverDocumentsInvestigation(question)) {
+    const requiredTools: KaviarAiToolName[] = [
+      'drivers_documents_pending',
+      'driver_pipeline_summary',
+    ];
+
+    const allowed = requiredTools.filter(t =>
+      authorizedTools.includes(t)
+    );
+
+    if (allowed.length !== requiredTools.length) {
+      return {
+        answer: 'Você não tem permissão para executar esta investigação completa.',
+        toolsUsed: [],
+      };
+    }
+
+    try {
+      const documentsResult = await executeTool(
+        'drivers_documents_pending'
+      );
+
+      const pipelineResult = await executeTool(
+        'driver_pipeline_summary'
+      );
+
+      const answer = formatDriverDocumentsInvestigation(
+        documentsResult.data as DriversDocumentsPendingData,
+        pipelineResult.data as DriverPipelineSummaryData
+      );
+
+      return {
+        answer,
+        toolsUsed: [
+          'drivers_documents_pending',
+          'driver_pipeline_summary',
+        ],
+      };
+    } catch {
+      return {
+        answer: 'Não foi possível concluir a investigação dos documentos de motoristas no momento. Tente novamente.',
+        toolsUsed: [],
+      };
+    }
   }
 
   // ── Inconsistency Detector v1 ───────────────────────────────────────────
