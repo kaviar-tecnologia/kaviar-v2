@@ -203,10 +203,13 @@ export function formatEmailImportant(data: InboxSummaryData): string {
     ].join('\n');
   }
 
+  const visible = attention.slice(0, 10);
+  const hiddenCount = attention.length - visible.length;
+
   return [
     'Não existe uma marcação formal de e-mail importante no KAVIAR.',
     'Mas estes e-mails recentes merecem atenção:',
-    ...attention.slice(0, 10).map(item => {
+    ...visible.map(item => {
       const rawSender = item.fromName?.trim() || '';
       const technicalSender =
         rawSender.startsWith('bounce-') ||
@@ -222,6 +225,9 @@ export function formatEmailImportant(data: InboxSummaryData): string {
 
       return `• ${item.subject}${senderPart}${item.riskLevel !== 'LOW' ? ` — risco ${item.riskLevel}` : ''}`;
     }),
+    ...(hiddenCount > 0
+      ? [`• ... e mais ${hiddenCount} e-mail${hiddenCount === 1 ? '' : 's'} relevante${hiddenCount === 1 ? '' : 's'} não exibido${hiddenCount === 1 ? '' : 's'}.`]
+      : []),
   ].join('\n');
 }
 

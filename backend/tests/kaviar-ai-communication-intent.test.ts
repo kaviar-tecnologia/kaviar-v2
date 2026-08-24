@@ -176,6 +176,7 @@ describe('COMMUNICATION semantic intent', () => {
     expect(answer).toContain('assunto operacional 10');
     expect(answer).not.toContain('assunto operacional 11');
     expect(answer).not.toContain('— return');
+    expect(answer).toContain('mais 5 e-mails relevantes não exibidos');
   });
 
   it('formats only email subjects', () => {
