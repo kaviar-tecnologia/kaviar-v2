@@ -801,9 +801,21 @@ export async function getDailyBriefing(): Promise<{
   try {
     const driversResult = await pool.query<{ docs_pending: number; pending_approval: number; compliance_pending: number }>(`
       SELECT
-        (SELECT COUNT(DISTINCT driver_id)::int FROM driver_documents WHERE status IN ('SUBMITTED','MISSING','REJECTED')) AS docs_pending,
+        (
+          SELECT COUNT(DISTINCT dd.driver_id)::int
+          FROM driver_documents dd
+          INNER JOIN drivers d ON d.id = dd.driver_id
+          WHERE d.status = 'pending'
+            AND dd.status IN ('SUBMITTED','MISSING','REJECTED')
+        ) AS docs_pending,
         (SELECT COUNT(*)::int FROM drivers WHERE status = 'pending') AS pending_approval,
-        (SELECT COUNT(DISTINCT driver_id)::int FROM driver_compliance_documents WHERE status = 'pending') AS compliance_pending
+        (
+          SELECT COUNT(DISTINCT dc.driver_id)::int
+          FROM driver_compliance_documents dc
+          INNER JOIN drivers d ON d.id = dc.driver_id
+          WHERE d.status = 'pending'
+            AND dc.status = 'pending'
+        ) AS compliance_pending
     `);
     const dr = driversResult.rows[0];
     if (dr) drivers = { available: true, docsPending: dr.docs_pending, pendingApproval: dr.pending_approval, compliancePending: dr.compliance_pending };
