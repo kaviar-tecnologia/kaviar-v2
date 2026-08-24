@@ -78,22 +78,41 @@ export function classifyCommunicationIntent(
     return 'COMM_EMAIL_IMPORTANT';
   }
 
-  if (
+  const isEmail =
+    q.includes('email') ||
+    q.includes('e-mail') ||
+    q.includes('inbox') ||
+    q.includes('caixa de entrada');
+
+  const asksEmailList =
     q.includes('assunto') ||
     q.includes('assuntos') ||
     q.includes('tema') ||
     q.includes('temas') ||
-    q.includes('sobre o que')
-  ) {
+    q.includes('sobre o que') ||
+    q.includes('me mostre') ||
+    q.includes('mostre os') ||
+    q.includes('quais email') ||
+    q.includes('quais e-mail') ||
+    q.includes('quais novos email') ||
+    q.includes('quais novos e-mail') ||
+    q.includes('que email') ||
+    q.includes('que e-mail') ||
+    q.includes('que novos email') ||
+    q.includes('que novos e-mail') ||
+    q.includes('o que chegou') ||
+    q.includes('quais chegaram');
+
+  const asksEmailCount =
+    q.includes('quantos') ||
+    q.includes('quantas') ||
+    q.includes('quantidade');
+
+  if (isEmail && asksEmailList && !asksEmailCount) {
     return 'COMM_EMAIL_SUBJECTS';
   }
 
-  if (
-    q.includes('email') ||
-    q.includes('e-mail') ||
-    q.includes('inbox') ||
-    q.includes('caixa de entrada')
-  ) {
+  if (isEmail) {
     return 'COMM_EMAIL_NEW';
   }
 
