@@ -158,6 +158,26 @@ describe('COMMUNICATION semantic intent', () => {
     expect(answer).not.toContain('AWS Health Event');
   });
 
+  it('limits executive email triage output to 10 relevant messages', () => {
+    const inbox: InboxSummaryData = {
+      totalNew: 30,
+      recent: Array.from({ length: 15 }, (_, index) => ({
+        subject: `Re: assunto operacional ${index + 1}`,
+        fromName: 'return',
+        receivedAt: '2026-08-24 10:00',
+        hasAttachments: false,
+        riskLevel: 'LOW',
+      })),
+    };
+
+    const answer = formatEmailImportant(inbox);
+
+    expect(answer).toContain('assunto operacional 1');
+    expect(answer).toContain('assunto operacional 10');
+    expect(answer).not.toContain('assunto operacional 11');
+    expect(answer).not.toContain('— return');
+  });
+
   it('formats only email subjects', () => {
     const answer = formatEmailSubjects(INBOX);
 

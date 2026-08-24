@@ -1870,7 +1870,12 @@ export async function askKaviarAi(
     }
 
     try {
-      const result = await executeTool(communicationTool);
+      const communicationArgs =
+        communicationSub === 'COMM_EMAIL_IMPORTANT'
+          ? { limit: '30' }
+          : undefined;
+
+      const result = await executeTool(communicationTool, communicationArgs);
 
       if (communicationTool === 'whatsapp_summary') {
         const data = result.data as WhatsAppSummaryData;

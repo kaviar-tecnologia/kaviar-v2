@@ -1274,7 +1274,7 @@ export async function getInboxSummary(args?: Record<string, string>): Promise<{
   data: InboxSummaryData;
 }> {
   const limitRaw = parseInt(args?.limit ?? '5', 10);
-  const limit = Math.max(1, Math.min(10, isNaN(limitRaw) ? 5 : limitRaw));
+  const limit = Math.max(1, Math.min(30, isNaN(limitRaw) ? 5 : limitRaw));
 
   const countResult = await pool.query<{ cnt: number }>(`
     SELECT COUNT(*)::int AS cnt FROM inbound_email_messages WHERE status = 'NEW'

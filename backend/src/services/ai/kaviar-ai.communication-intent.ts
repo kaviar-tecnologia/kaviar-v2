@@ -206,11 +206,13 @@ export function formatEmailImportant(data: InboxSummaryData): string {
   return [
     'Não existe uma marcação formal de e-mail importante no KAVIAR.',
     'Mas estes e-mails recentes merecem atenção:',
-    ...attention.map(item => {
+    ...attention.slice(0, 10).map(item => {
       const rawSender = item.fromName?.trim() || '';
       const technicalSender =
         rawSender.startsWith('bounce-') ||
         rawSender.startsWith('return-') ||
+        rawSender === 'return' ||
+        rawSender === 'reminders' ||
         /^[0-9a-f-]{20,}$/i.test(rawSender);
 
       const senderPart =

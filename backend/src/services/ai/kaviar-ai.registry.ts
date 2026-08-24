@@ -205,7 +205,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     readOnly: true,
     argSchema: {
       type: 'object',
-      properties: { limit: { type: 'string', description: 'Máximo de e-mails (1-10, default 5)' } },
+      properties: { limit: { type: 'string', description: 'Máximo de e-mails (1-30, default 5)' } },
       required: [],
     },
     allowedRoles: ['SUPER_ADMIN'],
