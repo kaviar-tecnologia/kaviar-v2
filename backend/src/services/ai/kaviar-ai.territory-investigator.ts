@@ -135,6 +135,7 @@ export async function investigateTerritoryManager(
         SELECT 1
         FROM admin_territory_access ata
         WHERE ata.admin_id = a.id
+          AND ata.access_level = 'full'
           AND ata.territory_id IN (
             SELECT id FROM territory_ancestors
           )
