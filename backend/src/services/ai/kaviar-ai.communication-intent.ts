@@ -179,7 +179,9 @@ export function formatEmailImportant(data: InboxSummaryData): string {
       .toLowerCase();
 
   const attention = data.recent.filter(item => {
-    if (item.riskLevel !== 'LOW') return true;
+    // Segurança e prioridade de negócio são conceitos diferentes:
+    // HIGH entra automaticamente; MEDIUM precisa também de sinal operacional.
+    if (item.riskLevel === 'HIGH') return true;
 
     const subject = normalize(item.subject);
 

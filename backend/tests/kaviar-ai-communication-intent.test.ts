@@ -158,6 +158,61 @@ describe('COMMUNICATION semantic intent', () => {
     expect(answer).not.toContain('AWS Health Event');
   });
 
+  it('does not treat MEDIUM security risk alone as business importance', () => {
+    const inbox: InboxSummaryData = {
+      totalNew: 3,
+      recent: [
+        {
+          subject: '5 atualizações para você: sobre amigos',
+          fromName: 'reminders',
+          receivedAt: '2026-08-24 10:00',
+          hasAttachments: false,
+          riskLevel: 'MEDIUM',
+        },
+        {
+          subject: 'Chegou pesquisa nova: responda e concorra!',
+          fromName: 'return',
+          receivedAt: '2026-08-24 09:00',
+          hasAttachments: false,
+          riskLevel: 'MEDIUM',
+        },
+        {
+          subject: 'R$ 103,19 o pagamento para Expo não foi bem-sucedido novamente',
+          fromName: 'Banco',
+          receivedAt: '2026-08-24 08:00',
+          hasAttachments: false,
+          riskLevel: 'MEDIUM',
+        },
+      ],
+    };
+
+    const answer = formatEmailImportant(inbox);
+
+    expect(answer).toContain('pagamento para Expo');
+    expect(answer).not.toContain('5 atualizações para você');
+    expect(answer).not.toContain('pesquisa nova');
+  });
+
+  it('keeps HIGH security risk important even without business keywords', () => {
+    const inbox: InboxSummaryData = {
+      totalNew: 1,
+      recent: [
+        {
+          subject: 'Mensagem incomum recebida',
+          fromName: 'Unknown',
+          receivedAt: '2026-08-24 10:00',
+          hasAttachments: true,
+          riskLevel: 'HIGH',
+        },
+      ],
+    };
+
+    const answer = formatEmailImportant(inbox);
+
+    expect(answer).toContain('Mensagem incomum recebida');
+    expect(answer).toContain('risco HIGH');
+  });
+
   it('limits executive email triage output to 10 relevant messages', () => {
     const inbox: InboxSummaryData = {
       totalNew: 30,
