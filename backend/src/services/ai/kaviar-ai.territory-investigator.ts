@@ -134,10 +134,11 @@ export function formatTerritoryManagerInvestigation(
   }
 
   const c = data.coverage;
+  const territory = c.territory!;
   const parts: string[] = [];
 
   parts.push(`🔎 Investigação de Gestor — ${data.city}/${data.uf}`);
-  parts.push(`Território: ${c.territory.name} (${c.territory.status})`);
+  parts.push(`Território: ${territory.name} (${territory.status})`);
   parts.push(`Gestores ativos atualmente: ${c.managers.length}`);
   parts.push(`Regiões ativas: ${c.activeRegions}`);
   parts.push(`Regiões sem gestor regional específico: ${c.uncoveredRegions.length}`);
