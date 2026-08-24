@@ -1898,7 +1898,7 @@ export async function askKaviarAi(
           : communicationSub === 'COMM_EMAIL_RISK'
             ? formatEmailRisk(data)
             : communicationSub === 'COMM_EMAIL_IMPORTANT'
-              ? formatEmailImportant()
+              ? formatEmailImportant(data)
               : communicationSub === 'COMM_EMAIL_NEW'
                 ? formatEmailNew(data)
                 : formatInboxSummary(data);

@@ -127,8 +127,67 @@ export function formatEmailNew(data: InboxSummaryData): string {
   return `Há ${data.totalNew} e-mail${data.totalNew === 1 ? '' : 's'} novo${data.totalNew === 1 ? '' : 's'} na caixa de entrada.`;
 }
 
-export function formatEmailImportant(): string {
-  return 'A caixa de entrada não possui um critério confiável de importância. Posso mostrar os assuntos dos e-mails novos ou verificar mensagens com risco de segurança.';
+export function formatEmailImportant(data: InboxSummaryData): string {
+  if (data.recent.length === 0) {
+    return 'Não há e-mails novos recentes para fazer uma triagem.';
+  }
+
+  const attentionTerms = [
+    'pagamento',
+    'cobranca',
+    'cobrança',
+    'vencimento',
+    'vencido',
+    'falha',
+    'falhou',
+    'nao foi bem-sucedido',
+    'não foi bem-sucedido',
+    'aprovado',
+    'aprovada',
+    'reprovado',
+    'reprovada',
+    'bloqueio',
+    'bloqueado',
+    'bloqueada',
+    'suspensao',
+    'suspensão',
+    'cancelamento',
+    'cancelado',
+    'cancelada',
+    'acao necessaria',
+    'ação necessária',
+    'urgente',
+  ];
+
+  const normalize = (value: string) =>
+    value
+      .normalize('NFD')
+      .replace(/[\\u0300-\\u036f]/g, '')
+      .toLowerCase();
+
+  const attention = data.recent.filter(item => {
+    if (item.riskLevel !== 'LOW') return true;
+
+    const subject = normalize(item.subject);
+    return attentionTerms.some(term =>
+      subject.includes(normalize(term))
+    );
+  });
+
+  if (attention.length === 0) {
+    return [
+      'Não existe uma marcação formal de e-mail importante no KAVIAR.',
+      'Entre os e-mails recentes analisados, nenhum apresentou sinal objetivo de prioridade operacional ou risco.',
+    ].join('\\n');
+  }
+
+  return [
+    'Não existe uma marcação formal de e-mail importante no KAVIAR.',
+    'Mas estes e-mails recentes merecem atenção:',
+    ...attention.map(item =>
+      `• ${item.subject} — ${item.fromName || 'remetente não identificado'}${item.riskLevel !== 'LOW' ? ` — risco ${item.riskLevel}` : ''}`
+    ),
+  ].join('\\n');
 }
 
 export function formatEmailSubjects(data: InboxSummaryData): string {
