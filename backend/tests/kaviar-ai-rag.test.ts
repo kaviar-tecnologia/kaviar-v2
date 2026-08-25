@@ -22,6 +22,7 @@ vi.mock('../src/services/ai/kaviar-ai.command-center', () => ({
   getDriverPipelineSummary: vi.fn().mockResolvedValue({ tool: 'driver_pipeline_summary', data: { available: true, total: 0, byStatus: {}, byVehicleType: {}, pendingApproval: 0, docsMissing: 0, docsSubmitted: 0, docsRejected: 0, compliancePending: 0, activeDrivers: 0, suspendedDrivers: 0, modalities: { available: true, pending: 0, approved: 0, rejected: 0 }, referenceTime: '' } }),
   getEmergencyOperationsSummary: vi.fn().mockResolvedValue({ tool: 'emergency_operations_summary', data: { emergencies: { available: true, active: 0, unresolved: 0, critical: null, criticalSupported: false, oldestActiveAt: null }, rides: { available: true, noDriver: 0, pendingAdjustment: 0 }, referenceTime: '' } }),
   getTerritoryPortfolioSummary: vi.fn().mockResolvedValue({ tool: 'territory_portfolio_summary', data: { available: true, total: 0, byStatus: {}, byRegulatoryStatus: {}, withoutManager: 0, withMotoPassenger: 0, withMotoExpress: 0, regulatoryChecklist: { available: true, pending: 0 }, regulatoryProtocols: { available: true, pending: 0 }, insuranceCoverages: { available: true, pending: 0 }, cityLandings: { available: true, total: 0, active: 0 }, attentionCities: [], referenceTime: '' } }),
+  getTerritoryManagerCoverage: vi.fn().mockResolvedValue({ tool: 'territory_manager_coverage', data: { available: true } }),
 }));
 
 import { askKaviarAi } from '../src/services/ai/kaviar-ai.service';
@@ -38,8 +39,8 @@ const ARTICLE_ROW = {
 };
 
 describe('RAG v1 — registry', () => {
-  it('registry contém 18 tools', () => {
-    expect(getRegisteredTools()).toHaveLength(18);
+  it('registry contém 28 tools', () => {
+    expect(getRegisteredTools()).toHaveLength(28);
   });
 
   it('todas as tools são readOnly', () => {
@@ -52,6 +53,7 @@ describe('RAG v1 — registry', () => {
     const tool = getRegisteredTools().find(t => t.name === 'knowledge_answer');
     expect(tool).toBeDefined();
     expect(tool!.allowedRoles).toContain('SUPER_ADMIN');
+    expect(tool!.allowedRoles).toContain('EXECUTIVE_ADMIN');
     expect(tool!.allowedRoles).toContain('FINANCE');
     expect(tool!.readOnly).toBe(true);
   });
@@ -104,6 +106,17 @@ describe('RAG v1 — busca e filtros', () => {
     expect(params[1]).toBe('FINANCE');
   });
 
+  it('EXECUTIVE_ADMIN passa role correta para consulta SQL', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [ARTICLE_ROW] });
+    mockResponsesCreate.mockResolvedValueOnce({ status: 'completed', output_text: 'Resposta.' });
+
+    const r = await getKnowledgeAnswer({ question: 'O que é a KAVIAR?', role: 'EXECUTIVE_ADMIN' });
+    const params = mockQuery.mock.calls[0][1];
+    expect(params[1]).toBe('EXECUTIVE_ADMIN');
+    expect(r.data.available).toBe(true);
+    expect(r.data.citations[0].slug).toBe('visao-geral-kaviar');
+  });
+
   it('FINANCE não acessa artigo exclusivo de SUPER_ADMIN (via SQL role filter)', async () => {
     // Article only allows SUPER_ADMIN → FINANCE query returns empty
     mockQuery.mockResolvedValueOnce({ rows: [] });
@@ -142,8 +155,20 @@ describe('RAG v1 — role e segurança', () => {
     expect(canRoleExecuteTool('SUPER_ADMIN', 'knowledge_answer')).toBe(true);
   });
 
+  it('EXECUTIVE_ADMIN pode executar knowledge_answer', () => {
+    expect(canRoleExecuteTool('EXECUTIVE_ADMIN', 'knowledge_answer')).toBe(true);
+  });
+
   it('FINANCE pode executar knowledge_answer', () => {
     expect(canRoleExecuteTool('FINANCE', 'knowledge_answer')).toBe(true);
+  });
+
+  it('OPERATOR não pode executar knowledge_answer', () => {
+    expect(canRoleExecuteTool('OPERATOR', 'knowledge_answer')).toBe(false);
+  });
+
+  it('LEAD_AGENT não pode executar knowledge_answer', () => {
+    expect(canRoleExecuteTool('LEAD_AGENT', 'knowledge_answer')).toBe(false);
   });
 
   it('SQL é parametrizado (question é $1, não interpolado)', async () => {
