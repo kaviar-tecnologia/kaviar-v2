@@ -199,6 +199,8 @@ export default function KaviarAiPage() {
   const isSuperAdmin = admin?.role === 'SUPER_ADMIN';
   const canCreatePlanningTerritory =
     isSuperAdmin || admin?.role === 'EXECUTIVE_ADMIN';
+  const canEnableDriverLanding =
+    isSuperAdmin || admin?.role === 'EXECUTIVE_ADMIN';
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -428,7 +430,7 @@ export default function KaviarAiPage() {
   };
 
   const handleEnableLanding = async () => {
-    if (!isSuperAdmin || !landingDialog) return;
+    if (!canEnableDriverLanding || !landingDialog) return;
 
     setActionLoading(true);
     setError('');
@@ -1191,7 +1193,7 @@ export default function KaviarAiPage() {
                 )}
 
                 {/* Liberar landing com confirmação explícita */}
-                {isSuperAdmin &&
+                {canEnableDriverLanding &&
                   msg.role === 'assistant' &&
                   msg.toolsUsed?.includes('territory_onboarding_status') &&
                   msg.toolsUsed?.includes('driver_city_landings') &&

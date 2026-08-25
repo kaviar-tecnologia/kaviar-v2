@@ -501,7 +501,7 @@ router.post('/territory/create-manager', requireSuperAdmin, async (req: Request,
 
 
 // ── Territorial: Liberar landing de motoristas ──────────────────────────────
-router.post('/territory/landing/enable', requireSuperAdmin, async (req: Request, res: Response) => {
+router.post('/territory/landing/enable', allowExecutiveConfirmedAction, async (req: Request, res: Response) => {
   try {
     const { city, uf, confirmation } = req.body;
 
