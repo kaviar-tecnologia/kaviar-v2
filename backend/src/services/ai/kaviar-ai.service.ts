@@ -24,6 +24,7 @@ import type {
   AnnualIncentiveSummaryData,
   WhatsAppSummaryData,
   DriverPipelineSummaryData,
+  DriverPendingListData,
   EmergencyOperationsSummaryData,
   TerritoryPortfolioSummaryData,
   TerritoryManagerCoverageData,
@@ -509,6 +510,33 @@ const FORMATTERS: Record<KaviarAiToolName, (data: unknown) => string> = {
     formatWhatsAppSummary(data as WhatsAppSummaryData),
   driver_pipeline_summary: (data) =>
     formatDriverPipelineSummary(data as DriverPipelineSummaryData),
+  driver_pending_list: (data) => {
+    const d = data as DriverPendingListData;
+
+    if (!d.available) {
+      return 'Motoristas pendentes: não foi possível consultar.';
+    }
+
+    if (d.drivers.length === 0) {
+      return 'Não há motoristas aguardando análise no momento.';
+    }
+
+    const parts = ['👤 Motoristas aguardando análise:'];
+
+    for (const driver of d.drivers) {
+      const location = [driver.neighborhood, driver.city]
+        .filter(Boolean)
+        .join(' — ');
+
+      parts.push(
+        `• ${driver.name} — status: ${driver.status}` +
+        `${location ? ` — ${location}` : ''}` +
+        ` — ID: ${driver.id}`
+      );
+    }
+
+    return parts.join('\n');
+  },
   emergency_operations_summary: (data) =>
     formatEmergencyOperationsSummary(data as EmergencyOperationsSummaryData),
   territory_portfolio_summary: (data) =>
@@ -1725,6 +1753,29 @@ export async function askKaviarAi(
   if (overallIntent === 'DRIVERS') {
     const driverSubIntent = classifyDriverIntent(question);
     const refinedTools = refineDriverTools(driverSubIntent, authorizedTools);
+
+    if (driverSubIntent === 'DRIVER_PENDING_LIST') {
+      if (!canRoleExecuteTool(role, 'driver_pending_list')) {
+        return {
+          answer: 'Você não tem permissão para acessar essas informações.',
+          toolsUsed: [],
+        };
+      }
+
+      try {
+        const result = await executeTool('driver_pending_list');
+        const answer = FORMATTERS.driver_pending_list(result.data);
+        return {
+          answer,
+          toolsUsed: ['driver_pending_list'],
+        };
+      } catch {
+        return {
+          answer: 'Não foi possível listar os motoristas pendentes no momento. Tente novamente.',
+          toolsUsed: [],
+        };
+      }
+    }
 
     if (driverSubIntent === 'DRIVER_PENDING_GENERAL') {
       // Consolidated pending: canonical source is driver_pipeline_summary.

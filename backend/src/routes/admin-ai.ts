@@ -16,6 +16,7 @@ import {
 import { createOpenAiProviderIfConfigured } from '../services/ai/kaviar-ai.openai-provider';
 import { startRegulatorySearch, retrieveRegulatorySearch, classifyRegulatorySearchError } from '../services/ai/kaviar-ai.regulatory-search';
 import { prisma } from '../lib/prisma';
+import { AdminService } from '../modules/admin/service';
 import { audit, auditCtx } from '../utils/audit';
 import {
   isCoverageStatus,
@@ -364,6 +365,148 @@ router.get('/territory/regulatory-search/:responseId', allowExecutiveRegulatoryS
     console.error(`[REGULATORY_SEARCH_RETRIEVE_ERROR] responseId=${responseId} message=${errMsg}`);
     const classified = classifyRegulatorySearchError(error);
     return res.status(classified.httpStatus).json({ success: false, code: classified.code, error: classified.publicMessage });
+  }
+});
+
+
+// ── Motoristas: aprovação/rejeição confirmada via Chat KAVIAR ───────────────
+router.post('/drivers/:id/approve', allowExecutiveConfirmedAction, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { confirmation } = req.body;
+
+    if (confirmation !== 'APROVAR_MOTORISTA') {
+      return res.status(400).json({
+        success: false,
+        error: 'Confirmação APROVAR_MOTORISTA obrigatória.',
+      });
+    }
+
+    const ctx = auditCtx(req);
+    const adminService = new AdminService();
+    const driver = await adminService.approveDriver(id, ctx.adminId);
+
+    audit({
+      adminId: ctx.adminId,
+      adminEmail: ctx.adminEmail,
+      action: 'approve_driver',
+      entityType: 'driver',
+      entityId: id,
+      newValue: {
+        status: 'approved',
+        source: 'chat_kaviar',
+      },
+      ipAddress: ctx.ip,
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        id: driver.id,
+        name: driver.name,
+        status: driver.status,
+      },
+      message: 'Motorista aprovado com sucesso.',
+    });
+  } catch (error: any) {
+    if (error?.code === 'DRIVER_INCOMPLETE') {
+      return res.status(400).json({
+        success: false,
+        error: 'DRIVER_INCOMPLETE',
+        message: 'Motorista possui documentos obrigatórios pendentes.',
+        missingRequirements: error?.missingRequirements || [],
+        details: error?.details || {},
+      });
+    }
+
+    return res.status(400).json({
+      success: false,
+      error: error?.message || 'Erro ao aprovar motorista.',
+    });
+  }
+});
+
+router.post('/drivers/:id/reject', allowExecutiveConfirmedAction, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { confirmation, reason } = req.body;
+
+    if (confirmation !== 'REJEITAR_MOTORISTA') {
+      return res.status(400).json({
+        success: false,
+        error: 'Confirmação REJEITAR_MOTORISTA obrigatória.',
+      });
+    }
+
+    if (!reason || typeof reason !== 'string' || !reason.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Motivo da rejeição é obrigatório.',
+      });
+    }
+
+    const existing = await prisma.drivers.findUnique({
+      where: { id },
+      select: { id: true, name: true, status: true },
+    });
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        error: 'Motorista não encontrado.',
+      });
+    }
+
+    if (!['pending', 'needs_documents'].includes(existing.status)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Apenas motoristas pendentes podem ser rejeitados por este fluxo.',
+      });
+    }
+
+    const ctx = auditCtx(req);
+
+    const driver = await prisma.drivers.update({
+      where: { id },
+      data: {
+        status: 'rejected',
+        rejected_at: new Date(),
+        rejected_by: ctx.adminId,
+        rejected_reason: reason.trim(),
+        approved_at: null,
+        approved_by: null,
+        updated_at: new Date(),
+      },
+    });
+
+    audit({
+      adminId: ctx.adminId,
+      adminEmail: ctx.adminEmail,
+      action: 'reject_driver',
+      entityType: 'driver',
+      entityId: id,
+      newValue: {
+        status: 'rejected',
+        reason: reason.trim(),
+        source: 'chat_kaviar',
+      },
+      ipAddress: ctx.ip,
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        id: driver.id,
+        name: driver.name,
+        status: driver.status,
+      },
+      message: 'Motorista rejeitado.',
+    });
+  } catch (error: any) {
+    return res.status(400).json({
+      success: false,
+      error: error?.message || 'Erro ao rejeitar motorista.',
+    });
   }
 });
 

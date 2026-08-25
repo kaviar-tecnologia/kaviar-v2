@@ -85,12 +85,12 @@ export class AdminService {
   }
 
   // Aprovar motorista (validação obrigatória de compliance)
-  async approveDriver(driver_id: string) {
-    return this.approveDriverWithGates(driver_id);
+  async approveDriver(driver_id: string, admin_id = 'system') {
+    return this.approveDriverWithGates(driver_id, admin_id);
   }
 
   // Validação obrigatória com gates (compliance)
-  private async approveDriverWithGates(driver_id: string) {
+  private async approveDriverWithGates(driver_id: string, admin_id: string) {
     // Validar elegibilidade obrigatoriamente
     const eligibility = await this.driver_verifications.evaluateEligibility(driver_id);
     
@@ -123,7 +123,7 @@ export class AdminService {
         data: { 
           status: 'approved',
           approved_at: new Date(),
-          approved_by: 'system',
+          approved_by: admin_id,
           suspension_reason: null,
           suspended_at: null,
           suspended_by: null,
@@ -136,7 +136,7 @@ export class AdminService {
         data: {
           status: 'APPROVED',
           approved_at: new Date(),
-          approved_by_admin_id: 'system' // TODO: get actual admin ID
+          approved_by_admin_id: admin_id
         }
       });
 
@@ -156,7 +156,7 @@ export class AdminService {
 
     // Reavaliar ativação da comunidade após aprovação
     if (driver.community_id) {
-      await this.communityActivation.evaluateCommunityActivation(driver.community_id, 'system');
+      await this.communityActivation.evaluateCommunityActivation(driver.community_id, admin_id);
     }
 
     return updatedDriver;

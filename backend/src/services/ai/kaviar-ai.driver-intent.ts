@@ -5,6 +5,7 @@ import type { DriverPipelineSummaryData } from './kaviar-ai.command-center';
 
 export type DriverSubIntent =
   | 'DRIVER_PENDING_GENERAL'
+  | 'DRIVER_PENDING_LIST'
   | 'DRIVER_STATUS'
   | 'DRIVER_DOCUMENTS'
   | 'DRIVER_COMPLIANCE'
@@ -16,6 +17,7 @@ export type DriverSubIntent =
 
 const DRIVER_SUBINTENT_TOOLS: Record<DriverSubIntent, KaviarAiToolName[]> = {
   DRIVER_PENDING_GENERAL: ['driver_pipeline_summary'],
+  DRIVER_PENDING_LIST: ['driver_pending_list'],
   DRIVER_STATUS: ['driver_pipeline_summary'],
   DRIVER_DOCUMENTS: ['drivers_documents_pending'],
   DRIVER_COMPLIANCE: ['driver_pipeline_summary'],
@@ -69,6 +71,23 @@ export function classifyDriverIntent(question: string): DriverSubIntent {
     (q.includes('pendente') || q.includes('aguardando') || q.includes('aprovacao') || q.includes('quantas'))
   ) {
     return 'DRIVER_MODALITIES';
+  }
+
+  // DRIVER_PENDING_LIST — asks which/list/detail pending drivers
+  if (
+    (q.includes('motorista') || q.includes('driver')) &&
+    (q.includes('pendente') || q.includes('aguardando') || q.includes('aprovacao')) &&
+    (
+      q.includes('quais') ||
+      q.includes('liste') ||
+      q.includes('listar') ||
+      q.includes('mostre') ||
+      q.includes('mostrar') ||
+      q.includes('detalhe') ||
+      q.includes('detalhar')
+    )
+  ) {
+    return 'DRIVER_PENDING_LIST';
   }
 
   // DRIVER_STATUS — explicitly mentions status, cadastro, pipeline
