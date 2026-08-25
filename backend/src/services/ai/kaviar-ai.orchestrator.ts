@@ -39,6 +39,7 @@ const INTENT_TOOL_FAMILIES: Record<KaviarAiIntent, KaviarAiToolName[]> = {
     'crm_leads_summary',
   ],
   DRIVERS: [
+    'driver_pending_list',
     'driver_pipeline_summary',
     'drivers_documents_pending',
     'driver_ratings_summary',
@@ -248,7 +249,8 @@ export function classifyIntent(question: string): KaviarAiIntent {
     (q.includes('motorista') || q.includes('driver')) &&
     (q.includes('pendente') || q.includes('pipeline') || q.includes('quantos') ||
      q.includes('documento') || q.includes('faltando') || q.includes('suspenso') ||
-     q.includes('cadastro') || q.includes('por status'))
+     q.includes('cadastro') || q.includes('por status') ||
+     q.includes('aguardando') || q.includes('aprovacao'))
   ) {
     return 'DRIVERS';
   }

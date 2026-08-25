@@ -83,8 +83,7 @@ export function routeByRules(question: string): KaviarAiRouteResult {
   if (
     (hasDocContext && hasDriverContext) ||
     (hasDocContext && hasPendingContext) ||
-    (hasDriverContext && hasPendingContext && hasDocContext) ||
-    (hasDriverContext && (q.includes('aprovação') || q.includes('aprovacao') || q.includes('aguardando') || q.includes('cadastro')))
+    (hasDriverContext && hasPendingContext && hasDocContext)
   ) {
     return { toolsToCall: ['drivers_documents_pending'] };
   }
