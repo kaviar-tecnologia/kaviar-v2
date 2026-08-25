@@ -1209,7 +1209,7 @@ export default function KaviarAiPage() {
                   (
                     msg.content?.includes('Nenhuma landing page de motoristas correspondente foi encontrada.') ||
                     msg.content?.includes('Landing: desativada') ||
-                    msg.content?.includes('Landing: ❌ Não habilitada')
+                    msg.content?.includes('Não habilitada')
                   ) && (
                   <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                     <Button
