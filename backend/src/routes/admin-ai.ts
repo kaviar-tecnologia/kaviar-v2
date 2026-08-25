@@ -466,8 +466,11 @@ router.post('/drivers/:id/reject', allowExecutiveConfirmedAction, async (req: Re
 
     const ctx = auditCtx(req);
 
-    const driver = await prisma.drivers.update({
-      where: { id },
+    const updated = await prisma.drivers.updateMany({
+      where: {
+        id,
+        status: { in: ['pending', 'needs_documents'] },
+      },
       data: {
         status: 'rejected',
         rejected_at: new Date(),
@@ -477,6 +480,18 @@ router.post('/drivers/:id/reject', allowExecutiveConfirmedAction, async (req: Re
         approved_by: null,
         updated_at: new Date(),
       },
+    });
+
+    if (updated.count !== 1) {
+      return res.status(409).json({
+        success: false,
+        error: 'O status do motorista mudou. Atualize a consulta antes de rejeitar.',
+      });
+    }
+
+    const driver = await prisma.drivers.findUniqueOrThrow({
+      where: { id },
+      select: { id: true, name: true, status: true },
     });
 
     audit({
