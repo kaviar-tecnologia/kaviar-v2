@@ -143,7 +143,7 @@ router.post('/chat', async (req: Request, res: Response) => {
       toolsUsed: result.toolsUsed,
     };
 
-    if (result.developmentProposal) {
+    if (result.developmentProposal && admin.role === 'SUPER_ADMIN') {
       const ctx = auditCtx(req);
 
       const developmentJob = await createDevelopmentJob(

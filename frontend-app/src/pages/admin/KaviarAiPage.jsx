@@ -197,6 +197,7 @@ export default function KaviarAiPage() {
   const adminData = localStorage.getItem('kaviar_admin_data');
   const admin = adminData ? JSON.parse(adminData) : null;
   const isSuperAdmin = admin?.role === 'SUPER_ADMIN';
+  const isExecutiveAdmin = admin?.role === 'EXECUTIVE_ADMIN';
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -974,7 +975,7 @@ export default function KaviarAiPage() {
                 </Typography>
 
                 {/* Development Agent approval */}
-                {msg.developmentProposal && (
+                {isSuperAdmin && msg.developmentProposal && (
                   <Box
                     sx={{
                       mt: 1.5,

@@ -654,6 +654,19 @@ describe('validação de limites', () => {
 describe('RBAC enforcement', () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it('EXECUTIVE_ADMIN pode consultar briefing executivo', () => {
+    expect(canRoleExecuteTool('EXECUTIVE_ADMIN', 'daily_briefing')).toBe(true);
+  });
+
+  it('EXECUTIVE_ADMIN pode consultar inbox executiva', () => {
+    expect(canRoleExecuteTool('EXECUTIVE_ADMIN', 'inbox_summary')).toBe(true);
+  });
+
+  it('EXECUTIVE_ADMIN pode consultar CRM e territórios', () => {
+    expect(canRoleExecuteTool('EXECUTIVE_ADMIN', 'crm_leads_summary')).toBe(true);
+    expect(canRoleExecuteTool('EXECUTIVE_ADMIN', 'territory_portfolio_summary')).toBe(true);
+  });
+
   it('FINANCE pode executar rides_operations', () => {
     expect(canRoleExecuteTool('FINANCE', 'rides_operations')).toBe(true);
   });
