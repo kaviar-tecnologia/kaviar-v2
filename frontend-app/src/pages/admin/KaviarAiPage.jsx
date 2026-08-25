@@ -1202,7 +1202,10 @@ export default function KaviarAiPage() {
                     ) ||
                     msg.toolsUsed?.includes('city_opening_overview')
                   ) &&
-                  msg.content?.includes('ID:') &&
+                  (
+                    msg.toolsUsed?.includes('city_opening_overview') ||
+                    msg.content?.includes('ID:')
+                  ) &&
                   (
                     msg.content?.includes('Nenhuma landing page de motoristas correspondente foi encontrada.') ||
                     msg.content?.includes('Landing: desativada') ||
@@ -1220,11 +1223,14 @@ export default function KaviarAiPage() {
                         textTransform: 'none',
                       }}
                       onClick={() => {
-                        const match = msg.content.match(/Cidade:\s*([^/\n]+)\/([A-Z]{2})/);
+                        const match =
+                          msg.content.match(/Cidade:\s*([^/\n]+)\/([A-Z]{2})/) ||
+                          msg.content.match(/Abertura de cidade\s+—\s+([^/\n]+)\/([A-Z]{2})/i);
+
                         if (match) {
                           setLandingDialog({
                             city: match[1].trim(),
-                            uf: match[2],
+                            uf: match[2].toUpperCase(),
                           });
                         }
                       }}
