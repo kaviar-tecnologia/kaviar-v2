@@ -103,7 +103,7 @@ function FinanceHomeRedirect() {
   const adminData = localStorage.getItem('kaviar_admin_data');
   const admin = adminData ? JSON.parse(adminData) : null;
   if (admin?.role === 'FINANCE') return <Navigate to="/admin/financeiro" replace />;
-  if (admin?.role === 'EXECUTIVE_ADMIN') return <Navigate to="/admin/ai" replace />;
+  if (admin?.role === 'EXECUTIVE_ADMIN') return <Navigate to="/admin/chat-kaviar" replace />;
   if (admin?.role === 'TERRITORIAL_OPERATOR') return <OperatorHome />;
   if (admin?.role === 'TERRITORIAL_MANAGER') return <ManagerHome />;
   if (['PET_OPERATOR', 'PET_SUPERVISOR', 'PET_ADMIN'].includes(admin?.role)) return <Navigate to="/admin/pet" replace />;
@@ -772,7 +772,7 @@ export default function AdminApp() {
             </ProtectedAdminRoute>
           } />
           <Route path="/chat-kaviar" element={
-            <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
+            <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'EXECUTIVE_ADMIN', 'FINANCE']}>
               <KaviarAiPage />
             </ProtectedAdminRoute>
           } />
