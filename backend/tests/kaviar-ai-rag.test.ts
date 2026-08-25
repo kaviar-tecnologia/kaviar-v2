@@ -329,3 +329,13 @@ describe('RAG v1 — integração com askKaviarAi', () => {
     expect(mockQuery).not.toHaveBeenCalled();
   });
 });
+
+describe('RAG v1 — roteamento conceitual territorial', () => {
+  it('roteia pergunta conceitual territorial para knowledge_answer', () => {
+    const r = routeByRules(
+      'Segundo o conhecimento interno do KAVIAR, qual é a diferença entre cadastrar, preparar e ativar um território?'
+    );
+
+    expect(r.toolsToCall).toEqual(['knowledge_answer']);
+  });
+});
