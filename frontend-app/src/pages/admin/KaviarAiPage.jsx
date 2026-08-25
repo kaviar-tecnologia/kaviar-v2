@@ -212,6 +212,7 @@ export default function KaviarAiPage() {
   const [driverDecisionDialog, setDriverDecisionDialog] = useState(null);
   const [driverRejectReason, setDriverRejectReason] = useState('');
   const [driverReviewDialog, setDriverReviewDialog] = useState(null);
+  const [resolvedDriverIds, setResolvedDriverIds] = useState({});
   const [actionLoading, setActionLoading] = useState(false);
   const [devJobs, setDevJobs] = useState([]);
   const [selectedJob, setSelectedJob] = useState(null);
@@ -432,6 +433,13 @@ export default function KaviarAiPage() {
       );
 
       if (res.data.success) {
+        const resolvedId = driverDecisionDialog.id;
+
+        setResolvedDriverIds((prev) => ({
+          ...prev,
+          [resolvedId]: true,
+        }));
+
         setMessages((prev) => [...prev, {
           role: 'assistant',
           content: `✓ Motorista "${res.data.data.name}" aprovado com sucesso.`,
@@ -476,6 +484,13 @@ export default function KaviarAiPage() {
       );
 
       if (res.data.success) {
+        const resolvedId = driverDecisionDialog.id;
+
+        setResolvedDriverIds((prev) => ({
+          ...prev,
+          [resolvedId]: true,
+        }));
+
         setMessages((prev) => [...prev, {
           role: 'assistant',
           content: `✓ Motorista "${res.data.data.name}" rejeitado. Motivo registrado.`,
@@ -1233,7 +1248,8 @@ export default function KaviarAiPage() {
                   msg.role === 'assistant' &&
                   msg.toolsUsed?.includes('driver_pending_list') &&
                   (() => {
-                    const pendingDrivers = getPendingDriversFromMessage(msg);
+                    const pendingDrivers = getPendingDriversFromMessage(msg)
+                      .filter((driver) => !resolvedDriverIds[driver.id]);
 
                     if (pendingDrivers.length === 0) return null;
 
