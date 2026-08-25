@@ -13,7 +13,7 @@ router.use(requireSuperAdmin);
 router.get('/', async (_req: Request, res: Response) => {
   try {
     const staff = await prisma.admins.findMany({
-      where: { role: { in: ['LEAD_AGENT', 'SUPER_ADMIN', 'ANGEL_VIEWER'] } },
+      where: { role: { in: ['LEAD_AGENT', 'SUPER_ADMIN', 'ANGEL_VIEWER', 'EXECUTIVE_ADMIN'] } },
       select: { id: true, name: true, email: true, phone: true, role: true, is_active: true, lead_regions: true, created_at: true },
       orderBy: { created_at: 'desc' },
     });
@@ -27,9 +27,16 @@ router.get('/', async (_req: Request, res: Response) => {
 // POST /api/admin/staff
 router.post('/', auditWrite('create_staff', 'admin'), async (req: Request, res: Response) => {
   try {
-    const { name, email, password, phone, lead_regions } = req.body;
+    const { name, email, password, phone, lead_regions, role } = req.body;
     if (!name || !email || !password) {
       return res.status(400).json({ success: false, error: 'Nome, email e senha são obrigatórios' });
+    }
+
+    const allowedRoles = ['LEAD_AGENT', 'EXECUTIVE_ADMIN'];
+    const selectedRole = role || 'LEAD_AGENT';
+
+    if (!allowedRoles.includes(selectedRole)) {
+      return res.status(400).json({ success: false, error: 'Perfil administrativo inválido' });
     }
 
     const existing = await prisma.admins.findUnique({ where: { email } });
@@ -39,7 +46,7 @@ router.post('/', auditWrite('create_staff', 'admin'), async (req: Request, res: 
 
     const password_hash = await bcrypt.hash(password, 10);
     const staff = await prisma.admins.create({
-      data: { name, email, password: password_hash, phone, role: 'LEAD_AGENT', is_active: true, lead_regions, must_change_password: true },
+      data: { name, email, password: password_hash, phone, role: selectedRole, is_active: true, lead_regions, must_change_password: true },
       select: { id: true, name: true, email: true, phone: true, role: true, is_active: true, lead_regions: true, created_at: true },
     });
 
