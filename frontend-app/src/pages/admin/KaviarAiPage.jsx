@@ -197,6 +197,8 @@ export default function KaviarAiPage() {
   const adminData = localStorage.getItem('kaviar_admin_data');
   const admin = adminData ? JSON.parse(adminData) : null;
   const isSuperAdmin = admin?.role === 'SUPER_ADMIN';
+  const canCreatePlanningTerritory =
+    isSuperAdmin || admin?.role === 'EXECUTIVE_ADMIN';
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -330,7 +332,7 @@ export default function KaviarAiPage() {
 
   // ── Ações territoriais ──────────────────────────────────────────────────
   const handleCreateTerritory = async () => {
-    if (!isSuperAdmin || !territoryDialog) return;
+    if (!canCreatePlanningTerritory || !territoryDialog) return;
 
     const { city, uf } = territoryDialog;
     setActionLoading(true);
@@ -1139,8 +1141,8 @@ export default function KaviarAiPage() {
                     );
                   })()}
 
-                {/* Ações territoriais (somente SUPER_ADMIN) */}
-                {isSuperAdmin && msg.role === 'assistant' && msg.toolsUsed?.includes('territory_onboarding_status') && msg.content?.includes('não encontrado') && (
+                {/* Criação segura de território planning */}
+                {canCreatePlanningTerritory && msg.role === 'assistant' && msg.toolsUsed?.includes('territory_onboarding_status') && msg.content?.includes('não encontrado') && (
                   <Box sx={{ mt: 1.5, pt: 1, borderTop: '1px solid rgba(184,148,46,0.15)', display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                     <Button size="small" variant="outlined" disabled={actionLoading}
                       sx={{ color: '#B8942E', borderColor: '#B8942E', fontSize: 11, textTransform: 'none' }}
@@ -1155,14 +1157,16 @@ export default function KaviarAiPage() {
                       }}>
                       Criar território
                     </Button>
-                    <Button size="small" variant="outlined" disabled={actionLoading}
-                      sx={{ color: '#6B7280', borderColor: '#6B7280', fontSize: 11, textTransform: 'none' }}
-                      onClick={() => {
-                        const match = msg.content.match(/Território\s+(.+?)\/([A-Z]{2})\s+não/);
-                        if (match) handleRegulatorySearch(match[1].trim(), match[2]);
-                      }}>
-                      Pesquisar regulatório
-                    </Button>
+                    {isSuperAdmin && (
+                      <Button size="small" variant="outlined" disabled={actionLoading}
+                        sx={{ color: '#6B7280', borderColor: '#6B7280', fontSize: 11, textTransform: 'none' }}
+                        onClick={() => {
+                          const match = msg.content.match(/Território\s+(.+?)\/([A-Z]{2})\s+não/);
+                          if (match) handleRegulatorySearch(match[1].trim(), match[2]);
+                        }}>
+                        Pesquisar regulatório
+                      </Button>
+                    )}
                   </Box>
                 )}
 

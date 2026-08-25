@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import {
   authenticateAdmin,
   allowFinanceAccess,
+  allowExecutiveConfirmedAction,
   requireSuperAdmin,
 } from '../middlewares/auth';
 import { askKaviarAi } from '../services/ai/kaviar-ai.service';
@@ -366,7 +367,7 @@ router.get('/territory/regulatory-search/:responseId', requireSuperAdmin, async 
 });
 
 // ── Territorial: Criar território em planning ────────────────────────────────
-router.post('/territory/create', requireSuperAdmin, async (req: Request, res: Response) => {
+router.post('/territory/create', allowExecutiveConfirmedAction, async (req: Request, res: Response) => {
   try {
     const { city, uf, confirmation } = req.body;
 
