@@ -1265,7 +1265,7 @@ export function detectStrategicCityIntent(question: string): boolean {
 
 // ── Roles permitidas no Chat KAVIAR ─────────────────────────────────────
 
-const ALLOWED_CHAT_ROLES = new Set(['SUPER_ADMIN', 'FINANCE']);
+const ALLOWED_CHAT_ROLES = new Set(['SUPER_ADMIN', 'EXECUTIVE_ADMIN', 'FINANCE']);
 
 // ── Função principal ───────────────────────────────────────────────────────
 
