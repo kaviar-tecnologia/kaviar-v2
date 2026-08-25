@@ -3,6 +3,7 @@ import {
   authenticateAdmin,
   allowFinanceAccess,
   allowExecutiveConfirmedAction,
+  allowExecutiveRegulatorySearch,
   requireSuperAdmin,
 } from '../middlewares/auth';
 import { askKaviarAi } from '../services/ai/kaviar-ai.service';
@@ -312,7 +313,7 @@ router.post('/dev-jobs/:id/confirm', requireSuperAdmin, async (req: Request, res
 });
 
 // ── Territorial: Pesquisa regulatória ────────────────────────────────────────
-router.post('/territory/regulatory-search', requireSuperAdmin, async (req: Request, res: Response) => {
+router.post('/territory/regulatory-search', allowExecutiveRegulatorySearch, async (req: Request, res: Response) => {
   const city = req.body?.city ?? '';
   const uf = req.body?.uf ?? '';
   const model = process.env.KAVIAR_AI_MODEL || 'gpt-5.4-mini';
@@ -341,7 +342,7 @@ router.post('/territory/regulatory-search', requireSuperAdmin, async (req: Reque
 
 const RESPONSE_ID_PATTERN = /^resp_[a-zA-Z0-9]{20,80}$/;
 
-router.get('/territory/regulatory-search/:responseId', requireSuperAdmin, async (req: Request, res: Response) => {
+router.get('/territory/regulatory-search/:responseId', allowExecutiveRegulatorySearch, async (req: Request, res: Response) => {
   const { responseId } = req.params;
 
   if (!responseId || !RESPONSE_ID_PATTERN.test(responseId)) {

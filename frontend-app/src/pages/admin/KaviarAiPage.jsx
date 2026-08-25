@@ -201,6 +201,8 @@ export default function KaviarAiPage() {
     isSuperAdmin || admin?.role === 'EXECUTIVE_ADMIN';
   const canEnableDriverLanding =
     isSuperAdmin || admin?.role === 'EXECUTIVE_ADMIN';
+  const canRunRegulatorySearch =
+    isSuperAdmin || admin?.role === 'EXECUTIVE_ADMIN';
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -1165,7 +1167,7 @@ export default function KaviarAiPage() {
                       }}>
                       Criar território
                     </Button>
-                    {isSuperAdmin && (
+                    {canRunRegulatorySearch && (
                       <Button size="small" variant="outlined" disabled={actionLoading}
                         sx={{ color: '#6B7280', borderColor: '#6B7280', fontSize: 11, textTransform: 'none' }}
                         onClick={() => {
@@ -1179,7 +1181,7 @@ export default function KaviarAiPage() {
                 )}
 
                 {/* Pesquisar regulatório para território EXISTENTE */}
-                {isSuperAdmin && msg.role === 'assistant' && msg.toolsUsed?.includes('territory_onboarding_status') && msg.content?.includes('ID:') && (
+                {canRunRegulatorySearch && msg.role === 'assistant' && msg.toolsUsed?.includes('territory_onboarding_status') && msg.content?.includes('ID:') && (
                   <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                     <Button size="small" variant="outlined" disabled={actionLoading}
                       sx={{ color: '#6B7280', borderColor: '#6B7280', fontSize: 11, textTransform: 'none' }}
@@ -1187,6 +1189,39 @@ export default function KaviarAiPage() {
                         const match = msg.content.match(/Cidade:\s*([^/\n]+)\/([A-Z]{2})/);
                         if (match) handleRegulatorySearch(match[1].trim(), match[2]);
                       }}>
+                      Pesquisar regulatório
+                    </Button>
+                  </Box>
+                )}
+
+                {/* Pesquisa regulatória a partir da visão de abertura da cidade */}
+                {canRunRegulatorySearch &&
+                  msg.role === 'assistant' &&
+                  msg.toolsUsed?.includes('city_opening_overview') &&
+                  msg.content?.includes('Não avaliado') && (
+                  <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      disabled={actionLoading}
+                      sx={{
+                        color: '#6B7280',
+                        borderColor: '#6B7280',
+                        fontSize: 11,
+                        textTransform: 'none',
+                      }}
+                      onClick={() => {
+                        const match =
+                          msg.content.match(/Abertura de cidade\s+—\s+([^/\n]+)\/([A-Z]{2})/i);
+
+                        if (match) {
+                          handleRegulatorySearch(
+                            match[1].trim(),
+                            match[2].toUpperCase()
+                          );
+                        }
+                      }}
+                    >
                       Pesquisar regulatório
                     </Button>
                   </Box>
