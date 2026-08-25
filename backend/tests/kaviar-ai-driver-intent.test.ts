@@ -392,6 +392,12 @@ describe('DRIVER_PENDING_LIST', () => {
     ).toBe('DRIVER_PENDING_LIST');
   });
 
+  it('classifica pergunta direta sobre existência de motoristas aguardando aprovação', () => {
+    expect(
+      classifyDriverIntent('Há motoristas aguardando aprovação?')
+    ).toBe('DRIVER_PENDING_LIST');
+  });
+
   it('classifica pedido explícito para listar pendentes', () => {
     expect(
       classifyDriverIntent('Liste os motoristas pendentes')

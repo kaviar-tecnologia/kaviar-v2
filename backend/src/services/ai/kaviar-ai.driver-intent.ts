@@ -74,6 +74,8 @@ export function classifyDriverIntent(question: string): DriverSubIntent {
   }
 
   // DRIVER_PENDING_LIST — asks which/list/detail pending drivers
+  // Also treat direct existence questions about drivers awaiting approval
+  // as list requests, because the operational answer must identify the drivers.
   if (
     (q.includes('motorista') || q.includes('driver')) &&
     (q.includes('pendente') || q.includes('aguardando') || q.includes('aprovacao')) &&
@@ -84,7 +86,11 @@ export function classifyDriverIntent(question: string): DriverSubIntent {
       q.includes('mostre') ||
       q.includes('mostrar') ||
       q.includes('detalhe') ||
-      q.includes('detalhar')
+      q.includes('detalhar') ||
+      (
+        (q.includes('ha motorista') || q.includes('ha motoristas')) &&
+        (q.includes('aguardando') || q.includes('aprovacao'))
+      )
     )
   ) {
     return 'DRIVER_PENDING_LIST';
