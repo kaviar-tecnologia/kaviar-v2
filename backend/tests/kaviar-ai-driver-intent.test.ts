@@ -384,3 +384,32 @@ describe('formatConsolidatedPending — edge cases', () => {
     expect(answer).toContain('Modalidades: não foi possível consultar');
   });
 });
+
+describe('DRIVER_PENDING_LIST', () => {
+  it('classifica pedido para listar motoristas aguardando aprovação', () => {
+    expect(
+      classifyDriverIntent('Quais motoristas estão aguardando aprovação?')
+    ).toBe('DRIVER_PENDING_LIST');
+  });
+
+  it('classifica pedido explícito para listar pendentes', () => {
+    expect(
+      classifyDriverIntent('Liste os motoristas pendentes')
+    ).toBe('DRIVER_PENDING_LIST');
+  });
+
+  it('mantém pergunta genérica de quantidade no resumo consolidado', () => {
+    expect(
+      classifyDriverIntent('Quantos motoristas estão pendentes?')
+    ).toBe('DRIVER_PENDING_GENERAL');
+  });
+
+  it('refina listagem para driver_pending_list', () => {
+    expect(
+      refineDriverTools(
+        'DRIVER_PENDING_LIST',
+        ['driver_pipeline_summary', 'driver_pending_list']
+      )
+    ).toEqual(['driver_pending_list']);
+  });
+});

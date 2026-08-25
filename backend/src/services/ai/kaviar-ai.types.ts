@@ -15,6 +15,7 @@ export type KaviarAiToolName =
   | 'annual_incentive_summary'
   | 'whatsapp_summary'
   | 'driver_pipeline_summary'
+  | 'driver_pending_list'
   | 'emergency_operations_summary'
   | 'territory_portfolio_summary'
   | 'knowledge_answer'

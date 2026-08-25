@@ -1576,3 +1576,70 @@ describe('cobertura territorial — máquina de estados 2C', () => {
     ).toBeNull();
   });
 });
+
+
+describe('aprovação executiva de motorista via Chat KAVIAR — regras', () => {
+  it('aprovação exige ação executiva confirmada e confirmação literal', () => {
+    const routeSrc = require('fs').readFileSync(
+      require('path').resolve(__dirname, '../src/routes/admin-ai.ts'), 'utf8'
+    );
+
+    expect(routeSrc).toContain(
+      "'/drivers/:id/approve', allowExecutiveConfirmedAction"
+    );
+    expect(routeSrc).toContain(
+      "confirmation !== 'APROVAR_MOTORISTA'"
+    );
+  });
+
+  it('rejeição exige ação executiva confirmada, confirmação e motivo', () => {
+    const routeSrc = require('fs').readFileSync(
+      require('path').resolve(__dirname, '../src/routes/admin-ai.ts'), 'utf8'
+    );
+
+    expect(routeSrc).toContain(
+      "'/drivers/:id/reject', allowExecutiveConfirmedAction"
+    );
+    expect(routeSrc).toContain(
+      "confirmation !== 'REJEITAR_MOTORISTA'"
+    );
+    expect(routeSrc).toContain(
+      "Motivo da rejeição é obrigatório."
+    );
+  });
+
+  it('rejeição pelo Chat só aceita motorista ainda em análise', () => {
+    const routeSrc = require('fs').readFileSync(
+      require('path').resolve(__dirname, '../src/routes/admin-ai.ts'), 'utf8'
+    );
+
+    expect(routeSrc).toContain(
+      "['pending', 'needs_documents'].includes(existing.status)"
+    );
+    expect(routeSrc).toContain(
+      'Apenas motoristas pendentes podem ser rejeitados por este fluxo.'
+    );
+  });
+
+  it('aprovação registra o administrador real no serviço', () => {
+    const serviceSrc = require('fs').readFileSync(
+      require('path').resolve(__dirname, '../src/modules/admin/service.ts'), 'utf8'
+    );
+
+    expect(serviceSrc).toContain(
+      "async approveDriver(driver_id: string, admin_id = 'system')"
+    );
+    expect(serviceSrc).toContain('approved_by: admin_id');
+    expect(serviceSrc).toContain('approved_by_admin_id: admin_id');
+  });
+
+  it('ações executivas de motorista são auditadas como Chat KAVIAR', () => {
+    const routeSrc = require('fs').readFileSync(
+      require('path').resolve(__dirname, '../src/routes/admin-ai.ts'), 'utf8'
+    );
+
+    expect(routeSrc).toContain("action: 'approve_driver'");
+    expect(routeSrc).toContain("action: 'reject_driver'");
+    expect(routeSrc).toContain("source: 'chat_kaviar'");
+  });
+});

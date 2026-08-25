@@ -528,6 +528,76 @@ export async function getDriverPipelineSummary(): Promise<{
   }
 }
 
+
+export type DriverPendingListData = {
+  available: boolean;
+  drivers: Array<{
+    id: string;
+    name: string;
+    status: string;
+    city: string | null;
+    neighborhood: string | null;
+    createdAt: string | null;
+  }>;
+  referenceTime: string;
+};
+
+export async function getDriverPendingList(): Promise<{
+  tool: 'driver_pending_list';
+  data: DriverPendingListData;
+}> {
+  try {
+    const result = await pool.query<{
+      id: string;
+      name: string;
+      status: string;
+      city: string | null;
+      neighborhood: string | null;
+      created_at: string | null;
+    }>(`
+      SELECT
+        d.id,
+        d.name,
+        d.status,
+        COALESCE(t.city_name, n.city) AS city,
+        n.name AS neighborhood,
+        d.created_at::text AS created_at
+      FROM drivers d
+      LEFT JOIN neighborhoods n ON n.id = d.neighborhood_id
+      LEFT JOIN operational_territories t ON t.id = n.territory_id
+      WHERE d.status IN ('pending', 'needs_documents')
+        AND d.deleted_at IS NULL
+      ORDER BY d.created_at ASC
+      LIMIT 50
+    `);
+
+    return {
+      tool: 'driver_pending_list',
+      data: {
+        available: true,
+        drivers: result.rows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          status: r.status,
+          city: r.city,
+          neighborhood: r.neighborhood,
+          createdAt: r.created_at,
+        })),
+        referenceTime: new Date().toISOString(),
+      },
+    };
+  } catch {
+    return {
+      tool: 'driver_pending_list',
+      data: {
+        available: false,
+        drivers: [],
+        referenceTime: new Date().toISOString(),
+      },
+    };
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // 5. EMERGENCY_OPERATIONS_SUMMARY
 // ══════════════════════════════════════════════════════════════════════════════

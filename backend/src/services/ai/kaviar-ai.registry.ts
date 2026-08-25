@@ -17,6 +17,7 @@ import {
   getAnnualIncentiveSummary,
   getWhatsAppSummary,
   getDriverPipelineSummary,
+  getDriverPendingList,
   getEmergencyOperationsSummary,
   getTerritoryPortfolioSummary,
   getTerritoryManagerCoverage,
@@ -256,6 +257,14 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     argSchema: { type: 'object', properties: {}, required: [] },
     allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN'],
     execute: getDriverPipelineSummary,
+  },
+  {
+    name: 'driver_pending_list',
+    description: 'Lista segura de motoristas com cadastro pendente ou aguardando documentos, com ID, nome, status e localização operacional.',
+    readOnly: true,
+    argSchema: { type: 'object', properties: {}, required: [] },
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN'],
+    execute: getDriverPendingList,
   },
   {
     name: 'emergency_operations_summary',

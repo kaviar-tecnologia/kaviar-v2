@@ -170,6 +170,30 @@ function getCoverageGovernanceAction(message) {
   };
 }
 
+function getPendingDriversFromMessage(message) {
+  if (!message?.toolsUsed?.includes('driver_pending_list')) return [];
+
+  const content = message.content || '';
+
+  return content
+    .split('\n')
+    .map((line) => {
+      const match = line.match(
+        /^•\s+(.+?)\s+—\s+status:\s+(pending|needs_documents)(?:\s+—\s+(.+?))?\s+—\s+ID:\s+([^\s]+)\s*$/
+      );
+
+      if (!match) return null;
+
+      return {
+        name: match[1].trim(),
+        status: match[2],
+        location: match[3]?.trim() || '',
+        id: match[4].trim(),
+      };
+    })
+    .filter(Boolean);
+}
+
 export default function KaviarAiPage() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -185,6 +209,8 @@ export default function KaviarAiPage() {
   const [territoryDialog, setTerritoryDialog] = useState(null); // { city, uf }
   const [coverageDialog, setCoverageDialog] = useState(null);
   const [coverageNotes, setCoverageNotes] = useState('');
+  const [driverDecisionDialog, setDriverDecisionDialog] = useState(null);
+  const [driverRejectReason, setDriverRejectReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [devJobs, setDevJobs] = useState([]);
   const [selectedJob, setSelectedJob] = useState(null);
@@ -200,6 +226,8 @@ export default function KaviarAiPage() {
   const canCreatePlanningTerritory =
     isSuperAdmin || admin?.role === 'EXECUTIVE_ADMIN';
   const canEnableDriverLanding =
+    isSuperAdmin || admin?.role === 'EXECUTIVE_ADMIN';
+  const canConfirmDriverDecision =
     isSuperAdmin || admin?.role === 'EXECUTIVE_ADMIN';
   const canRunRegulatorySearch =
     isSuperAdmin || admin?.role === 'EXECUTIVE_ADMIN';
@@ -333,6 +361,86 @@ export default function KaviarAiPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  // ── Aprovação/rejeição de motorista via Chat KAVIAR ─────────────────────
+  const handleApproveDriver = async () => {
+    if (
+      !canConfirmDriverDecision ||
+      !driverDecisionDialog ||
+      driverDecisionDialog.action !== 'approve'
+    ) return;
+
+    setActionLoading(true);
+    setError('');
+
+    try {
+      const res = await api.post(
+        `/api/admin/ai/drivers/${driverDecisionDialog.id}/approve`,
+        { confirmation: 'APROVAR_MOTORISTA' }
+      );
+
+      if (res.data.success) {
+        setMessages((prev) => [...prev, {
+          role: 'assistant',
+          content: `✓ Motorista "${res.data.data.name}" aprovado com sucesso.`,
+        }]);
+
+        setDriverDecisionDialog(null);
+      }
+    } catch (err) {
+      const data = err?.response?.data;
+      const missing = Array.isArray(data?.missingRequirements)
+        ? `\nPendências: ${data.missingRequirements.join(', ')}`
+        : '';
+
+      setError(
+        `${data?.message || data?.error || 'Erro ao aprovar motorista.'}${missing}`
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRejectDriver = async () => {
+    if (
+      !canConfirmDriverDecision ||
+      !driverDecisionDialog ||
+      driverDecisionDialog.action !== 'reject'
+    ) return;
+
+    const reason = driverRejectReason.trim();
+    if (!reason) return;
+
+    setActionLoading(true);
+    setError('');
+
+    try {
+      const res = await api.post(
+        `/api/admin/ai/drivers/${driverDecisionDialog.id}/reject`,
+        {
+          confirmation: 'REJEITAR_MOTORISTA',
+          reason,
+        }
+      );
+
+      if (res.data.success) {
+        setMessages((prev) => [...prev, {
+          role: 'assistant',
+          content: `✓ Motorista "${res.data.data.name}" rejeitado. Motivo registrado.`,
+        }]);
+
+        setDriverDecisionDialog(null);
+        setDriverRejectReason('');
+      }
+    } catch (err) {
+      setError(
+        err?.response?.data?.error ||
+        'Erro ao rejeitar motorista.'
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   // ── Ações territoriais ──────────────────────────────────────────────────
   const handleCreateTerritory = async () => {
@@ -1068,6 +1176,90 @@ export default function KaviarAiPage() {
                   </Box>
                 )}
 
+                {/* Decisão de motorista pendente */}
+                {canConfirmDriverDecision &&
+                  msg.role === 'assistant' &&
+                  msg.toolsUsed?.includes('driver_pending_list') &&
+                  (() => {
+                    const pendingDrivers = getPendingDriversFromMessage(msg);
+
+                    if (pendingDrivers.length === 0) return null;
+
+                    return (
+                      <Box
+                        sx={{
+                          mt: 1.5,
+                          pt: 1,
+                          borderTop: '1px solid rgba(184,148,46,0.15)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 1,
+                        }}
+                      >
+                        {pendingDrivers.map((driver) => (
+                          <Box
+                            key={driver.id}
+                            sx={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 1,
+                              flexWrap: 'wrap',
+                            }}
+                          >
+                            <Typography sx={{ color: '#D1D5DB', fontSize: 12 }}>
+                              {driver.name}
+                            </Typography>
+
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                disabled={actionLoading}
+                                sx={{
+                                  color: '#34D399',
+                                  borderColor: '#34D399',
+                                  fontSize: 11,
+                                  textTransform: 'none',
+                                }}
+                                onClick={() => {
+                                  setDriverRejectReason('');
+                                  setDriverDecisionDialog({
+                                    ...driver,
+                                    action: 'approve',
+                                  });
+                                }}
+                              >
+                                Aprovar
+                              </Button>
+
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                disabled={actionLoading}
+                                sx={{
+                                  color: '#FCA5A5',
+                                  borderColor: '#FCA5A5',
+                                  fontSize: 11,
+                                  textTransform: 'none',
+                                }}
+                                onClick={() => {
+                                  setDriverRejectReason('');
+                                  setDriverDecisionDialog({
+                                    ...driver,
+                                    action: 'reject',
+                                  });
+                                }}
+                              >
+                                Rejeitar
+                              </Button>
+                            </Box>
+                          </Box>
+                        ))}
+                      </Box>
+                    );
+                  })()}
+
                 {/* Tools used */}
                 {msg.toolsUsed && msg.toolsUsed.length > 0 && (
                   <Box sx={{ mt: 1.5, pt: 1, borderTop: '1px solid rgba(107,114,128,0.1)' }}>
@@ -1648,6 +1840,119 @@ export default function KaviarAiPage() {
           <Button onClick={() => { navigator.clipboard?.writeText(managerResult?.tempPassword || ''); }}
             sx={{ color: '#B8942E', fontSize: 12 }}>Copiar senha</Button>
           <Button onClick={() => setManagerResult(null)} sx={{ color: '#6B7280' }}>Fechar</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog decisão de motorista */}
+      <Dialog
+        open={!!driverDecisionDialog}
+        onClose={() => {
+          if (!actionLoading) {
+            setDriverDecisionDialog(null);
+            setDriverRejectReason('');
+          }
+        }}
+        PaperProps={{
+          sx: {
+            bgcolor: '#1A1A1F',
+            color: '#E5E7EB',
+            minWidth: 380,
+          },
+        }}
+      >
+        <DialogTitle
+          sx={{
+            color:
+              driverDecisionDialog?.action === 'reject'
+                ? '#FCA5A5'
+                : '#34D399',
+            fontSize: 16,
+          }}
+        >
+          {driverDecisionDialog?.action === 'reject'
+            ? 'Confirmar rejeição do motorista'
+            : 'Confirmar aprovação do motorista'}
+        </DialogTitle>
+
+        <DialogContent>
+          <Typography sx={{ color: '#E5E7EB', fontSize: 13, mb: 1 }}>
+            {driverDecisionDialog?.name || ''}
+          </Typography>
+
+          {driverDecisionDialog?.location && (
+            <Typography sx={{ color: '#9CA3AF', fontSize: 12, mb: 1 }}>
+              {driverDecisionDialog.location}
+            </Typography>
+          )}
+
+          <Typography sx={{ color: '#6B7280', fontSize: 11, mb: 2 }}>
+            ID: {driverDecisionDialog?.id || ''}
+          </Typography>
+
+          {driverDecisionDialog?.action === 'approve' ? (
+            <Typography sx={{ color: '#9CA3AF', fontSize: 12 }}>
+              A aprovação só será concluída se todos os requisitos obrigatórios
+              do motorista estiverem validados. A ação ficará registrada na
+              auditoria do KAVIAR.
+            </Typography>
+          ) : (
+            <>
+              <Typography sx={{ color: '#9CA3AF', fontSize: 12, mb: 1.5 }}>
+                Informe o motivo da rejeição. Esse motivo ficará registrado.
+              </Typography>
+
+              <TextField
+                fullWidth
+                multiline
+                minRows={3}
+                label="Motivo da rejeição"
+                value={driverRejectReason}
+                required
+                onChange={(e) => setDriverRejectReason(e.target.value)}
+                inputProps={{ maxLength: 1000 }}
+                sx={{
+                  '& .MuiInputLabel-root': { color: '#6B7280' },
+                  '& .MuiOutlinedInput-root': {
+                    color: '#E5E7EB',
+                    '& fieldset': {
+                      borderColor: 'rgba(252,165,165,0.3)',
+                    },
+                  },
+                }}
+              />
+            </>
+          )}
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setDriverDecisionDialog(null);
+              setDriverRejectReason('');
+            }}
+            disabled={actionLoading}
+            sx={{ color: '#6B7280' }}
+          >
+            Cancelar
+          </Button>
+
+          {driverDecisionDialog?.action === 'approve' ? (
+            <Button
+              onClick={handleApproveDriver}
+              disabled={actionLoading}
+              sx={{ color: '#34D399' }}
+            >
+              Confirmar aprovação
+            </Button>
+          ) : (
+            <Button
+              onClick={handleRejectDriver}
+              disabled={actionLoading || !driverRejectReason.trim()}
+              sx={{ color: '#FCA5A5' }}
+            >
+              Confirmar rejeição
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
 
