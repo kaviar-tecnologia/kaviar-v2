@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Container, Typography, Box, Card, CardContent, Grid, Chip, IconButton, TextField, Button, CircularProgress, Alert, Dialog, DialogTitle, DialogContent, DialogActions, Switch, FormControlLabel } from '@mui/material';
+import { Container, Typography, Box, Card, CardContent, Grid, Chip, IconButton, TextField, Button, CircularProgress, Alert, Dialog, DialogTitle, DialogContent, DialogActions, Switch, FormControlLabel, FormControl, InputLabel, Select, MenuItem } from '@mui/material';
 import { Add, Edit, Phone, Email, LocationOn } from '@mui/icons-material';
 import { API_BASE_URL } from '../../config/api';
 import { formatDate } from '../../utils/formatDate';
@@ -10,7 +10,7 @@ export default function StaffManagement() {
   const [error, setError] = useState('');
   const [dialog, setDialog] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', email: '', password: '', phone: '', lead_regions: '' });
+  const [form, setForm] = useState({ name: '', email: '', password: '', phone: '', lead_regions: '', role: 'LEAD_AGENT' });
   const [saving, setSaving] = useState(false);
 
   const token = () => localStorage.getItem('kaviar_admin_token');
@@ -28,7 +28,7 @@ export default function StaffManagement() {
     finally { setLoading(false); }
   };
 
-  const openNew = () => { setEditing(null); setForm({ name: '', email: '', password: '', phone: '', lead_regions: '' }); setDialog(true); };
+  const openNew = () => { setEditing(null); setForm({ name: '', email: '', password: '', phone: '', lead_regions: '', role: 'LEAD_AGENT' }); setDialog(true); };
   const openEdit = (s) => { setEditing(s); setForm({ name: s.name, email: s.email, password: '', phone: s.phone || '', lead_regions: s.lead_regions || '' }); setDialog(true); };
 
   const handleSave = async () => {
@@ -133,6 +133,19 @@ export default function StaffManagement() {
           <TextField label="Nome" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} fullWidth required />
           <TextField label="Email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} fullWidth required disabled={!!editing} />
           <TextField label={editing ? 'Nova senha (deixe vazio para manter)' : 'Senha'} type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} fullWidth required={!editing} />
+          {!editing && (
+            <FormControl fullWidth>
+              <InputLabel>Perfil</InputLabel>
+              <Select
+                value={form.role}
+                label="Perfil"
+                onChange={e => setForm({ ...form, role: e.target.value })}
+              >
+                <MenuItem value="LEAD_AGENT">Funcionário comercial</MenuItem>
+                <MenuItem value="EXECUTIVE_ADMIN">Sócia Executiva</MenuItem>
+              </Select>
+            </FormControl>
+          )}
           <TextField label="Telefone" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} fullWidth />
           <TextField label="Regiões (ex: RJ,SP)" value={form.lead_regions} onChange={e => setForm({ ...form, lead_regions: e.target.value })} fullWidth helperText="Separe por vírgula. Ex: RJ,SP,MG" />
         </DialogContent>
