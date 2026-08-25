@@ -23,6 +23,45 @@ import {
 } from '@mui/icons-material';
 import { askKaviarAi } from '../../services/adminAiService';
 
+function renderSafeInternalLinks(content) {
+  if (typeof content !== 'string') return content;
+
+  const regex = /\[Abrir e-mail\]\((\/admin\/inbox\?message=[^)]+)\)/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(content.slice(lastIndex, match.index));
+    }
+
+    const href = match[1];
+
+    parts.push(
+      <a
+        key={`${href}-${match.index}`}
+        href={href}
+        style={{
+          color: '#8A6D18',
+          textDecoration: 'underline',
+          fontWeight: 700,
+        }}
+      >
+        Abrir e-mail
+      </a>
+    );
+
+    lastIndex = regex.lastIndex;
+  }
+
+  if (lastIndex < content.length) {
+    parts.push(content.slice(lastIndex));
+  }
+
+  return parts;
+}
+
 const QUICK_QUESTIONS = [
   {
     label: 'E-mails importantes',
@@ -202,7 +241,7 @@ export default function ExecutiveHome() {
                   color: '#374151',
                 }}
               >
-                {answer}
+                {renderSafeInternalLinks(answer)}
               </Typography>
             )}
 
