@@ -211,6 +211,7 @@ export default function KaviarAiPage() {
   const [coverageNotes, setCoverageNotes] = useState('');
   const [driverDecisionDialog, setDriverDecisionDialog] = useState(null);
   const [driverRejectReason, setDriverRejectReason] = useState('');
+  const [driverReviewDialog, setDriverReviewDialog] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [devJobs, setDevJobs] = useState([]);
   const [selectedJob, setSelectedJob] = useState(null);
@@ -361,6 +362,57 @@ export default function KaviarAiPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  // ── Análise documental de motorista via Chat KAVIAR ──────────────────────
+  const handleOpenDriverReview = async (driver) => {
+    if (!canConfirmDriverDecision || !driver?.id) return;
+
+    setDriverReviewDialog({
+      open: true,
+      driver,
+      loading: true,
+      error: '',
+      documents: [],
+      compliance: [],
+    });
+
+    try {
+      const [documentsResult, complianceResult] = await Promise.allSettled([
+        api.get(`/api/admin/drivers/${driver.id}/documents`),
+        api.get(`/api/admin/compliance/drivers/${driver.id}/documents`),
+      ]);
+
+      const documents =
+        documentsResult.status === 'fulfilled'
+          ? documentsResult.value?.data?.data || []
+          : [];
+
+      const compliance =
+        complianceResult.status === 'fulfilled'
+          ? complianceResult.value?.data?.data || []
+          : [];
+
+      const bothFailed =
+        documentsResult.status === 'rejected' &&
+        complianceResult.status === 'rejected';
+
+      setDriverReviewDialog((current) => ({
+        ...current,
+        loading: false,
+        documents,
+        compliance,
+        error: bothFailed
+          ? 'Não foi possível carregar os documentos deste motorista.'
+          : '',
+      }));
+    } catch {
+      setDriverReviewDialog((current) => ({
+        ...current,
+        loading: false,
+        error: 'Não foi possível carregar a análise deste motorista.',
+      }));
+    }
+  };
 
   // ── Aprovação/rejeição de motorista via Chat KAVIAR ─────────────────────
   const handleApproveDriver = async () => {
@@ -1211,7 +1263,22 @@ export default function KaviarAiPage() {
                               {driver.name}
                             </Typography>
 
-                            <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                disabled={actionLoading}
+                                sx={{
+                                  color: '#60A5FA',
+                                  borderColor: '#60A5FA',
+                                  fontSize: 11,
+                                  textTransform: 'none',
+                                }}
+                                onClick={() => handleOpenDriverReview(driver)}
+                              >
+                                Ver análise
+                              </Button>
+
                               <Button
                                 size="small"
                                 variant="outlined"
@@ -1840,6 +1907,207 @@ export default function KaviarAiPage() {
           <Button onClick={() => { navigator.clipboard?.writeText(managerResult?.tempPassword || ''); }}
             sx={{ color: '#B8942E', fontSize: 12 }}>Copiar senha</Button>
           <Button onClick={() => setManagerResult(null)} sx={{ color: '#6B7280' }}>Fechar</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog análise documental do motorista */}
+      <Dialog
+        open={!!driverReviewDialog?.open}
+        onClose={() => setDriverReviewDialog(null)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            bgcolor: '#1A1A1F',
+            color: '#E5E7EB',
+          },
+        }}
+      >
+        <DialogTitle sx={{ color: '#60A5FA', fontSize: 16 }}>
+          Análise do motorista
+        </DialogTitle>
+
+        <DialogContent>
+          <Typography sx={{ color: '#E5E7EB', fontSize: 14, fontWeight: 600 }}>
+            {driverReviewDialog?.driver?.name || ''}
+          </Typography>
+
+          {driverReviewDialog?.driver?.location && (
+            <Typography sx={{ color: '#9CA3AF', fontSize: 12, mt: 0.5 }}>
+              {driverReviewDialog.driver.location}
+            </Typography>
+          )}
+
+          <Typography sx={{ color: '#6B7280', fontSize: 11, mt: 0.5, mb: 2 }}>
+            ID: {driverReviewDialog?.driver?.id || ''}
+          </Typography>
+
+          {driverReviewDialog?.loading ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 3 }}>
+              <CircularProgress size={20} />
+              <Typography sx={{ color: '#9CA3AF', fontSize: 12 }}>
+                Carregando documentos e compliance...
+              </Typography>
+            </Box>
+          ) : (
+            <>
+              {driverReviewDialog?.error && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {driverReviewDialog.error}
+                </Alert>
+              )}
+
+              <Typography sx={{ color: '#FFD700', fontSize: 13, fontWeight: 700, mb: 1 }}>
+                Documentos do cadastro
+              </Typography>
+
+              {driverReviewDialog?.documents?.length > 0 ? (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.2, mb: 3 }}>
+                  {driverReviewDialog.documents.map((doc) => {
+                    const fileUrl = doc.document_url || doc.file_url;
+                    return (
+                      <Box
+                        key={doc.id}
+                        sx={{
+                          p: 1.25,
+                          border: '1px solid rgba(255,255,255,0.08)',
+                          borderRadius: 1,
+                          bgcolor: 'rgba(255,255,255,0.02)',
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
+                          <Typography sx={{ color: '#E5E7EB', fontSize: 12, fontWeight: 600 }}>
+                            {doc.type || 'Documento'}
+                          </Typography>
+                          <Chip
+                            size="small"
+                            label={doc.status || 'sem status'}
+                            sx={{ color: '#D1D5DB', fontSize: 10, height: 20 }}
+                          />
+                        </Box>
+
+                        {doc.reject_reason && (
+                          <Typography sx={{ color: '#FCA5A5', fontSize: 11, mt: 0.75 }}>
+                            Motivo: {doc.reject_reason}
+                          </Typography>
+                        )}
+
+                        {fileUrl && (
+                          <Button
+                            component="a"
+                            href={fileUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            size="small"
+                            sx={{ mt: 0.75, px: 0, color: '#60A5FA', textTransform: 'none', fontSize: 11 }}
+                          >
+                            Abrir arquivo
+                          </Button>
+                        )}
+                      </Box>
+                    );
+                  })}
+                </Box>
+              ) : (
+                <Typography sx={{ color: '#9CA3AF', fontSize: 12, mb: 3 }}>
+                  Nenhum documento de cadastro encontrado.
+                </Typography>
+              )}
+
+              <Typography sx={{ color: '#FFD700', fontSize: 13, fontWeight: 700, mb: 1 }}>
+                Antecedentes criminais / Compliance
+              </Typography>
+
+              {driverReviewDialog?.compliance?.length > 0 ? (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.2 }}>
+                  {driverReviewDialog.compliance.map((doc) => (
+                    <Box
+                      key={doc.id}
+                      sx={{
+                        p: 1.25,
+                        border: '1px solid rgba(255,215,0,0.15)',
+                        borderRadius: 1,
+                        bgcolor: 'rgba(255,215,0,0.03)',
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
+                        <Typography sx={{ color: '#E5E7EB', fontSize: 12, fontWeight: 600 }}>
+                          {doc.type === 'criminal_record'
+                            ? 'Certidão de antecedentes criminais'
+                            : doc.type || 'Documento de compliance'}
+                        </Typography>
+                        <Chip
+                          size="small"
+                          label={`${doc.status || 'sem status'}${doc.is_current ? ' • vigente' : ''}`}
+                          sx={{ color: '#D1D5DB', fontSize: 10, height: 20 }}
+                        />
+                      </Box>
+
+                      {doc.emission_date && (
+                        <Typography sx={{ color: '#9CA3AF', fontSize: 11, mt: 0.75 }}>
+                          Emissão: {new Date(doc.emission_date).toLocaleDateString('pt-BR')}
+                        </Typography>
+                      )}
+
+                      {doc.valid_until && (
+                        <Typography sx={{ color: '#9CA3AF', fontSize: 11 }}>
+                          Validade: {new Date(doc.valid_until).toLocaleDateString('pt-BR')}
+                        </Typography>
+                      )}
+
+                      <Typography
+                        sx={{
+                          color: doc.lgpd_consent_accepted ? '#34D399' : '#FCA5A5',
+                          fontSize: 11,
+                          mt: 0.75,
+                        }}
+                      >
+                        Consentimento LGPD: {doc.lgpd_consent_accepted ? 'registrado' : 'não registrado'}
+                      </Typography>
+
+                      {doc.lgpd_consent_at && (
+                        <Typography sx={{ color: '#6B7280', fontSize: 10 }}>
+                          Consentido em: {new Date(doc.lgpd_consent_at).toLocaleString('pt-BR')}
+                        </Typography>
+                      )}
+
+                      {doc.rejection_reason && (
+                        <Typography sx={{ color: '#FCA5A5', fontSize: 11, mt: 0.75 }}>
+                          Motivo da rejeição: {doc.rejection_reason}
+                        </Typography>
+                      )}
+
+                      {doc.file_url && (
+                        <Button
+                          component="a"
+                          href={doc.file_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          size="small"
+                          sx={{ mt: 0.75, px: 0, color: '#60A5FA', textTransform: 'none', fontSize: 11 }}
+                        >
+                          Abrir certidão
+                        </Button>
+                      )}
+                    </Box>
+                  ))}
+                </Box>
+              ) : (
+                <Alert severity="warning" sx={{ mt: 1 }}>
+                  Nenhuma certidão de antecedentes criminais encontrada no compliance.
+                </Alert>
+              )}
+            </>
+          )}
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={() => setDriverReviewDialog(null)}
+            sx={{ color: '#9CA3AF' }}
+          >
+            Fechar
+          </Button>
         </DialogActions>
       </Dialog>
 
