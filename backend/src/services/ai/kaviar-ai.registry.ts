@@ -64,7 +64,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
       'Retorna o resumo financeiro das corridas liquidadas hoje: quantidade, valor bruto e receita da KAVIAR.',
     readOnly: true,
     argSchema: { type: 'object', properties: {}, required: [] },
-    allowedRoles: ['SUPER_ADMIN', 'FINANCE'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN', 'FINANCE'],
     execute: getRidesSummaryToday,
   },
   {
@@ -73,7 +73,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
       'Retorna a contagem de motoristas com documentos pendentes de análise (SUBMITTED, MISSING, REJECTED) e compliance pendente.',
     readOnly: true,
     argSchema: { type: 'object', properties: {}, required: [] },
-    allowedRoles: ['SUPER_ADMIN', 'FINANCE'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN', 'FINANCE'],
     execute: getDriversDocumentsPending,
   },
   {
@@ -82,7 +82,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
       'Retorna obrigações financeiras pendentes: total, valor, vencidas e a vencer nos próximos 7 dias.',
     readOnly: true,
     argSchema: { type: 'object', properties: {}, required: [] },
-    allowedRoles: ['SUPER_ADMIN', 'FINANCE'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN', 'FINANCE'],
     execute: getFinanceDueObligations,
   },
   {
@@ -98,7 +98,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
       },
       required: ['city', 'uf'],
     },
-    allowedRoles: ['SUPER_ADMIN'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN'],
     execute: (args) => getTerritoryOnboardingStatus(args?.city ?? '', args?.uf ?? ''),
   },
   {
@@ -114,7 +114,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
       },
       required: ['city', 'uf'],
     },
-    allowedRoles: ['SUPER_ADMIN'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN'],
     execute: getTerritoryManagerCoverage,
   },
   {
@@ -130,7 +130,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
       },
       required: ['city', 'uf'],
     },
-    allowedRoles: ['SUPER_ADMIN'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN'],
     execute: (args) => getTerritoryActivationReadiness(args?.city ?? '', args?.uf ?? ''),
   },
   {
@@ -145,7 +145,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
       },
       required: [],
     },
-    allowedRoles: ['SUPER_ADMIN'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN'],
     execute: getDriverCityLandings,
   },
 
@@ -156,7 +156,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
       'Resumo administrativo consolidado: corridas, motoristas, financeiro, leads, inbox e territórios com classificação de prioridade.',
     readOnly: true,
     argSchema: { type: 'object', properties: {}, required: [] },
-    allowedRoles: ['SUPER_ADMIN'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN'],
     execute: getDailyBriefing,
   },
   {
@@ -169,7 +169,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
       properties: { period: { type: 'string', enum: ['today', 'week', 'month'] } },
       required: ['period'],
     },
-    allowedRoles: ['SUPER_ADMIN', 'FINANCE'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN', 'FINANCE'],
     execute: getRidesOperations,
   },
   {
@@ -182,7 +182,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
       properties: { period: { type: 'string', enum: ['month', 'quarter'] } },
       required: ['period'],
     },
-    allowedRoles: ['SUPER_ADMIN', 'FINANCE'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN', 'FINANCE'],
     execute: getFinanceAccountingBrief,
   },
   {
@@ -195,7 +195,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
       properties: { period: { type: 'string', enum: ['today', 'week', 'month'] } },
       required: ['period'],
     },
-    allowedRoles: ['SUPER_ADMIN'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN'],
     execute: getCrmLeadsSummary,
   },
   {
@@ -208,7 +208,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
       properties: { limit: { type: 'string', description: 'Máximo de e-mails (1-30, default 5)' } },
       required: [],
     },
-    allowedRoles: ['SUPER_ADMIN'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN'],
     execute: getInboxSummary,
   },
   {
@@ -221,7 +221,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
       properties: { section: { type: 'string', enum: ['identity', 'contacts', 'governance', 'structure', 'activities', 'about', 'full'] } },
       required: [],
     },
-    allowedRoles: ['SUPER_ADMIN', 'FINANCE'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN', 'FINANCE'],
     execute: getCompanyProfile,
   },
   // ── Command Center v1 ───────────────────────────────────────────────────
@@ -230,7 +230,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     description: 'Catálogo de módulos da plataforma KAVIAR: o que existe, para que serve e onde acessar no admin.',
     readOnly: true,
     argSchema: { type: 'object', properties: { section: { type: 'string' } }, required: [] },
-    allowedRoles: ['SUPER_ADMIN', 'FINANCE'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN', 'FINANCE'],
     execute: getPlatformCatalog,
   },
   {
@@ -238,7 +238,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     description: 'Resumo da Gratificação Anual: total acumulado, a pagar, disponível, reservado, pago e previsão até dezembro.',
     readOnly: true,
     argSchema: { type: 'object', properties: {}, required: [] },
-    allowedRoles: ['SUPER_ADMIN', 'FINANCE'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN', 'FINANCE'],
     execute: getAnnualIncentiveSummary,
   },
   {
@@ -246,7 +246,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     description: 'Resumo da Central WhatsApp: conversas novas, não lidas e urgentes. Nunca retorna telefone ou corpo de mensagem.',
     readOnly: true,
     argSchema: { type: 'object', properties: {}, required: [] },
-    allowedRoles: ['SUPER_ADMIN'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN'],
     execute: getWhatsAppSummary,
   },
   {
@@ -254,7 +254,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     description: 'Pipeline de motoristas: total, por status, por tipo de veículo, documentos pendentes e compliance.',
     readOnly: true,
     argSchema: { type: 'object', properties: {}, required: [] },
-    allowedRoles: ['SUPER_ADMIN'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN'],
     execute: getDriverPipelineSummary,
   },
   {
@@ -262,7 +262,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     description: 'Emergências operacionais: ativas, registradas hoje, resolvidas e alarmes falsos.',
     readOnly: true,
     argSchema: { type: 'object', properties: {}, required: [] },
-    allowedRoles: ['SUPER_ADMIN'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN'],
     execute: getEmergencyOperationsSummary,
   },
   {
@@ -270,7 +270,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     description: 'Portfólio de territórios: total por status, regulatório, sem gestor e modalidades habilitadas.',
     readOnly: true,
     argSchema: { type: 'object', properties: {}, required: [] },
-    allowedRoles: ['SUPER_ADMIN'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN'],
     execute: getTerritoryPortfolioSummary,
   },
   // ── RAG v1 ──────────────────────────────────────────────────────────────
@@ -283,7 +283,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
       properties: { question: { type: 'string' }, role: { type: 'string' } },
       required: ['question', 'role'],
     },
-    allowedRoles: ['SUPER_ADMIN', 'FINANCE'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN', 'FINANCE'],
     execute: getKnowledgeAnswer,
   },
   {
@@ -295,7 +295,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
       properties: { driverId: { type: 'string', description: 'ID do motorista (opcional, para consulta individual)' } },
       required: [],
     },
-    allowedRoles: ['SUPER_ADMIN'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN'],
     execute: getDriverRatingsSummary,
   },
   {
@@ -303,7 +303,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     description: 'Resumo de conformidade de antecedentes criminais: válidos, vencendo, vencidos, sem data de emissão. Não retorna documentos ou dados pessoais.',
     readOnly: true,
     argSchema: { type: 'object', properties: {}, required: [] },
-    allowedRoles: ['SUPER_ADMIN'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN'],
     execute: getComplianceSummary,
   },
   {
@@ -311,7 +311,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     description: 'Resumo do Selo Excelência KAVIAR: motoristas ativos, suspensos e movimentações da semana.',
     readOnly: true,
     argSchema: { type: 'object', properties: {}, required: [] },
-    allowedRoles: ['SUPER_ADMIN'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN'],
     execute: getExcellenceSealSummary,
   },
   {
@@ -319,7 +319,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     description: 'Visão geral operacional: motoristas, selos, admins, territórios e bloqueios.',
     readOnly: true,
     argSchema: { type: 'object', properties: {}, required: [] },
-    allowedRoles: ['SUPER_ADMIN'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN'],
     execute: getOperationsOverview,
   },
   {
@@ -327,7 +327,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     description: 'Busca segura de pessoa por nome: motorista, admin ou passageiro. Retorna apenas dados operacionais, sem CPF/telefone/email.',
     readOnly: true,
     argSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
-    allowedRoles: ['SUPER_ADMIN'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN'],
     execute: getPersonLookup,
   },
   {
@@ -335,7 +335,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     description: 'Detalhe individual do motorista: avaliações, compliance, selo, modalidades. Identificado por driverId.',
     readOnly: true,
     argSchema: { type: 'object', properties: { driverId: { type: 'string' } }, required: ['driverId'] },
-    allowedRoles: ['SUPER_ADMIN'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN'],
     execute: getDriverDetail,
   },
   {
@@ -343,7 +343,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
     description: 'Histórico do Selo Excelência: ativos, suspensos, concessões e revogações recentes.',
     readOnly: true,
     argSchema: { type: 'object', properties: {}, required: [] },
-    allowedRoles: ['SUPER_ADMIN'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN'],
     execute: getSealHistory,
   },
   {
@@ -358,7 +358,7 @@ const TOOL_DEFINITIONS: readonly KaviarAiToolDefinition[] = [
       },
       required: ['city', 'uf'],
     },
-    allowedRoles: ['SUPER_ADMIN'],
+    allowedRoles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN'],
     execute: getCityOpeningOverview,
   },
 ] as const;

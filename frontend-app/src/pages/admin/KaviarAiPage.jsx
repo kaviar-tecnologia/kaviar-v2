@@ -974,7 +974,7 @@ export default function KaviarAiPage() {
                 </Typography>
 
                 {/* Development Agent approval */}
-                {msg.developmentProposal && (
+                {isSuperAdmin && msg.developmentProposal && (
                   <Box
                     sx={{
                       mt: 1.5,
