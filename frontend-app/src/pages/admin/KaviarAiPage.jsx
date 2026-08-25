@@ -1142,7 +1142,13 @@ export default function KaviarAiPage() {
                   })()}
 
                 {/* Criação segura de território planning */}
-                {canCreatePlanningTerritory && msg.role === 'assistant' && msg.toolsUsed?.includes('territory_onboarding_status') && msg.content?.includes('não encontrado') && (
+                {canCreatePlanningTerritory &&
+                  msg.role === 'assistant' &&
+                  (
+                    msg.toolsUsed?.includes('territory_onboarding_status') ||
+                    msg.toolsUsed?.includes('city_opening_overview')
+                  ) &&
+                  msg.content?.includes('não encontrado') && (
                   <Box sx={{ mt: 1.5, pt: 1, borderTop: '1px solid rgba(184,148,46,0.15)', display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                     <Button size="small" variant="outlined" disabled={actionLoading}
                       sx={{ color: '#B8942E', borderColor: '#B8942E', fontSize: 11, textTransform: 'none' }}
