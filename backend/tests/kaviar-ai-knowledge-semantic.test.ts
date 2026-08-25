@@ -147,6 +147,50 @@ describe('searchKnowledgeSemantic', () => {
     expect(result.matched).toBe(false);
   });
 
+  it('EXECUTIVE_ADMIN can access articles with EXECUTIVE_ADMIN in allowed_roles', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [{
+        slug: 'visao-geral-kaviar',
+        title: 'Visão geral da KAVIAR',
+        version: 1,
+        content_md: 'A KAVIAR é uma plataforma de mobilidade comunitária.',
+        allowed_roles: ['SUPER_ADMIN', 'EXECUTIVE_ADMIN', 'FINANCE'],
+      }],
+    });
+
+    mockEmbeddingsCreate.mockResolvedValueOnce({
+      data: [{ embedding: [0.9, 0.1, 0.1] }],
+    });
+
+    mockEmbeddingsCreate.mockResolvedValueOnce({
+      data: [{ embedding: [0.9, 0.1, 0.1] }],
+    });
+
+    const result = await searchKnowledgeSemantic('o que é a KAVIAR?', 'EXECUTIVE_ADMIN');
+    expect(result.available).toBe(true);
+    expect(result.matched).toBe(true);
+    expect(result.citations[0].slug).toBe('visao-geral-kaviar');
+  });
+
+  it('EXECUTIVE_ADMIN cannot access articles without EXECUTIVE_ADMIN in allowed_roles', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [{
+        slug: 'restricted-article',
+        title: 'Restricted',
+        version: 1,
+        content_md: 'Restricted content.',
+        allowed_roles: ['SUPER_ADMIN'], // only SUPER_ADMIN, no EXECUTIVE_ADMIN
+      }],
+    });
+
+    mockEmbeddingsCreate.mockResolvedValueOnce({
+      data: [{ embedding: [0.9, 0.1, 0.1] }],
+    });
+
+    const result = await searchKnowledgeSemantic('restricted', 'EXECUTIVE_ADMIN');
+    expect(result.matched).toBe(false);
+  });
+
   it('returns available:false on DB error without crashing', async () => {
     mockQuery.mockRejectedValueOnce(new Error('connection refused'));
     const result = await searchKnowledgeSemantic('test', 'SUPER_ADMIN');
