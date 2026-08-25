@@ -467,6 +467,9 @@ function AdminHome() {
               ] : []),
             ]},
             { section: 'Pessoas e Território', items: [
+              ...(isSuperAdmin ? [
+                { Icon: Person, title: 'Funcionários', desc: 'Cadastrar e gerenciar equipe administrativa', to: '/admin/staff' },
+              ] : []),
               { Icon: Group, title: 'Grupos KAVIAR', desc: 'Criar grupos, convites e acompanhar membros', to: '/admin/groups' },
               { Icon: DirectionsCar, title: 'Corridas Compartilhadas', desc: 'Visão operacional, reservas e ciclo de vida', to: '/admin/fixed-routes' },
               { Icon: DriveEta, title: 'Motoristas', desc: 'Gerenciar motoristas', to: '/admin/drivers' },
