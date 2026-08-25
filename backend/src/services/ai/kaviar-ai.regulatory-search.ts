@@ -204,7 +204,23 @@ export async function retrieveRegulatorySearch(
   }
 
   if (status === 'failed') {
-    const err: any = new Error('[regulatory-search] Modelo falhou ao gerar resposta.');
+    const providerError = (response as any).error;
+    const providerCode =
+      typeof providerError?.code === 'string'
+        ? providerError.code
+        : 'unknown';
+    const providerMessage =
+      typeof providerError?.message === 'string'
+        ? providerError.message.slice(0, 500)
+        : 'sem mensagem do provedor';
+
+    console.error(
+      `[REGULATORY_SEARCH_PROVIDER_FAILED] responseId=${responseId} code=${providerCode} message=${providerMessage}`
+    );
+
+    const err: any = new Error(
+      `[regulatory-search] Modelo falhou ao gerar resposta. code=${providerCode}`
+    );
     err.regulatoryCode = 'PROVIDER_ERROR';
     throw err;
   }

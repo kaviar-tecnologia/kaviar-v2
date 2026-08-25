@@ -26,6 +26,7 @@ vi.mock('../src/services/ai/kaviar-ai.command-center', () => ({
   getDriverPipelineSummary: vi.fn().mockResolvedValue({ tool: 'driver_pipeline_summary', data: { available: true, total: 0, byStatus: {}, byVehicleType: {}, pendingApproval: 0, docsMissing: 0, docsSubmitted: 0, docsRejected: 0, compliancePending: 0, activeDrivers: 0, suspendedDrivers: 0, modalities: { available: true, pending: 0, approved: 0, rejected: 0 }, referenceTime: '' } }),
   getEmergencyOperationsSummary: vi.fn().mockResolvedValue({ tool: 'emergency_operations_summary', data: { emergencies: { available: true, active: 0, unresolved: 0, critical: null, criticalSupported: false, oldestActiveAt: null }, rides: { available: true, noDriver: 0, pendingAdjustment: 0 }, referenceTime: '' } }),
   getTerritoryPortfolioSummary: vi.fn().mockResolvedValue({ tool: 'territory_portfolio_summary', data: { available: true, total: 0, byStatus: {}, byRegulatoryStatus: {}, withoutManager: 0, withMotoPassenger: 0, withMotoExpress: 0, regulatoryChecklist: { available: true, pending: 0 }, regulatoryProtocols: { available: true, pending: 0 }, insuranceCoverages: { available: true, pending: 0 }, cityLandings: { available: true, total: 0, active: 0 }, attentionCities: [], referenceTime: '' } }),
+  getTerritoryManagerCoverage: vi.fn(),
 }));
 
 import { askKaviarAi } from '../src/services/ai/kaviar-ai.service';
@@ -231,11 +232,12 @@ describe('regulatory search — preserved behavior', () => {
     expect(r.result?.requirements).toContain('Alvará');
   });
 
-  it('route requires SUPER_ADMIN (checked in route source)', () => {
+  it('route allows EXECUTIVE_ADMIN regulatory search via dedicated middleware', () => {
     const fs = require('fs');
     const path = require('path');
     const src = fs.readFileSync(path.resolve(__dirname, '../src/routes/admin-ai.ts'), 'utf8');
-    expect(src).toContain("'/territory/regulatory-search', requireSuperAdmin");
+    expect(src).toContain("'/territory/regulatory-search', allowExecutiveRegulatorySearch");
+    expect(src).toContain("'/territory/regulatory-search/:responseId', allowExecutiveRegulatorySearch");
   });
 
   it('log does not contain API key or secrets', () => {
