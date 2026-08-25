@@ -1552,6 +1552,7 @@ export async function askKaviarAi(
   if (route.toolsToCall.length === 0 && classifyIntent(question) === 'DRIVERS') {
     const driverSub = classifyDriverIntent(question);
     const driverPreferred: KaviarAiToolName[] =
+      driverSub === 'DRIVER_PENDING_LIST' ? ['driver_pending_list'] :
       driverSub === 'DRIVER_DOCUMENTS' ? ['drivers_documents_pending'] :
       driverSub === 'DRIVER_RATINGS' ? ['driver_ratings_summary'] :
       ['driver_pipeline_summary'];
