@@ -1195,12 +1195,18 @@ export default function KaviarAiPage() {
                 {/* Liberar landing com confirmação explícita */}
                 {canEnableDriverLanding &&
                   msg.role === 'assistant' &&
-                  msg.toolsUsed?.includes('territory_onboarding_status') &&
-                  msg.toolsUsed?.includes('driver_city_landings') &&
+                  (
+                    (
+                      msg.toolsUsed?.includes('territory_onboarding_status') &&
+                      msg.toolsUsed?.includes('driver_city_landings')
+                    ) ||
+                    msg.toolsUsed?.includes('city_opening_overview')
+                  ) &&
                   msg.content?.includes('ID:') &&
                   (
                     msg.content?.includes('Nenhuma landing page de motoristas correspondente foi encontrada.') ||
-                    msg.content?.includes('Landing: desativada')
+                    msg.content?.includes('Landing: desativada') ||
+                    msg.content?.includes('Landing: ❌ Não habilitada')
                   ) && (
                   <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                     <Button
