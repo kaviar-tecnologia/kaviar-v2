@@ -402,6 +402,18 @@ export function routeByRules(question: string): KaviarAiRouteResult {
     }
   }
 
+  // Territory conceptual knowledge — explanatory questions use RAG
+  const isTerritoryConceptualQuestion =
+    !/(?:\/\s*[A-Za-z]{2}\b|[-–]\s+[A-Za-z]{2}\b|\(\s*[A-Za-z]{2}\s*\))/.test(question) &&
+    (q.includes('território') || q.includes('territorio') || q.includes('territórios') || q.includes('territorios')) &&
+    (q.includes('qual é a diferença') || q.includes('qual e a diferença') || q.includes('qual a diferença') || q.includes('qual a diferenca') ||
+     q.includes('explique') || q.includes('me explica') || q.includes('como funciona') || q.includes('o que significa') ||
+     q.includes('segundo o conhecimento interno'));
+
+  if (isTerritoryConceptualQuestion) {
+    return { toolsToCall: ['knowledge_answer'] };
+  }
+
   // ── Territorial onboarding ────────────────────────────────────────────
   const hasExplicitCityUf =
     /(?:\/\s*[A-Za-z]{2}\b|[-–]\s+[A-Za-z]{2}\b|\(\s*[A-Za-z]{2}\s*\))/.test(question);
