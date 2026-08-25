@@ -96,6 +96,7 @@ import OperatorHome from "../../pages/admin/OperatorHome";
 import ManagerHome from "../../pages/admin/ManagerHome";
 import AccountingPortalPage from "../../pages/admin/accounting/AccountingPortalPage";
 import KaviarAiPage from "../../pages/admin/KaviarAiPage";
+import ExecutiveHome from "../../pages/admin/ExecutiveHome";
 import kaviarLogo from "../../assets/logo-kaviar-full.svg";
 import { useState, useEffect } from 'react';
 
@@ -103,7 +104,7 @@ function FinanceHomeRedirect() {
   const adminData = localStorage.getItem('kaviar_admin_data');
   const admin = adminData ? JSON.parse(adminData) : null;
   if (admin?.role === 'FINANCE') return <Navigate to="/admin/financeiro" replace />;
-  if (admin?.role === 'EXECUTIVE_ADMIN') return <Navigate to="/admin/chat-kaviar" replace />;
+  if (admin?.role === 'EXECUTIVE_ADMIN') return <Navigate to="/admin/executive" replace />;
   if (admin?.role === 'TERRITORIAL_OPERATOR') return <OperatorHome />;
   if (admin?.role === 'TERRITORIAL_MANAGER') return <ManagerHome />;
   if (['PET_OPERATOR', 'PET_SUPERVISOR', 'PET_ADMIN'].includes(admin?.role)) return <Navigate to="/admin/pet" replace />;
@@ -769,6 +770,11 @@ export default function AdminApp() {
           <Route path="/financeiro/contas-a-pagar" element={
             <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
               <FinancePayablesPage />
+            </ProtectedAdminRoute>
+          } />
+          <Route path="/executive" element={
+            <ProtectedAdminRoute allowedRoles={['EXECUTIVE_ADMIN']}>
+              <ExecutiveHome />
             </ProtectedAdminRoute>
           } />
           <Route path="/chat-kaviar" element={
