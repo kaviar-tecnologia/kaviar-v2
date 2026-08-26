@@ -5,6 +5,7 @@ vi.mock('../src/lib/prisma', () => ({
     municipal_regulations: { findFirst: vi.fn(), findMany: vi.fn() },
     driver_documents: { findMany: vi.fn() },
     municipal_authorizations: { findMany: vi.fn() },
+    driver_modalities: { findUnique: vi.fn() },
     drivers: { findUnique: vi.fn() },
     municipal_regulatory_driver_protocols: { findFirst: vi.fn() },
   },
@@ -25,6 +26,7 @@ const mockFindRegulation = prisma.municipal_regulations.findFirst as ReturnType<
 const mockFindRegulations = prisma.municipal_regulations.findMany as ReturnType<typeof vi.fn>;
 const mockFindDocuments = prisma.driver_documents.findMany as ReturnType<typeof vi.fn>;
 const mockFindAuthorization = prisma.municipal_authorizations.findMany as ReturnType<typeof vi.fn>;
+const mockFindDriverModality = prisma.driver_modalities.findUnique as ReturnType<typeof vi.fn>;
 const mockFindDriver = prisma.drivers.findUnique as ReturnType<typeof vi.fn>;
 const mockFindExistingProtocol = prisma.municipal_regulatory_driver_protocols.findFirst as ReturnType<typeof vi.fn>;
 
@@ -33,6 +35,7 @@ beforeEach(() => {
   mockFindRegulations.mockResolvedValue([]);
   mockFindDocuments.mockResolvedValue([]);
   mockFindAuthorization.mockResolvedValue([]);
+  mockFindDriverModality.mockResolvedValue(null);
   mockFindExistingProtocol.mockResolvedValue(null);
 });
 
@@ -842,4 +845,158 @@ describe('municipal regulation service', () => {
     expect(result.status).toBe('INCOMPATIBLE');
     expect(result.reasons).toContain('Este motorista já possui protocolo nesta cidade.');
   });
+
+  it('bloqueia operação municipal quando veículo excede idade máxima por ano de fabricação', async () => {
+    mockFindRegulation.mockResolvedValue({
+      id: 'reg-age-1',
+      city: 'Santa Rita do Passa Quatro',
+      state: 'SP',
+      service_modality: 'CAR',
+      regulation_status: 'REGULATED',
+      requires_city_approval: false,
+      max_vehicle_age_years: 12,
+      vehicle_age_basis: 'MANUFACTURE_YEAR',
+      requirements: [],
+    });
+
+    mockFindDriverModality.mockResolvedValue({
+      driver_id: 'driver-1',
+      modality: 'CAR',
+      vehicle_year: 2010,
+    });
+
+    mockFindAuthorization.mockResolvedValue([{
+      id: 'auth-age-1',
+      status: 'APPROVED_BY_CITY_HALL',
+      approved_by_admin_id: 'admin-1',
+      authorization_valid_until: null,
+      created_at: new Date('2026-07-12T10:00:00.000Z'),
+    }]);
+
+    const result = await getDriverMunicipalStatus(
+      'driver-1',
+      'Santa Rita do Passa Quatro',
+      'SP',
+      'CAR',
+    );
+
+    expect(result.canOperateMunicipally).toBe(false);
+    expect(result.reason).toMatch(/idade.*veículo/i);
+  });
+
+  it('permite regra de idade quando veículo está dentro do limite por ano de fabricação', async () => {
+    const currentYear = new Date().getFullYear();
+
+    mockFindRegulation.mockResolvedValue({
+      id: 'reg-age-2',
+      city: 'Santa Rita do Passa Quatro',
+      state: 'SP',
+      service_modality: 'CAR',
+      regulation_status: 'REGULATED',
+      requires_city_approval: false,
+      max_vehicle_age_years: 12,
+      vehicle_age_basis: 'MANUFACTURE_YEAR',
+      requirements: [],
+    });
+
+    mockFindDriverModality.mockResolvedValue({
+      driver_id: 'driver-1',
+      modality: 'CAR',
+      vehicle_year: currentYear - 5,
+    });
+
+    mockFindAuthorization.mockResolvedValue([{
+      id: 'auth-age-2',
+      status: 'APPROVED_BY_CITY_HALL',
+      approved_by_admin_id: 'admin-1',
+      authorization_valid_until: null,
+      created_at: new Date('2026-07-12T10:00:00.000Z'),
+    }]);
+
+    const result = await getDriverMunicipalStatus(
+      'driver-1',
+      'Santa Rita do Passa Quatro',
+      'SP',
+      'CAR',
+    );
+
+    expect(result.canOperateMunicipally).toBe(true);
+  });
+
+  it('exige revisão quando há limite de idade mas ano do veículo não está informado', async () => {
+    mockFindRegulation.mockResolvedValue({
+      id: 'reg-age-3',
+      city: 'Santa Rita do Passa Quatro',
+      state: 'SP',
+      service_modality: 'CAR',
+      regulation_status: 'REGULATED',
+      requires_city_approval: false,
+      max_vehicle_age_years: 12,
+      vehicle_age_basis: 'MANUFACTURE_YEAR',
+      requirements: [],
+    });
+
+    mockFindDriverModality.mockResolvedValue({
+      driver_id: 'driver-1',
+      modality: 'CAR',
+      vehicle_year: null,
+    });
+
+    mockFindAuthorization.mockResolvedValue([{
+      id: 'auth-age-3',
+      status: 'APPROVED_BY_CITY_HALL',
+      approved_by_admin_id: 'admin-1',
+      authorization_valid_until: null,
+      created_at: new Date('2026-07-12T10:00:00.000Z'),
+    }]);
+
+    const result = await getDriverMunicipalStatus(
+      'driver-1',
+      'Santa Rita do Passa Quatro',
+      'SP',
+      'CAR',
+    );
+
+    expect(result.canOperateMunicipally).toBe(false);
+    expect(result.reason).toMatch(/ano do veículo/i);
+  });
+
+  it('exige revisão quando critério de idade depende de dado não armazenado', async () => {
+    mockFindRegulation.mockResolvedValue({
+      id: 'reg-age-4',
+      city: 'Cidade Modelo',
+      state: 'SP',
+      service_modality: 'CAR',
+      regulation_status: 'REGULATED',
+      requires_city_approval: false,
+      max_vehicle_age_years: 10,
+      vehicle_age_basis: 'FIRST_REGISTRATION',
+      requirements: [],
+    });
+
+    mockFindDriverModality.mockResolvedValue({
+      driver_id: 'driver-1',
+      modality: 'CAR',
+      vehicle_year: 2020,
+    });
+
+    mockFindAuthorization.mockResolvedValue([{
+      id: 'auth-age-4',
+      status: 'APPROVED_BY_CITY_HALL',
+      approved_by_admin_id: 'admin-1',
+      authorization_valid_until: null,
+      created_at: new Date('2026-07-12T10:00:00.000Z'),
+    }]);
+
+    const result = await getDriverMunicipalStatus(
+      'driver-1',
+      'Cidade Modelo',
+      'SP',
+      'CAR',
+    );
+
+    expect(result.canOperateMunicipally).toBe(false);
+    expect(result.reason).toMatch(/revisão/i);
+  });
+
 });

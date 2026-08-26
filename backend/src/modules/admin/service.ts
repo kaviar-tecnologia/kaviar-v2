@@ -84,6 +84,16 @@ export class AdminService {
     };
   }
 
+  // Consultar prontidão do motorista para aprovação, sem aprovar
+  async getDriverApprovalReadiness(driver_id: string) {
+    const eligibility = await this.driver_verifications.evaluateEligibility(driver_id);
+
+    return {
+      ...eligibility,
+      details: this.formatMissingRequirementsDetails(eligibility.missingRequirements),
+    };
+  }
+
   // Aprovar motorista (validação obrigatória de compliance)
   async approveDriver(driver_id: string, admin_id = 'system') {
     return this.approveDriverWithGates(driver_id, admin_id);

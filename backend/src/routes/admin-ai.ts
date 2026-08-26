@@ -4,6 +4,7 @@ import {
   allowFinanceAccess,
   allowExecutiveConfirmedAction,
   allowExecutiveRegulatorySearch,
+  allowExecutiveReadAccess,
   requireSuperAdmin,
 } from '../middlewares/auth';
 import { askKaviarAi } from '../services/ai/kaviar-ai.service';
@@ -369,7 +370,49 @@ router.get('/territory/regulatory-search/:responseId', allowExecutiveRegulatoryS
 });
 
 
-// ── Motoristas: aprovação/rejeição confirmada via Chat KAVIAR ───────────────
+// ── Motoristas: prontidão + aprovação/rejeição via Chat KAVIAR ─────────────
+router.get('/drivers/:id/readiness', allowExecutiveReadAccess, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const driver = await prisma.drivers.findUnique({
+      where: { id },
+      select: { id: true, name: true, status: true },
+    });
+
+    if (!driver) {
+      return res.status(404).json({
+        success: false,
+        error: 'Motorista não encontrado.',
+      });
+    }
+
+    const adminService = new AdminService();
+    const readiness = await adminService.getDriverApprovalReadiness(id);
+
+    const statusAllowsApproval =
+      driver.status === 'pending' || driver.status === 'needs_documents';
+
+    return res.json({
+      success: true,
+      data: {
+        driver,
+        ...readiness,
+        canApprove: readiness.isEligible && statusAllowsApproval,
+        statusAllowsApproval,
+        blockingReason: statusAllowsApproval
+          ? null
+          : 'Apenas motoristas pendentes podem ser aprovados.',
+      },
+    });
+  } catch (error: any) {
+    return res.status(400).json({
+      success: false,
+      error: error?.message || 'Erro ao consultar prontidão do motorista.',
+    });
+  }
+});
+
 router.post('/drivers/:id/approve', allowExecutiveConfirmedAction, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
