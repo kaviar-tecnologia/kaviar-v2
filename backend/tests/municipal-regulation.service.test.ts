@@ -999,4 +999,37 @@ describe('municipal regulation service', () => {
     expect(result.reason).toMatch(/revisão/i);
   });
 
+  it('canDriverOperateInMunicipality bloqueia motorista aprovado quando veículo excede idade máxima municipal', async () => {
+    mockFindDriver.mockResolvedValue({ id: 'driver-1', status: 'approved' });
+
+    mockFindRegulation.mockResolvedValue({
+      id: 'reg-age-gate',
+      city: 'Santa Rita do Passa Quatro',
+      state: 'SP',
+      service_modality: 'CAR',
+      regulation_status: 'REGULATED',
+      requires_city_approval: false,
+      max_vehicle_age_years: 12,
+      vehicle_age_basis: 'MANUFACTURE_YEAR',
+      requirements: [],
+    });
+
+    mockFindDriverModality.mockResolvedValue({
+      driver_id: 'driver-1',
+      modality: 'CAR',
+      vehicle_year: 2010,
+    });
+
+    const result = await canDriverOperateInMunicipality(
+      'driver-1',
+      'Santa Rita do Passa Quatro',
+      'SP',
+      'CAR',
+    );
+
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toMatch(/idade.*veículo/i);
+    expect(result.municipal?.canOperateMunicipally).toBe(false);
+  });
+
 });

@@ -802,7 +802,7 @@ export async function getDriverMunicipalStatus(driverId: string, city: string, s
     };
   }
 
-  if (!authorization) {
+  if (!authorization && regulation.requires_city_approval) {
     return {
       hasRegulation: true,
       city: normalizeCity(city),
@@ -859,7 +859,7 @@ export async function getDriverMunicipalStatus(driverId: string, city: string, s
     state: normalizeState(state),
     modality,
     requiresCityApproval: regulation.requires_city_approval,
-    municipalStatus: authorization.status,
+    municipalStatus: authorization?.status || 'NOT_REQUIRED',
     authorizationValidityState: authorizationValidity.state,
     authorizationValidUntil: authorizationValidity.validUntil,
     authorizationDaysUntilExpiry: authorizationValidity.daysUntilExpiry,
