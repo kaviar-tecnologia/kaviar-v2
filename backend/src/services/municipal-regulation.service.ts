@@ -573,6 +573,105 @@ export async function evaluateDriverRegulatoryCompatibility(
   });
 }
 
+export type MunicipalVehicleAgeStatus =
+  | 'COMPLIANT'
+  | 'NON_COMPLIANT'
+  | 'REVIEW_REQUIRED'
+  | 'NOT_APPLICABLE';
+
+export type MunicipalVehicleAgeEvaluation = {
+  status: MunicipalVehicleAgeStatus;
+  maxAgeYears: number | null;
+  basis: string | null;
+  vehicleYear: number | null;
+  vehicleAgeYears: number | null;
+  reason: string | null;
+};
+
+export function evaluateMunicipalVehicleAge(input: {
+  maxAgeYears: number | null | undefined;
+  basis: string | null | undefined;
+  vehicleYear: number | null | undefined;
+  now?: Date;
+}): MunicipalVehicleAgeEvaluation {
+  const maxAgeYears = input.maxAgeYears ?? null;
+  const basis = input.basis ?? null;
+  const vehicleYear = input.vehicleYear ?? null;
+
+  if (maxAgeYears === null) {
+    return {
+      status: 'NOT_APPLICABLE',
+      maxAgeYears: null,
+      basis,
+      vehicleYear,
+      vehicleAgeYears: null,
+      reason: null,
+    };
+  }
+
+  if (basis !== 'MANUFACTURE_YEAR') {
+    return {
+      status: 'REVIEW_REQUIRED',
+      maxAgeYears,
+      basis,
+      vehicleYear,
+      vehicleAgeYears: null,
+      reason: basis
+        ? 'Revisão necessária: o critério municipal de idade do veículo depende de dado ainda não armazenado.'
+        : 'Revisão necessária: critério municipal para cálculo da idade do veículo não informado.',
+    };
+  }
+
+  if (!Number.isInteger(vehicleYear)) {
+    return {
+      status: 'REVIEW_REQUIRED',
+      maxAgeYears,
+      basis,
+      vehicleYear,
+      vehicleAgeYears: null,
+      reason: 'Ano do veículo não informado para validar a regra municipal de idade.',
+    };
+  }
+
+  const currentYear = getDatePartsInTimeZone(
+    input.now ?? new Date(),
+    MUNICIPAL_OPERATION_TIME_ZONE,
+  ).year;
+
+  if ((vehicleYear as number) > currentYear) {
+    return {
+      status: 'REVIEW_REQUIRED',
+      maxAgeYears,
+      basis,
+      vehicleYear,
+      vehicleAgeYears: null,
+      reason: 'Ano do veículo é futuro ou inválido e exige revisão.',
+    };
+  }
+
+  const vehicleAgeYears = currentYear - (vehicleYear as number);
+
+  if (vehicleAgeYears > maxAgeYears) {
+    return {
+      status: 'NON_COMPLIANT',
+      maxAgeYears,
+      basis,
+      vehicleYear,
+      vehicleAgeYears,
+      reason: `Idade do veículo excede o limite municipal de ${maxAgeYears} anos.`,
+    };
+  }
+
+  return {
+    status: 'COMPLIANT',
+    maxAgeYears,
+    basis,
+    vehicleYear,
+    vehicleAgeYears,
+    reason: null,
+  };
+}
+
 export async function getMunicipalRegulation(city: string, state: string, modality: MunicipalModality) {
   const normalizedCity = normalizeCity(city);
   const normalizedState = normalizeState(state);
@@ -631,6 +730,26 @@ export async function getDriverMunicipalStatus(driverId: string, city: string, s
   const missingDocumentTypes = requiredDocumentTypes.filter((docType) => {
     const status = docStatusByType.get(docType);
     return status !== 'SUBMITTED' && status !== 'VERIFIED';
+  });
+
+  const driverModality = regulation.max_vehicle_age_years !== null
+    ? await prisma.driver_modalities.findUnique({
+        where: {
+          driver_id_modality: {
+            driver_id: driverId,
+            modality,
+          },
+        },
+        select: {
+          vehicle_year: true,
+        },
+      })
+    : null;
+
+  const vehicleAge = evaluateMunicipalVehicleAge({
+    maxAgeYears: regulation.max_vehicle_age_years,
+    basis: regulation.vehicle_age_basis,
+    vehicleYear: driverModality?.vehicle_year ?? null,
   });
 
   const authorizations = await prisma.municipal_authorizations.findMany({
@@ -713,12 +832,20 @@ export async function getDriverMunicipalStatus(driverId: string, city: string, s
 
   const hasValidAuthorization = authorizationValidity.isOperationallyValid;
 
-  const canOperateMunicipally = regulation.requires_city_approval
-    ? hasValidAuthorization
-    : missingDocumentTypes.length === 0;
+  const vehicleAgeAllowsOperation =
+    vehicleAge.status === 'COMPLIANT' ||
+    vehicleAge.status === 'NOT_APPLICABLE';
+
+  const canOperateMunicipally = (
+    regulation.requires_city_approval
+      ? hasValidAuthorization
+      : missingDocumentTypes.length === 0
+  ) && vehicleAgeAllowsOperation;
 
   let reason: string | null = null;
-  if (regulation.requires_city_approval && !hasValidAuthorization) {
+  if (!vehicleAgeAllowsOperation) {
+    reason = vehicleAge.reason;
+  } else if (regulation.requires_city_approval && !hasValidAuthorization) {
     reason = authorizationValidity.state === 'EXPIRED'
       ? 'Autorização municipal vencida.'
       : 'Aguardando autorização municipal aprovada e válida.';
@@ -737,6 +864,7 @@ export async function getDriverMunicipalStatus(driverId: string, city: string, s
     authorizationValidUntil: authorizationValidity.validUntil,
     authorizationDaysUntilExpiry: authorizationValidity.daysUntilExpiry,
     missingDocumentTypes,
+    vehicleAge,
     canOperateMunicipally,
     reason,
     authorization,

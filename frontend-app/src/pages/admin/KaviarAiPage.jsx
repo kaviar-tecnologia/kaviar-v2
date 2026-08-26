@@ -415,6 +415,46 @@ export default function KaviarAiPage() {
     }
   };
 
+  const handleCheckDriverReadiness = async (driver) => {
+    if (!canConfirmDriverDecision || !driver?.id) return;
+
+    setActionLoading(true);
+    setError('');
+
+    try {
+      const res = await api.get(`/api/admin/ai/drivers/${driver.id}/readiness`);
+      const readiness = res?.data?.data;
+
+      if (!readiness?.isEligible) {
+        const missing = Array.isArray(readiness?.missingRequirements)
+          ? readiness.missingRequirements.join(', ')
+          : '';
+
+        setError(
+          missing
+            ? `Motorista ainda não pode ser aprovado. Pendências: ${missing}`
+            : 'Motorista ainda não pode ser aprovado.'
+        );
+        return;
+      }
+
+      setDriverRejectReason('');
+      setDriverDecisionDialog({
+        ...driver,
+        action: 'approve',
+      });
+    } catch (err) {
+      const data = err?.response?.data;
+      setError(
+        data?.error ||
+        data?.message ||
+        'Erro ao verificar se o motorista está apto para aprovação.'
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // ── Aprovação/rejeição de motorista via Chat KAVIAR ─────────────────────
   const handleApproveDriver = async () => {
     if (
@@ -1305,13 +1345,7 @@ export default function KaviarAiPage() {
                                   fontSize: 11,
                                   textTransform: 'none',
                                 }}
-                                onClick={() => {
-                                  setDriverRejectReason('');
-                                  setDriverDecisionDialog({
-                                    ...driver,
-                                    action: 'approve',
-                                  });
-                                }}
+                                onClick={() => handleCheckDriverReadiness(driver)}
                               >
                                 Aprovar
                               </Button>

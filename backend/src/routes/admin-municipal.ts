@@ -23,6 +23,8 @@ const regulationRequirementSchema = z.object({
   sort_order: z.number().int().min(0).default(0),
 });
 
+const VEHICLE_AGE_BASES = ['MANUFACTURE_YEAR', 'MODEL_YEAR', 'FIRST_REGISTRATION'] as const;
+
 const regulationCreateSchema = z.object({
   city: z.string().min(1),
   state: z.string().min(2).max(2),
@@ -35,6 +37,7 @@ const regulationCreateSchema = z.object({
   requires_city_approval: z.boolean().default(false),
   requires_protocol: z.boolean().default(false),
   max_vehicle_age_years: z.number().int().optional().nullable(),
+  vehicle_age_basis: z.enum(VEHICLE_AGE_BASES).optional().nullable(),
   authorization_validity_months: z.number().int().optional().nullable(),
   responsible_agency: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
@@ -137,6 +140,7 @@ router.post('/municipal-regulations', MUNICIPAL_CONFIG_ROLE, async (req: Request
           requires_city_approval: payload.requires_city_approval,
           requires_protocol: payload.requires_protocol,
           max_vehicle_age_years: payload.max_vehicle_age_years ?? null,
+          vehicle_age_basis: payload.vehicle_age_basis ?? null,
           authorization_validity_months: payload.authorization_validity_months ?? null,
           responsible_agency: payload.responsible_agency || null,
           notes: payload.notes || null,
@@ -197,6 +201,7 @@ router.patch('/municipal-regulations/:id', MUNICIPAL_CONFIG_ROLE, async (req: Re
       if (payload.requires_city_approval !== undefined) data.requires_city_approval = payload.requires_city_approval;
       if (payload.requires_protocol !== undefined) data.requires_protocol = payload.requires_protocol;
       if (payload.max_vehicle_age_years !== undefined) data.max_vehicle_age_years = payload.max_vehicle_age_years;
+      if (payload.vehicle_age_basis !== undefined) data.vehicle_age_basis = payload.vehicle_age_basis;
       if (payload.authorization_validity_months !== undefined) data.authorization_validity_months = payload.authorization_validity_months;
       if (payload.responsible_agency !== undefined) data.responsible_agency = payload.responsible_agency;
       if (payload.notes !== undefined) data.notes = payload.notes;

@@ -111,6 +111,7 @@ export function requireRole(allowedRoles: string[]) {
 export const requireSuperAdmin = requireRole(['SUPER_ADMIN']);
 export const allowExecutiveConfirmedAction = requireRole(['SUPER_ADMIN', 'EXECUTIVE_ADMIN']);
 export const allowExecutiveRegulatorySearch = requireRole(['SUPER_ADMIN', 'EXECUTIVE_ADMIN']);
+export const allowExecutiveReadAccess = requireRole(['SUPER_ADMIN', 'EXECUTIVE_ADMIN']);
 export const allowReadAccess = requireRole(['SUPER_ADMIN', 'ANGEL_VIEWER', 'TERRITORIAL_OPERATOR', 'TERRITORIAL_MANAGER']);
 export const allowFinanceAccess = requireRole(['SUPER_ADMIN', 'EXECUTIVE_ADMIN', 'FINANCE']);
 

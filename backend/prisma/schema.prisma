@@ -1770,6 +1770,7 @@ model municipal_regulations {
   requires_city_approval          Boolean                     @default(false)
   requires_protocol               Boolean                     @default(false)
   max_vehicle_age_years           Int?
+  vehicle_age_basis               String?
   authorization_validity_months   Int?
   responsible_agency              String?
   notes                           String?
