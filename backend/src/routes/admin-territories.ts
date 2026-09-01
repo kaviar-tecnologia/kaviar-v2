@@ -734,7 +734,7 @@ router.post('/:id/prepare-city/dry-run', async (req: Request, res: Response) => 
     if (!geojsonPath) {
       return res.status(400).json({
         success: false,
-        error: `Nenhum arquivo territorial (GeoJSON) mapeado para "${territory.city_name || territory.name}". Adicione o arquivo em backend/data/geojson e registre em CITY_GEOJSON_FILES.`,
+        error: `Nenhum dataset territorial (GeoJSON) registrado para "${territory.city_name || territory.name}"${territory.uf ? '/' + territory.uf : ''}. Adicione o arquivo em backend/data/geojson e registre-o em backend/data/geojson/territorial-datasets.json (city, uf, file).`,
       });
     }
 
@@ -776,7 +776,7 @@ router.post('/:id/prepare-city/confirm', async (req: Request, res: Response) => 
     if (!geojsonPath) {
       return res.status(400).json({
         success: false,
-        error: `Nenhum arquivo territorial (GeoJSON) mapeado para "${territory.city_name || territory.name}".`,
+        error: `Nenhum dataset territorial (GeoJSON) registrado para "${territory.city_name || territory.name}"${territory.uf ? '/' + territory.uf : ''}. Registre-o em backend/data/geojson/territorial-datasets.json.`,
       });
     }
 
