@@ -24,6 +24,71 @@ export function isValidPolygonCoordinates(coordinates) {
   return ring.every((pair) => Array.isArray(pair) && pair.length >= 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1]));
 }
 
+// Valida coordenadas de MultiPolygon: [ [ [ [lng,lat], ... ] ], ... ]
+export function isValidMultiPolygonCoordinates(coordinates) {
+  if (!Array.isArray(coordinates) || coordinates.length === 0) return false;
+  return coordinates.every((polygon) => isValidPolygonCoordinates(polygon));
+}
+
+/**
+ * Normaliza geometria de geofence para um objeto GeoJSON consistente
+ * ({ type: 'Polygon' | 'MultiPolygon', coordinates }) ou retorna null se inválida.
+ *
+ * Genérico — aceita:
+ *   1. Array legado de anéis:            [[[lng,lat], ...]]            -> Polygon
+ *   2. GeoJSON Polygon completo:         { type:'Polygon', coordinates:[[[lng,lat],...]] }
+ *   3. GeoJSON MultiPolygon completo:    { type:'MultiPolygon', coordinates:[[[[...]]]] }
+ *   4. Feature / FeatureCollection que embrulhe (1..3) em .geometry / .features[0].geometry
+ *
+ * Não faz suposição de cidade. Serve para qualquer UF/cidade.
+ */
+export function normalizeGeofenceGeometry(payload) {
+  if (payload == null) return null;
+
+  // Desembrulha Feature / FeatureCollection, se vier assim.
+  if (typeof payload === 'object' && !Array.isArray(payload)) {
+    if (payload.type === 'FeatureCollection') {
+      return normalizeGeofenceGeometry(payload.features?.[0]?.geometry ?? null);
+    }
+    if (payload.type === 'Feature') {
+      return normalizeGeofenceGeometry(payload.geometry ?? null);
+    }
+  }
+
+  // Caso 1: array legado de anéis -> Polygon.
+  if (Array.isArray(payload)) {
+    return isValidPolygonCoordinates(payload) ? { type: 'Polygon', coordinates: payload } : null;
+  }
+
+  // Casos 2/3: objeto GeoJSON com type + coordinates.
+  if (typeof payload === 'object' && payload.type && payload.coordinates != null) {
+    if (payload.type === 'Polygon') {
+      return isValidPolygonCoordinates(payload.coordinates)
+        ? { type: 'Polygon', coordinates: payload.coordinates }
+        : null;
+    }
+    if (payload.type === 'MultiPolygon') {
+      return isValidMultiPolygonCoordinates(payload.coordinates)
+        ? { type: 'MultiPolygon', coordinates: payload.coordinates }
+        : null;
+    }
+  }
+
+  return null;
+}
+
+/** Extrai o primeiro ponto [lng,lat] de uma geometria Polygon ou MultiPolygon normalizada. */
+export function firstPointOfGeometry(geometry) {
+  if (!geometry || !geometry.coordinates) return null;
+  if (geometry.type === 'Polygon') {
+    return geometry.coordinates?.[0]?.[0] ?? null;
+  }
+  if (geometry.type === 'MultiPolygon') {
+    return geometry.coordinates?.[0]?.[0]?.[0] ?? null;
+  }
+  return null;
+}
+
 export function haversineKm(lat1, lng1, lat2, lng2) {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -36,9 +101,15 @@ export function haversineKm(lat1, lng1, lat2, lng2) {
   return R * c;
 }
 
-export function isCompatibleWithCity(coordinates, city) {
+export function isCompatibleWithCity(geometryOrCoordinates, city) {
   const center = getCityCenter(city);
-  const firstPoint = coordinates?.[0]?.[0];
+  // Aceita geometria normalizada ({type,coordinates}) OU array legado de anéis.
+  let firstPoint = null;
+  if (geometryOrCoordinates && !Array.isArray(geometryOrCoordinates) && geometryOrCoordinates.type) {
+    firstPoint = firstPointOfGeometry(geometryOrCoordinates);
+  } else {
+    firstPoint = geometryOrCoordinates?.[0]?.[0] ?? null;
+  }
   if (!Array.isArray(firstPoint)) return false;
   return haversineKm(firstPoint[1], firstPoint[0], center.lat, center.lng) <= 250;
 }

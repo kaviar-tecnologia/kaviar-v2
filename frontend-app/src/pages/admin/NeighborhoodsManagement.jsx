@@ -23,7 +23,7 @@ import LeafletGeofenceMap from '../../components/maps/LeafletGeofenceMap';
 import {
   getCityCenter,
   isCompatibleWithCity,
-  isValidPolygonCoordinates,
+  normalizeGeofenceGeometry,
   shouldFetchGeofence
 } from './neighborhoodsGeofenceUtils';
 
@@ -82,19 +82,21 @@ export default function NeighborhoodsManagement() {
 
       if (requestId !== requestIdRef.current) return;
       
-      const coordinates = response.data?.data?.coordinates;
-      if (response.data.success && coordinates) {
-        if (!isValidPolygonCoordinates(coordinates)) {
+      const rawGeometry = response.data?.data?.coordinates;
+      if (response.data.success && rawGeometry != null) {
+        // Normaliza aceitando array legado OU objeto GeoJSON (Polygon/MultiPolygon).
+        const geometry = normalizeGeofenceGeometry(rawGeometry);
+        if (!geometry) {
           setGeofence('INVALID_GEOMETRY');
           return;
         }
 
-        if (!isCompatibleWithCity(coordinates, selectedCity)) {
+        if (!isCompatibleWithCity(geometry, selectedCity)) {
           setGeofence('INCOMPATIBLE_CITY_GEOMETRY');
           return;
         }
 
-        setGeofence({ type: 'Polygon', coordinates });
+        setGeofence(geometry);
       } else {
         setGeofence('NO_GEOMETRY');
       }
@@ -137,6 +139,8 @@ export default function NeighborhoodsManagement() {
   }
 
   const filteredNeighborhoods = neighborhoods.filter(n => n.city === selectedCity);
+  // Geometria renderável = Polygon ou MultiPolygon já normalizado.
+  const hasRenderableGeometry = geofence?.type === 'Polygon' || geofence?.type === 'MultiPolygon';
   
   console.log('🔍 Debug Neighborhoods:', {
     total: neighborhoods.length,
@@ -253,10 +257,10 @@ export default function NeighborhoodsManagement() {
                 </Typography>
                 <Box sx={{ height: 360, border: '1px solid #334155', borderRadius: 1, mb: 2 }}>
                   <LeafletGeofenceMap
-                    geometry={geofence?.type === 'Polygon' ? geofence : null}
+                    geometry={hasRenderableGeometry ? geofence : null}
                     referenceCenter={getCityCenter(selectedCity)}
                     zoom={getCityCenter(selectedCity).zoom}
-                    noGeofence={geofence !== null && geofence !== undefined && geofence?.type !== 'Polygon'}
+                    noGeofence={geofence !== null && geofence !== undefined && !hasRenderableGeometry}
                     selectedAreaId={selectedNeighborhood.id}
                     isVisible
                     height={360}
@@ -336,7 +340,7 @@ export default function NeighborhoodsManagement() {
                       Erro de conexão com o servidor. Tente novamente.
                     </Typography>
                   </Box>
-                ) : geofence?.type === 'Polygon' ? (
+                ) : hasRenderableGeometry ? (
                   <Typography variant="body2" sx={{ color: '#CBD5E1' }}>
                     Geofence oficial exibida no mapa.
                   </Typography>
