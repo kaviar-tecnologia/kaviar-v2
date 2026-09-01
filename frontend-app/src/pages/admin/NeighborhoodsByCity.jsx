@@ -15,6 +15,13 @@ import {
 import { LocationCity, Map } from '@mui/icons-material';
 import api from '../../api';
 
+// UF por cidade (rótulo). Novas cidades entram aqui conforme onboarding.
+const CITY_UF = {
+  'Rio de Janeiro': 'RJ',
+  'São Paulo': 'SP',
+  'Cariacica': 'ES',
+};
+
 export default function NeighborhoodsByCity() {
   const navigate = useNavigate();
   const [neighborhoods, setNeighborhoods] = useState([]);
@@ -187,7 +194,7 @@ export default function NeighborhoodsByCity() {
                         {city}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
-                        {city === 'Rio de Janeiro' ? 'RJ' : city === 'São Paulo' ? 'SP' : ''}
+                        {CITY_UF[city] || ''}
                       </Typography>
                     </Box>
                   </Box>
