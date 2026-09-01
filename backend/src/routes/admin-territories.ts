@@ -10,6 +10,7 @@ import {
   executePrepareCity,
 } from '../services/territory/city-preparation.service';
 import { resolveGeojsonPath } from '../services/territory/territorial-dataset-registry';
+import { acquireCityDataset } from '../services/territory/territorial-dataset-acquisition.service';
 
 const router = Router();
 router.use(authenticateAdmin, requireSuperAdmin);
@@ -722,6 +723,92 @@ function resolveGeojsonPathForTerritory(territory: {
   const resolved = resolveGeojsonPath(city, territory.uf);
   return resolved ? resolved.filePath : null;
 }
+
+// POST /api/admin/territories/:id/prepare-city/acquire
+// Fase 1: busca automática do dataset via provider (OSM/Overpass), normaliza,
+// valida e persiste como VERSÃO DRAFT (S3 + territorial_dataset_versions).
+// Somente SUPER_ADMIN (router usa requireSuperAdmin). Somente leitura externa;
+// única escrita = S3 + linha DRAFT. NÃO cria neighborhoods/geofences, NÃO altera
+// território/gestor/status/modalidade.
+router.post('/:id/prepare-city/acquire', async (req: Request, res: Response) => {
+  try {
+    const territory = await prisma.operational_territories.findUnique({ where: { id: req.params.id } });
+    if (!territory) return res.status(404).json({ success: false, error: 'Território não encontrado' });
+
+    const ctx = auditCtx(req);
+
+    // Cancela a aquisição se o cliente fechar a conexão (propaga por todo o pipeline).
+    const reqAbort = new AbortController();
+    const onClose = () => reqAbort.abort();
+    req.on('close', onClose);
+
+    let result;
+    try {
+      result = await acquireCityDataset({
+        territoryId: territory.id,
+        createdBy: ctx.adminId,
+        prisma,
+        signal: reqAbort.signal,
+      });
+    } finally {
+      req.off('close', onClose);
+    }
+
+    if (!result.ok) {
+      // Cancelamento/deadline: nada persistido.
+      if (result.code === 'ACQUISITION_ABORTED' || result.code === 'ACQUISITION_DEADLINE_EXCEEDED') {
+        audit({
+          adminId: ctx.adminId, adminEmail: ctx.adminEmail,
+          action: 'prepare_city_acquire_cancelled', entityType: 'territory', entityId: territory.id,
+          newValue: { code: result.code }, ipAddress: ctx.ip, userAgent: ctx.ua,
+        });
+        // 499-like: cliente cancelou; 504 quando deadline. Usa 504 p/ deadline.
+        const st = result.code === 'ACQUISITION_DEADLINE_EXCEEDED' ? 504 : 499;
+        return res.status(st).json({ success: false, error: result.reason, code: result.code });
+      }
+      // Qualidade insuficiente ou falha externa: nada foi persistido.
+      audit({
+        adminId: ctx.adminId, adminEmail: ctx.adminEmail,
+        action: 'prepare_city_acquire_failed', entityType: 'territory', entityId: territory.id,
+        newValue: { code: result.code, reason: result.reason, stats: result.stats },
+        ipAddress: ctx.ip, userAgent: ctx.ua,
+      });
+      const status = result.code === 'NO_VALID_FEATURES' ? 422 : 502;
+      return res.status(status).json({ success: false, error: result.reason, code: result.code, stats: result.stats });
+    }
+
+    audit({
+      adminId: ctx.adminId, adminEmail: ctx.adminEmail,
+      action: 'prepare_city_acquire_draft', entityType: 'territorial_dataset_version', entityId: result.datasetVersionId,
+      newValue: {
+        city: result.city, uf: result.uf,
+        providerId: result.provenance.providerId, isOfficial: result.provenance.isOfficial,
+        sourceUrl: result.provenance.sourceUrl, stats: result.stats,
+      },
+      ipAddress: ctx.ip, userAgent: ctx.ua,
+    });
+
+    return res.json({
+      success: true,
+      mode: 'acquired-draft',
+      data: {
+        datasetVersionId: result.datasetVersionId,
+        city: result.city,
+        uf: result.uf,
+        provenance: result.provenance,   // inclui source, sourceUrl, query, sourceIds, isOfficial=false
+        stats: result.stats,
+        s3: result.s3,
+        checksum: result.checksum,
+        // reforço explícito na resposta:
+        isOfficial: false,
+        sourceVerified: false,
+        status: 'DRAFT',
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || 'Erro na aquisição de dataset' });
+  }
+});
 
 // POST /api/admin/territories/:id/prepare-city/dry-run
 // Retorna a prévia (nenhuma gravação).
