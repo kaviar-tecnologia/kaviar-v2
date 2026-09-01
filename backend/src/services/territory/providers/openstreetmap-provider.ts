@@ -46,7 +46,7 @@ export interface OpenStreetMapProviderConfig {
 }
 
 const DEFAULTS = {
-  timeoutMs: 60_000,
+  timeoutMs: 20_000, // por tentativa; o DEADLINE TOTAL governa a operação inteira
   maxAttemptsPerMirror: 2,
   backoffBaseMs: 500,
   maxResponseBytes: 25 * 1024 * 1024, // 25 MB
@@ -60,7 +60,16 @@ export class OverpassAcquisitionError extends Error {
   }
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** sleep ABORTÁVEL: resolve no tempo OU rejeita imediatamente se abortar. */
+function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+    const t = setTimeout(() => { cleanup(); resolve(); }, ms);
+    const onAbort = () => { cleanup(); reject(Object.assign(new Error('aborted'), { name: 'AbortError' })); };
+    const cleanup = () => { clearTimeout(t); signal?.removeEventListener('abort', onAbort); };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
 
 /**
  * Lê o corpo da resposta com limite REAL de bytes.
@@ -150,10 +159,14 @@ export class OpenStreetMapProvider implements TerritorialDatasetProvider {
             throw new OverpassAcquisitionError('Aquisição cancelada (abort externo)', 'ACQUISITION_ABORTED');
           }
           lastError = err;
-          // backoff antes de nova tentativa no mesmo mirror
+          // backoff ABORTÁVEL antes de nova tentativa no mesmo mirror
           if (attempt < cfg.maxAttemptsPerMirror) {
-            // eslint-disable-next-line no-await-in-loop
-            await sleep(cfg.backoffBaseMs * attempt);
+            try {
+              // eslint-disable-next-line no-await-in-loop
+              await abortableSleep(cfg.backoffBaseMs * attempt, opts.signal);
+            } catch {
+              throw new OverpassAcquisitionError('Aquisição cancelada (abort externo)', 'ACQUISITION_ABORTED');
+            }
           }
         }
       }

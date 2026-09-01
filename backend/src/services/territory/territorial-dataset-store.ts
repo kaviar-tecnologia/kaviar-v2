@@ -13,7 +13,7 @@
  *     executam quando explicitamente chamadas (fases posteriores, com autorização).
  *   - NÃO escreve em neighborhoods / neighborhood_geofences / operational_territories.
  */
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import type { AcquiredDataset } from './providers/territorial-dataset-provider';
 
 export type DatasetStatus = 'DRAFT' | 'PREVIEWED' | 'APPLIED' | 'REJECTED';
@@ -92,7 +92,10 @@ export async function persistDatasetVersion(
     deleteObject?: (bucket: string, key: string) => Promise<void>;
   } = {},
 ): Promise<PersistDatasetResult> {
-  const version = input.version || new Date().toISOString().replace(/[:.]/g, '-');
+  // Versão inequivocamente única: timestamp + UUID cripto-seguro. Evita colisão
+  // entre aquisições concorrentes (crítico com o cleanup compensatório — uma
+  // execução nunca deve apagar objetos de outra).
+  const version = input.version || `${new Date().toISOString().replace(/[:.]/g, '-')}_${randomUUID()}`;
   const keys = buildDatasetKeys(input.uf, input.city, version);
   const normalized = input.acquired.featureCollection;
   const checksum = checksumOf(normalized);

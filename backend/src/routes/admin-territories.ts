@@ -736,13 +736,36 @@ router.post('/:id/prepare-city/acquire', async (req: Request, res: Response) => 
     if (!territory) return res.status(404).json({ success: false, error: 'Território não encontrado' });
 
     const ctx = auditCtx(req);
-    const result = await acquireCityDataset({
-      territoryId: territory.id,
-      createdBy: ctx.adminId,
-      prisma,
-    });
+
+    // Cancela a aquisição se o cliente fechar a conexão (propaga por todo o pipeline).
+    const reqAbort = new AbortController();
+    const onClose = () => reqAbort.abort();
+    req.on('close', onClose);
+
+    let result;
+    try {
+      result = await acquireCityDataset({
+        territoryId: territory.id,
+        createdBy: ctx.adminId,
+        prisma,
+        signal: reqAbort.signal,
+      });
+    } finally {
+      req.off('close', onClose);
+    }
 
     if (!result.ok) {
+      // Cancelamento/deadline: nada persistido.
+      if (result.code === 'ACQUISITION_ABORTED' || result.code === 'ACQUISITION_DEADLINE_EXCEEDED') {
+        audit({
+          adminId: ctx.adminId, adminEmail: ctx.adminEmail,
+          action: 'prepare_city_acquire_cancelled', entityType: 'territory', entityId: territory.id,
+          newValue: { code: result.code }, ipAddress: ctx.ip, userAgent: ctx.ua,
+        });
+        // 499-like: cliente cancelou; 504 quando deadline. Usa 504 p/ deadline.
+        const st = result.code === 'ACQUISITION_DEADLINE_EXCEEDED' ? 504 : 499;
+        return res.status(st).json({ success: false, error: result.reason, code: result.code });
+      }
       // Qualidade insuficiente ou falha externa: nada foi persistido.
       audit({
         adminId: ctx.adminId, adminEmail: ctx.adminEmail,

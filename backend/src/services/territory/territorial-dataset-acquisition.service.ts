@@ -21,6 +21,14 @@ import { persistDatasetVersion, type PrismaLike, type S3Like } from './territori
 import { resolveMunicipalBBox } from './municipal-bbox-resolver';
 import type { CityBoundingBox } from './city-preparation.core';
 
+/**
+ * Deadline TOTAL padrão da aquisição (bbox + Overpass + retries/backoff).
+ * A infraestrutura (ALB `kaviar-alb`) usa o idle timeout PADRÃO da AWS = 60s
+ * (o provisionamento não altera `idle_timeout.timeout_seconds`). Portanto o
+ * deadline total fica ABAIXO disso, com folga para parse/serialização/auditoria.
+ */
+export const ACQUISITION_TOTAL_DEADLINE_MS = 45_000;
+
 export interface AcquireParams {
   territoryId: string;
   /** Provider a usar (default: OpenStreetMapProvider). Injeção facilita testes. */
@@ -29,6 +37,10 @@ export interface AcquireParams {
   acquisitionOptions?: AcquisitionOptions;
   /** bbox esperado (passado ao provider OSM). */
   bbox?: CityBoundingBox | null;
+  /** Deadline TOTAL (ms) da operação. Default ACQUISITION_TOTAL_DEADLINE_MS. */
+  totalDeadlineMs?: number;
+  /** Sinal externo (ex.: request fechado pelo cliente) que cancela tudo. */
+  signal?: AbortSignal;
   createdBy?: string | null;
   prisma?: PrismaLike;
   s3?: S3Like;
@@ -72,66 +84,109 @@ export async function acquireCityDataset(params: AcquireParams): Promise<Acquire
     return { ok: false, reason: 'Território sem cidade/UF definidos', code: 'CITY_UF_MISSING', city, uf };
   }
 
-  // Resolve um bbox MUNICIPAL confiável (dado próprio ou limite OSM). Genérico.
-  // Se não houver bbox confiável, NÃO adquire dataset persistível silenciosamente.
-  let bbox = params.bbox ?? null;
-  let bboxSource = 'injected';
-  if (!bbox) {
-    const resolved = await resolveMunicipalBBox(prisma, city, uf, {
-      fetchImpl: params.acquisitionOptions?.fetchImpl,
-      timeoutMs: params.acquisitionOptions?.timeoutMs,
-    });
-    bbox = resolved.bbox;
-    bboxSource = resolved.source;
+  // ── DEADLINE TOTAL + cancelamento propagado por TODO o pipeline ────────────
+  // Um único AbortController governa: resolução de bbox + Overpass + retries +
+  // backoff. Encadeia o sinal EXTERNO (ex.: request HTTP fechado) e um timer de
+  // deadline total. Após cancelamento, jamais persiste S3/DRAFT.
+  const deadlineMs = params.totalDeadlineMs ?? ACQUISITION_TOTAL_DEADLINE_MS;
+  const controller = new AbortController();
+  let deadlineHit = false;
+  const deadlineTimer = setTimeout(() => { deadlineHit = true; controller.abort(); }, deadlineMs);
+  const external = params.signal;
+  const onExternalAbort = () => controller.abort();
+  if (external) {
+    if (external.aborted) controller.abort();
+    else external.addEventListener('abort', onExternalAbort, { once: true });
+  }
+  const signal = controller.signal;
+
+  // Helper: classifica o motivo do cancelamento.
+  const abortResult = (): AcquireFail => ({
+    ok: false,
+    reason: deadlineHit
+      ? `Deadline total (${deadlineMs}ms) excedido — aquisição cancelada; nada persistido.`
+      : 'Aquisição cancelada (abort externo) — nada persistido.',
+    code: deadlineHit ? 'ACQUISITION_DEADLINE_EXCEEDED' : 'ACQUISITION_ABORTED',
+    city, uf,
+  });
+
+  try {
+    // Resolve um bbox MUNICIPAL confiável (dado próprio/território ou limite OSM).
+    // Se não houver bbox confiável, NÃO adquire dataset persistível silenciosamente.
+    let bbox = params.bbox ?? null;
     if (!bbox) {
+      const resolved = await resolveMunicipalBBox(prisma, city, uf, {
+        territoryId: territory.id,
+        fetchImpl: params.acquisitionOptions?.fetchImpl,
+        signal,
+      });
+      if (signal.aborted) return abortResult();
+      if (resolved.code === 'MUNICIPAL_BBOX_AMBIGUOUS') {
+        return { ok: false, reason: 'Múltiplos limites municipais ambíguos para a cidade/UF.', code: 'MUNICIPAL_BBOX_AMBIGUOUS', city, uf };
+      }
+      bbox = resolved.bbox;
+      if (!bbox) {
+        return {
+          ok: false,
+          reason: 'BBox municipal confiável indisponível — aquisição recusada para evitar dataset da região errada.',
+          code: 'MUNICIPAL_BBOX_UNAVAILABLE',
+          city, uf,
+        };
+      }
+    }
+
+    if (signal.aborted) return abortResult();
+
+    const provider = params.provider ?? new OpenStreetMapProvider({ bbox });
+
+    let acquired;
+    try {
+      // bbox + signal por chamada (o deadline total governa mirrors/retries/backoff).
+      acquired = await provider.fetchDataset({ city, uf }, { ...(params.acquisitionOptions ?? {}), bbox, signal });
+    } catch (err: any) {
+      if (signal.aborted || err?.code === 'ACQUISITION_ABORTED') return abortResult();
       return {
         ok: false,
-        reason: 'BBox municipal confiável indisponível — aquisição recusada para evitar dataset da região errada.',
-        code: 'MUNICIPAL_BBOX_UNAVAILABLE',
+        reason: `Falha na aquisição externa: ${err?.message ?? String(err)}`,
+        code: err?.code || 'ACQUISITION_FAILED',
         city, uf,
       };
     }
-  }
 
-  const provider = params.provider ?? new OpenStreetMapProvider({ bbox });
+    // Cancelado após o fetch? Não persiste.
+    if (signal.aborted) return abortResult();
 
-  let acquired;
-  try {
-    // bbox por chamada tem precedência — garante a checagem regional no caminho real.
-    acquired = await provider.fetchDataset({ city, uf }, { ...(params.acquisitionOptions ?? {}), bbox });
-  } catch (err: any) {
+    // Qualidade insuficiente: zero features válidas → NÃO persiste.
+    if (!acquired.featureCollection.features.length || acquired.stats.valid === 0) {
+      return {
+        ok: false,
+        reason: 'Nenhuma feature válida encontrada — qualidade insuficiente; dataset não persistido.',
+        code: 'NO_VALID_FEATURES',
+        city, uf,
+        stats: acquired.stats,
+      };
+    }
+
+    // Guarda final antes de qualquer escrita.
+    if (signal.aborted) return abortResult();
+
+    // Persiste DRAFT (S3 + metadados). source_verified é FORÇADO false no store.
+    const persisted = await persistDatasetVersion(
+      { city, uf, acquired, createdBy: params.createdBy ?? null, status: 'DRAFT' },
+      { prisma, s3: params.s3, putObject: params.putObject, deleteObject: params.deleteObject },
+    );
+
     return {
-      ok: false,
-      reason: `Falha na aquisição externa: ${err?.message ?? String(err)}`,
-      code: err?.code || 'ACQUISITION_FAILED',
+      ok: true,
+      datasetVersionId: persisted.id,
       city, uf,
-    };
-  }
-
-  // Qualidade insuficiente: zero features válidas → NÃO persiste.
-  if (!acquired.featureCollection.features.length || acquired.stats.valid === 0) {
-    return {
-      ok: false,
-      reason: 'Nenhuma feature válida encontrada — qualidade insuficiente; dataset não persistido.',
-      code: 'NO_VALID_FEATURES',
-      city, uf,
+      provenance: acquired.provenance,
       stats: acquired.stats,
+      s3: persisted.keys,
+      checksum: persisted.checksum,
     };
+  } finally {
+    clearTimeout(deadlineTimer);
+    if (external) external.removeEventListener('abort', onExternalAbort);
   }
-
-  // Persiste DRAFT (S3 + metadados). source_verified é FORÇADO false no store.
-  const persisted = await persistDatasetVersion(
-    { city, uf, acquired, createdBy: params.createdBy ?? null, status: 'DRAFT' },
-    { prisma, s3: params.s3, putObject: params.putObject, deleteObject: params.deleteObject },
-  );
-
-  return {
-    ok: true,
-    datasetVersionId: persisted.id,
-    city, uf,
-    provenance: acquired.provenance,
-    stats: acquired.stats,
-    s3: persisted.keys,
-    checksum: persisted.checksum,
-  };
 }

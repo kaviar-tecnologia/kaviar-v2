@@ -1,49 +1,68 @@
 /**
  * Resolve um bounding box (bbox) MUNICIPAL confiável para um território,
- * de forma GENÉRICA (sem hardcode por cidade). Ordem de preferência:
+ * de forma GENÉRICA (sem hardcode por cidade).
  *
- *   1) Envelope dos geofences já existentes daquela cidade no sistema
- *      (neighborhood_geofences via PostGIS ST_Extent) — reuso de dado próprio;
- *   2) Envelope do LIMITE MUNICIPAL do OpenStreetMap (relação admin_level=8),
- *      buscado via Overpass — mesma origem/região, sem inventar bbox.
+ * PRIORIDADE (por segurança):
+ *   1) LIMITE MUNICIPAL do OpenStreetMap (relação admin_level=8, cidade+UF) —
+ *      proteção PRIMÁRIA. É o limite do município inteiro.
+ *   2) Fallback: envelope dos geofences JÁ EXISTENTES daquele TERRITÓRIO
+ *      (isolado por neighborhoods.territory_id). Isto representa apenas a
+ *      COBERTURA EXISTENTE — não necessariamente o limite municipal — e serve
+ *      só quando o limite municipal confiável não está disponível.
  *
- * Se nenhuma fonte confiável estiver disponível, retorna null (o chamador deve
- * então recusar a aquisição persistível com MUNICIPAL_BBOX_UNAVAILABLE).
+ * Se nada confiável → bbox=null (chamador recusa com MUNICIPAL_BBOX_UNAVAILABLE).
+ * Se a consulta municipal for AMBÍGUA (múltiplas relações plausíveis) →
+ * code='MUNICIPAL_BBOX_AMBIGUOUS' (não une silenciosamente).
  *
+ * Segurança da entrada externa (OSM): respeita AbortSignal, limita bytes e nº de
+ * elementos, valida WGS84 e min<max, rejeita valores absurdos.
  * Somente LEITURA. Não grava nada.
  */
 import type { CityBoundingBox } from './city-preparation.core';
-import {
-  OVERPASS_MIRRORS,
-} from './providers/openstreetmap-provider';
+import { OVERPASS_MIRRORS } from './providers/openstreetmap-provider';
 import { UF_TO_STATE_NAME } from './osm-geojson-normalizer';
 
 export type PrismaLike = any;
 
+export type MunicipalBBoxCode =
+  | 'OK'
+  | 'MUNICIPAL_BBOX_UNAVAILABLE'
+  | 'MUNICIPAL_BBOX_AMBIGUOUS';
+
 export interface MunicipalBBoxResult {
   bbox: CityBoundingBox | null;
-  source: 'existing_geofences' | 'osm_municipality' | 'none';
+  source: 'osm_municipality' | 'existing_coverage' | 'none';
+  code: MunicipalBBoxCode;
   details?: string;
 }
 
 const ALLOWED_HOSTS = new Set(OVERPASS_MIRRORS.map((u) => new URL(u).host));
+const MAX_BOUNDS_BYTES = 2 * 1024 * 1024;   // 2 MB (resposta 'out bb;' é pequena)
+const MAX_BOUNDS_ELEMENTS = 200;            // limite de elementos retornados
+// Extensão máxima plausível de um município (graus). Rejeita bounds absurdos.
+const MAX_SPAN_DEG = 3.0;
 
-/** Aplica margem (graus) ao bbox para tolerância de borda. */
 export function expand(bbox: CityBoundingBox, marginDeg: number): CityBoundingBox {
   return {
-    minLon: bbox.minLon - marginDeg,
-    maxLon: bbox.maxLon + marginDeg,
-    minLat: bbox.minLat - marginDeg,
-    maxLat: bbox.maxLat + marginDeg,
+    minLon: bbox.minLon - marginDeg, maxLon: bbox.maxLon + marginDeg,
+    minLat: bbox.minLat - marginDeg, maxLat: bbox.maxLat + marginDeg,
   };
 }
 
-/** 1) Envelope de geofences já existentes da cidade (se houver). */
-export async function bboxFromExistingGeofences(
+function isValidBBox(b: CityBoundingBox): boolean {
+  const vals = [b.minLon, b.maxLon, b.minLat, b.maxLat];
+  if (!vals.every(Number.isFinite)) return false;
+  if (b.minLon < -180 || b.maxLon > 180 || b.minLat < -90 || b.maxLat > 90) return false;
+  if (!(b.minLon < b.maxLon) || !(b.minLat < b.maxLat)) return false; // min < max
+  if ((b.maxLon - b.minLon) > MAX_SPAN_DEG || (b.maxLat - b.minLat) > MAX_SPAN_DEG) return false; // absurdo
+  return true;
+}
+
+/** 2) Fallback: envelope dos geofences do TERRITÓRIO (isolado por territory_id). */
+export async function bboxFromExistingCoverage(
   prisma: PrismaLike,
-  city: string,
+  territoryId: string,
 ): Promise<CityBoundingBox | null> {
-  // ST_Extent sobre os geofences dos bairros daquela cidade.
   const rows: any[] = await prisma.$queryRaw`
     SELECT
       ST_XMin(ext) AS min_lon, ST_YMin(ext) AS min_lat,
@@ -52,24 +71,23 @@ export async function bboxFromExistingGeofences(
       SELECT ST_Extent(g.geom) AS ext
       FROM neighborhood_geofences g
       JOIN neighborhoods n ON n.id = g.neighborhood_id
-      WHERE n.city = ${city} AND g.geom IS NOT NULL
+      WHERE n.territory_id = ${territoryId} AND g.geom IS NOT NULL
     ) e
   `;
   const r = rows?.[0];
-  if (!r || r.min_lon == null || r.min_lat == null || r.max_lon == null || r.max_lat == null) return null;
+  if (!r || r.min_lon == null) return null;
   const bbox: CityBoundingBox = {
     minLon: Number(r.min_lon), maxLon: Number(r.max_lon),
     minLat: Number(r.min_lat), maxLat: Number(r.max_lat),
   };
-  if (![bbox.minLon, bbox.maxLon, bbox.minLat, bbox.maxLat].every(Number.isFinite)) return null;
-  return bbox;
+  return isValidBBox(bbox) ? bbox : null;
 }
 
-/** Query Overpass que retorna apenas os bounds da relação municipal (admin_level=8). */
+/** Query Overpass que retorna os bounds das relações municipais (admin_level=8). */
 export function buildMunicipalityBoundsQuery(city: string, uf?: string | null): string {
   const safeCity = city.replace(/"/g, '\\"');
   const stateName = uf ? UF_TO_STATE_NAME[String(uf).toUpperCase()] : null;
-  const lines = ['[out:json][timeout:120];'];
+  const lines = ['[out:json][timeout:60];'];
   if (stateName) {
     const safeState = stateName.replace(/"/g, '\\"');
     lines.push(
@@ -80,86 +98,98 @@ export function buildMunicipalityBoundsQuery(city: string, uf?: string | null): 
   } else {
     lines.push(`rel["name"="${safeCity}"]["admin_level"="8"]["boundary"="administrative"];`);
   }
-  // `out bb;` retorna apenas os bounding boxes — payload minúsculo.
-  lines.push('out bb;');
+  lines.push('out bb;'); // apenas bounding boxes
   return lines.join('\n');
 }
 
-/** 2) Envelope do limite municipal via OSM (admin_level=8). */
+/** 1) Limite municipal via OSM (admin_level=8), com endurecimento de segurança. */
 export async function bboxFromOsmMunicipality(
   city: string,
   uf: string | null,
-  opts: { fetchImpl?: typeof fetch; timeoutMs?: number; mirrors?: readonly string[] } = {},
-): Promise<CityBoundingBox | null> {
+  opts: { fetchImpl?: typeof fetch; signal?: AbortSignal; mirrors?: readonly string[] } = {},
+): Promise<{ bbox: CityBoundingBox | null; ambiguous: boolean }> {
   const fetchImpl = opts.fetchImpl ?? (globalThis.fetch as typeof fetch);
-  if (typeof fetchImpl !== 'function') return null;
+  if (typeof fetchImpl !== 'function') return { bbox: null, ambiguous: false };
   const mirrors = (opts.mirrors ?? OVERPASS_MIRRORS).filter((u) => ALLOWED_HOSTS.has(new URL(u).host));
   const query = buildMunicipalityBoundsQuery(city, uf);
-  const timeoutMs = opts.timeoutMs ?? 30_000;
 
   for (const url of mirrors) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    if (opts.signal?.aborted) return { bbox: null, ambiguous: false };
     try {
       const res: any = await fetchImpl(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
         body: `data=${encodeURIComponent(query)}`,
-        signal: controller.signal,
+        signal: opts.signal,
         redirect: 'manual',
       } as any);
+
       const status = res.status as number;
       if (res.type === 'opaqueredirect' || (status >= 300 && status < 400)) continue;
       if (status < 200 || status >= 300) continue;
       const ct = (res.headers?.get?.('content-type') || '').toLowerCase();
       if (!ct.includes('json') && !ct.includes('osm3s')) continue;
-      const text = await res.text();
+
+      const declaredLen = Number(res.headers?.get?.('content-length') || 0);
+      if (declaredLen && declaredLen > MAX_BOUNDS_BYTES) continue;
+      const text: string = await res.text();
+      if (Buffer.byteLength(text, 'utf8') > MAX_BOUNDS_BYTES) continue;
+
       let parsed: any;
       try { parsed = JSON.parse(text); } catch { continue; }
       const els = Array.isArray(parsed?.elements) ? parsed.elements : [];
-      // Une os bounds de todos os elementos retornados.
-      let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity, found = false;
+      if (els.length > MAX_BOUNDS_ELEMENTS) continue;
+
+      // Coleta bounds VÁLIDOS individuais.
+      const valid: CityBoundingBox[] = [];
       for (const el of els) {
         const b = el.bounds;
-        if (b && Number.isFinite(b.minlon) && Number.isFinite(b.minlat) && Number.isFinite(b.maxlon) && Number.isFinite(b.maxlat)) {
-          minLon = Math.min(minLon, b.minlon); maxLon = Math.max(maxLon, b.maxlon);
-          minLat = Math.min(minLat, b.minlat); maxLat = Math.max(maxLat, b.maxlat);
-          found = true;
-        }
+        if (!b) continue;
+        const cand: CityBoundingBox = { minLon: b.minlon, maxLon: b.maxlon, minLat: b.minlat, maxLat: b.maxlat };
+        if (isValidBBox(cand)) valid.push(cand);
       }
-      if (found) return { minLon, maxLon, minLat, maxLat };
+      if (valid.length === 0) continue;
+
+      // AMBIGUIDADE: mais de uma relação municipal plausível → NÃO unir.
+      // (Partes contíguas da mesma relação retornam um único elemento com bounds.)
+      if (valid.length > 1) {
+        return { bbox: null, ambiguous: true };
+      }
+      return { bbox: valid[0], ambiguous: false };
     } catch {
+      if (opts.signal?.aborted) return { bbox: null, ambiguous: false };
       // tenta próximo mirror
-    } finally {
-      clearTimeout(timer);
     }
   }
-  return null;
+  return { bbox: null, ambiguous: false };
 }
 
-/**
- * Resolve o bbox municipal (com margem) tentando dado próprio e depois OSM.
- * marginDeg default 0.05 (~5 km) apenas para tolerância de borda.
- */
 export async function resolveMunicipalBBox(
   prisma: PrismaLike,
   city: string,
   uf: string | null,
-  opts: { fetchImpl?: typeof fetch; timeoutMs?: number; mirrors?: readonly string[]; marginDeg?: number } = {},
+  opts: { territoryId?: string; fetchImpl?: typeof fetch; signal?: AbortSignal; mirrors?: readonly string[]; marginDeg?: number } = {},
 ): Promise<MunicipalBBoxResult> {
   const margin = opts.marginDeg ?? 0.05;
 
-  // 1) Dado próprio (se a cidade já tem geofences).
-  try {
-    const existing = await bboxFromExistingGeofences(prisma, city);
-    if (existing) return { bbox: expand(existing, margin), source: 'existing_geofences' };
-  } catch (e) {
-    // segue para OSM; não mascara — apenas tenta a próxima fonte.
+  // 1) PRIMÁRIO: limite municipal OSM.
+  const osm = await bboxFromOsmMunicipality(city, uf, opts);
+  if (opts.signal?.aborted) return { bbox: null, source: 'none', code: 'MUNICIPAL_BBOX_UNAVAILABLE', details: 'cancelado' };
+  if (osm.ambiguous) return { bbox: null, source: 'none', code: 'MUNICIPAL_BBOX_AMBIGUOUS' };
+  if (osm.bbox) return { bbox: expand(osm.bbox, margin), source: 'osm_municipality', code: 'OK' };
+
+  // 2) FALLBACK: cobertura existente (isolada por território).
+  if (opts.territoryId) {
+    try {
+      const cov = await bboxFromExistingCoverage(prisma, opts.territoryId);
+      if (cov) {
+        // Cobertura existente NÃO é limite municipal; não expandimos além da margem.
+        return { bbox: expand(cov, margin), source: 'existing_coverage', code: 'OK', details: 'cobertura existente (não é limite municipal)' };
+      }
+    } catch {
+      // segue; sem mascarar — apenas indisponível.
+    }
   }
 
-  // 2) Limite municipal via OSM.
-  const osm = await bboxFromOsmMunicipality(city, uf, opts);
-  if (osm) return { bbox: expand(osm, margin), source: 'osm_municipality' };
-
-  return { bbox: null, source: 'none', details: 'Nenhuma fonte confiável de bbox municipal' };
+  return { bbox: null, source: 'none', code: 'MUNICIPAL_BBOX_UNAVAILABLE' };
 }

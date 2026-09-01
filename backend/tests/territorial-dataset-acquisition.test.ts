@@ -5,6 +5,11 @@ import {
   OVERPASS_MIRRORS,
 } from '../src/services/territory/providers/openstreetmap-provider';
 import { acquireCityDataset } from '../src/services/territory/territorial-dataset-acquisition.service';
+import {
+  resolveMunicipalBBox,
+  bboxFromOsmMunicipality,
+  buildMunicipalityBoundsQuery,
+} from '../src/services/territory/municipal-bbox-resolver';
 
 // ─── Fixtures Overpass ────────────────────────────────────────────────────────
 
@@ -538,5 +543,271 @@ describe('persistDatasetVersion — cleanup best-effort de objetos S3 em falha',
       { city: 'X', uf: 'YY', acquired: acquiredFixture(), version: 'v1' },
       { prisma, putObject, deleteObject } as any,
     )).rejects.toThrow(/erro original/); // preserva o erro original
+  });
+});
+
+// ─── Round 2 #1: deadline total + propagação de cancelamento ─────────────────
+
+describe('deadline total e cancelamento propagado', () => {
+  const territory = { id: 't1', name: 'Cariacica', city_name: 'Cariacica', uf: 'ES', level: 'city' };
+  const muniBounds = [{ type: 'relation', id: 1, bounds: { minlon: -40.5, minlat: -20.4, maxlon: -40.35, maxlat: -20.24 } }];
+
+  function prismaT(t: any) {
+    const state: any = { territory: t, created: null };
+    return {
+      __state: state,
+      operational_territories: { findUnique: async () => t },
+      $queryRaw: async () => [{ min_lon: null, min_lat: null, max_lon: null, max_lat: null }],
+      territorial_dataset_versions: { create: async ({ data }: any) => { state.created = data; return { id: 'dsv' }; } },
+    } as any;
+  }
+
+  it('deadline total encerra antes de tentar todos os mirrors; zero PUT e zero create', async () => {
+    let neighborhoodCalls = 0;
+    // bounds respondem rápido; a busca de bairros trava até abort (deadline).
+    const fetchImpl = (async (_url: string, init: any) => {
+      const body = decodeURIComponent(String(init?.body || ''));
+      if (/out bb;/.test(body)) return jsonResponse(JSON.stringify({ elements: muniBounds }));
+      neighborhoodCalls++;
+      return new Promise((_res, rej) => {
+        const rej2 = () => rej(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+        if (init.signal.aborted) return rej2();
+        init.signal.addEventListener('abort', rej2, { once: true });
+      });
+    }) as unknown as typeof fetch;
+
+    let puts = 0;
+    const prisma = prismaT(territory);
+    const res = await acquireCityDataset({
+      territoryId: 't1', prisma,
+      totalDeadlineMs: 40, // deadline curtíssimo
+      acquisitionOptions: { fetchImpl, timeoutMs: 5000 },
+      putObject: async () => { puts++; },
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.code).toBe('ACQUISITION_DEADLINE_EXCEEDED');
+    // não tentou os 3 mirrors da busca de bairros (parou no deadline)
+    expect(neighborhoodCalls).toBeLessThan(3);
+    expect(puts).toBe(0);
+    expect(prisma.__state.created).toBeNull();
+  });
+
+  it('abort externo DURANTE a resolução do bbox interrompe tudo (sem PUT/create)', async () => {
+    const ac = new AbortController();
+    let calls = 0;
+    // A 1ª chamada (bounds) dispara abort e trava.
+    const fetchImpl = (async (_url: string, init: any) => {
+      calls++;
+      ac.abort();
+      return new Promise((_res, rej) => {
+        const rej2 = () => rej(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+        if (init.signal.aborted) return rej2();
+        init.signal.addEventListener('abort', rej2, { once: true });
+      });
+    }) as unknown as typeof fetch;
+    let puts = 0;
+    const prisma = prismaT(territory);
+    const res = await acquireCityDataset({
+      territoryId: 't1', prisma, signal: ac.signal,
+      acquisitionOptions: { fetchImpl, timeoutMs: 5000 },
+      putObject: async () => { puts++; },
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.code).toBe('ACQUISITION_ABORTED');
+    expect(calls).toBe(1); // não tentou outros mirrors do bounds
+    expect(puts).toBe(0);
+    expect(prisma.__state.created).toBeNull();
+  });
+});
+
+// ─── Round 2 #1: backoff abortável não faz nova tentativa ────────────────────
+
+describe('backoff abortável', () => {
+  it('abort durante o backoff → nenhuma nova tentativa (ACQUISITION_ABORTED)', async () => {
+    const ac = new AbortController();
+    let calls = 0;
+    // 1ª tentativa falha (5xx) → entra em backoff; abortamos durante o backoff.
+    const fetchImpl = (async () => {
+      calls++;
+      if (calls === 1) {
+        setTimeout(() => ac.abort(), 5); // aborta durante o backoff
+        return jsonResponse('err', { status: 500 });
+      }
+      return jsonResponse('{"elements":[]}');
+    }) as unknown as typeof fetch;
+    const provider = new OpenStreetMapProvider({ maxAttemptsPerMirror: 3, backoffBaseMs: 1000, mirrors: [OVERPASS_MIRRORS[0]] });
+    await expect(provider.fetchDataset({ city: 'X', uf: 'ES' }, { fetchImpl, signal: ac.signal }))
+      .rejects.toMatchObject({ code: 'ACQUISITION_ABORTED' });
+    expect(calls).toBe(1); // não re-tentou após abort no backoff
+  });
+});
+
+// ─── Round 2 #4: endurecimento do bbox municipal ─────────────────────────────
+
+describe('bboxFromOsmMunicipality — endurecimento e ambiguidade', () => {
+  function boundsResp(elements: any[], extraHeaders: Record<string, string> = {}) {
+    return () => Promise.resolve({
+      status: 200, type: 'default',
+      headers: { get: (h: string) => {
+        const k = h.toLowerCase();
+        if (k === 'content-type') return 'application/json';
+        return extraHeaders[k] ?? null;
+      } },
+      text: async () => JSON.stringify({ elements }),
+    });
+  }
+
+  it('exatamente um limite municipal válido → aceita', async () => {
+    const fetchImpl = makeFetch([boundsResp([{ type: 'relation', id: 1, bounds: { minlon: -40.5, minlat: -20.4, maxlon: -40.35, maxlat: -20.24 } }])]);
+    const r = await bboxFromOsmMunicipality('Cariacica', 'ES', { fetchImpl, mirrors: [OVERPASS_MIRRORS[0]] });
+    expect(r.ambiguous).toBe(false);
+    expect(r.bbox).not.toBeNull();
+  });
+
+  it('múltiplas relações municipais → ambíguo (não une)', async () => {
+    const fetchImpl = makeFetch([boundsResp([
+      { type: 'relation', id: 1, bounds: { minlon: -40.5, minlat: -20.4, maxlon: -40.35, maxlat: -20.24 } },
+      { type: 'relation', id: 2, bounds: { minlon: -43.3, minlat: -23.0, maxlon: -43.1, maxlat: -22.8 } },
+    ])]);
+    const r = await bboxFromOsmMunicipality('Cidade', 'ES', { fetchImpl, mirrors: [OVERPASS_MIRRORS[0]] });
+    expect(r.ambiguous).toBe(true);
+    expect(r.bbox).toBeNull();
+  });
+
+  it('bounds inválidos (min>max / fora WGS84 / absurdo) → rejeitados', async () => {
+    const fetchImpl = makeFetch([boundsResp([
+      { type: 'relation', id: 1, bounds: { minlon: -40.3, minlat: -20.24, maxlon: -40.5, maxlat: -20.4 } }, // min>max
+      { type: 'relation', id: 2, bounds: { minlon: -999, minlat: -20.4, maxlon: -40.3, maxlat: -20.24 } }, // fora WGS84
+      { type: 'relation', id: 3, bounds: { minlon: -45, minlat: -25, maxlon: 5, maxlat: 5 } }, // span absurdo
+    ])]);
+    const r = await bboxFromOsmMunicipality('X', 'ES', { fetchImpl, mirrors: [OVERPASS_MIRRORS[0]] });
+    expect(r.bbox).toBeNull();
+    expect(r.ambiguous).toBe(false); // nenhum válido → não é "ambíguo"
+  });
+
+  it('payload excessivo (muitos elementos) → rejeita mirror', async () => {
+    const many = Array.from({ length: 300 }, (_, i) => ({ type: 'relation', id: i, bounds: { minlon: -40.5, minlat: -20.4, maxlon: -40.35, maxlat: -20.24 } }));
+    const fetchImpl = makeFetch([boundsResp(many)]);
+    const r = await bboxFromOsmMunicipality('X', 'ES', { fetchImpl, mirrors: [OVERPASS_MIRRORS[0]] });
+    expect(r.bbox).toBeNull();
+  });
+
+  it('cancelamento (signal abortado) → interrompe sem bbox', async () => {
+    const ac = new AbortController();
+    ac.abort();
+    let calls = 0;
+    const fetchImpl = (async () => { calls++; return boundsResp([])(); }) as unknown as typeof fetch;
+    const r = await bboxFromOsmMunicipality('X', 'ES', { fetchImpl, signal: ac.signal, mirrors: [OVERPASS_MIRRORS[0]] });
+    expect(r.bbox).toBeNull();
+    expect(calls).toBe(0);
+  });
+
+  it('query sempre inclui cidade + UF (estado)', () => {
+    const q = buildMunicipalityBoundsQuery('Cariacica', 'ES');
+    expect(q).toContain('rel["name"="Espírito Santo"]["admin_level"="4"]');
+    expect(q).toContain('rel["name"="Cariacica"]["admin_level"="8"]');
+    expect(q).toContain('out bb;');
+  });
+});
+
+// ─── Round 2 #4 (service): ambiguidade propaga MUNICIPAL_BBOX_AMBIGUOUS ───────
+
+describe('service: bbox municipal ambíguo → MUNICIPAL_BBOX_AMBIGUOUS (sem persistir)', () => {
+  it('não persiste quando o município é ambíguo', async () => {
+    const territory = { id: 't1', name: 'Cidade', city_name: 'Cidade', uf: 'ES', level: 'city' };
+    const state: any = { created: null };
+    const prisma: any = {
+      __state: state,
+      operational_territories: { findUnique: async () => territory },
+      $queryRaw: async () => [{ min_lon: null }],
+      territorial_dataset_versions: { create: async () => { state.created = {}; return { id: 'x' }; } },
+    };
+    const fetchImpl = (async (_url: string, init: any) => {
+      const body = decodeURIComponent(String(init?.body || ''));
+      if (/out bb;/.test(body)) {
+        return jsonResponse(JSON.stringify({ elements: [
+          { type: 'relation', id: 1, bounds: { minlon: -40.5, minlat: -20.4, maxlon: -40.35, maxlat: -20.24 } },
+          { type: 'relation', id: 2, bounds: { minlon: -43.3, minlat: -23.0, maxlon: -43.1, maxlat: -22.8 } },
+        ] }));
+      }
+      return jsonResponse('{"elements":[]}');
+    }) as unknown as typeof fetch;
+    let puts = 0;
+    const res = await acquireCityDataset({ territoryId: 't1', prisma, acquisitionOptions: { fetchImpl }, putObject: async () => { puts++; } });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.code).toBe('MUNICIPAL_BBOX_AMBIGUOUS');
+    expect(puts).toBe(0);
+    expect(state.created).toBeNull();
+  });
+});
+
+// ─── Round 2 #2: cobertura parcial não causa falsa rejeição ──────────────────
+
+describe('cobertura parcial existente não causa falsa rejeição', () => {
+  it('limite municipal (OSM) inclui um bairro afastado mesmo com geofences centrais existentes', async () => {
+    const territory = { id: 't1', name: 'Cidade', city_name: 'Cidade', uf: 'ES', level: 'city' };
+    // Geofences existentes são CENTRAIS (envelope pequeno ~ -40.42..-40.41).
+    // Se o resolver usasse cobertura como limite, rejeitaria o bairro afastado.
+    const state: any = { created: null };
+    const prisma: any = {
+      __state: state,
+      operational_territories: { findUnique: async () => territory },
+      // ST_Extent da cobertura central (pequeno). NÃO deve ser usado como primário.
+      $queryRaw: async () => [{ min_lon: -40.42, min_lat: -20.31, max_lon: -40.41, max_lat: -20.30 }],
+      territorial_dataset_versions: { create: async ({ data }: any) => { state.created = data; return { id: 'dsv' }; } },
+    };
+    // Limite municipal OSM amplo cobre o bairro afastado (-40.36).
+    const muniBounds = [{ type: 'relation', id: 1, bounds: { minlon: -40.5, minlat: -20.45, maxlon: -40.30, maxlat: -20.20 } }];
+    const raw = overpassJson([suburbRelation(10, 'Afastado', -40.36, -20.44)]); // dentro do município, longe do centro
+    const fetchImpl = (async (_url: string, init: any) => {
+      const body = decodeURIComponent(String(init?.body || ''));
+      if (/out bb;/.test(body)) return jsonResponse(JSON.stringify({ elements: muniBounds }));
+      return jsonResponse(raw);
+    }) as unknown as typeof fetch;
+
+    const res = await acquireCityDataset({ territoryId: 't1', prisma, acquisitionOptions: { fetchImpl }, putObject: async () => {} });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    // O bairro afastado foi ACEITO (limite municipal, não cobertura central).
+    expect(res.stats.valid).toBe(1);
+    expect(res.stats.outOfBBox).toBe(0);
+  });
+});
+
+// ─── Round 2 #3: keys/version únicas entre aquisições concorrentes ───────────
+
+describe('persistDatasetVersion — versão/keys únicas', () => {
+  async function loadStore2() { return await import('../src/services/territory/territorial-dataset-store'); }
+  function acq() {
+    return {
+      rawSource: { elements: [] },
+      featureCollection: { type: 'FeatureCollection', name: 'x', features: [
+        { type: 'Feature', properties: { name: 'A', city: 'X', uf: 'YY', area_type: 'BAIRRO_OFICIAL' }, geometry: { type: 'Polygon', coordinates: [[[0,0],[1,0],[1,1],[0,1],[0,0]]] } },
+      ] },
+      provenance: { providerId: 'osm-overpass', source: 'OSM', sourceUrl: 'u', method: 'overpass-api', collectedAt: new Date().toISOString(), isOfficial: false },
+      stats: { total: 1, valid: 1, invalid: 0, duplicates: 0, outOfBBox: 0 },
+    } as any;
+  }
+
+  it('duas persistências no mesmo instante geram keys diferentes (mesma city/uf)', async () => {
+    const { persistDatasetVersion } = await loadStore2();
+    const keysA: string[] = []; const keysB: string[] = [];
+    const prisma = { territorial_dataset_versions: { create: async () => ({ id: 'x' }) } } as any;
+    // Sem passar version → cada chamada deriva timestamp+UUID.
+    const [ra, rb] = await Promise.all([
+      persistDatasetVersion({ city: 'X', uf: 'YY', acquired: acq() }, { prisma, putObject: async (_b, k) => { keysA.push(k); } } as any),
+      persistDatasetVersion({ city: 'X', uf: 'YY', acquired: acq() }, { prisma, putObject: async (_b, k) => { keysB.push(k); } } as any),
+    ]);
+    expect(ra.version).not.toBe(rb.version);
+    // As 3 keys de cada execução diferem entre execuções (nenhuma sobreposição).
+    const setA = new Set(keysA); const overlap = keysB.filter((k) => setA.has(k));
+    expect(overlap).toHaveLength(0);
+    // Cada execução tem raw/normalized/provenance sob a MESMA versão.
+    expect(ra.keys.raw.includes(ra.version)).toBe(true);
+    expect(ra.keys.normalized.includes(ra.version)).toBe(true);
+    expect(ra.keys.provenance.includes(ra.version)).toBe(true);
   });
 });
