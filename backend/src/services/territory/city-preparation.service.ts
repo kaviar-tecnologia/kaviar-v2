@@ -23,7 +23,9 @@ import {
   validateNeighborhoodGeoJSON,
   buildCityPreparationPlan,
   normalizeNeighborhoodName,
-  CARIACICA_BBOX,
+  computeBoundingBox,
+  readDeclaredBoundingBox,
+  expandBoundingBox,
   type CityBoundingBox,
   type CityPreparationPlan,
   type NeighborhoodFeatureCollection,
@@ -44,8 +46,18 @@ export interface PrepareCityParams {
   geojson?: NeighborhoodFeatureCollection;
   /** Cidade esperada. Default = territory.city_name || territory.name. */
   city?: string;
-  /** Bounding box para checagem geográfica. Default = Cariacica. */
+  /**
+   * Bounding box "esperado" para checagem de compatibilidade geográfica.
+   * Genérico e opcional:
+   *   - se informado explicitamente, é usado;
+   *   - senão, tenta ler dos metadados do arquivo (`bbox`/`expectedBBox`);
+   *   - senão, deriva do próprio GeoJSON (com margem) — isto valida apenas
+   *     coerência interna (todas as features próximas entre si);
+   *   - passe `null` para PULAR a checagem de extensão (mantém validação WGS84).
+   */
   bbox?: CityBoundingBox | null;
+  /** Margem (graus) aplicada ao bbox derivado do arquivo. Default 0.5°. */
+  bboxMarginDeg?: number;
   prisma?: PrismaLike;
 }
 
@@ -133,6 +145,24 @@ export interface DryRunResult {
   parsed: ParsedNeighborhood[];
 }
 
+/**
+ * Resolve o bounding box esperado de forma GENÉRICA (sem constante de cidade):
+ *   1. `params.bbox` explícito (inclui `null` = pular checagem de extensão);
+ *   2. bbox declarado nos metadados do arquivo (`bbox`/`expectedBBox`);
+ *   3. bbox derivado das próprias coordenadas do GeoJSON, com margem.
+ */
+export function resolveExpectedBBox(
+  params: PrepareCityParams,
+  fc: NeighborhoodFeatureCollection,
+): CityBoundingBox | null {
+  if (params.bbox !== undefined) return params.bbox; // inclui null explícito
+  const declared = readDeclaredBoundingBox(fc);
+  if (declared) return declared;
+  const computed = computeBoundingBox(fc);
+  if (!computed) return null;
+  return expandBoundingBox(computed, params.bboxMarginDeg ?? 0.5);
+}
+
 export async function dryRunPrepareCity(params: PrepareCityParams): Promise<DryRunResult> {
   const prisma = params.prisma ?? defaultPrisma;
   const territory = await loadTerritory(prisma, params.territoryId);
@@ -140,10 +170,11 @@ export async function dryRunPrepareCity(params: PrepareCityParams): Promise<DryR
   const uf = territory.uf ?? null;
 
   const fc = loadGeoJSON(params);
+  const bbox = resolveExpectedBBox(params, fc);
   const validation = validateNeighborhoodGeoJSON(fc, {
     expectedCity: city || undefined,
     expectedUf: uf,
-    bbox: params.bbox === undefined ? CARIACICA_BBOX : params.bbox,
+    bbox,
     defaultAreaType: 'BAIRRO_OFICIAL',
   });
 

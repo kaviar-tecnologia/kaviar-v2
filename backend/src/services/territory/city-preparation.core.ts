@@ -70,14 +70,80 @@ export interface CityBoundingBox {
   maxLat: number;
 }
 
-// Bounding box padrão de Cariacica/ES (com folga). Usado para checagem de
-// compatibilidade geográfica; pode ser sobrescrito por cidade.
-export const CARIACICA_BBOX: CityBoundingBox = {
-  minLon: -40.75,
-  maxLon: -40.25,
-  minLat: -20.6,
-  maxLat: -19.95,
-};
+/**
+ * Calcula o bounding box a partir de todas as coordenadas de uma
+ * FeatureCollection. Genérico: funciona para qualquer cidade. Retorna null
+ * quando não há coordenadas válidas.
+ */
+export function computeBoundingBox(fc: NeighborhoodFeatureCollection): CityBoundingBox | null {
+  let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
+  let found = false;
+
+  const visitRing = (ring: any) => {
+    if (!Array.isArray(ring)) return;
+    for (const pt of ring) {
+      if (
+        Array.isArray(pt) && pt.length >= 2 &&
+        Number.isFinite(pt[0]) && Number.isFinite(pt[1])
+      ) {
+        const [lon, lat] = pt;
+        if (lon < minLon) minLon = lon;
+        if (lon > maxLon) maxLon = lon;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+        found = true;
+      }
+    }
+  };
+
+  for (const f of fc?.features ?? []) {
+    const g = f?.geometry;
+    if (!g) continue;
+    if (g.type === 'Polygon') {
+      for (const ring of (g.coordinates as PolygonCoords) ?? []) visitRing(ring);
+    } else if (g.type === 'MultiPolygon') {
+      for (const poly of (g.coordinates as MultiPolygonCoords) ?? []) {
+        for (const ring of poly ?? []) visitRing(ring);
+      }
+    }
+  }
+
+  if (!found) return null;
+  return { minLon, maxLon, minLat, maxLat };
+}
+
+/** Expande um bounding box por uma margem em graus (folga para checagem). */
+export function expandBoundingBox(bbox: CityBoundingBox, marginDeg: number): CityBoundingBox {
+  return {
+    minLon: bbox.minLon - marginDeg,
+    maxLon: bbox.maxLon + marginDeg,
+    minLat: bbox.minLat - marginDeg,
+    maxLat: bbox.maxLat + marginDeg,
+  };
+}
+
+/**
+ * Lê um bounding box "esperado" declarado nos metadados do arquivo, se houver.
+ * Aceita:
+ *   - top-level `bbox: [minLon, minLat, maxLon, maxLat]` (padrão GeoJSON RFC 7946);
+ *   - top-level `expectedBBox: {minLon,maxLon,minLat,maxLat}`.
+ * Retorna null quando não declarado.
+ */
+export function readDeclaredBoundingBox(fc: any): CityBoundingBox | null {
+  if (!fc || typeof fc !== 'object') return null;
+  const arr = fc.bbox;
+  if (Array.isArray(arr) && arr.length >= 4 && arr.every((n: any) => Number.isFinite(n))) {
+    return { minLon: arr[0], minLat: arr[1], maxLon: arr[2], maxLat: arr[3] };
+  }
+  const e = fc.expectedBBox;
+  if (
+    e && typeof e === 'object' &&
+    ['minLon', 'maxLon', 'minLat', 'maxLat'].every((k) => Number.isFinite(e[k]))
+  ) {
+    return { minLon: e.minLon, maxLon: e.maxLon, minLat: e.minLat, maxLat: e.maxLat };
+  }
+  return null;
+}
 
 /** Normaliza nome de bairro para deduplicação/lookup (trim + colapsa espaços + lower). */
 export function normalizeNeighborhoodName(name: string): string {

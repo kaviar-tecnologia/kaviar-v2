@@ -1,7 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import crypto from 'crypto';
-import * as path from 'path';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma';
 import { authenticateAdmin, requireSuperAdmin } from '../middlewares/auth';
@@ -10,6 +9,7 @@ import {
   dryRunPrepareCity,
   executePrepareCity,
 } from '../services/territory/city-preparation.service';
+import { resolveGeojsonPath } from '../services/territory/territorial-dataset-registry';
 
 const router = Router();
 router.use(authenticateAdmin, requireSuperAdmin);
@@ -707,21 +707,20 @@ router.post('/regional-admins/:id/reset-password', async (req: Request, res: Res
 // Fluxo assistido e production-safe: nunca grava sem confirmação explícita do
 // Super Admin. NÃO ativa a cidade, NÃO altera status/modalidades, NÃO mexe em
 // outras cidades. Reusa neighborhoods/neighborhood_geofences/territory_id.
-
-// Mapa curado cidade -> arquivo GeoJSON versionado no repositório.
-// Novas cidades entram aqui após revisão do arquivo territorial.
-const CITY_GEOJSON_FILES: Record<string, string> = {
-  cariacica: 'cariacica_bairros.geojson',
-};
+//
+// GENÉRICO: o arquivo territorial é resolvido pelo registro
+// (territorial-datasets.json) via (city, uf). Onboardar nova cidade = registrar
+// dataset + colocar o arquivo; sem lógica especial de cidade aqui.
 
 function resolveGeojsonPathForTerritory(territory: {
   city_name: string | null;
   name: string;
+  uf: string | null;
 }): string | null {
-  const key = (territory.city_name || territory.name || '').trim().toLowerCase();
-  const file = CITY_GEOJSON_FILES[key];
-  if (!file) return null;
-  return path.join(__dirname, '../../data/geojson', file);
+  const city = (territory.city_name || territory.name || '').trim();
+  if (!city) return null;
+  const resolved = resolveGeojsonPath(city, territory.uf);
+  return resolved ? resolved.filePath : null;
 }
 
 // POST /api/admin/territories/:id/prepare-city/dry-run

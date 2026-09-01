@@ -3,7 +3,10 @@ import {
   validateNeighborhoodGeoJSON,
   buildCityPreparationPlan,
   normalizeNeighborhoodName,
-  CARIACICA_BBOX,
+  computeBoundingBox,
+  readDeclaredBoundingBox,
+  expandBoundingBox,
+  type CityBoundingBox,
   type NeighborhoodFeatureCollection,
   type TerritoryInfo,
   type ManagerInfo,
@@ -13,7 +16,13 @@ import {
   dryRunPrepareCity,
   executePrepareCity,
   loadExistingNeighborhoods,
+  resolveExpectedBBox,
 } from '../src/services/territory/city-preparation.service';
+
+// bbox local do fixture (Cariacica) — usado só como "extensão esperada" nos
+// testes. NÃO é um default de produção; a lógica de produção deriva o bbox do
+// arquivo/metadados de forma genérica.
+const CARIACICA_BBOX: CityBoundingBox = { minLon: -40.75, maxLon: -40.25, minLat: -20.6, maxLat: -19.95 };
 
 // ─── Helpers de geometria ────────────────────────────────────────────────────
 

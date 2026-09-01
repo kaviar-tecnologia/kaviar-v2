@@ -1,0 +1,23 @@
+{
+  "$schema": "./territorial-datasets.schema.md",
+  "version": 1,
+  "description": "Registro genérico de datasets territoriais por cidade+UF. Para onboardar uma nova cidade, adicione uma entrada aqui e coloque o arquivo em backend/data/geojson/. Nenhuma lógica de código precisa mudar.",
+  "datasets": [
+    {
+      "city": "Cariacica",
+      "uf": "ES",
+      "file": "cariacica_bairros.geojson",
+      "areaType": "BAIRRO_OFICIAL",
+      "sourceVerified": false,
+      "notes": "Limites administrativos do OpenStreetMap (admin_level 9/10). Não é malha cadastral municipal/IBGE oficial — requer revisão da gestão territorial. Importado com is_verified=false."
+    },
+    {
+      "city": "Vila Fictícia",
+      "uf": "ZZ",
+      "file": "vila_ficticia_bairros.geojson",
+      "areaType": "BAIRRO_OFICIAL",
+      "sourceVerified": false,
+      "notes": "Cidade FICTÍCIA (fixture sintética) usada para provar o mecanismo genérico de onboarding sem lógica especial de cidade. Não representa lugar real."
+    }
+  ]
+}

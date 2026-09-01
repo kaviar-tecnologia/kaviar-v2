@@ -88,6 +88,8 @@ validate-territory.sql
 !app.json
 !eas.json
 !backend/migration-runner-task-def.json
+# Exceção: manifesto de datasets territoriais (config genérica de onboarding)
+!backend/data/geojson/territorial-datasets.json
 
 # === Evidências locais ===
 evidencias-prod-*/

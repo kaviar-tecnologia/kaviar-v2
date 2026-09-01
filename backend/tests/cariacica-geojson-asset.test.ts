@@ -3,7 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
   validateNeighborhoodGeoJSON,
-  CARIACICA_BBOX,
+  computeBoundingBox,
+  expandBoundingBox,
   type NeighborhoodFeatureCollection,
 } from '../src/services/territory/city-preparation.core';
 
@@ -19,10 +20,16 @@ describe('Asset: cariacica_bairros.geojson', () => {
   });
 
   it('passa na validação completa (Cariacica/ES, WGS84, sem duplicidades)', () => {
+    // bbox derivado do próprio arquivo (genérico) + margem — prova que a
+    // checagem de coerência geográfica funciona sem constante de cidade.
+    const computed = computeBoundingBox(fc);
+    expect(computed).not.toBeNull();
+    const bbox = expandBoundingBox(computed!, 0.5);
+
     const result = validateNeighborhoodGeoJSON(fc, {
       expectedCity: 'Cariacica',
       expectedUf: 'ES',
-      bbox: CARIACICA_BBOX,
+      bbox,
       defaultAreaType: 'BAIRRO_OFICIAL',
     });
 

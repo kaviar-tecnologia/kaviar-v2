@@ -55,18 +55,29 @@ O arquivo final deve ser uma `FeatureCollection` com, por feature:
 Documente a fonte em `backend/data/geojson/<cidade>_bairros.SOURCE.md`
 (veja `cariacica_bairros.SOURCE.md` como modelo).
 
-## Passo 2 — Registrar o arquivo no fluxo assistido
+## Passo 2 — Registrar o arquivo no manifesto (config, sem código)
 
-Em `backend/src/routes/admin-territories.ts`, adicione a cidade ao mapa:
+Adicione uma entrada em `backend/data/geojson/territorial-datasets.json`:
 
-```ts
-const CITY_GEOJSON_FILES: Record<string, string> = {
-  cariacica: 'cariacica_bairros.geojson',
-  // novacidade: 'novacidade_bairros.geojson',
-};
+```json
+{
+  "city": "Nova Cidade",
+  "uf": "XX",
+  "file": "novacidade_bairros.geojson",
+  "areaType": "BAIRRO_OFICIAL",
+  "sourceVerified": false,
+  "notes": "Origem e ressalvas do dataset."
+}
 ```
 
-A chave é o nome da cidade em minúsculas (`territory.city_name || territory.name`).
+O onboarding é **dirigido por dados/config**: registrar a entrada + colocar o
+arquivo em `backend/data/geojson/` é suficiente. **Nenhuma lógica de backend ou
+frontend precisa mudar** — a resolução do dataset é feita por `(city, uf)` no
+registro genérico (`territorial-dataset-registry.ts`), usado igualmente pela CLI
+e pelos endpoints administrativos.
+
+> `sourceVerified: false` sinaliza malha não oficialmente validada; os bairros
+> são importados com `is_verified=false` até revisão da gestão territorial.
 
 ## Passo 3 — Dry-run (prévia, sem gravar)
 
@@ -78,13 +89,16 @@ A chave é o nome da cidade em minúsculas (`territory.city_name || territory.na
    duplicidades, inválidos, a criar, a atualizar, a vincular) e riscos/pendências.
    **Nada é gravado** nesta etapa.
 
-### Pela linha de comando (Cariacica)
+### Pela linha de comando (CLI genérica)
 
 ```bash
 cd backend
 DATABASE_URL="postgresql://<user>:<pass>@<host>:5432/<db>" \
-  npx tsx src/scripts/import-cariacica-neighborhoods.ts --dry-run
+  npx tsx src/scripts/prepare-city.ts --city "Nova Cidade" --uf XX --dry-run
 ```
+
+> Compatibilidade: o script antigo `import-cariacica-neighborhoods.ts` continua
+> funcionando como wrapper (delega à CLI genérica com `--city "Cariacica" --uf ES`).
 
 ## Passo 4 — Confirmar e importar (grava em produção)
 
@@ -95,12 +109,12 @@ Só execute após revisar a prévia e as pendências.
 Marque o checkbox de confirmação e clique em **Confirmar e importar**. A operação é
 idempotente (reexecutar não duplica) e registra **auditoria** (`prepare_city_execute`).
 
-### Pela linha de comando (Cariacica)
+### Pela linha de comando
 
 ```bash
 cd backend
 DATABASE_URL="postgresql://<user>:<pass>@<host>:5432/<db>" \
-  npx tsx src/scripts/import-cariacica-neighborhoods.ts --apply
+  npx tsx src/scripts/prepare-city.ts --city "Nova Cidade" --uf XX --apply
 ```
 
 ## Passo 5 — Verificar
