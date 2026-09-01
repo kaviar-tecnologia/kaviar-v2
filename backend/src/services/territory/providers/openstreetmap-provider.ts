@@ -62,6 +62,47 @@ export class OverpassAcquisitionError extends Error {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Lê o corpo da resposta com limite REAL de bytes.
+ *  - Se houver stream (res.body.getReader), conta bytes por chunk e aborta assim
+ *    que ultrapassar o limite (não carrega o corpo inteiro).
+ *  - Sem stream (fakes de teste), usa res.text() e mede Buffer.byteLength(utf8).
+ * Lança OverpassAcquisitionError('RESPONSE_TOO_LARGE') ao exceder.
+ */
+async function readBodyWithLimit(res: any, maxBytes: number, controller?: AbortController): Promise<string> {
+  const body = res?.body;
+  const reader = typeof body?.getReader === 'function' ? body.getReader() : null;
+
+  if (reader) {
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      // eslint-disable-next-line no-await-in-loop
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        total += value.byteLength ?? value.length ?? 0;
+        if (total > maxBytes) {
+          try { controller?.abort(); } catch { /* noop */ }
+          try { await reader.cancel(); } catch { /* noop */ }
+          throw new OverpassAcquisitionError(`Resposta excede ${maxBytes} bytes`, 'RESPONSE_TOO_LARGE');
+        }
+        chunks.push(value);
+      }
+    }
+    const buf = Buffer.concat(chunks.map((c) => Buffer.from(c)));
+    return buf.toString('utf8');
+  }
+
+  // Fallback (sem stream): mede bytes UTF-8, não text.length.
+  const text: string = await res.text();
+  if (Buffer.byteLength(text, 'utf8') > maxBytes) {
+    throw new OverpassAcquisitionError(`Resposta excede ${maxBytes} bytes`, 'RESPONSE_TOO_LARGE');
+  }
+  return text;
+}
+
 export class OpenStreetMapProvider implements TerritorialDatasetProvider {
   readonly id = 'osm-overpass';
   readonly isOfficial = false; // comunitário
@@ -91,12 +132,23 @@ export class OpenStreetMapProvider implements TerritorialDatasetProvider {
     let raw: OverpassResponse | null = null;
 
     for (const url of mirrors) {
+      // Abort externo: para IMEDIATAMENTE, sem tentar outro mirror/backoff.
+      if (opts.signal?.aborted) {
+        throw new OverpassAcquisitionError('Aquisição cancelada (abort externo)', 'ACQUISITION_ABORTED');
+      }
       for (let attempt = 1; attempt <= cfg.maxAttemptsPerMirror; attempt++) {
+        if (opts.signal?.aborted) {
+          throw new OverpassAcquisitionError('Aquisição cancelada (abort externo)', 'ACQUISITION_ABORTED');
+        }
         try {
           raw = await this.requestOverpass(fetchImpl, url, query, timeoutMs, cfg, opts.signal);
           usedUrl = url;
           break;
         } catch (err) {
+          // Se o abort externo disparou, propaga cancelamento sem novas tentativas.
+          if (opts.signal?.aborted || (err as any)?.code === 'ACQUISITION_ABORTED') {
+            throw new OverpassAcquisitionError('Aquisição cancelada (abort externo)', 'ACQUISITION_ABORTED');
+          }
           lastError = err;
           // backoff antes de nova tentativa no mesmo mirror
           if (attempt < cfg.maxAttemptsPerMirror) {
@@ -128,7 +180,7 @@ export class OpenStreetMapProvider implements TerritorialDatasetProvider {
     const norm = normalizeOverpassToGeoJSON(raw, {
       expectedCity: ref.city,
       expectedUf: ref.uf,
-      bbox: this.config.bbox ?? null,
+      bbox: opts.bbox !== undefined ? opts.bbox : (this.config.bbox ?? null),
       areaType: opts.areaType ?? 'BAIRRO_OFICIAL',
     });
 
@@ -202,15 +254,14 @@ export class OpenStreetMapProvider implements TerritorialDatasetProvider {
         throw new OverpassAcquisitionError(`Content-Type inesperado: ${contentType || '(vazio)'}`, 'BAD_CONTENT_TYPE');
       }
 
-      // Limite de tamanho: usa Content-Length quando presente; senão, mede o texto.
+      // Precheck por Content-Length quando disponível e confiável.
       const declaredLen = Number((res as any).headers?.get?.('content-length') || 0);
       if (declaredLen && declaredLen > cfg.maxResponseBytes) {
         throw new OverpassAcquisitionError(`Resposta excede ${cfg.maxResponseBytes} bytes`, 'RESPONSE_TOO_LARGE');
       }
-      const text = await (res as any).text();
-      if (text.length > cfg.maxResponseBytes) {
-        throw new OverpassAcquisitionError(`Resposta excede ${cfg.maxResponseBytes} bytes`, 'RESPONSE_TOO_LARGE');
-      }
+
+      // Leitura do corpo com limite REAL de bytes (aborta ao ultrapassar).
+      const text = await readBodyWithLimit(res, cfg.maxResponseBytes, controller);
 
       let parsed: any;
       try {

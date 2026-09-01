@@ -85,56 +85,84 @@ export interface PersistDatasetResult {
  */
 export async function persistDatasetVersion(
   input: PersistDatasetInput,
-  deps: { s3?: S3Like; prisma?: PrismaLike; putObject?: (bucket: string, key: string, body: string, contentType: string) => Promise<void> } = {},
+  deps: {
+    s3?: S3Like;
+    prisma?: PrismaLike;
+    putObject?: (bucket: string, key: string, body: string, contentType: string) => Promise<void>;
+    deleteObject?: (bucket: string, key: string) => Promise<void>;
+  } = {},
 ): Promise<PersistDatasetResult> {
   const version = input.version || new Date().toISOString().replace(/[:.]/g, '-');
   const keys = buildDatasetKeys(input.uf, input.city, version);
   const normalized = input.acquired.featureCollection;
   const checksum = checksumOf(normalized);
 
-  // Gravação S3 via função injetável (permite mock nos testes).
-  // raw.json      = resposta BRUTA original da fonte (rastreabilidade)
-  // normalized    = FeatureCollection normalizada
-  // provenance    = metadados de origem
   const put = deps.putObject ?? defaultPutObject(deps.s3);
-  await put(DATASET_BUCKET, keys.raw, JSON.stringify(input.acquired.rawSource ?? null), 'application/json');
-  await put(DATASET_BUCKET, keys.normalized, JSON.stringify(normalized), 'application/geo+json');
-  await put(DATASET_BUCKET, keys.provenance, JSON.stringify(input.acquired.provenance), 'application/json');
+  const del = deps.deleteObject ?? defaultDeleteObject(deps.s3);
 
-  // Metadados na tabela nova. Prisma injetável.
-  const prisma = deps.prisma;
-  if (!prisma) throw new Error('persistDatasetVersion requer prisma (client) para registrar metadados');
+  // Rastreia keys efetivamente gravadas para cleanup compensável em caso de falha.
+  const writtenKeys: string[] = [];
 
-  const p = input.acquired.provenance;
-  const s = input.acquired.stats;
-  const row = await prisma.territorial_dataset_versions.create({
-    data: {
-      city: input.city,
-      uf: input.uf.toUpperCase(),
-      provider_id: p.providerId,
-      source: p.source,
-      source_url: p.sourceUrl ?? null,
-      method: p.method,
-      collected_at: new Date(p.collectedAt),
-      is_official: p.isOfficial === true,
-      // SEGURANÇA: aquisição automática NUNCA marca a fonte como verificada.
-      // source_verified só vira true via fluxo explícito de revisão humana/admin.
-      source_verified: false,
-      s3_raw_key: keys.raw,
-      s3_normalized_key: keys.normalized,
-      feature_count: s.valid,
-      invalid_count: s.invalid,
-      duplicate_count: s.duplicates,
-      out_of_bbox_count: s.outOfBBox,
-      status: input.status ?? 'DRAFT',
-      created_by: input.createdBy ?? null,
-      notes: input.notes ?? p.notes ?? null,
-      checksum,
-    },
-    select: { id: true },
-  });
+  // Cleanup best-effort: remove os objetos já gravados. NÃO mascara o erro
+  // original; se um delete falhar, apenas registra/loga e segue.
+  const cleanup = async () => {
+    for (const key of writtenKeys) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await del(DATASET_BUCKET, key);
+      } catch (cleanupErr) {
+        console.error('[territorial-dataset-store] cleanup S3 falhou para key=' + key, cleanupErr);
+      }
+    }
+  };
 
-  return { id: row.id, version, keys, checksum };
+  try {
+    // Gravação S3 (raw / normalized / provenance). Cada sucesso é rastreado.
+    await put(DATASET_BUCKET, keys.raw, JSON.stringify(input.acquired.rawSource ?? null), 'application/json');
+    writtenKeys.push(keys.raw);
+    await put(DATASET_BUCKET, keys.normalized, JSON.stringify(normalized), 'application/geo+json');
+    writtenKeys.push(keys.normalized);
+    await put(DATASET_BUCKET, keys.provenance, JSON.stringify(input.acquired.provenance), 'application/json');
+    writtenKeys.push(keys.provenance);
+
+    const prisma = deps.prisma;
+    if (!prisma) throw new Error('persistDatasetVersion requer prisma (client) para registrar metadados');
+
+    const p = input.acquired.provenance;
+    const s = input.acquired.stats;
+    const row = await prisma.territorial_dataset_versions.create({
+      data: {
+        city: input.city,
+        uf: input.uf.toUpperCase(),
+        provider_id: p.providerId,
+        source: p.source,
+        source_url: p.sourceUrl ?? null,
+        method: p.method,
+        collected_at: new Date(p.collectedAt),
+        is_official: p.isOfficial === true,
+        // SEGURANÇA: aquisição automática NUNCA marca a fonte como verificada.
+        source_verified: false,
+        s3_raw_key: keys.raw,
+        s3_normalized_key: keys.normalized,
+        feature_count: s.valid,
+        invalid_count: s.invalid,
+        duplicate_count: s.duplicates,
+        out_of_bbox_count: s.outOfBBox,
+        status: input.status ?? 'DRAFT',
+        created_by: input.createdBy ?? null,
+        notes: input.notes ?? p.notes ?? null,
+        checksum,
+      },
+      select: { id: true },
+    });
+
+    return { id: row.id, version, keys, checksum };
+  } catch (err) {
+    // Falha parcial (upload intermediário ou insert): compensa removendo os
+    // objetos já criados e RE-LANÇA o erro original.
+    await cleanup();
+    throw err;
+  }
 }
 
 function defaultPutObject(s3?: S3Like) {
@@ -143,5 +171,13 @@ function defaultPutObject(s3?: S3Like) {
     const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
     const client: S3Like = s3 ?? new S3Client({ region: process.env.AWS_REGION || 'us-east-2' });
     await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType }));
+  };
+}
+
+function defaultDeleteObject(s3?: S3Like) {
+  return async (bucket: string, key: string) => {
+    const { S3Client, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+    const client: S3Like = s3 ?? new S3Client({ region: process.env.AWS_REGION || 'us-east-2' });
+    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
   };
 }

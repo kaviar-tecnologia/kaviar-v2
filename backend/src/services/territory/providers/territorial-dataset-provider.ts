@@ -71,6 +71,11 @@ export interface AcquisitionOptions {
   fetchImpl?: typeof fetch;
   /** Sinal de abort opcional. */
   signal?: AbortSignal;
+  /**
+   * bbox esperado por CHAMADA (tem precedência sobre a config do provider).
+   * Permite ao serviço injetar o bbox municipal resolvido genericamente.
+   */
+  bbox?: import('../city-preparation.core').CityBoundingBox | null;
 }
 
 /** Contexto de resolução (cidade/UF). Genérico — sem cidade hardcoded. */

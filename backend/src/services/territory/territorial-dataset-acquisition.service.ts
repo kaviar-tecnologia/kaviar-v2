@@ -18,6 +18,7 @@ import {
   type AcquisitionOptions,
 } from './providers/territorial-dataset-provider';
 import { persistDatasetVersion, type PrismaLike, type S3Like } from './territorial-dataset-store';
+import { resolveMunicipalBBox } from './municipal-bbox-resolver';
 import type { CityBoundingBox } from './city-preparation.core';
 
 export interface AcquireParams {
@@ -33,6 +34,7 @@ export interface AcquireParams {
   s3?: S3Like;
   /** função de gravação S3 injetável (testes). */
   putObject?: (bucket: string, key: string, body: string, contentType: string) => Promise<void>;
+  deleteObject?: (bucket: string, key: string) => Promise<void>;
 }
 
 export interface AcquireOk {
@@ -70,11 +72,33 @@ export async function acquireCityDataset(params: AcquireParams): Promise<Acquire
     return { ok: false, reason: 'Território sem cidade/UF definidos', code: 'CITY_UF_MISSING', city, uf };
   }
 
-  const provider = params.provider ?? new OpenStreetMapProvider({ bbox: params.bbox ?? null });
+  // Resolve um bbox MUNICIPAL confiável (dado próprio ou limite OSM). Genérico.
+  // Se não houver bbox confiável, NÃO adquire dataset persistível silenciosamente.
+  let bbox = params.bbox ?? null;
+  let bboxSource = 'injected';
+  if (!bbox) {
+    const resolved = await resolveMunicipalBBox(prisma, city, uf, {
+      fetchImpl: params.acquisitionOptions?.fetchImpl,
+      timeoutMs: params.acquisitionOptions?.timeoutMs,
+    });
+    bbox = resolved.bbox;
+    bboxSource = resolved.source;
+    if (!bbox) {
+      return {
+        ok: false,
+        reason: 'BBox municipal confiável indisponível — aquisição recusada para evitar dataset da região errada.',
+        code: 'MUNICIPAL_BBOX_UNAVAILABLE',
+        city, uf,
+      };
+    }
+  }
+
+  const provider = params.provider ?? new OpenStreetMapProvider({ bbox });
 
   let acquired;
   try {
-    acquired = await provider.fetchDataset({ city, uf }, params.acquisitionOptions);
+    // bbox por chamada tem precedência — garante a checagem regional no caminho real.
+    acquired = await provider.fetchDataset({ city, uf }, { ...(params.acquisitionOptions ?? {}), bbox });
   } catch (err: any) {
     return {
       ok: false,
@@ -98,7 +122,7 @@ export async function acquireCityDataset(params: AcquireParams): Promise<Acquire
   // Persiste DRAFT (S3 + metadados). source_verified é FORÇADO false no store.
   const persisted = await persistDatasetVersion(
     { city, uf, acquired, createdBy: params.createdBy ?? null, status: 'DRAFT' },
-    { prisma, s3: params.s3, putObject: params.putObject },
+    { prisma, s3: params.s3, putObject: params.putObject, deleteObject: params.deleteObject },
   );
 
   return {
