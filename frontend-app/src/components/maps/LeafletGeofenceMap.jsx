@@ -16,9 +16,16 @@ function toLatLng(center) {
 }
 
 function isPolygonGeometry(geometry) {
-  if (!geometry || geometry.type !== 'Polygon') return false;
-  const ring = geometry.coordinates?.[0];
-  return Array.isArray(ring) && ring.length >= 3;
+  if (!geometry) return false;
+  if (geometry.type === 'Polygon') {
+    const ring = geometry.coordinates?.[0];
+    return Array.isArray(ring) && ring.length >= 3;
+  }
+  if (geometry.type === 'MultiPolygon') {
+    const ring = geometry.coordinates?.[0]?.[0];
+    return Array.isArray(ring) && ring.length >= 3;
+  }
+  return false;
 }
 
 const LeafletGeofenceMap = ({
