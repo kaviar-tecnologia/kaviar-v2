@@ -46,14 +46,32 @@ function parseArgs(argv: string[]): Args {
   return out;
 }
 
+/**
+ * Constrói o filtro (where) GENÉRICO de resolução de território por cidade+UF.
+ * Puro/testável — sem DB. Regras:
+ *   - level = 'city' (sempre);
+ *   - match de `city_name` OU `name` de forma CASE-INSENSITIVE (mode:'insensitive');
+ *   - `uf` exata e normalizada em MAIÚSCULAS (quando informada);
+ *   - não cria nada; apenas descreve o filtro de leitura.
+ */
+export function buildTerritoryResolutionWhere(city: string, uf?: string | null) {
+  const name = (city ?? '').trim();
+  const where: any = {
+    level: 'city',
+    OR: [
+      { city_name: { equals: name, mode: 'insensitive' } },
+      { name: { equals: name, mode: 'insensitive' } },
+    ],
+  };
+  const normUf = (uf ?? '').trim().toUpperCase();
+  if (normUf) where.uf = normUf;
+  return where;
+}
+
 async function resolveTerritoryId(city: string, uf?: string): Promise<string | null> {
   // Genérico: localiza território existente por cidade+uf (não cria).
   const t = await prisma.operational_territories.findFirst({
-    where: {
-      level: 'city',
-      OR: [{ city_name: city }, { name: city }],
-      ...(uf ? { uf: uf.toUpperCase() } : {}),
-    },
+    where: buildTerritoryResolutionWhere(city, uf),
     select: { id: true, name: true, status: true },
   });
   return t?.id ?? null;
