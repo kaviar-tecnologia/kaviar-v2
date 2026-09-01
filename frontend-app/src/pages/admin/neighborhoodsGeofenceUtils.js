@@ -12,9 +12,26 @@ export function normalizeCityKey(city) {
     .trim();
 }
 
-export function getCityCenter(city) {
+// Centro genérico (Brasil) — usado APENAS como fallback VISUAL do mapa quando
+// não há geofence nem cidade conhecida. Nunca deve ser usado para REJEITAR
+// geometria válida por incompatibilidade.
+export const BRAZIL_FALLBACK_CENTER = { lat: -14.235, lng: -51.9253, zoom: 4 };
+
+/**
+ * Retorna o centro configurado da cidade OU null quando a cidade é desconhecida.
+ * Genérico — não assume nenhuma cidade específica.
+ */
+export function getKnownCityCenter(city) {
   const key = normalizeCityKey(city);
-  return CITY_CENTERS[key] || { lat: -14.235, lng: -51.9253, zoom: 4 };
+  return CITY_CENTERS[key] || null;
+}
+
+/**
+ * Centro para uso VISUAL (fallback de enquadramento quando não há geofence).
+ * Cai no centro do Brasil se a cidade não for conhecida.
+ */
+export function getCityCenter(city) {
+  return getKnownCityCenter(city) || BRAZIL_FALLBACK_CENTER;
 }
 
 export function isValidPolygonCoordinates(coordinates) {
@@ -102,7 +119,10 @@ export function haversineKm(lat1, lng1, lat2, lng2) {
 }
 
 export function isCompatibleWithCity(geometryOrCoordinates, city) {
-  const center = getCityCenter(city);
+  // Cidade sem centro conhecido: não rejeitar geometria válida. O enquadramento
+  // fica por conta do fitBounds sobre a própria geofence.
+  const center = getKnownCityCenter(city);
+  if (!center) return true;
   // Aceita geometria normalizada ({type,coordinates}) OU array legado de anéis.
   let firstPoint = null;
   if (geometryOrCoordinates && !Array.isArray(geometryOrCoordinates) && geometryOrCoordinates.type) {

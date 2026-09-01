@@ -4,6 +4,7 @@ import {
   isCompatibleWithCity,
   firstPointOfGeometry,
   getCityCenter,
+  getKnownCityCenter,
 } from '../pages/admin/neighborhoodsGeofenceUtils.js';
 
 // Anel quadrado válido (>=3 pontos, fechado) em torno de um centro [lng,lat].
@@ -76,20 +77,53 @@ describe('firstPointOfGeometry', () => {
   });
 });
 
-describe('cidade desconhecida (fora de CITY_CENTERS) com geometria válida', () => {
-  it('getCityCenter cai no fallback Brasil para Cariacica (não há entrada)', () => {
-    const center = getCityCenter('Cariacica');
-    expect(center).toEqual({ lat: -14.235, lng: -51.9253, zoom: 4 });
+describe('compatibilidade de cidade (bloqueio corrigido)', () => {
+  // Simula a decisão do handler: normaliza -> valida -> compat.
+  function decide(rawPayload, selectedCity) {
+    const geometry = normalizeGeofenceGeometry(rawPayload);
+    if (!geometry) return 'INVALID_GEOMETRY';
+    if (!isCompatibleWithCity(geometry, selectedCity)) return 'INCOMPATIBLE_CITY_GEOMETRY';
+    return geometry; // renderável
+  }
+
+  it('getKnownCityCenter retorna null para cidade desconhecida (Cariacica) e objeto p/ conhecida', () => {
+    expect(getKnownCityCenter('Cariacica')).toBeNull();
+    expect(getKnownCityCenter('Rio de Janeiro')).toEqual({ lat: -22.9068, lng: -43.1729, zoom: 11 });
   });
 
-  it('isCompatibleWithCity NÃO deve barrar geometria só porque a cidade é desconhecida (fallback Brasil está a <250km? não)', () => {
-    // Cariacica dista >250km do centro do Brasil => a checagem de compat com fallback
-    // reprovaria. Por isso o mapa deve usar a PRÓPRIA geometria (fitBounds), não o centro.
-    // Aqui garantimos que a geometria é válida/renderável independentemente da cidade.
-    const geometry = normalizeGeofenceGeometry({ type: 'Polygon', coordinates: [ring(CARIACICA.lng, CARIACICA.lat)] });
-    expect(geometry).not.toBeNull();
-    // O ponto existe e é usável para fitBounds:
-    expect(firstPointOfGeometry(geometry)).toEqual([CARIACICA.lng - 0.01, CARIACICA.lat - 0.01]);
+  it("Cariacica + Polygon válido (~ -40.42/-20.30) NÃO resulta em INCOMPATIBLE_CITY_GEOMETRY", () => {
+    const raw = { type: 'Polygon', coordinates: [ring(CARIACICA.lng, CARIACICA.lat)] };
+    const result = decide(raw, 'Cariacica');
+    expect(result).not.toBe('INCOMPATIBLE_CITY_GEOMETRY');
+    expect(result).not.toBe('INVALID_GEOMETRY');
+    expect(result.type).toBe('Polygon'); // renderável
+  });
+
+  it('cidade CONHECIDA + geometria absurdamente distante → incompatível', () => {
+    // Rio de Janeiro conhecida; polígono no meio do Pacífico (lng 0, lat 0-ish deslocado)
+    const raw = { type: 'Polygon', coordinates: [ring(10, 10)] };
+    expect(decide(raw, 'Rio de Janeiro')).toBe('INCOMPATIBLE_CITY_GEOMETRY');
+  });
+
+  it('cidade CONHECIDA + geometria próxima → aceita', () => {
+    const rj = getKnownCityCenter('Rio de Janeiro');
+    const raw = { type: 'Polygon', coordinates: [ring(rj.lng, rj.lat)] };
+    expect(decide(raw, 'Rio de Janeiro').type).toBe('Polygon');
+  });
+
+  it('cidade DESCONHECIDA + geometria válida → aceita (não rejeita pelo centro do Brasil)', () => {
+    const raw = { type: 'Polygon', coordinates: [ring(CARIACICA.lng, CARIACICA.lat)] };
+    expect(decide(raw, 'Cidade Nova ES').type).toBe('Polygon');
+  });
+
+  it('geometria inválida continua rejeitada mesmo para cidade desconhecida', () => {
+    expect(decide({ type: 'Polygon' }, 'Cariacica')).toBe('INVALID_GEOMETRY');
+    expect(decide(null, 'Cariacica')).toBe('INVALID_GEOMETRY');
+    expect(decide([[[0, 0], [1, 1]]], 'Cariacica')).toBe('INVALID_GEOMETRY'); // < 3 pontos
+  });
+
+  it('getCityCenter mantém fallback VISUAL (Brasil) para cidade desconhecida', () => {
+    expect(getCityCenter('Cariacica')).toEqual({ lat: -14.235, lng: -51.9253, zoom: 4 });
   });
 });
 
