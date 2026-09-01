@@ -5,6 +5,11 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma';
 import { authenticateAdmin, requireSuperAdmin } from '../middlewares/auth';
 import { audit, auditCtx } from '../utils/audit';
+import {
+  dryRunPrepareCity,
+  executePrepareCity,
+} from '../services/territory/city-preparation.service';
+import { resolveGeojsonPath } from '../services/territory/territorial-dataset-registry';
 
 const router = Router();
 router.use(authenticateAdmin, requireSuperAdmin);
@@ -695,6 +700,119 @@ router.post('/regional-admins/:id/reset-password', async (req: Request, res: Res
     res.json({ success: true, data: { email: target.email, name: target.name, temp_password: tempPassword } });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Erro ao redefinir senha.' });
+  }
+});
+
+// ─── Preparar cidade (dry-run + confirmação) ─────────────────────────────────
+// Fluxo assistido e production-safe: nunca grava sem confirmação explícita do
+// Super Admin. NÃO ativa a cidade, NÃO altera status/modalidades, NÃO mexe em
+// outras cidades. Reusa neighborhoods/neighborhood_geofences/territory_id.
+//
+// GENÉRICO: o arquivo territorial é resolvido pelo registro
+// (territorial-datasets.json) via (city, uf). Onboardar nova cidade = registrar
+// dataset + colocar o arquivo; sem lógica especial de cidade aqui.
+
+function resolveGeojsonPathForTerritory(territory: {
+  city_name: string | null;
+  name: string;
+  uf: string | null;
+}): string | null {
+  const city = (territory.city_name || territory.name || '').trim();
+  if (!city) return null;
+  const resolved = resolveGeojsonPath(city, territory.uf);
+  return resolved ? resolved.filePath : null;
+}
+
+// POST /api/admin/territories/:id/prepare-city/dry-run
+// Retorna a prévia (nenhuma gravação).
+router.post('/:id/prepare-city/dry-run', async (req: Request, res: Response) => {
+  try {
+    const territory = await prisma.operational_territories.findUnique({ where: { id: req.params.id } });
+    if (!territory) return res.status(404).json({ success: false, error: 'Território não encontrado' });
+
+    const geojsonPath = resolveGeojsonPathForTerritory(territory);
+    if (!geojsonPath) {
+      return res.status(400).json({
+        success: false,
+        error: `Nenhum dataset territorial (GeoJSON) registrado para "${territory.city_name || territory.name}"${territory.uf ? '/' + territory.uf : ''}. Adicione o arquivo em backend/data/geojson e registre-o em backend/data/geojson/territorial-datasets.json (city, uf, file).`,
+      });
+    }
+
+    const { plan } = await dryRunPrepareCity({ territoryId: territory.id, geojsonPath, prisma });
+
+    const ctx = auditCtx(req);
+    audit({
+      adminId: ctx.adminId, adminEmail: ctx.adminEmail,
+      action: 'prepare_city_dry_run', entityType: 'territory', entityId: territory.id,
+      newValue: { city: plan.city, toCreate: plan.totals.toCreate, toUpdate: plan.totals.toUpdate, canProceed: plan.canProceed },
+      ipAddress: ctx.ip, userAgent: ctx.ua,
+    });
+
+    res.json({ success: true, mode: 'dry-run', data: plan });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message || 'Erro no dry-run de preparação' });
+  }
+});
+
+const confirmPrepareSchema = z.object({
+  // Confirmação explícita obrigatória. O front deve exigir digitar/toggle.
+  confirm: z.literal(true),
+  reason: z.string().max(500).optional(),
+});
+
+// POST /api/admin/territories/:id/prepare-city/confirm
+// Executa a importação idempotente APÓS confirmação explícita do Super Admin.
+router.post('/:id/prepare-city/confirm', async (req: Request, res: Response) => {
+  try {
+    const parsed = confirmPrepareSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: 'Confirmação explícita (confirm=true) é obrigatória.' });
+    }
+
+    const territory = await prisma.operational_territories.findUnique({ where: { id: req.params.id } });
+    if (!territory) return res.status(404).json({ success: false, error: 'Território não encontrado' });
+
+    const geojsonPath = resolveGeojsonPathForTerritory(territory);
+    if (!geojsonPath) {
+      return res.status(400).json({
+        success: false,
+        error: `Nenhum dataset territorial (GeoJSON) registrado para "${territory.city_name || territory.name}"${territory.uf ? '/' + territory.uf : ''}. Registre-o em backend/data/geojson/territorial-datasets.json.`,
+      });
+    }
+
+    const params = { territoryId: territory.id, geojsonPath, prisma };
+
+    // Revalida o plano antes de gravar (defesa em profundidade).
+    const { plan } = await dryRunPrepareCity(params);
+    if (!plan.canProceed) {
+      return res.status(422).json({
+        success: false,
+        error: 'Plano não pode prosseguir.',
+        risks: plan.risks,
+      });
+    }
+
+    const result = await executePrepareCity(params);
+
+    const ctx = auditCtx(req);
+    audit({
+      adminId: ctx.adminId, adminEmail: ctx.adminEmail,
+      action: 'prepare_city_execute', entityType: 'territory', entityId: territory.id,
+      newValue: {
+        city: result.city,
+        created: result.created,
+        updated: result.updated,
+        geofencesWritten: result.geofencesWritten,
+        linkedToTerritory: result.linkedToTerritory,
+        errors: result.errors.length,
+      },
+      reason: parsed.data.reason,
+      ipAddress: ctx.ip, userAgent: ctx.ua,
+    });
+
+    res.json({ success: true, mode: 'executed', data: result });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message || 'Erro ao executar preparação' });
   }
 });
 

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Box, Typography, Card, CardContent, Tabs, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Chip, Button, CircularProgress, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Alert } from '@mui/material';
-import { ArrowBack, Edit, PersonAdd, Delete } from '@mui/icons-material';
+import { ArrowBack, Edit, PersonAdd, Delete, Map } from '@mui/icons-material';
 import { API_BASE_URL } from '../../config/api';
 import MotoPassengerCompliance from '../../components/admin/MotoPassengerCompliance';
 import { formatDate } from '../../utils/formatDate';
@@ -18,7 +18,9 @@ export default function TerritoryDetailPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving] = useState(false);
+  const [prepareOpen, setPrepareOpen] = useState(false);
   const token = localStorage.getItem('kaviar_admin_token');
+  const isSuperAdmin = JSON.parse(localStorage.getItem('kaviar_admin_user') || '{}').role === 'SUPER_ADMIN';
 
   const fetchTerritory = async () => {
     try {
@@ -62,6 +64,9 @@ export default function TerritoryDetailPage() {
           <Typography variant="body2" sx={{ color: '#6B7280' }}>{t.level}{t.uf ? ` • ${t.uf}` : ''}{t.parent?.name ? ` • Pai: ${t.parent.name}` : ''}</Typography>
         </Box>
         <Chip label={STATUS_LABELS[t.status]} sx={{ bgcolor: `${STATUS_COLORS[t.status]}15`, color: STATUS_COLORS[t.status], fontWeight: 600 }} />
+        {isSuperAdmin && (
+          <Button startIcon={<Map />} onClick={() => setPrepareOpen(true)} sx={{ color: '#B8942E' }}>Preparar cidade</Button>
+        )}
         <Button startIcon={<Edit />} onClick={() => { setEditForm({ name: t.name, status: t.status, uf: t.uf || '', city_name: t.city_name || '', notes: t.notes || '' }); setEditOpen(true); }} sx={{ color: '#B8942E' }}>Editar</Button>
       </Box>
 
@@ -194,7 +199,127 @@ export default function TerritoryDetailPage() {
           <Button onClick={handleEdit} disabled={saving} variant="contained" sx={{ bgcolor: '#B8942E' }}>{saving ? 'Salvando...' : 'Salvar'}</Button>
         </DialogActions>
       </Dialog>
+
+      <PrepareCityDialog
+        open={prepareOpen}
+        onClose={() => setPrepareOpen(false)}
+        territoryId={id}
+        token={token}
+        onDone={fetchTerritory}
+      />
     </Box>
+  );
+}
+
+function PrepareCityDialog({ open, onClose, territoryId, token, onDone }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [plan, setPlan] = useState(null);
+  const [confirmChecked, setConfirmChecked] = useState(false);
+  const [executing, setExecuting] = useState(false);
+  const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    if (!open) { setPlan(null); setError(''); setConfirmChecked(false); setResult(null); return; }
+    (async () => {
+      setLoading(true); setError('');
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/admin/territories/${territoryId}/prepare-city/dry-run`, {
+          method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: '{}',
+        });
+        const data = await res.json();
+        if (data.success) setPlan(data.data);
+        else setError(data.error || 'Falha no dry-run');
+      } catch (e) { setError(String(e)); }
+      setLoading(false);
+    })();
+  }, [open, territoryId, token]);
+
+  const handleConfirm = async () => {
+    setExecuting(true); setError('');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/territories/${territoryId}/prepare-city/confirm`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true }),
+      });
+      const data = await res.json();
+      if (data.success) { setResult(data.data); onDone && onDone(); }
+      else setError(data.error || (data.risks ? data.risks.join(' | ') : 'Falha na execução'));
+    } catch (e) { setError(String(e)); }
+    setExecuting(false);
+  };
+
+  const Row = ({ label, value, color }) => (
+    <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
+      <Typography variant="body2" sx={{ color: '#6B7280' }}>{label}</Typography>
+      <Typography variant="body2" sx={{ fontWeight: 700, color: color || '#111827' }}>{value}</Typography>
+    </Box>
+  );
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle sx={{ color: '#C8A84E', fontWeight: 700 }}>Preparar cidade (dry-run)</DialogTitle>
+      <DialogContent dividers>
+        {loading && <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}><CircularProgress sx={{ color: '#B8942E' }} /></Box>}
+        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
+        {result && (
+          <Alert severity="success" sx={{ mb: 2 }}>
+            Importação concluída: {result.created} criados, {result.updated} atualizados, {result.geofencesWritten} geofences,
+            {' '}{result.linkedToTerritory} vinculados ao território.
+          </Alert>
+        )}
+
+        {plan && !result && (
+          <>
+            <Row label="Cidade" value={plan.city} />
+            <Row label="UF" value={plan.uf || '—'} />
+            <Row label="Território" value={`${plan.territory?.name || '—'} (${plan.territory?.status || '—'})`} />
+            <Row label="Gestor territorial" value={plan.manager?.found ? plan.manager.names.join(', ') : 'nenhum ativo'} color={plan.manager?.found ? '#059669' : '#DC2626'} />
+            <Box sx={{ my: 1, borderTop: '1px solid #E8E5DE' }} />
+            <Row label="Bairros no arquivo" value={plan.totals?.featuresInFile} />
+            <Row label="Válidos" value={plan.totals?.validNeighborhoods} />
+            <Row label="Com geofence válida" value={plan.totals?.withValidGeofence} />
+            <Row label="Duplicidades" value={plan.totals?.duplicatesInFile} color={plan.totals?.duplicatesInFile ? '#DC2626' : undefined} />
+            <Row label="Geometrias inválidas" value={plan.totals?.invalidGeometries} color={plan.totals?.invalidGeometries ? '#D97706' : undefined} />
+            <Row label="Seriam criados" value={plan.totals?.toCreate} color="#059669" />
+            <Row label="Seriam atualizados" value={plan.totals?.toUpdate} color="#D97706" />
+            <Row label="Vínculo territorial" value={plan.totals?.toLinkTerritory} color="#B8942E" />
+
+            {plan.risks?.length > 0 && (
+              <Alert severity="warning" sx={{ mt: 2 }}>
+                <Typography variant="caption" sx={{ fontWeight: 700 }}>Riscos / pendências:</Typography>
+                <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                  {plan.risks.map((r, i) => <li key={i}><Typography variant="caption">{r}</Typography></li>)}
+                </ul>
+              </Alert>
+            )}
+
+            <Alert severity="info" sx={{ mt: 2 }}>
+              A preparação <strong>não ativa</strong> a cidade nem libera modalidades bloqueadas por compliance.
+              A cidade permanece no status atual até aprovação administrativa/regulatória.
+            </Alert>
+
+            <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <input id="confirm-prepare" type="checkbox" checked={confirmChecked} disabled={!plan.canProceed}
+                onChange={(e) => setConfirmChecked(e.target.checked)} />
+              <label htmlFor="confirm-prepare">
+                <Typography variant="body2">Confirmo a importação idempotente destes bairros em produção.</Typography>
+              </label>
+            </Box>
+            {!plan.canProceed && <Typography variant="caption" sx={{ color: '#DC2626' }}>Plano não pode prosseguir — corrija as pendências acima.</Typography>}
+          </>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} sx={{ color: '#6B7280' }}>{result ? 'Fechar' : 'Cancelar'}</Button>
+        {plan && !result && (
+          <Button onClick={handleConfirm} disabled={!plan.canProceed || !confirmChecked || executing}
+            variant="contained" sx={{ bgcolor: '#B8942E' }}>
+            {executing ? 'Executando...' : 'Confirmar e importar'}
+          </Button>
+        )}
+      </DialogActions>
+    </Dialog>
   );
 }
 
