@@ -5278,3 +5278,39 @@ model development_jobs {
   @@index([requested_by_admin_id])
   @@index([confirmed_by_admin_id])
 }
+
+
+// Versões/histórico de datasets territoriais adquiridos automaticamente
+// (aquisição "Preparar cidade"). Tabela NOVA — não referencia nem altera
+// nenhuma tabela existente. Metadados/proveniência/rastreabilidade; os
+// arquivos (raw/normalizado) ficam no S3.
+model territorial_dataset_versions {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  city               String
+  uf                 String    @db.VarChar(2)
+  provider_id        String
+  source             String
+  source_url         String?
+  method             String?
+  collected_at       DateTime  @db.Timestamptz
+  is_official        Boolean   @default(false)
+  source_verified    Boolean   @default(false)
+  s3_raw_key         String?
+  s3_normalized_key  String?
+  feature_count      Int       @default(0)
+  invalid_count      Int       @default(0)
+  duplicate_count    Int       @default(0)
+  out_of_bbox_count  Int       @default(0)
+  status             String    @default("DRAFT")
+  created_by         String?
+  created_at         DateTime  @default(now()) @db.Timestamptz
+  applied_at         DateTime? @db.Timestamptz
+  notes              String?
+  checksum           String?
+
+  @@index([city, uf])
+  @@index([status])
+  @@index([provider_id])
+  @@index([uf, city, created_at(sort: Desc)])
+  @@map("territorial_dataset_versions")
+}
