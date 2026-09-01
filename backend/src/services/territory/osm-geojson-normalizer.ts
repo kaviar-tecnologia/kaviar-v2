@@ -64,17 +64,15 @@ function round(n: number, p: number): number {
   return Math.round(n * f) / f;
 }
 
-function closeRing(ring: Ring): Ring {
-  if (ring.length === 0) return ring;
-  const [f, l] = [ring[0], ring[ring.length - 1]];
-  if (f[0] !== l[0] || f[1] !== l[1]) return [...ring, [f[0], f[1]]];
-  return ring;
-}
-
-/** Une segmentos (ways) em anéis fechados. */
-function assembleRings(ways: Ring[]): Ring[] {
+/**
+ * Une segmentos (ways) por extremidades coincidentes. NÃO fecha artificialmente:
+ * um anel só é aceito quando o primeiro e o último ponto REALMENTE coincidem
+ * após a união. Se sobrar um encadeamento que não fecha, `hadUnclosed=true`.
+ */
+function assembleRings(ways: Ring[]): { closed: Ring[]; hadUnclosed: boolean } {
   const segs: Ring[] = ways.filter((w) => Array.isArray(w) && w.length >= 2).map((w) => [...w]);
-  const rings: Ring[] = [];
+  const closed: Ring[] = [];
+  let hadUnclosed = false;
   const eq = (a: number[], b: number[]) => a[0] === b[0] && a[1] === b[1];
 
   while (segs.length) {
@@ -90,9 +88,14 @@ function assembleRings(ways: Ring[]): Ring[] {
         if (eq(s[0], cur[0])) { cur = [...s].reverse().slice(0, -1).concat(cur); segs.splice(i, 1); changed = true; break; }
       }
     }
-    rings.push(closeRing(cur));
+    // Aceita SOMENTE se fechou pelas próprias extremidades. Nunca inventa fechamento.
+    if (cur.length >= 4 && eq(cur[0], cur[cur.length - 1])) {
+      closed.push(cur);
+    } else {
+      hadUnclosed = true;
+    }
   }
-  return rings;
+  return { closed, hadUnclosed };
 }
 
 function ptsFrom(geom: OverpassGeomPoint[] | undefined, precision: number): Ring | null {
@@ -128,30 +131,9 @@ function repPoint(ring: Ring): number[] {
   return ring[0];
 }
 
-function geomFromRelation(rel: OverpassElement, precision: number): { type: 'Polygon' | 'MultiPolygon'; coordinates: any } | null {
-  const outerWays: Ring[] = [];
-  const innerWays: Ring[] = [];
-  for (const m of rel.members ?? []) {
-    if (m.type !== 'way') continue;
-    const pts = ptsFrom(m.geometry, precision);
-    if (!pts) continue;
-    if (m.role === 'inner') innerWays.push(pts);
-    else outerWays.push(pts);
-  }
-  const outers = assembleRings(outerWays).filter((r) => r.length >= 4);
-  const inners = assembleRings(innerWays).filter((r) => r.length >= 4);
-  if (outers.length === 0) return null;
-
-  // Um único outer: todos os inners (buracos) pertencem a ele.
-  if (outers.length === 1) {
-    const coordinates: Ring[] = [outers[0], ...inners];
-    return { type: 'Polygon', coordinates };
-  }
-
-  // Múltiplos outers → MultiPolygon. Associa CADA inner ao outer que o CONTÉM.
-  // Regra: um ponto representativo do inner dentro do outer; em caso de múltiplos
-  // outers contendo, escolhe o de MENOR área (mais aninhado). Inner sem outer
-  // que o contenha torna a geometria NÃO SUPORTADA (evita geometria errada).
+/** Atribui cada inner ao outer que o contém (menor área em caso de aninhamento).
+ *  Retorna null se algum inner não estiver contido em nenhum outer. */
+function assignInnersToOuters(outers: Ring[], inners: Ring[]): Ring[][] | null {
   const polygons: Ring[][] = outers.map((o) => [o]);
   for (const inner of inners) {
     const p = repPoint(inner);
@@ -163,21 +145,50 @@ function geomFromRelation(rel: OverpassElement, precision: number): { type: 'Pol
         if (area < bestArea) { bestArea = area; bestIdx = i; }
       }
     }
-    if (bestIdx < 0) {
-      // Não foi possível associar com segurança → não suportado.
-      return null;
-    }
+    if (bestIdx < 0) return null; // inner órfão → não suportado
     polygons[bestIdx].push(inner);
+  }
+  return polygons;
+}
+
+function geomFromRelation(rel: OverpassElement, precision: number): { type: 'Polygon' | 'MultiPolygon'; coordinates: any } | null {
+  const outerWays: Ring[] = [];
+  const innerWays: Ring[] = [];
+  for (const m of rel.members ?? []) {
+    if (m.type !== 'way') continue;
+    const pts = ptsFrom(m.geometry, precision);
+    if (!pts) continue;
+    if (m.role === 'inner') innerWays.push(pts);
+    else outerWays.push(pts);
+  }
+  const outerAsm = assembleRings(outerWays);
+  const innerAsm = assembleRings(innerWays);
+  // Segmentos que não fecharam por conta própria → relation incompleta → rejeita.
+  if (outerAsm.hadUnclosed || innerAsm.hadUnclosed) return null;
+
+  const outers = outerAsm.closed;
+  const inners = innerAsm.closed;
+  if (outers.length === 0) return null;
+
+  // Associação inner→outer por CONTENÇÃO em TODOS os casos (inclui 1 outer).
+  // Inner que não pertence a nenhum outer → geometria não suportada.
+  const polygons = assignInnersToOuters(outers, inners);
+  if (polygons === null) return null;
+
+  if (polygons.length === 1) {
+    return { type: 'Polygon', coordinates: polygons[0] };
   }
   return { type: 'MultiPolygon', coordinates: polygons };
 }
 
 function geomFromWay(el: OverpassElement, precision: number): { type: 'Polygon'; coordinates: any } | null {
   const pts = ptsFrom(el.geometry, precision);
-  if (!pts) return null;
-  const ring = closeRing(pts);
-  if (ring.length < 4) return null;
-  return { type: 'Polygon', coordinates: [ring] };
+  if (!pts || pts.length < 4) return null;
+  // Aceita SOMENTE way já fechado (primeiro == último). Não fecha artificialmente.
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) return null;
+  return { type: 'Polygon', coordinates: [pts] };
 }
 
 // ─── Validação WGS84 / bbox ───────────────────────────────────────────────────

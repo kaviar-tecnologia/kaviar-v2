@@ -218,6 +218,90 @@ describe('MultiPolygon com inner: associação ao outer correto', () => {
   });
 });
 
+describe('Polygon com único outer: inner deve estar contido', () => {
+  const opts = { expectedCity: 'X', expectedUf: 'YY', bbox: null };
+  const outer = [
+    { lon: 0, lat: 0 }, { lon: 1, lat: 0 }, { lon: 1, lat: 1 }, { lon: 0, lat: 1 }, { lon: 0, lat: 0 },
+  ];
+
+  it('1 outer + inner DENTRO → Polygon válido com buraco', () => {
+    const innerIn = [
+      { lon: 0.4, lat: 0.4 }, { lon: 0.6, lat: 0.4 }, { lon: 0.6, lat: 0.6 }, { lon: 0.4, lat: 0.6 }, { lon: 0.4, lat: 0.4 },
+    ];
+    const rel = { type: 'relation' as const, id: 300, tags: { name: 'ComBuraco', place: 'suburb' },
+      members: [
+        { type: 'way' as const, ref: 1, role: 'outer', geometry: outer },
+        { type: 'way' as const, ref: 2, role: 'inner', geometry: innerIn },
+      ] };
+    const r = normalizeOverpassToGeoJSON({ elements: [rel] }, opts);
+    expect(r.stats.valid).toBe(1);
+    const geom = r.featureCollection.features[0].geometry as any;
+    expect(geom.type).toBe('Polygon');
+    expect(geom.coordinates).toHaveLength(2); // outer + 1 buraco
+  });
+
+  it('1 outer + inner FORA → rejeitado (não suportado/inválido)', () => {
+    const innerOut = [
+      { lon: 5, lat: 5 }, { lon: 5.1, lat: 5 }, { lon: 5.1, lat: 5.1 }, { lon: 5, lat: 5.1 }, { lon: 5, lat: 5 },
+    ];
+    const rel = { type: 'relation' as const, id: 301, tags: { name: 'BuracoFora', place: 'suburb' },
+      members: [
+        { type: 'way' as const, ref: 1, role: 'outer', geometry: outer },
+        { type: 'way' as const, ref: 2, role: 'inner', geometry: innerOut },
+      ] };
+    const r = normalizeOverpassToGeoJSON({ elements: [rel] }, opts);
+    expect(r.stats.valid).toBe(0);
+    expect(r.stats.invalid).toBe(1);
+  });
+});
+
+describe('não fechar artificialmente ways desconectados', () => {
+  const opts = { expectedCity: 'X', expectedUf: 'YY', bbox: null };
+
+  it('relation com segmentos conectáveis que FECHAM → aceita', () => {
+    // Dois segmentos que juntos formam um quadrado fechado.
+    const segA = [ { lon: 0, lat: 0 }, { lon: 1, lat: 0 }, { lon: 1, lat: 1 } ];
+    const segB = [ { lon: 1, lat: 1 }, { lon: 0, lat: 1 }, { lon: 0, lat: 0 } ];
+    const rel = { type: 'relation' as const, id: 400, tags: { name: 'Fecha', place: 'suburb' },
+      members: [
+        { type: 'way' as const, ref: 1, role: 'outer', geometry: segA },
+        { type: 'way' as const, ref: 2, role: 'outer', geometry: segB },
+      ] };
+    const r = normalizeOverpassToGeoJSON({ elements: [rel] }, opts);
+    expect(r.stats.valid).toBe(1);
+    expect((r.featureCollection.features[0].geometry as any).type).toBe('Polygon');
+  });
+
+  it('relation com segmento faltando (não fecha) → rejeita (não inventa fechamento)', () => {
+    // Falta o segmento de volta; extremidades não coincidem.
+    const segA = [ { lon: 0, lat: 0 }, { lon: 1, lat: 0 }, { lon: 1, lat: 1 } ];
+    const segB = [ { lon: 1, lat: 1 }, { lon: 0.5, lat: 1 } ]; // termina em (0.5,1) != (0,0)
+    const rel = { type: 'relation' as const, id: 401, tags: { name: 'NaoFecha', place: 'suburb' },
+      members: [
+        { type: 'way' as const, ref: 1, role: 'outer', geometry: segA },
+        { type: 'way' as const, ref: 2, role: 'outer', geometry: segB },
+      ] };
+    const r = normalizeOverpassToGeoJSON({ elements: [rel] }, opts);
+    expect(r.stats.valid).toBe(0);
+    expect(r.stats.invalid).toBe(1);
+  });
+
+  it('way FECHADO → aceita', () => {
+    const closed = { type: 'way' as const, id: 402, tags: { name: 'WayFechado', place: 'neighbourhood' },
+      geometry: [ { lon: 0, lat: 0 }, { lon: 1, lat: 0 }, { lon: 1, lat: 1 }, { lon: 0, lat: 1 }, { lon: 0, lat: 0 } ] };
+    const r = normalizeOverpassToGeoJSON({ elements: [closed] }, opts);
+    expect(r.stats.valid).toBe(1);
+  });
+
+  it('way ABERTO → rejeita (não fecha automaticamente)', () => {
+    const open = { type: 'way' as const, id: 403, tags: { name: 'WayAberto', place: 'neighbourhood' },
+      geometry: [ { lon: 0, lat: 0 }, { lon: 1, lat: 0 }, { lon: 1, lat: 1 }, { lon: 0, lat: 1 } ] }; // não fecha
+    const r = normalizeOverpassToGeoJSON({ elements: [open] }, opts);
+    expect(r.stats.valid).toBe(0);
+    expect(r.stats.invalid).toBe(1);
+  });
+});
+
 describe('bbox: valida ENVELOPE inteiro, não só o primeiro ponto', () => {
   it('rejeita geometria cujo primeiro vértice está dentro mas a maior parte está fora', () => {
     // Primeiro vértice dentro do bbox (perto de -40.42/-20.30), mas polígono se
