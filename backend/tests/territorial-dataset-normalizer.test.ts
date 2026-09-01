@@ -15,6 +15,7 @@ import {
   citySlug,
   buildDatasetKeys,
   checksumOf,
+  persistDatasetVersion,
 } from '../src/services/territory/territorial-dataset-store';
 
 // Região fictícia (lon ~ -40.4, lat ~ -20.3), NÃO hardcoded no core.
@@ -148,9 +149,105 @@ describe('normalizeOverpassToGeoJSON', () => {
 });
 
 describe('buildOverpassQuery', () => {
-  it('gera query genérica com o nome da cidade e escapa aspas', () => {
-    expect(buildOverpassQuery('Cariacica')).toContain('rel["name"="Cariacica"]');
-    expect(buildOverpassQuery('São "X"')).toContain('São \\"X\\"');
+  it('sem UF: resolve só pelo nome do município', () => {
+    const q = buildOverpassQuery('Cariacica');
+    expect(q).toContain('rel["name"="Cariacica"]["admin_level"="8"]');
+    expect(q).not.toContain('admin_level"="4"');
+  });
+
+  it('com UF: restringe ao estado (admin_level 4) para desambiguar homônimos', () => {
+    const q = buildOverpassQuery({ city: 'Cariacica', uf: 'ES' });
+    expect(q).toContain('rel["name"="Espírito Santo"]["admin_level"="4"]');
+    expect(q).toContain('map_to_area->.st;');
+    expect(q).toContain('(area.st)');
+    expect(q).toContain('rel["name"="Cariacica"]["admin_level"="8"]');
+  });
+
+  it('aceita assinatura (city, uf) e escapa aspas', () => {
+    const q = buildOverpassQuery('São "X"', 'SP');
+    expect(q).toContain('São \\"X\\"');
+    expect(q).toContain('São Paulo'); // nome do estado de SP
+  });
+});
+
+describe('MultiPolygon com inner: associação ao outer correto', () => {
+  const opts = { expectedCity: 'X', expectedUf: 'YY', bbox: null };
+
+  // outer grande em A, outer grande em B distante, e um inner (buraco) dentro de B.
+  function relTwoOutersInnerInSecond() {
+    // Outer A ~ (0,0), Outer B ~ (10,10). Inner pequeno dentro de B.
+    const bigA = [ { lon: -0.1, lat: -0.1 }, { lon: 0.1, lat: -0.1 }, { lon: 0.1, lat: 0.1 }, { lon: -0.1, lat: 0.1 }, { lon: -0.1, lat: -0.1 } ];
+    const bigB = [ { lon: 9.9, lat: 9.9 }, { lon: 10.1, lat: 9.9 }, { lon: 10.1, lat: 10.1 }, { lon: 9.9, lat: 10.1 }, { lon: 9.9, lat: 9.9 } ];
+    const innerB = [ { lon: 9.99, lat: 9.99 }, { lon: 10.01, lat: 9.99 }, { lon: 10.01, lat: 10.01 }, { lon: 9.99, lat: 10.01 }, { lon: 9.99, lat: 9.99 } ];
+    return {
+      type: 'relation' as const, id: 100, tags: { name: 'Multi', place: 'suburb' },
+      members: [
+        { type: 'way' as const, ref: 1, role: 'outer', geometry: bigA },
+        { type: 'way' as const, ref: 2, role: 'outer', geometry: bigB },
+        { type: 'way' as const, ref: 3, role: 'inner', geometry: innerB },
+      ],
+    };
+  }
+
+  it('atribui o inner ao segundo outer (que o contém), não ao primeiro', () => {
+    const r = normalizeOverpassToGeoJSON({ elements: [relTwoOutersInnerInSecond()] }, opts);
+    expect(r.stats.valid).toBe(1);
+    const geom = r.featureCollection.features[0].geometry as any;
+    expect(geom.type).toBe('MultiPolygon');
+    // Polygon do outer A: só 1 anel (sem buraco). Polygon do outer B: 2 anéis (com o inner).
+    const ringCounts = geom.coordinates.map((poly: any[]) => poly.length).sort();
+    expect(ringCounts).toEqual([1, 2]);
+    // O polígono com 2 anéis deve ser o que contém o ponto ~ (10,10)
+    const withHole = geom.coordinates.find((poly: any[]) => poly.length === 2);
+    expect(withHole[0][0][0]).toBeGreaterThan(5); // outer B fica em lon ~10
+  });
+
+  it('rejeita (não suportado) quando um inner não pertence a nenhum outer', () => {
+    const bigA = [ { lon: -0.1, lat: -0.1 }, { lon: 0.1, lat: -0.1 }, { lon: 0.1, lat: 0.1 }, { lon: -0.1, lat: 0.1 }, { lon: -0.1, lat: -0.1 } ];
+    const bigB = [ { lon: 10, lat: 10 }, { lon: 10.2, lat: 10 }, { lon: 10.2, lat: 10.2 }, { lon: 10, lat: 10.2 }, { lon: 10, lat: 10 } ];
+    const orphanInner = [ { lon: 50, lat: 50 }, { lon: 50.1, lat: 50 }, { lon: 50.1, lat: 50.1 }, { lon: 50, lat: 50.1 }, { lon: 50, lat: 50 } ];
+    const rel = { type: 'relation' as const, id: 101, tags: { name: 'Orfao', place: 'suburb' },
+      members: [
+        { type: 'way' as const, ref: 1, role: 'outer', geometry: bigA },
+        { type: 'way' as const, ref: 2, role: 'outer', geometry: bigB },
+        { type: 'way' as const, ref: 3, role: 'inner', geometry: orphanInner },
+      ] };
+    const r = normalizeOverpassToGeoJSON({ elements: [rel] }, opts);
+    expect(r.stats.valid).toBe(0);
+    expect(r.stats.invalid).toBe(1);
+  });
+});
+
+describe('bbox: valida ENVELOPE inteiro, não só o primeiro ponto', () => {
+  it('rejeita geometria cujo primeiro vértice está dentro mas a maior parte está fora', () => {
+    // Primeiro vértice dentro do bbox (perto de -40.42/-20.30), mas polígono se
+    // estende muito para fora (lng -30). Deve contar como outOfBBox.
+    const bbox = { minLon: -40.75, maxLon: -40.25, minLat: -20.6, maxLat: -19.95 };
+    const geom = [
+      { lon: -40.42, lat: -20.30 }, // dentro
+      { lon: -30.00, lat: -20.30 }, // muito fora (leste)
+      { lon: -30.00, lat: -20.29 },
+      { lon: -40.42, lat: -20.29 },
+      { lon: -40.42, lat: -20.30 },
+    ];
+    const rel = { type: 'relation' as const, id: 200, tags: { name: 'Vaza', place: 'suburb' },
+      members: [{ type: 'way' as const, ref: 1, role: 'outer', geometry: geom }] };
+    const r = normalizeOverpassToGeoJSON({ elements: [rel] }, { expectedCity: 'X', expectedUf: 'ES', bbox });
+    expect(r.stats.valid).toBe(0);
+    expect(r.stats.outOfBBox).toBe(1);
+  });
+
+  it('aceita geometria com envelope totalmente dentro do bbox', () => {
+    const bbox = { minLon: -40.75, maxLon: -40.25, minLat: -20.6, maxLat: -19.95 };
+    const geom = [
+      { lon: -40.42, lat: -20.30 }, { lon: -40.40, lat: -20.30 },
+      { lon: -40.40, lat: -20.29 }, { lon: -40.42, lat: -20.29 }, { lon: -40.42, lat: -20.30 },
+    ];
+    const rel = { type: 'relation' as const, id: 201, tags: { name: 'Dentro', place: 'suburb' },
+      members: [{ type: 'way' as const, ref: 1, role: 'outer', geometry: geom }] };
+    const r = normalizeOverpassToGeoJSON({ elements: [rel] }, { expectedCity: 'X', expectedUf: 'ES', bbox });
+    expect(r.stats.valid).toBe(1);
+    expect(r.stats.outOfBBox).toBe(0);
   });
 });
 
@@ -207,5 +304,72 @@ describe('territorial-dataset-store (helpers puros)', () => {
     const b = checksumOf({ type: 'FeatureCollection', features: [] });
     expect(a).toBe(b);
     expect(a).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe('persistDatasetVersion: raw/normalized/provenance distintos + source_verified forçado false', () => {
+  function buildAcquired(overrides = {}) {
+    const fc = { type: 'FeatureCollection', name: 'x_bairros', features: [
+      { type: 'Feature', properties: { name: 'A', city: 'X', uf: 'YY', area_type: 'BAIRRO_OFICIAL' }, geometry: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] } },
+    ] };
+    return {
+      rawSource: { elements: [{ type: 'relation', id: 1, tags: { name: 'A' } }], generator: 'overpass' },
+      featureCollection: fc,
+      provenance: {
+        providerId: 'osm-overpass', source: 'OpenStreetMap', sourceUrl: 'https://overpass-api.de',
+        method: 'overpass-api', collectedAt: new Date().toISOString(), isOfficial: false,
+        query: '[out:json];', sourceIds: ['relation/1'], notes: 'comunitário',
+      },
+      stats: { total: 1, valid: 1, invalid: 0, duplicates: 0, outOfBBox: 0 },
+      ...overrides,
+    } as any;
+  }
+
+  it('grava raw.json = rawSource, normalized = FeatureCollection, provenance = proveniência (três conteúdos distintos)', async () => {
+    const puts: Record<string, string> = {};
+    const putObject = async (_bucket: string, key: string, body: string) => { puts[key] = body; };
+    const prismaMock = { territorial_dataset_versions: { create: async ({ data }: any) => { prismaMock._last = data; return { id: 'row-1' }; } } } as any;
+
+    const acquired = buildAcquired();
+    const res = await persistDatasetVersion(
+      { city: 'X', uf: 'yy', acquired, createdBy: 'admin-1', version: 'v1' },
+      { prisma: prismaMock, putObject },
+    );
+
+    const raw = JSON.parse(puts['territorial-datasets/YY/x/v1/raw.json']);
+    const normalized = JSON.parse(puts['territorial-datasets/YY/x/v1/normalized.geojson']);
+    const provenance = JSON.parse(puts['territorial-datasets/YY/x/v1/provenance.json']);
+
+    // raw = resposta bruta (tem 'generator'/'elements'), NÃO é proveniência
+    expect(raw.generator).toBe('overpass');
+    expect(raw.provider_id).toBeUndefined();
+    // normalized = FeatureCollection
+    expect(normalized.type).toBe('FeatureCollection');
+    expect(normalized.features).toHaveLength(1);
+    // provenance = metadados
+    expect(provenance.providerId).toBe('osm-overpass');
+    // três conteúdos distintos
+    expect(puts['territorial-datasets/YY/x/v1/raw.json']).not.toBe(puts['territorial-datasets/YY/x/v1/normalized.geojson']);
+    expect(puts['territorial-datasets/YY/x/v1/raw.json']).not.toBe(puts['territorial-datasets/YY/x/v1/provenance.json']);
+    expect(puts['territorial-datasets/YY/x/v1/normalized.geojson']).not.toBe(puts['territorial-datasets/YY/x/v1/provenance.json']);
+    // checksum e id retornados
+    expect(res.id).toBe('row-1');
+    expect(res.checksum).toMatch(/^[0-9a-f]{64}$/);
+    // metadados: source_verified sempre false
+    expect(prismaMock._last.source_verified).toBe(false);
+    expect(prismaMock._last.is_official).toBe(false);
+    expect(prismaMock._last.status).toBe('DRAFT');
+  });
+
+  it('provider NÃO consegue marcar fonte como verificada — source_verified permanece false mesmo se a proveniência tentar', async () => {
+    const putObject = async () => {};
+    const prismaMock = { territorial_dataset_versions: { create: async ({ data }: any) => { prismaMock._last = data; return { id: 'row-2' }; } } } as any;
+    // Simula provider malicioso/errado injetando sourceVerified/is_official=true na proveniência.
+    const acquired = buildAcquired({ provenance: {
+      providerId: 'evil', source: 'x', sourceUrl: null, method: 'm', collectedAt: new Date().toISOString(),
+      isOfficial: true, sourceVerified: true, // não deve influenciar source_verified
+    } });
+    await persistDatasetVersion({ city: 'X', uf: 'YY', acquired, version: 'v2' }, { prisma: prismaMock, putObject });
+    expect(prismaMock._last.source_verified).toBe(false); // FORÇADO false
   });
 });

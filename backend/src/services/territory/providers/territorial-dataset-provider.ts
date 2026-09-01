@@ -25,11 +25,9 @@ export interface DatasetProvenance {
   collectedAt: string;
   /** true SOMENTE se a fonte é oficial (governo). OSM => false. */
   isOfficial: boolean;
-  /**
-   * Verificação humana/curadoria do dado. Default false.
-   * Nunca é setado true automaticamente pela aquisição.
-   */
-  sourceVerified: boolean;
+  // OBS: `sourceVerified` NÃO faz parte da proveniência do provider.
+  // Verificação de fonte é decisão HUMANA/administrativa (fluxo de revisão),
+  // nunca um valor retornado pela aquisição. A persistência força false.
   /** Query/consulta usada (ex.: OverpassQL), quando aplicável. */
   query?: string | null;
   /** IDs de origem (ex.: OSM relation/way ids), quando aplicável. */
@@ -47,8 +45,17 @@ export interface AcquisitionStats {
   outOfBBox: number;
 }
 
-/** Resultado de uma aquisição (dataset normalizado + proveniência + stats). */
+/**
+ * Resultado de uma aquisição:
+ *  - rawSource: resposta BRUTA original da fonte (ex.: JSON do Overpass), para
+ *    rastreabilidade — persistida como raw.json;
+ *  - featureCollection: FeatureCollection NORMALIZADA — persistida como normalized.geojson;
+ *  - provenance: metadados de origem — persistida como provenance.json;
+ *  - stats: qualidade da coleta.
+ */
 export interface AcquiredDataset {
+  /** Resposta bruta original da fonte (sem normalização). */
+  rawSource: unknown;
   featureCollection: NeighborhoodFeatureCollection;
   provenance: DatasetProvenance;
   stats: AcquisitionStats;

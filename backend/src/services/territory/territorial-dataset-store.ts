@@ -93,8 +93,11 @@ export async function persistDatasetVersion(
   const checksum = checksumOf(normalized);
 
   // Gravação S3 via função injetável (permite mock nos testes).
+  // raw.json      = resposta BRUTA original da fonte (rastreabilidade)
+  // normalized    = FeatureCollection normalizada
+  // provenance    = metadados de origem
   const put = deps.putObject ?? defaultPutObject(deps.s3);
-  await put(DATASET_BUCKET, keys.raw, JSON.stringify(input.acquired.provenance), 'application/json');
+  await put(DATASET_BUCKET, keys.raw, JSON.stringify(input.acquired.rawSource ?? null), 'application/json');
   await put(DATASET_BUCKET, keys.normalized, JSON.stringify(normalized), 'application/geo+json');
   await put(DATASET_BUCKET, keys.provenance, JSON.stringify(input.acquired.provenance), 'application/json');
 
@@ -114,7 +117,9 @@ export async function persistDatasetVersion(
       method: p.method,
       collected_at: new Date(p.collectedAt),
       is_official: p.isOfficial === true,
-      source_verified: p.sourceVerified === true, // default false; nunca setado true automaticamente
+      // SEGURANÇA: aquisição automática NUNCA marca a fonte como verificada.
+      // source_verified só vira true via fluxo explícito de revisão humana/admin.
+      source_verified: false,
       s3_raw_key: keys.raw,
       s3_normalized_key: keys.normalized,
       feature_count: s.valid,

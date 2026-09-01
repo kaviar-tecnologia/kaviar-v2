@@ -100,6 +100,34 @@ function ptsFrom(geom: OverpassGeomPoint[] | undefined, precision: number): Ring
   return geom.map((p) => [round(p.lon, precision), round(p.lat, precision)]);
 }
 
+/** Ray-casting: ponto [lon,lat] dentro do anel? */
+function pointInRing(pt: number[], ring: Ring): boolean {
+  const [x, y] = pt;
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1];
+    const xj = ring[j][0], yj = ring[j][1];
+    const intersect = (yi > y) !== (yj > y) &&
+      x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+/** Área assinada (shoelace) — magnitude para escolher o menor outer que contém. */
+function ringAbsArea(ring: Ring): number {
+  let a = 0;
+  for (let i = 0; i < ring.length - 1; i++) {
+    a += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1];
+  }
+  return Math.abs(a / 2);
+}
+
+/** Ponto representativo do anel (primeiro vértice). */
+function repPoint(ring: Ring): number[] {
+  return ring[0];
+}
+
 function geomFromRelation(rel: OverpassElement, precision: number): { type: 'Polygon' | 'MultiPolygon'; coordinates: any } | null {
   const outerWays: Ring[] = [];
   const innerWays: Ring[] = [];
@@ -113,12 +141,34 @@ function geomFromRelation(rel: OverpassElement, precision: number): { type: 'Pol
   const outers = assembleRings(outerWays).filter((r) => r.length >= 4);
   const inners = assembleRings(innerWays).filter((r) => r.length >= 4);
   if (outers.length === 0) return null;
+
+  // Um único outer: todos os inners (buracos) pertencem a ele.
   if (outers.length === 1) {
     const coordinates: Ring[] = [outers[0], ...inners];
     return { type: 'Polygon', coordinates };
   }
-  // múltiplos outers → MultiPolygon (inners atribuídos ao primeiro por simplicidade)
-  const polygons = outers.map((o, idx) => (idx === 0 ? [o, ...inners] : [o]));
+
+  // Múltiplos outers → MultiPolygon. Associa CADA inner ao outer que o CONTÉM.
+  // Regra: um ponto representativo do inner dentro do outer; em caso de múltiplos
+  // outers contendo, escolhe o de MENOR área (mais aninhado). Inner sem outer
+  // que o contenha torna a geometria NÃO SUPORTADA (evita geometria errada).
+  const polygons: Ring[][] = outers.map((o) => [o]);
+  for (const inner of inners) {
+    const p = repPoint(inner);
+    let bestIdx = -1;
+    let bestArea = Infinity;
+    for (let i = 0; i < outers.length; i++) {
+      if (pointInRing(p, outers[i])) {
+        const area = ringAbsArea(outers[i]);
+        if (area < bestArea) { bestArea = area; bestIdx = i; }
+      }
+    }
+    if (bestIdx < 0) {
+      // Não foi possível associar com segurança → não suportado.
+      return null;
+    }
+    polygons[bestIdx].push(inner);
+  }
   return { type: 'MultiPolygon', coordinates: polygons };
 }
 
@@ -150,16 +200,37 @@ function geometryWgs84Valid(geom: { type: string; coordinates: any }): boolean {
   return false;
 }
 
-function firstPoint(geom: { type: string; coordinates: any }): number[] | null {
-  if (geom.type === 'Polygon') return geom.coordinates?.[0]?.[0] ?? null;
-  if (geom.type === 'MultiPolygon') return geom.coordinates?.[0]?.[0]?.[0] ?? null;
-  return null;
+function eachCoord(geom: { type: string; coordinates: any }, cb: (lon: number, lat: number) => void): void {
+  if (geom.type === 'Polygon') {
+    for (const ring of geom.coordinates as Ring[]) for (const [lon, lat] of ring) cb(lon, lat);
+  } else if (geom.type === 'MultiPolygon') {
+    for (const poly of geom.coordinates as Ring[][]) for (const ring of poly) for (const [lon, lat] of ring) cb(lon, lat);
+  }
 }
 
-function withinBBox(pt: number[] | null, bbox: CityBoundingBox): boolean {
-  if (!pt) return false;
-  const [lon, lat] = pt;
-  return lon >= bbox.minLon && lon <= bbox.maxLon && lat >= bbox.minLat && lat <= bbox.maxLat;
+/** Envelope (bbox) da geometria inteira, calculado sobre TODOS os pontos. */
+function geometryEnvelope(geom: { type: string; coordinates: any }): CityBoundingBox | null {
+  let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
+  let found = false;
+  eachCoord(geom, (lon, lat) => {
+    if (lon < minLon) minLon = lon;
+    if (lon > maxLon) maxLon = lon;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+    found = true;
+  });
+  return found ? { minLon, maxLon, minLat, maxLat } : null;
+}
+
+/**
+ * Regra de compatibilidade: o ENVELOPE INTEIRO da geometria deve estar dentro
+ * do bbox esperado da cidade. Rejeita geometria cuja extensão sai da região,
+ * mesmo que o primeiro vértice esteja dentro.
+ */
+function envelopeWithinBBox(env: CityBoundingBox | null, bbox: CityBoundingBox): boolean {
+  if (!env) return false;
+  return env.minLon >= bbox.minLon && env.maxLon <= bbox.maxLon &&
+         env.minLat >= bbox.minLat && env.maxLat <= bbox.maxLat;
 }
 
 function pickName(tags: Record<string, string> | undefined): string | null {
@@ -202,7 +273,7 @@ export function normalizeOverpassToGeoJSON(
     const key = normalizeNeighborhoodName(name);
     if (seenNames.has(key)) { duplicates++; continue; }
 
-    if (opts.bbox && !withinBBox(firstPoint(geom), opts.bbox)) { outOfBBox++; continue; }
+    if (opts.bbox && !envelopeWithinBBox(geometryEnvelope(geom), opts.bbox)) { outOfBBox++; continue; }
 
     seenNames.add(key);
     osmIds.push(`${el.type}/${el.id}`);
@@ -240,21 +311,57 @@ export function normalizeOverpassToGeoJSON(
   };
 }
 
+/** Nome oficial do estado por UF (genérico; não é hardcode de cidade). */
+export const UF_TO_STATE_NAME: Record<string, string> = {
+  AC: 'Acre', AL: 'Alagoas', AP: 'Amapá', AM: 'Amazonas', BA: 'Bahia',
+  CE: 'Ceará', DF: 'Distrito Federal', ES: 'Espírito Santo', GO: 'Goiás',
+  MA: 'Maranhão', MT: 'Mato Grosso', MS: 'Mato Grosso do Sul', MG: 'Minas Gerais',
+  PA: 'Pará', PB: 'Paraíba', PR: 'Paraná', PE: 'Pernambuco', PI: 'Piauí',
+  RJ: 'Rio de Janeiro', RN: 'Rio Grande do Norte', RS: 'Rio Grande do Sul',
+  RO: 'Rondônia', RR: 'Roraima', SC: 'Santa Catarina', SP: 'São Paulo',
+  SE: 'Sergipe', TO: 'Tocantins',
+};
+
 /**
- * Monta a query Overpass genérica para bairros de uma cidade/UF.
- * Não é hardcoded por cidade — usa o nome recebido.
+ * Monta a query Overpass genérica para bairros de uma cidade, opcionalmente
+ * restringindo ao ESTADO (UF) correspondente para reduzir ambiguidade de
+ * municípios homônimos. Sem hardcode por cidade.
+ *
+ * Aceita CityRef { city, uf } ou (city, uf).
  */
-export function buildOverpassQuery(city: string): string {
-  const safe = city.replace(/"/g, '\\"');
-  return [
-    '[out:json][timeout:180];',
-    `rel["name"="${safe}"]["admin_level"="8"]["boundary"="administrative"];`,
-    'map_to_area->.c;',
+export function buildOverpassQuery(ref: { city: string; uf?: string | null } | string, uf?: string | null): string {
+  const city = typeof ref === 'string' ? ref : ref.city;
+  const ufCode = (typeof ref === 'string' ? uf : ref.uf) ?? null;
+  const safeCity = city.replace(/"/g, '\\"');
+  const stateName = ufCode ? UF_TO_STATE_NAME[String(ufCode).toUpperCase()] : null;
+
+  const lines: string[] = ['[out:json][timeout:180];'];
+
+  if (stateName) {
+    const safeState = stateName.replace(/"/g, '\\"');
+    // Resolve o município DENTRO da área do estado (admin_level 4),
+    // desambiguando homônimos de outras UFs.
+    lines.push(
+      `rel["name"="${safeState}"]["admin_level"="4"]["boundary"="administrative"];`,
+      'map_to_area->.st;',
+      `rel["name"="${safeCity}"]["admin_level"="8"]["boundary"="administrative"](area.st);`,
+      'map_to_area->.c;',
+    );
+  } else {
+    // Sem UF: resolve só pelo nome do município (pode haver ambiguidade).
+    lines.push(
+      `rel["name"="${safeCity}"]["admin_level"="8"]["boundary"="administrative"];`,
+      'map_to_area->.c;',
+    );
+  }
+
+  lines.push(
     '(',
     '  way["place"~"suburb|neighbourhood|quarter"](area.c);',
     '  relation["place"~"suburb|neighbourhood|quarter"](area.c);',
     '  relation["boundary"="administrative"]["admin_level"~"9|10"](area.c);',
     ');',
     'out geom;',
-  ].join('\n');
+  );
+  return lines.join('\n');
 }
