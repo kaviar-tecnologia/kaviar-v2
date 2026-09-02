@@ -153,6 +153,30 @@ describe('Backward compatibility', () => {
 // ══════════════════════════════════════════════════════════════════════════
 
 describe('Create team member', () => {
+  it('can create team member without CPF', async () => {
+    prismaMock.accountants.findUnique.mockResolvedValue(null);
+    prismaMock.accountants.create.mockImplementation(async ({ data }) => ({
+      ...baseAccountant,
+      ...data,
+      id: ACCT_ID_2,
+      firm: baseFirm,
+    }));
+
+    const res = await request(app)
+      .post('/api/admin/accounting/accountants')
+      .send({
+        accounting_firm_id: FIRM_ID,
+        nome_completo: 'Maria Financeiro',
+        email: 'maria.financeiro@contabil.com',
+        job_title: 'Financeiro',
+        department: 'Financeiro',
+      });
+
+    expect(res.status).toBe(201);
+    const createCall = prismaMock.accountants.create.mock.calls[0][0];
+    expect(createCall.data.cpf).toBeNull();
+  });
+
   it('can create member without CRC (auxiliar)', async () => {
     prismaMock.accountants.findUnique.mockResolvedValue(null); // no duplicate
     prismaMock.accountants.create.mockResolvedValue({

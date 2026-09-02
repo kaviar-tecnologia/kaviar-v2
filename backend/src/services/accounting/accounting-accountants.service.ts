@@ -16,7 +16,7 @@ interface CreateAccountantInput {
   accounting_firm_id: string;
   nome_completo: string;
   email: string;
-  cpf: string;
+  cpf?: string | null;
   crc?: string | null;
   crc_uf?: string | null;
   job_title?: string | null;
@@ -95,10 +95,12 @@ export async function createAccountant(data: CreateAccountantInput, adminId: str
     throw new EntityValidationError('E-mail já cadastrado');
   }
 
-  // Check duplicate CPF
-  const existingCpf = await prisma.accountants.findUnique({ where: { cpf: data.cpf } });
-  if (existingCpf) {
-    throw new EntityValidationError('CPF já cadastrado');
+  // Check duplicate CPF only when informed
+  if (data.cpf) {
+    const existingCpf = await prisma.accountants.findUnique({ where: { cpf: data.cpf } });
+    if (existingCpf) {
+      throw new EntityValidationError('CPF já cadastrado');
+    }
   }
 
   const initialStatus = 'INVITED';
@@ -109,7 +111,7 @@ export async function createAccountant(data: CreateAccountantInput, adminId: str
         accounting_firm_id: data.accounting_firm_id,
         nome_completo: data.nome_completo,
         email: data.email,
-        cpf: data.cpf,
+        cpf: data.cpf ?? null,
         crc: data.crc ?? null,
         crc_uf: data.crc_uf ?? null,
         job_title: data.job_title ?? null,

@@ -33,7 +33,7 @@ export interface PasswordValidationResult {
   errors: string[];
 }
 
-export function validatePassword(password: string, email?: string, cpf?: string): PasswordValidationResult {
+export function validatePassword(password: string, email?: string, cpf?: string | null): PasswordValidationResult {
   const errors: string[] = [];
 
   if (!password || typeof password !== 'string') {

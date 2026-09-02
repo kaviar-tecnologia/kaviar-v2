@@ -16,10 +16,13 @@ const entityTypeColors = {
 };
 
 const scopeColors = {
-  FULL: { bg: 'rgba(16,185,129,0.15)', color: '#10B981', label: 'Completo' },
+  COMPLETO: { bg: 'rgba(16,185,129,0.15)', color: '#10B981', label: 'Completo' },
   FISCAL: { bg: 'rgba(245,158,11,0.15)', color: '#F59E0B', label: 'Fiscal' },
   CONTABIL: { bg: 'rgba(59,130,246,0.15)', color: '#3B82F6', label: 'Contábil' },
-  DEPARTAMENTO_PESSOAL: { bg: 'rgba(168,85,247,0.15)', color: '#A855F7', label: 'DP' },
+  FOLHA: { bg: 'rgba(168,85,247,0.15)', color: '#A855F7', label: 'Folha / DP' },
+  SOCIETARIO: { bg: 'rgba(236,72,153,0.15)', color: '#EC4899', label: 'Societário' },
+  FINANCEIRO: { bg: 'rgba(16,185,129,0.15)', color: '#10B981', label: 'Financeiro' },
+  MUNICIPAL: { bg: 'rgba(14,165,233,0.15)', color: '#0EA5E9', label: 'Municipal' },
 };
 
 export default function AccountantCompaniesPage() {
@@ -119,7 +122,7 @@ export default function AccountantCompaniesPage() {
       <Grid container spacing={2}>
         {filtered.map(company => {
           const typeStyle = entityTypeColors[company.entity_type] || entityTypeColors.MATRIZ;
-          const scopeStyle = scopeColors[company.scope] || scopeColors.FULL;
+          const scopeStyle = scopeColors[company.scope] || scopeColors.COMPLETO;
 
           return (
             <Grid item xs={12} sm={6} md={4} key={company.id}>

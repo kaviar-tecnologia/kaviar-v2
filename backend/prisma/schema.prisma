@@ -4498,7 +4498,7 @@ model accountants {
   accounting_firm_id          String
   nome_completo               String
   email                       String             @unique
-  cpf                         String             @unique
+  cpf                         String?            @unique
   crc                         String?
   crc_uf                      String?            @db.VarChar(2)
   job_title                   String?
