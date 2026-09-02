@@ -59,7 +59,13 @@ export async function listAccountants(params: ListAccountantsParams) {
   const [rows, total] = await Promise.all([
     prisma.accountants.findMany({
       where,
-      include: { firm: true },
+      include: {
+        firm: true,
+        invites: {
+          orderBy: { created_at: 'desc' },
+          take: 1,
+        },
+      },
       orderBy: { created_at: 'desc' },
       skip,
       take: limit,

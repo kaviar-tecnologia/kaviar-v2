@@ -140,6 +140,7 @@ test.describe('Accounting Portal — Invite Management', () => {
 
     await expect(page.getByText('João Silva')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Reenviar' })).toBeVisible();
+    await expect(page.getByText('Enviado')).toBeVisible();
   });
 
   test('shows "Convidar" button for INVITED accountant without email sent', async ({ page }) => {

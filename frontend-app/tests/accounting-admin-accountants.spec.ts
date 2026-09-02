@@ -216,7 +216,7 @@ test.describe('Accounting Portal — Accountants (Equipe)', () => {
 
     // Verify status chips render
     await expect(page.getByText('Ativo').first()).toBeVisible();
-    await expect(page.getByText('INVITED', { exact: true })).toBeVisible();
+    await expect(page.getByText('Pendente', { exact: true })).toBeVisible();
     await expect(page.getByText('SUSPENDED', { exact: true }).first()).toBeVisible();
   });
 

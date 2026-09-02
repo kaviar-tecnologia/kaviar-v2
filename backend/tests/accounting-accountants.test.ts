@@ -78,6 +78,12 @@ const baseAccountant = {
   created_at: new Date('2026-01-01T00:00:00.000Z'),
   updated_at: new Date('2026-01-02T00:00:00.000Z'),
   firm: baseFirm,
+  invites: [{
+    status: 'PENDING',
+    last_email_sent_at: new Date('2026-01-03T00:00:00.000Z'),
+    last_email_status: 'SENT',
+    created_at: new Date('2026-01-03T00:00:00.000Z'),
+  }],
 };
 
 beforeEach(() => {
@@ -98,6 +104,8 @@ describe('GET /api/admin/accounting/accountants', () => {
     expect(res.body.data).toHaveLength(1);
     expect(res.body.data[0].nome_completo).toBe('João da Silva');
     expect(res.body.data[0].firm.razao_social).toBe('Contabilidade Silva');
+    expect(res.body.data[0].last_email_status).toBe('SENT');
+    expect(res.body.data[0].last_email_sent_at).toBe('2026-01-03T00:00:00.000Z');
     expect(res.body.pagination.total).toBe(1);
   });
 
