@@ -32,7 +32,7 @@ import AccountantFormDialog from '../../../components/admin/accounting/Accountan
 
 function getInviteChip(row) {
   if (row.status === 'ACTIVE') {
-    return <Chip label="Ativado" size="small" color="primary" />;
+    return <Chip label="Ativo" size="small" color="primary" />;
   }
   if (row.status === 'INVITED') {
     if (row.last_email_status === 'SENT') {
