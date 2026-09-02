@@ -11,6 +11,11 @@ import {
 } from '../services/territory/city-preparation.service';
 import { resolveGeojsonPath } from '../services/territory/territorial-dataset-registry';
 import { acquireCityDataset } from '../services/territory/territorial-dataset-acquisition.service';
+import {
+  previewDatasetVersion,
+  rejectDatasetVersion,
+  listTerritoryDatasets,
+} from '../services/territory/territorial-dataset-review.service';
 
 const router = Router();
 router.use(authenticateAdmin, requireSuperAdmin);
@@ -807,6 +812,106 @@ router.post('/:id/prepare-city/acquire', async (req: Request, res: Response) => 
     });
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error?.message || 'Erro na aquisição de dataset' });
+  }
+});
+
+// ─── Fase 2: revisão de datasets DRAFT (listar / preview / reject) ───────────
+// SUPER_ADMIN (router). NÃO efetiva bairros/geofences (isso é Fase 3).
+
+// GET /api/admin/territories/:id/prepare-city/datasets
+router.get('/:id/prepare-city/datasets', async (req: Request, res: Response) => {
+  try {
+    const result = await listTerritoryDatasets(req.params.id, { prisma });
+    if (!result.ok) {
+      const map: Record<string, number> = { TERRITORY_NOT_FOUND: 404, DATASET_TERRITORY_AMBIGUOUS: 409, CITY_UF_MISSING: 400 };
+      return res.status(map[result.code] ?? 400).json({ success: false, error: result.code });
+    }
+    return res.json({ success: true, data: result.datasets });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || 'Erro ao listar datasets' });
+  }
+});
+
+// POST /api/admin/territories/:id/prepare-city/datasets/:versionId/preview
+// Read-only quanto a bairros/geofences/território. DRAFT -> PREVIEWED só no sucesso.
+router.post('/:id/prepare-city/datasets/:versionId/preview', async (req: Request, res: Response) => {
+  const ctx = auditCtx(req);
+  const reqAbort = new AbortController();
+  const onClose = () => reqAbort.abort();
+  req.on('close', onClose);
+  try {
+    const result = await previewDatasetVersion({
+      territoryId: req.params.id,
+      versionId: req.params.versionId,
+      signal: reqAbort.signal,
+      createdBy: ctx.adminId,
+      prisma,
+    });
+
+    if (!result.ok) {
+      const map: Record<string, number> = {
+        TERRITORY_NOT_FOUND: 404, DATASET_NOT_FOUND: 404,
+        DATASET_TERRITORY_MISMATCH: 403, DATASET_TERRITORY_AMBIGUOUS: 409,
+        CITY_UF_MISSING: 400, INVALID_STATUS_TRANSITION: 409,
+        CHECKSUM_MISMATCH: 409, NORMALIZED_TOO_LARGE: 413,
+        PREVIEW_DEADLINE_EXCEEDED: 504, PREVIEW_ABORTED: 499,
+      };
+      const status = map[result.code] ?? 422;
+      audit({
+        adminId: ctx.adminId, adminEmail: ctx.adminEmail,
+        action: 'prepare_city_dataset_preview_failed', entityType: 'territorial_dataset_version', entityId: req.params.versionId,
+        newValue: { code: result.code, status: (result as any).status }, ipAddress: ctx.ip, userAgent: ctx.ua,
+      });
+      return res.status(status).json({ success: false, error: result.reason, code: result.code });
+    }
+
+    audit({
+      adminId: ctx.adminId, adminEmail: ctx.adminEmail,
+      action: 'prepare_city_dataset_previewed', entityType: 'territorial_dataset_version', entityId: result.versionId,
+      newValue: {
+        transitioned: result.transitioned,
+        toCreate: result.plan.totals.toCreate,
+        toUpdate: result.plan.totals.toUpdate,
+        canProceed: result.plan.canProceed,
+      },
+      ipAddress: ctx.ip, userAgent: ctx.ua,
+    });
+
+    return res.json({ success: true, mode: 'preview', data: { status: result.status, transitioned: result.transitioned, plan: result.plan } });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || 'Erro no preview do dataset' });
+  } finally {
+    req.off('close', onClose);
+  }
+});
+
+const rejectDatasetSchema = z.object({ reason: z.string().max(500).optional() });
+
+// POST /api/admin/territories/:id/prepare-city/datasets/:versionId/reject
+router.post('/:id/prepare-city/datasets/:versionId/reject', async (req: Request, res: Response) => {
+  try {
+    const parsed = rejectDatasetSchema.safeParse(req.body ?? {});
+    const reason = parsed.success ? parsed.data.reason : undefined;
+    const ctx = auditCtx(req);
+    const result = await rejectDatasetVersion({
+      territoryId: req.params.id, versionId: req.params.versionId, reason, createdBy: ctx.adminId, prisma,
+    });
+    if (!result.ok) {
+      const map: Record<string, number> = {
+        TERRITORY_NOT_FOUND: 404, DATASET_NOT_FOUND: 404,
+        DATASET_TERRITORY_MISMATCH: 403, DATASET_TERRITORY_AMBIGUOUS: 409,
+        CITY_UF_MISSING: 400, INVALID_STATUS_TRANSITION: 409,
+      };
+      return res.status(map[result.code] ?? 400).json({ success: false, error: result.code, status: result.status });
+    }
+    audit({
+      adminId: ctx.adminId, adminEmail: ctx.adminEmail,
+      action: 'prepare_city_dataset_rejected', entityType: 'territorial_dataset_version', entityId: req.params.versionId,
+      reason, ipAddress: ctx.ip, userAgent: ctx.ua,
+    });
+    return res.json({ success: true, mode: 'rejected', data: { status: 'REJECTED' } });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || 'Erro ao rejeitar dataset' });
   }
 });
 

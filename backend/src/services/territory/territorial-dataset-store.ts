@@ -184,3 +184,131 @@ function defaultDeleteObject(s3?: S3Like) {
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
   };
 }
+
+// ─── Fase 2: leitura de versão + carregamento seguro do S3 + transições ──────
+
+/** Limite de bytes ao carregar o normalized.geojson do S3 (defesa). */
+export const MAX_NORMALIZED_BYTES = 50 * 1024 * 1024; // 50 MB
+
+export interface DatasetVersionRow {
+  id: string;
+  city: string;
+  uf: string;
+  provider_id: string;
+  source: string;
+  source_url: string | null;
+  method: string | null;
+  collected_at: Date;
+  is_official: boolean;
+  source_verified: boolean;
+  s3_raw_key: string | null;
+  s3_normalized_key: string | null;
+  feature_count: number;
+  invalid_count: number;
+  duplicate_count: number;
+  out_of_bbox_count: number;
+  status: DatasetStatus | string;
+  created_by: string | null;
+  created_at: Date;
+  applied_at: Date | null;
+  notes: string | null;
+  checksum: string | null;
+}
+
+/** Busca UMA versão de dataset por id (metadados). Read-only. */
+export async function getDatasetVersion(prisma: PrismaLike, versionId: string): Promise<DatasetVersionRow | null> {
+  return prisma.territorial_dataset_versions.findUnique({ where: { id: versionId } });
+}
+
+/** Lista as versões de uma cidade/UF (metadados). Read-only. */
+export async function listDatasetVersions(prisma: PrismaLike, city: string, uf: string): Promise<DatasetVersionRow[]> {
+  return prisma.territorial_dataset_versions.findMany({
+    where: { city, uf: uf.toUpperCase() },
+    orderBy: { created_at: 'desc' },
+  });
+}
+
+export interface LoadNormalizedResult {
+  /** FeatureCollection parseada. */
+  featureCollection: any;
+  /** checksum sha-256 calculado sobre os BYTES efetivamente lidos do S3. */
+  checksum: string;
+  /** nº de bytes lidos. */
+  bytes: number;
+}
+
+/**
+ * Carrega e valida o normalized.geojson do S3 de forma segura:
+ *  - limite de bytes (rejeita ANTES do parse pesado quando possível);
+ *  - checksum calculado sobre os bytes efetivamente lidos;
+ *  - parse defensivo (JSON inválido → erro);
+ *  - `getObject` INJETÁVEL (testes sem S3 real).
+ * Não grava nada.
+ */
+export async function loadNormalizedFromS3(
+  key: string,
+  deps: { s3?: S3Like; getObject?: (bucket: string, key: string) => Promise<string> } = {},
+  maxBytes: number = MAX_NORMALIZED_BYTES,
+): Promise<LoadNormalizedResult> {
+  const get = deps.getObject ?? defaultGetObject(deps.s3);
+  const body = await get(DATASET_BUCKET, key);
+  // Limite sobre BYTES UTF-8 efetivamente lidos (não .length de caracteres).
+  const bytes = Buffer.byteLength(body, 'utf8');
+  if (bytes > maxBytes) {
+    const e: any = new Error(`normalized.geojson excede ${maxBytes} bytes (${bytes})`);
+    e.code = 'NORMALIZED_TOO_LARGE';
+    throw e;
+  }
+  // Checksum sobre os bytes lidos.
+  const checksum = createHash('sha256').update(body).digest('hex');
+  let featureCollection: any;
+  try {
+    featureCollection = JSON.parse(body);
+  } catch {
+    const e: any = new Error('normalized.geojson inválido (JSON)');
+    e.code = 'INVALID_NORMALIZED_JSON';
+    throw e;
+  }
+  return { featureCollection, checksum, bytes };
+}
+
+export interface TransitionResult {
+  ok: boolean;
+  code: 'OK' | 'INVALID_STATUS_TRANSITION';
+  from?: string;
+  to?: DatasetStatus;
+}
+
+/**
+ * Transição de status com COMPARE-AND-SET (concorrência-segura).
+ * Só efetiva se o status atual ∈ allowedFrom. Retorna INVALID_STATUS_TRANSITION
+ * quando nenhuma linha casa (estado obsoleto / transição não permitida).
+ * Escreve SOMENTE em territorial_dataset_versions.
+ */
+export async function transitionStatus(
+  prisma: PrismaLike,
+  versionId: string,
+  allowedFrom: readonly string[],
+  to: DatasetStatus,
+): Promise<TransitionResult> {
+  const res = await prisma.territorial_dataset_versions.updateMany({
+    where: { id: versionId, status: { in: [...allowedFrom] } },
+    data: { status: to },
+  });
+  if (res.count === 1) return { ok: true, code: 'OK', to };
+  return { ok: false, code: 'INVALID_STATUS_TRANSITION' };
+}
+
+function defaultGetObject(s3?: S3Like) {
+  return async (bucket: string, key: string): Promise<string> => {
+    const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+    const client: S3Like = s3 ?? new S3Client({ region: process.env.AWS_REGION || 'us-east-2' });
+    const out: any = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    // AWS SDK v3: Body é stream; transformToString quando disponível.
+    if (out?.Body?.transformToString) return await out.Body.transformToString('utf-8');
+    // Fallback: concatena chunks.
+    const chunks: Buffer[] = [];
+    for await (const c of out.Body as any) chunks.push(Buffer.from(c));
+    return Buffer.concat(chunks).toString('utf-8');
+  };
+}
