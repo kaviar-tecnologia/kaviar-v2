@@ -59,15 +59,27 @@ export function availableActions({ superAdmin, dataset }) {
 }
 
 /**
- * Gating do apply: só habilita o botão "Confirmar aplicação" quando TODAS as
- * condições são verdadeiras. Fail-closed por padrão.
+ * Gating do apply: só habilita "Confirmar aplicação" quando TODAS as condições
+ * são verdadeiras. Fail-closed por padrão.
+ *
+ * EXIGE também uma PREVIEW VÁLIDA carregada para a MESMA dataset version:
+ *  - `preview` presente;
+ *  - `preview.versionId === dataset.id` (não vale prévia de outra version);
+ *  - `preview.canProceed === true`.
+ * Assim, recarregar a página com um dataset PREVIEWED (preview=null) NÃO habilita
+ * apply — o usuário precisa clicar em "Gerar prévia" novamente. A prévia NÃO é
+ * persistida no client.
  */
-export function canConfirmApply({ superAdmin, dataset, confirmChecked, inFlight }) {
+export function canConfirmApply({ superAdmin, dataset, preview, confirmChecked, inFlight }) {
   if (!superAdmin) return false;
   if (inFlight) return false;                 // proteção contra double-click / loading
   if (!dataset || dataset.status !== DATASET_STATUS.PREVIEWED) return false;
   if (dataset.applied_at) return false;       // já aplicado
   if (confirmChecked !== true) return false;  // checkbox obrigatório
+  // Exige preview válida da MESMA version (fail-closed).
+  if (!preview) return false;
+  if (preview.versionId !== dataset.id) return false;
+  if (preview.canProceed !== true) return false;
   return true;
 }
 
@@ -93,51 +105,67 @@ function base(territoryId) {
   return `${API_BASE_URL}/api/admin/territories/${territoryId}/prepare-city`;
 }
 
-/** GET datasets do território. Retorna {ok, datasets} | {ok:false, error}. */
+/**
+ * Executa uma request e retorna sempre um objeto (nunca lança):
+ *  - erro de rede/abort → { ok:false, code:'NETWORK_ERROR'|'ABORTED', message }
+ *  - JSON inválido/resposta inesperada → { ok:false, code:'INVALID_RESPONSE', message }
+ *  - HTTP !ok ou success:false → normalizeError
+ *  - sucesso → { ok:true, data }  (via `pick`)
+ * Fail-closed: qualquer coisa fora do caminho feliz vira ok:false.
+ */
+async function safeRequest(fetchImpl, url, options, pick) {
+  let res;
+  try {
+    res = await fetchImpl(url, options);
+  } catch (e) {
+    const aborted = e && (e.name === 'AbortError' || /abort/i.test(String(e.message || '')));
+    return { ok: false, code: aborted ? 'ABORTED' : 'NETWORK_ERROR', message: String(e?.message || e || 'Falha de rede') };
+  }
+  let data;
+  try {
+    data = await res.json();
+  } catch (e) {
+    return { ok: false, code: 'INVALID_RESPONSE', message: `Resposta inválida do servidor (HTTP ${res?.status ?? '?'})` };
+  }
+  if (!data || typeof data !== 'object') {
+    return { ok: false, code: 'INVALID_RESPONSE', message: 'Resposta inesperada do servidor' };
+  }
+  if (!res.ok || !data.success) return { ok: false, ...normalizeError(data, res.status) };
+  return { ok: true, data: pick ? pick(data) : data };
+}
+
+/** GET datasets do território. Nunca lança. */
 export async function fetchDatasets(territoryId, token, fetchImpl = fetch) {
-  const res = await fetchImpl(`${base(territoryId)}/datasets`, { headers: headers(token) });
-  const data = await res.json();
-  if (!res.ok || !data.success) return { ok: false, ...normalizeError(data, res.status) };
-  return { ok: true, datasets: data.data || [] };
+  const r = await safeRequest(fetchImpl, `${base(territoryId)}/datasets`, { headers: headers(token) }, (d) => d.data || []);
+  return r.ok ? { ok: true, datasets: r.data } : r;
 }
 
-/** POST acquire. Não faz retry. */
+/** POST acquire. Não faz retry. Nunca lança. */
 export async function acquireDataset(territoryId, token, fetchImpl = fetch) {
-  const res = await fetchImpl(`${base(territoryId)}/acquire`, { method: 'POST', headers: headers(token), body: '{}' });
-  const data = await res.json();
-  if (!res.ok || !data.success) return { ok: false, ...normalizeError(data, res.status) };
-  return { ok: true, data: data.data };
+  return safeRequest(fetchImpl, `${base(territoryId)}/acquire`, { method: 'POST', headers: headers(token), body: '{}' }, (d) => d.data);
 }
 
-/** POST preview. Não faz retry. */
+/** POST preview. Não faz retry. Nunca lança. */
 export async function previewDataset(territoryId, versionId, token, fetchImpl = fetch) {
-  const res = await fetchImpl(`${base(territoryId)}/datasets/${versionId}/preview`, { method: 'POST', headers: headers(token), body: '{}' });
-  const data = await res.json();
-  if (!res.ok || !data.success) return { ok: false, ...normalizeError(data, res.status) };
-  return { ok: true, data: data.data };
+  return safeRequest(fetchImpl, `${base(territoryId)}/datasets/${versionId}/preview`, { method: 'POST', headers: headers(token), body: '{}' }, (d) => d.data);
 }
 
-/** POST reject. Não faz retry. */
+/** POST reject. Não faz retry. Nunca lança. */
 export async function rejectDataset(territoryId, versionId, token, reason, fetchImpl = fetch) {
-  const res = await fetchImpl(`${base(territoryId)}/datasets/${versionId}/reject`, {
+  return safeRequest(fetchImpl, `${base(territoryId)}/datasets/${versionId}/reject`, {
     method: 'POST', headers: headers(token), body: JSON.stringify(reason ? { reason } : {}),
-  });
-  const data = await res.json();
-  if (!res.ok || !data.success) return { ok: false, ...normalizeError(data, res.status) };
-  return { ok: true, data: data.data };
+  }, (d) => d.data);
 }
 
 /**
  * POST apply — endpoint OFICIAL com confirm=true OBRIGATÓRIO.
- * A UI só deve chamar esta função após canConfirmApply(...) === true.
+ * A UI só deve chamar após canConfirmApply(...) === true.
  * `confirm` deve ser exatamente true (guarda extra fail-closed no client).
+ * Nunca lança.
  */
 export async function applyDataset(territoryId, versionId, token, confirm, fetchImpl = fetch) {
   if (confirm !== true) return { ok: false, code: 'CONFIRM_REQUIRED', message: 'Confirmação explícita obrigatória' };
-  const res = await fetchImpl(`${base(territoryId)}/datasets/${versionId}/apply`, {
+  return safeRequest(fetchImpl, `${base(territoryId)}/datasets/${versionId}/apply`, {
     method: 'POST', headers: headers(token), body: JSON.stringify({ confirm: true }),
-  });
-  const data = await res.json();
-  if (!res.ok || !data.success) return { ok: false, ...normalizeError(data, res.status) };
-  return { ok: true, data: data.data };
+  }, (d) => d.data);
 }

@@ -48,8 +48,15 @@ export default function TerritorialDatasetSection({ territory, token }) {
     if (!territoryId || !token) return;
     setLoading(true); setError(null);
     const r = await fetchDatasets(territoryId, token);
-    if (r.ok) setDataset(latestDataset(r.datasets));
-    else setError({ code: r.code, message: r.message });
+    if (r.ok) {
+      const latest = latestDataset(r.datasets);
+      setDataset(latest);
+      // Fail-closed: prévia NÃO é persistida. Se recarregou e a version atual
+      // não corresponde à prévia em memória, descarta a prévia (força novo preview).
+      setPreview((prev) => (prev && latest && prev.versionId === latest.id ? prev : null));
+    } else {
+      setError({ code: r.code, message: r.message });
+    }
     setLoading(false);
   }, [territoryId, token]);
 
@@ -77,7 +84,12 @@ export default function TerritorialDatasetSection({ territory, token }) {
   const onPreview = async () => {
     if (!dataset) return;
     const r = await run(() => previewDataset(territoryId, dataset.id, token));
-    if (r?.ok) { setPreview(r.data?.plan || null); await reload(); }
+    if (r?.ok) {
+      // Guarda a prévia AMARRADA à version que a gerou (fail-closed p/ apply).
+      const plan = r.data?.plan || null;
+      setPreview(plan ? { ...plan, versionId: dataset.id } : null);
+      await reload();
+    }
   };
   const onReject = async () => {
     if (!dataset) return;
@@ -86,7 +98,7 @@ export default function TerritorialDatasetSection({ territory, token }) {
   };
   const openConfirm = () => { setConfirmChecked(false); setConfirmOpen(true); };
   const onConfirmApply = async () => {
-    if (!canConfirmApply({ superAdmin, dataset, confirmChecked, inFlight })) return;
+    if (!canConfirmApply({ superAdmin, dataset, preview, confirmChecked, inFlight })) return;
     const r = await run(() => applyDataset(territoryId, dataset.id, token, true));
     setConfirmOpen(false);
     if (r?.ok) { setApplyResult(r.data); await reload(); }
@@ -208,6 +220,13 @@ export default function TerritorialDatasetSection({ territory, token }) {
             <Field label="Vínculos territoriais" value={preview?.totals?.toLinkTerritory ?? '—'} color="#B8942E" />
           </Box>
           <Divider sx={{ my: 1 }} />
+          {(!preview || preview.versionId !== dataset?.id) ? (
+            <Alert severity="warning" sx={{ mb: 2 }} data-testid="need-preview">
+              Gere a prévia desta versão antes de aplicar. Recarregar a página exige gerar a prévia novamente.
+            </Alert>
+          ) : preview.canProceed !== true ? (
+            <Alert severity="error" sx={{ mb: 2 }}>A prévia indica que o dataset não pode prosseguir (canProceed=false).</Alert>
+          ) : null}
           <Alert severity="warning" sx={{ mb: 2 }}>
             Esta ação escreverá bairros e geofences no banco de produção.
           </Alert>
@@ -221,7 +240,7 @@ export default function TerritorialDatasetSection({ territory, token }) {
           <Button
             variant="contained"
             data-testid="btn-confirm-apply"
-            disabled={!canConfirmApply({ superAdmin, dataset, confirmChecked, inFlight })}
+            disabled={!canConfirmApply({ superAdmin, dataset, preview, confirmChecked, inFlight })}
             onClick={onConfirmApply}
             sx={{ bgcolor: '#059669' }}
           >

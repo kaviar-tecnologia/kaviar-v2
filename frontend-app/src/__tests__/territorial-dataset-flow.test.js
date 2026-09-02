@@ -56,10 +56,20 @@ describe('availableActions (state machine)', () => {
   });
 });
 
-describe('canConfirmApply (gating do apply)', () => {
-  const okArgs = { superAdmin: true, dataset: previewed, confirmChecked: true, inFlight: false };
-  it('true somente com todas as condições', () => {
+describe('canConfirmApply (gating do apply — exige preview válida da mesma version)', () => {
+  const validPreview = { versionId: 'v1', canProceed: true };
+  const okArgs = { superAdmin: true, dataset: previewed, preview: validPreview, confirmChecked: true, inFlight: false };
+  it('true somente com todas as condições (incl. preview válida da mesma version)', () => {
     expect(canConfirmApply(okArgs)).toBe(true);
+  });
+  it('PREVIEWED + preview null => desabilitado', () => {
+    expect(canConfirmApply({ ...okArgs, preview: null })).toBe(false);
+  });
+  it('PREVIEWED + preview de OUTRA version => desabilitado', () => {
+    expect(canConfirmApply({ ...okArgs, preview: { versionId: 'OUTRA', canProceed: true } })).toBe(false);
+  });
+  it('PREVIEWED + canProceed=false => desabilitado', () => {
+    expect(canConfirmApply({ ...okArgs, preview: { versionId: 'v1', canProceed: false } })).toBe(false);
   });
   it('false sem checkbox (confirmação obrigatória)', () => {
     expect(canConfirmApply({ ...okArgs, confirmChecked: false })).toBe(false);
@@ -145,5 +155,35 @@ describe('API client — fail-closed', () => {
     const spy = async () => { calls++; return { ok: false, status: 422, json: async () => ({ success: false, error: 'sem features', code: 'NO_VALID_FEATURES' }) }; };
     const r = await acquireDataset('t1', 'tok', spy);
     expect(r.ok).toBe(false); expect(r.code).toBe('NO_VALID_FEATURES'); expect(calls).toBe(1);
+  });
+});
+
+describe('API client — erros de rede/JSON tratados (fail-closed, nunca lança)', () => {
+  it('fetch REJEITA a Promise → ok:false NETWORK_ERROR (sem exceção)', async () => {
+    const reject = async () => { throw new Error('getaddrinfo ENOTFOUND'); };
+    const r = await fetchDatasets('t1', 'tok', reject);
+    expect(r.ok).toBe(false); expect(r.code).toBe('NETWORK_ERROR');
+    expect(r.message).toContain('ENOTFOUND');
+  });
+  it('AbortError → ok:false ABORTED', async () => {
+    const abort = async () => { const e = new Error('The user aborted a request.'); e.name = 'AbortError'; throw e; };
+    const r = await previewDataset('t1', 'v1', 'tok', abort);
+    expect(r.ok).toBe(false); expect(r.code).toBe('ABORTED');
+  });
+  it('res.json() LANÇA → ok:false INVALID_RESPONSE', async () => {
+    const badJson = async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token < in JSON'); } });
+    const r = await applyDataset('t1', 'v1', 'tok', true, badJson);
+    expect(r.ok).toBe(false); expect(r.code).toBe('INVALID_RESPONSE');
+  });
+  it('resposta não-objeto → ok:false INVALID_RESPONSE', async () => {
+    const weird = async () => ({ ok: true, status: 200, json: async () => 'string inesperada' });
+    const r = await acquireDataset('t1', 'tok', weird);
+    expect(r.ok).toBe(false); expect(r.code).toBe('INVALID_RESPONSE');
+  });
+  it('erro de rede NÃO dispara retry (uma única chamada)', async () => {
+    let calls = 0;
+    const spy = async () => { calls++; throw new Error('network down'); };
+    const r = await applyDataset('t1', 'v1', 'tok', true, spy);
+    expect(r.ok).toBe(false); expect(calls).toBe(1);
   });
 });
