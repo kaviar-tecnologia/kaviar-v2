@@ -5,6 +5,7 @@ import {
   rejectDatasetVersion,
   listTerritoryDatasets,
   datasetBelongsToTerritory,
+  resolveVersionOwnership,
 } from '../src/services/territory/territorial-dataset-review.service';
 
 // ─── FeatureCollection normalizada válida dentro de Cariacica ────────────────
@@ -428,5 +429,32 @@ describe('FASE 3A — isolamento por territory_id', () => {
     if (r.ok) return;
     expect(r.code).toBe('DATASET_TERRITORY_AMBIGUOUS');
     expect(s3).toBe(false);
+  });
+});
+
+// ─── FASE 3A: territory_id NÃO deve depender de city/uf do território ─────────
+describe('FASE 3A — territory_id independe de city/uf', () => {
+  it('território SEM city_name/UF + versão com territory_id CORRETO → ownership válido (OK)', async () => {
+    // Território moderno sem city/uf preenchidos; ownership resolve só por territory_id.
+    const T = { id: 'terr-x', name: 'Território X', city_name: null, uf: null };
+    const prisma = makePrisma(draftVersion({ territory_id: 'terr-x' }), { territory: T, territories: [T] });
+    const own = await resolveVersionOwnership(prisma, 'terr-x', 'v1');
+    expect(own.code).toBe('OK');
+    expect(own.version?.id).toBe('v1');
+  });
+
+  it('território SEM city/UF + versão com territory_id ERRADO → MISMATCH (não CITY_UF_MISSING)', async () => {
+    const T = { id: 'terr-x', name: 'Território X', city_name: null, uf: null };
+    // versão aponta para outro território
+    const prisma = makePrisma(draftVersion({ territory_id: 'terr-outro' }), { territory: T, territories: [T] });
+    const own = await resolveVersionOwnership(prisma, 'terr-x', 'v1');
+    expect(own.code).toBe('DATASET_TERRITORY_MISMATCH');
+  });
+
+  it('versão LEGADA territory_id=NULL + território SEM city/UF → CITY_UF_MISSING (fail-closed)', async () => {
+    const T = { id: 'terr-x', name: 'Território X', city_name: null, uf: null };
+    const prisma = makePrisma(draftVersion({ territory_id: null }), { territory: T, territories: [T] });
+    const own = await resolveVersionOwnership(prisma, 'terr-x', 'v1');
+    expect(own.code).toBe('CITY_UF_MISSING');
   });
 });

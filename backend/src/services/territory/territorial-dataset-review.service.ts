@@ -125,9 +125,10 @@ export interface OwnershipResult {
 /**
  * Resolve o território e a versão, aplicando o isolamento correto:
  *  - se a versão tem `territory_id` (Fase 3A): AUTORIDADE PRIMÁRIA — compara
- *    diretamente com o território; a guarda de ambiguidade city+uf NÃO se aplica.
- *  - se `territory_id` é NULL (legado): aplica a guarda fail-closed por city+uf
- *    (DATASET_TERRITORY_AMBIGUOUS) + datasetBelongsToTerritory.
+ *    diretamente com o território, SEM depender de city/uf e SEM guarda de
+ *    ambiguidade. Uma versão moderna não deve depender de city+uf.
+ *  - se `territory_id` é NULL (legado): SÓ ENTÃO exige city+uf e aplica a guarda
+ *    fail-closed por city+uf (DATASET_TERRITORY_AMBIGUOUS) + datasetBelongsToTerritory.
  * Somente LEITURA. Chamada ANTES de qualquer acesso a S3/transição.
  */
 export async function resolveVersionOwnership(
@@ -137,20 +138,22 @@ export async function resolveVersionOwnership(
 ): Promise<OwnershipResult> {
   const territory = await prisma.operational_territories.findUnique({ where: { id: territoryId } });
   if (!territory) return { code: 'TERRITORY_NOT_FOUND' };
-  const city = (territory.city_name || territory.name || '').trim();
-  const uf = (territory.uf || '').trim();
-  if (!city || !uf) return { code: 'CITY_UF_MISSING' };
 
   const version = await getDatasetVersion(prisma, versionId);
   if (!version) return { code: 'DATASET_NOT_FOUND', territory };
 
   if (version.territory_id != null) {
-    // Autoridade primária: territory_id. Sem depender de city+uf/ambiguidade.
+    // Autoridade primária: territory_id. NÃO exige city/uf nem guarda de ambiguidade.
     if (version.territory_id !== territory.id) return { code: 'DATASET_TERRITORY_MISMATCH', territory };
     return { code: 'OK', territory, version };
   }
 
-  // Legado (territory_id NULL): guarda fail-closed por city+uf.
+  // Legado (territory_id NULL): SÓ AQUI city+uf é exigido.
+  const city = (territory.city_name || territory.name || '').trim();
+  const uf = (territory.uf || '').trim();
+  if (!city || !uf) return { code: 'CITY_UF_MISSING', territory };
+
+  // Guarda fail-closed por city+uf.
   const scope = await resolveTerritoryScope(prisma, territoryId);
   if (scope.code === 'DATASET_TERRITORY_AMBIGUOUS' || !scope.scope) {
     return { code: 'DATASET_TERRITORY_AMBIGUOUS', territory };
