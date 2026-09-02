@@ -34,16 +34,25 @@ function normKey(s: string | null | undefined): string {
   return String(s ?? '').trim().toLowerCase();
 }
 
-/** Isolamento: a versão pertence ao território? Usa city+uf (autoridade disponível). */
+/**
+ * Isolamento: a versão pertence ao território?
+ *  - Se a versão tem `territory_id` (Fase 3A), ele é a AUTORIDADE PRIMÁRIA:
+ *    precisa ser igual ao id do território. city/uf viram validação secundária.
+ *  - Se `territory_id` é NULL (versões legadas), usa a guarda por city+uf.
+ */
 export function datasetBelongsToTerritory(
-  version: Pick<DatasetVersionRow, 'city' | 'uf'>,
-  territory: { name: string; city_name: string | null; uf: string | null },
+  version: Pick<DatasetVersionRow, 'city' | 'uf'> & { territory_id?: string | null },
+  territory: { id: string; name: string; city_name: string | null; uf: string | null },
 ): boolean {
+  // Autoridade primária: territory_id explícito.
+  if (version.territory_id != null) {
+    return version.territory_id === territory.id;
+  }
+  // Legado (territory_id NULL): city+uf.
   const tCity = normKey(territory.city_name || territory.name);
   const tUf = normKey(territory.uf);
   const vCity = normKey(version.city);
   const vUf = normKey(version.uf);
-  // UF deve bater quando ambos existem; cidade deve bater (case-insensitive).
   if (tUf && vUf && tUf !== vUf) return false;
   return vCity === tCity;
 }
@@ -97,6 +106,62 @@ export async function resolveTerritoryScope(prisma: PrismaLike, territoryId: str
   if (distinctIds.size > 1) return { code: 'DATASET_TERRITORY_AMBIGUOUS' };
 
   return { code: 'OK', scope: { territory, city, uf } };
+}
+
+export type OwnershipCode =
+  | 'OK'
+  | 'TERRITORY_NOT_FOUND'
+  | 'CITY_UF_MISSING'
+  | 'DATASET_NOT_FOUND'
+  | 'DATASET_TERRITORY_AMBIGUOUS'
+  | 'DATASET_TERRITORY_MISMATCH';
+
+export interface OwnershipResult {
+  code: OwnershipCode;
+  territory?: any;
+  version?: DatasetVersionRow;
+}
+
+/**
+ * Resolve o território e a versão, aplicando o isolamento correto:
+ *  - se a versão tem `territory_id` (Fase 3A): AUTORIDADE PRIMÁRIA — compara
+ *    diretamente com o território, SEM depender de city/uf e SEM guarda de
+ *    ambiguidade. Uma versão moderna não deve depender de city+uf.
+ *  - se `territory_id` é NULL (legado): SÓ ENTÃO exige city+uf e aplica a guarda
+ *    fail-closed por city+uf (DATASET_TERRITORY_AMBIGUOUS) + datasetBelongsToTerritory.
+ * Somente LEITURA. Chamada ANTES de qualquer acesso a S3/transição.
+ */
+export async function resolveVersionOwnership(
+  prisma: PrismaLike,
+  territoryId: string,
+  versionId: string,
+): Promise<OwnershipResult> {
+  const territory = await prisma.operational_territories.findUnique({ where: { id: territoryId } });
+  if (!territory) return { code: 'TERRITORY_NOT_FOUND' };
+
+  const version = await getDatasetVersion(prisma, versionId);
+  if (!version) return { code: 'DATASET_NOT_FOUND', territory };
+
+  if (version.territory_id != null) {
+    // Autoridade primária: territory_id. NÃO exige city/uf nem guarda de ambiguidade.
+    if (version.territory_id !== territory.id) return { code: 'DATASET_TERRITORY_MISMATCH', territory };
+    return { code: 'OK', territory, version };
+  }
+
+  // Legado (territory_id NULL): SÓ AQUI city+uf é exigido.
+  const city = (territory.city_name || territory.name || '').trim();
+  const uf = (territory.uf || '').trim();
+  if (!city || !uf) return { code: 'CITY_UF_MISSING', territory };
+
+  // Guarda fail-closed por city+uf.
+  const scope = await resolveTerritoryScope(prisma, territoryId);
+  if (scope.code === 'DATASET_TERRITORY_AMBIGUOUS' || !scope.scope) {
+    return { code: 'DATASET_TERRITORY_AMBIGUOUS', territory };
+  }
+  if (!datasetBelongsToTerritory(version, territory)) {
+    return { code: 'DATASET_TERRITORY_MISMATCH', territory };
+  }
+  return { code: 'OK', territory, version };
 }
 
 export interface ReviewDeps {
@@ -154,22 +219,16 @@ export async function previewDatasetVersion(params: PreviewParams): Promise<Prev
   });
 
   try {
-    // 1) Resolve território + GUARDA DE AMBIGUIDADE (antes de qualquer S3).
-    const scope = await resolveTerritoryScope(prisma, params.territoryId);
-    if (scope.code === 'TERRITORY_NOT_FOUND') return { ok: false, code: 'TERRITORY_NOT_FOUND', reason: 'Território não encontrado' };
-    if (scope.code === 'CITY_UF_MISSING') return { ok: false, code: 'CITY_UF_MISSING', reason: 'Território sem cidade/UF definidos' };
-    if (scope.code === 'DATASET_TERRITORY_AMBIGUOUS' || !scope.scope) {
-      return { ok: false, code: 'DATASET_TERRITORY_AMBIGUOUS', reason: 'Mais de um território mapeia para a mesma city+UF; pertencimento não pode ser assumido.' };
-    }
-    const territory = scope.scope.territory;
-
-    const version = await getDatasetVersion(prisma, params.versionId);
-    if (!version) return { ok: false, code: 'DATASET_NOT_FOUND', reason: 'Versão de dataset não encontrada' };
-
-    // 2) Isolamento por território (city+uf) — ANTES do S3/transição.
-    if (!datasetBelongsToTerritory(version, territory)) {
-      return { ok: false, code: 'DATASET_TERRITORY_MISMATCH', reason: 'Dataset não pertence ao território.' };
-    }
+    // 1) Resolve território + versão + ISOLAMENTO (territory_id primário; city+uf
+    //    com guarda de ambiguidade apenas para versões legadas). Antes de S3.
+    const own = await resolveVersionOwnership(prisma, params.territoryId, params.versionId);
+    if (own.code === 'TERRITORY_NOT_FOUND') return { ok: false, code: 'TERRITORY_NOT_FOUND', reason: 'Território não encontrado' };
+    if (own.code === 'CITY_UF_MISSING') return { ok: false, code: 'CITY_UF_MISSING', reason: 'Território sem cidade/UF definidos' };
+    if (own.code === 'DATASET_NOT_FOUND') return { ok: false, code: 'DATASET_NOT_FOUND', reason: 'Versão de dataset não encontrada' };
+    if (own.code === 'DATASET_TERRITORY_AMBIGUOUS') return { ok: false, code: 'DATASET_TERRITORY_AMBIGUOUS', reason: 'Mais de um território mapeia para a mesma city+UF; pertencimento não pode ser assumido.' };
+    if (own.code === 'DATASET_TERRITORY_MISMATCH' || !own.version) return { ok: false, code: 'DATASET_TERRITORY_MISMATCH', reason: 'Dataset não pertence ao território.' };
+    const version = own.version;
+    const territory = own.territory;
 
     // 3) Estado: só DRAFT ou PREVIEWED podem ser previewados. REJECTED/APPLIED não.
     if (version.status !== 'DRAFT' && version.status !== 'PREVIEWED') {
@@ -261,16 +320,14 @@ export interface RejectResult {
 export async function rejectDatasetVersion(params: RejectParams): Promise<RejectResult> {
   const prisma = params.prisma ?? defaultPrisma;
 
-  // Guarda de ambiguidade ANTES de qualquer transição.
-  const scope = await resolveTerritoryScope(prisma, params.territoryId);
-  if (scope.code === 'TERRITORY_NOT_FOUND') return { ok: false, code: 'TERRITORY_NOT_FOUND' };
-  if (scope.code === 'CITY_UF_MISSING') return { ok: false, code: 'CITY_UF_MISSING' };
-  if (scope.code === 'DATASET_TERRITORY_AMBIGUOUS' || !scope.scope) return { ok: false, code: 'DATASET_TERRITORY_AMBIGUOUS' };
-  const territory = scope.scope.territory;
-
-  const version = await getDatasetVersion(prisma, params.versionId);
-  if (!version) return { ok: false, code: 'DATASET_NOT_FOUND' };
-  if (!datasetBelongsToTerritory(version, territory)) return { ok: false, code: 'DATASET_TERRITORY_MISMATCH' };
+  // Isolamento (territory_id primário; city+uf/ambiguidade só p/ legado) antes da transição.
+  const own = await resolveVersionOwnership(prisma, params.territoryId, params.versionId);
+  if (own.code === 'TERRITORY_NOT_FOUND') return { ok: false, code: 'TERRITORY_NOT_FOUND' };
+  if (own.code === 'CITY_UF_MISSING') return { ok: false, code: 'CITY_UF_MISSING' };
+  if (own.code === 'DATASET_NOT_FOUND') return { ok: false, code: 'DATASET_NOT_FOUND' };
+  if (own.code === 'DATASET_TERRITORY_AMBIGUOUS') return { ok: false, code: 'DATASET_TERRITORY_AMBIGUOUS' };
+  if (own.code === 'DATASET_TERRITORY_MISMATCH' || !own.version) return { ok: false, code: 'DATASET_TERRITORY_MISMATCH' };
+  const version = own.version;
 
   // Permitido: DRAFT|PREVIEWED -> REJECTED. REJECTED/APPLIED → inválido.
   const t = await transitionStatus(prisma, version.id, ['DRAFT', 'PREVIEWED'], 'REJECTED');

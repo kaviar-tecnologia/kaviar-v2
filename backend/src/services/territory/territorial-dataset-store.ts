@@ -64,6 +64,8 @@ export type PrismaLike = any;
 export interface PersistDatasetInput {
   city: string;
   uf: string;
+  /** Vínculo territorial explícito (Fase 3A). Preferir sempre este valor. */
+  territoryId?: string | null;
   acquired: AcquiredDataset;
   createdBy?: string | null;
   notes?: string | null;
@@ -137,6 +139,7 @@ export async function persistDatasetVersion(
       data: {
         city: input.city,
         uf: input.uf.toUpperCase(),
+        territory_id: input.territoryId ?? null,
         provider_id: p.providerId,
         source: p.source,
         source_url: p.sourceUrl ?? null,
@@ -194,6 +197,7 @@ export interface DatasetVersionRow {
   id: string;
   city: string;
   uf: string;
+  territory_id: string | null;
   provider_id: string;
   source: string;
   source_url: string | null;

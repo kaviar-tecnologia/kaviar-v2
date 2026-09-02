@@ -172,7 +172,7 @@ export async function acquireCityDataset(params: AcquireParams): Promise<Acquire
 
     // Persiste DRAFT (S3 + metadados). source_verified é FORÇADO false no store.
     const persisted = await persistDatasetVersion(
-      { city, uf, acquired, createdBy: params.createdBy ?? null, status: 'DRAFT' },
+      { city, uf, territoryId: territory.id, acquired, createdBy: params.createdBy ?? null, status: 'DRAFT' },
       { prisma, s3: params.s3, putObject: params.putObject, deleteObject: params.deleteObject },
     );
 
