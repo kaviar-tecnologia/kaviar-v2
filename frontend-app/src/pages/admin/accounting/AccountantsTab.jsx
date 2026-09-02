@@ -237,11 +237,7 @@ export default function AccountantsTab() {
                     ) : '—'}
                   </TableCell>
                   <TableCell>
-                    <Chip
-                      label={row.status === 'ACTIVE' ? 'Ativo' : row.status || 'Inativo'}
-                      size="small"
-                      color={row.status === 'ACTIVE' ? 'success' : 'default'}
-                    />
+                    {getInviteChip(row)}
                   </TableCell>
                   <TableCell align="right">
                     <Button size="small" onClick={() => handleEdit(row.id)}>Editar</Button>

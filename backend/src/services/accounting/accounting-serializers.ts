@@ -96,6 +96,8 @@ export function serializeAccountantListItem(accountant: any) {
     mfa_enabled: accountant.mfa_enabled,
     invited_at: toIso(accountant.invited_at),
     activated_at: toIso(accountant.activated_at),
+    last_email_sent_at: toIso(accountant.invites?.[0]?.last_email_sent_at),
+    last_email_status: accountant.invites?.[0]?.last_email_status ?? null,
     last_access_at: toIso(accountant.last_access_at),
     created_at: toIso(accountant.created_at),
     updated_at: toIso(accountant.updated_at),
