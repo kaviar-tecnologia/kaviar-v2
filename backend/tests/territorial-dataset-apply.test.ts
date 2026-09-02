@@ -71,6 +71,7 @@ interface MockOpts {
   failFinalTransition?: boolean; // CAS APPLYING->APPLIED retorna count 0
   concurrentSteal?: boolean;  // simula outra corrida: CAS PREVIEWED->APPLYING retorna count 0
   featureEnvelope?: { xmin: number; xmax: number; ymin: number; ymax: number }; // envelope da geometria no $queryRaw
+  onGeofenceWrite?: (n: number) => void; // hook chamado a cada geofence escrita (dentro da tx)
 }
 
 // resolveBBox injetado: bbox municipal CONFIÁVEL fixo (não chama OSM/Overpass).
@@ -163,6 +164,7 @@ function makePrisma(vRow: any, opts: MockOpts = {}) {
         throw new Error('DB geofence insert failed');
       }
       state.geofenceWrites++;
+      if (opts.onGeofenceWrite) opts.onGeofenceWrite(state.geofenceWrites);
       return 1;
     },
   };
@@ -409,22 +411,26 @@ describe('FASE 3B — idempotência e conflitos', () => {
     expect(r.counters?.geofencesWritten).toBe(1); // reescreveu 1, sem duplicar
   });
 
-  it('conflito (bairro de OUTRO território) NÃO provoca delete; conta conflicts/skipped', async () => {
+  it('conflito (bairro de OUTRO território) → fail-closed: rollback, sem APPLIED, sem delete', async () => {
     const prisma = makePrisma(versionRow({ status: 'PREVIEWED' }), {
       neighborhoods: [{ id: 'nb-centro', name: 'Centro', city: CITY, territory_id: 'terr-OUTRO' }],
     });
     const body = bodyOf(fc(polygon('Centro'), polygon('Novo')));
     prisma.__state.versions[0].checksum = checksumOf(body);
     const r = await applyDatasetVersion({ resolveBBox: bboxOk(), territoryId: 'terr-cariacica', versionId: 'v1', prisma, getObject: async () => body });
-    expect(r.ok).toBe(true);
-    expect(r.counters?.conflicts).toBe(1);
-    expect(r.counters?.skipped).toBe(1);
-    expect(r.conflicts?.[0].name).toBe('Centro');
-    // 'Centro' preservado com territory_id do OUTRO (não sobrescrito, não apagado)
+    // FAIL-CLOSED: conflito territorial aborta o apply inteiro.
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe('NEIGHBORHOOD_TERRITORY_CONFLICT');
+    expect(r.conflicts?.[0].name).toBeTruthy(); // lista de conflitos retornada
+    // rollback integral: versão continua PREVIEWED, nenhuma escrita parcial
+    expect(prisma.__state.versions[0].status).toBe('PREVIEWED');
+    expect(prisma.__state.versions[0].applied_at).toBeNull();
+    expect(prisma.__state.geofenceWrites).toBe(0);
+    // 'Centro' preservado no OUTRO território; 'Novo' NÃO permanece (rollback)
     const centro = prisma.__state.neighborhoods.find((x: any) => x.name === 'Centro');
-    expect(centro.territory_id).toBe('terr-OUTRO');
-    expect(prisma.__state.neighborhoods.find((x: any) => x.name === 'Novo')).toBeTruthy(); // 'Novo' criado
-    expect(r.counters?.created).toBe(1);
+    expect(centro.territory_id).toBe('terr-OUTRO'); // não sobrescrito, não apagado
+    expect(prisma.__state.neighborhoods.find((x: any) => x.name === 'Novo')).toBeFalsy();
+    expect(prisma.__state.neighborhoods.length).toBe(1);
   });
 });
 
@@ -591,18 +597,99 @@ describe('FASE 3B — identidade por nome normalizado', () => {
     expect(prisma.__state.geofenceWrites).toBe(0);
   });
 
-  it('bairro normalizado pertence a OUTRO território → conflito sem escrita', async () => {
+  it('bairro normalizado pertence a OUTRO território → fail-closed, sem escrita', async () => {
     const prisma = makePrisma(versionRow({ status: 'PREVIEWED' }), {
       neighborhoods: [{ id: 'nb-centro', name: '  centro ', city: CITY, territory_id: 'terr-OUTRO' }],
     });
     const body = bodyOf(fc(polygon('Centro')));
     prisma.__state.versions[0].checksum = checksumOf(body);
     const r = await applyDatasetVersion({ resolveBBox: bboxOk(), territoryId: 'terr-cariacica', versionId: 'v1', prisma, getObject: async () => body });
-    expect(r.ok).toBe(true); // conflito é contabilizado, não aborta o apply
-    expect(r.counters?.conflicts).toBe(1);
-    expect(r.counters?.skipped).toBe(1);
+    expect(r.ok).toBe(false); // fail-closed
+    expect(r.code).toBe('NEIGHBORHOOD_TERRITORY_CONFLICT');
     const centro = prisma.__state.neighborhoods.find((x: any) => x.id === 'nb-centro');
     expect(centro.territory_id).toBe('terr-OUTRO'); // não sobrescrito
     expect(prisma.__state.neighborhoods.length).toBe(1); // não criou duplicado
+    expect(prisma.__state.versions[0].status).toBe('PREVIEWED'); // rollback
+    expect(prisma.__state.geofenceWrites).toBe(0);
+  });
+});
+
+// ─── FIX #1: conflito territorial => rollback integral (não APPLIED parcial) ─
+describe('FASE 3B — conflito territorial é fail-closed (rollback integral)', () => {
+  it('1 conflito + 1 bairro novo → rollback: bairro novo NÃO permanece, versão PREVIEWED', async () => {
+    // 'Centro' pertence a outro território (conflito); 'Novo' seria criado.
+    // Como o conflito aborta a tx, o 'Novo' já criado é revertido.
+    const prisma = makePrisma(versionRow({ status: 'PREVIEWED' }), {
+      neighborhoods: [{ id: 'nb-centro', name: 'Centro', city: CITY, territory_id: 'terr-OUTRO' }],
+    });
+    // Ordena 'Novo' ANTES de 'Centro' para provar que uma escrita já feita é revertida.
+    const body = bodyOf(fc(polygon('Novo'), polygon('Centro')));
+    prisma.__state.versions[0].checksum = checksumOf(body);
+    const r = await applyDatasetVersion({ resolveBBox: bboxOk(), territoryId: 'terr-cariacica', versionId: 'v1', prisma, getObject: async () => body });
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe('NEIGHBORHOOD_TERRITORY_CONFLICT');
+    expect(r.conflicts && r.conflicts.length).toBeGreaterThanOrEqual(1); // lista de conflitos
+    expect(prisma.__state.versions[0].status).toBe('PREVIEWED'); // não APPLIED
+    expect(prisma.__state.versions[0].applied_at).toBeNull();
+    expect(prisma.__state.geofenceWrites).toBe(0); // nenhuma geofence parcial
+    // 'Novo' não permanece; 'Centro' intocado no OUTRO território (sem delete)
+    expect(prisma.__state.neighborhoods.find((x: any) => x.name === 'Novo')).toBeFalsy();
+    expect(prisma.__state.neighborhoods.length).toBe(1);
+  });
+});
+
+// ─── FIX #2: cancelamento/deadline propagados por todo o apply ───────────────
+describe('FASE 3B — cancelamento e deadline', () => {
+  it('abort durante resolução do bbox → zero escrita, PREVIEWED', async () => {
+    const prisma = makePrisma(versionRow({ status: 'PREVIEWED' }));
+    const controller = new AbortController();
+    // resolveBBox simula cancelamento durante OSM: aborta e retorna (o serviço
+    // deve checar signal.aborted após o bbox e não iniciar a transação).
+    const resolveAbort = async () => { controller.abort(); return { bbox: { ...MUNICIPAL_BBOX }, source: 'osm_municipality' as const, code: 'OK' as const }; };
+    const r = await applyDatasetVersion({ resolveBBox: resolveAbort as any, signal: controller.signal, territoryId: 'terr-cariacica', versionId: 'v1', prisma, getObject: okGetObject });
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe('APPLY_ABORTED');
+    expect(prisma.__state.versions[0].status).toBe('PREVIEWED');
+    expect(prisma.__state.geofenceWrites).toBe(0);
+    expect(prisma.__state.neighborhoods.length).toBe(0);
+  });
+
+  it('abort ANTES do CAS (já cancelado ao entrar) → zero escrita', async () => {
+    const prisma = makePrisma(versionRow({ status: 'PREVIEWED' }));
+    const controller = new AbortController();
+    controller.abort(); // já cancelado
+    const r = await applyDatasetVersion({ resolveBBox: bboxOk(), signal: controller.signal, territoryId: 'terr-cariacica', versionId: 'v1', prisma, getObject: okGetObject });
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe('APPLY_ABORTED');
+    expect(prisma.__state.geofenceWrites).toBe(0);
+    expect(prisma.__state.versions[0].status).toBe('PREVIEWED');
+  });
+
+  it('abort DURANTE o loop de bairros → rollback integral (não APPLIED)', async () => {
+    const controller = new AbortController();
+    // aborta após a primeira geofence escrita (dentro da tx); a checagem no
+    // início da próxima iteração do loop lança __ABORT__ => rollback.
+    const prisma = makePrisma(versionRow({ status: 'PREVIEWED' }), {
+      onGeofenceWrite: (n: number) => { if (n === 1) controller.abort(); },
+    });
+    const r = await applyDatasetVersion({ resolveBBox: bboxOk(), signal: controller.signal, territoryId: 'terr-cariacica', versionId: 'v1', prisma, getObject: okGetObject });
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe('APPLY_ABORTED');
+    expect(prisma.__state.versions[0].status).toBe('PREVIEWED'); // rollback (não APPLIED nem APPLYING)
+    expect(prisma.__state.versions[0].applied_at).toBeNull();
+    expect(prisma.__state.neighborhoods.length).toBe(0); // parcial revertido
+    expect(prisma.__state.geofenceWrites).toBe(0);        // rollback zera o contador (snapshot)
+  });
+
+  it('deadline excedido → PREVIEWED preservado, APPLY_DEADLINE_EXCEEDED', async () => {
+    const prisma = makePrisma(versionRow({ status: 'PREVIEWED' }));
+    // resolveBBox demora além do deadline (totalDeadlineMs pequeno).
+    const slowResolve = async () => { await new Promise((res) => setTimeout(res, 40)); return { bbox: { ...MUNICIPAL_BBOX }, source: 'osm_municipality' as const, code: 'OK' as const }; };
+    const r = await applyDatasetVersion({ resolveBBox: slowResolve as any, totalDeadlineMs: 5, territoryId: 'terr-cariacica', versionId: 'v1', prisma, getObject: okGetObject });
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe('APPLY_DEADLINE_EXCEEDED');
+    expect(prisma.__state.versions[0].status).toBe('PREVIEWED');
+    expect(prisma.__state.geofenceWrites).toBe(0);
+    expect(prisma.__state.neighborhoods.length).toBe(0);
   });
 });

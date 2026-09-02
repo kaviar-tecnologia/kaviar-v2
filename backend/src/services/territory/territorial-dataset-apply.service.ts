@@ -58,7 +58,10 @@ export type ApplyCode =
   | 'MUNICIPAL_BBOX_UNAVAILABLE'
   | 'MUNICIPAL_BBOX_AMBIGUOUS'
   | 'NEIGHBORHOOD_IDENTITY_CONFLICT'
+  | 'NEIGHBORHOOD_TERRITORY_CONFLICT'
   | 'APPLY_CONFLICT'
+  | 'APPLY_ABORTED'
+  | 'APPLY_DEADLINE_EXCEEDED'
   | 'S3_LOAD_FAILED';
 
 export interface ApplyCounters {
@@ -99,11 +102,21 @@ export interface ApplyParams {
   resolveBBox?: typeof resolveMunicipalBBox;
   /** fetch injetável repassado ao resolvedor de bbox municipal (OSM/Overpass). */
   fetchImpl?: typeof fetch;
+  /** Sinal externo de cancelamento (ex.: request HTTP fechado). */
+  signal?: AbortSignal;
+  /** Deadline TOTAL (ms) da operação. Default APPLY_TOTAL_DEADLINE_MS. */
+  totalDeadlineMs?: number;
 }
 
 function emptyCounters(): ApplyCounters {
   return { created: 0, updated: 0, unchanged: 0, conflicts: 0, skipped: 0, geofencesWritten: 0 };
 }
+
+/**
+ * Deadline TOTAL do apply (ms). Mantido abaixo do idle timeout do ALB (60s),
+ * com folga para auditoria/serialização. Alinhado ao padrão da aquisição.
+ */
+export const APPLY_TOTAL_DEADLINE_MS = 45_000;
 
 /** Geometria da feature para os campos coordinates/geom. */
 function geometryToGeoJSONString(nb: ParsedNeighborhood): string {
@@ -230,12 +243,16 @@ async function applyOneNeighborhood(
   }
   const existing = matches[0] ?? null;
 
-  // CONFLITO: bairro pertence a outro território (não sobrescreve/apaga).
+  // CONFLITO TERRITORIAL (fail-closed): bairro existente pertence a OUTRO
+  // território (não-nulo e != alvo). NÃO sobrescreve, NÃO apaga e NÃO marca
+  // APPLIED parcial: registra o conflito e LANÇA => rollback integral da tx.
   if (existing && existing.territory_id != null && existing.territory_id !== territoryId) {
     counters.conflicts++;
-    conflicts.push({ name: nb.name, reason: `bairro pertence a outro território (${existing.territory_id})` });
     counters.skipped++;
-    return;
+    conflicts.push({ name: nb.name, reason: `bairro pertence a outro território (${existing.territory_id})` });
+    const e: any = new Error(`Conflito territorial em "${nb.name}": pertence a ${existing.territory_id}`);
+    e.code = 'NEIGHBORHOOD_TERRITORY_CONFLICT';
+    throw e;
   }
 
   let neighborhoodId: string;
@@ -321,6 +338,43 @@ async function applyOneNeighborhood(
 export async function applyDatasetVersion(params: ApplyParams): Promise<ApplyResult> {
   const prisma = params.prisma ?? defaultPrisma;
 
+  // ── DEADLINE TOTAL + cancelamento propagado por TODO o apply ───────────────
+  // Um único AbortController governa: resolução de bbox (OSM) + validação +
+  // transação. Encadeia o sinal EXTERNO (request HTTP fechado) e um timer de
+  // deadline total. Após cancelamento, JAMAIS marca APPLIED nem escreve parcial.
+  const deadlineMs = params.totalDeadlineMs ?? APPLY_TOTAL_DEADLINE_MS;
+  const controller = new AbortController();
+  let deadlineHit = false;
+  const deadlineTimer = setTimeout(() => { deadlineHit = true; controller.abort(); }, deadlineMs);
+  const external = params.signal;
+  const onExternalAbort = () => controller.abort();
+  if (external) {
+    if (external.aborted) controller.abort();
+    else external.addEventListener('abort', onExternalAbort, { once: true });
+  }
+  const signal = controller.signal;
+  const abortResult = (): ApplyResult => ({
+    ok: false,
+    code: deadlineHit ? 'APPLY_DEADLINE_EXCEEDED' : 'APPLY_ABORTED',
+    reason: deadlineHit
+      ? `Deadline total (${deadlineMs}ms) excedido — apply cancelado; nada aplicado.`
+      : 'Apply cancelado (abort externo) — nada aplicado.',
+  });
+
+  try {
+    return await runApply(params, prisma, signal, abortResult);
+  } finally {
+    clearTimeout(deadlineTimer);
+    if (external) external.removeEventListener('abort', onExternalAbort);
+  }
+}
+
+async function runApply(
+  params: ApplyParams,
+  prisma: PrismaLike,
+  signal: AbortSignal,
+  abortResult: () => ApplyResult,
+): Promise<ApplyResult> {
   // ── 1) Ownership territorial ANTES de qualquer escrita (Fase 3A). ──────────
   const own = await resolveVersionOwnership(prisma, params.territoryId, params.versionId);
   if (own.code === 'TERRITORY_NOT_FOUND') return { ok: false, code: 'TERRITORY_NOT_FOUND', reason: 'Território não encontrado' };
@@ -341,6 +395,8 @@ export async function applyDatasetVersion(params: ApplyParams): Promise<ApplyRes
     return { ok: false, code: 'NORMALIZED_KEY_MISSING', reason: 'Versão sem s3_normalized_key' };
   }
 
+  if (signal.aborted) return abortResult();
+
   // ── 3) RELÊ e REVALIDA o normalized do S3 (não confia no frontend). ────────
   let loaded;
   try {
@@ -352,6 +408,8 @@ export async function applyDatasetVersion(params: ApplyParams): Promise<ApplyRes
   } catch (err: any) {
     return { ok: false, code: err?.code || 'S3_LOAD_FAILED', reason: err?.message || 'Falha ao reler normalized.geojson' };
   }
+
+  if (signal.aborted) return abortResult();
 
   // Integridade contra checksum registrado (quando presente).
   if (version.checksum && version.checksum !== loaded.checksum) {
@@ -369,8 +427,9 @@ export async function applyDatasetVersion(params: ApplyParams): Promise<ApplyRes
   //  cobertura existente do território (fallback). Ambíguo/indisponível =>
   //  fail-closed, ANTES de qualquer escrita. O bbox fica CONGELADO e é passado
   //  à validação/transação (nenhuma chamada externa longa dentro da tx).
+  //  O `signal` é propagado ao resolvedor (cancela OSM/Overpass).
   const resolveBBox = params.resolveBBox ?? resolveMunicipalBBox;
-  const bboxRes = await resolveBBox(prisma, city, uf, { territoryId, fetchImpl: params.fetchImpl });
+  const bboxRes = await resolveBBox(prisma, city, uf, { territoryId, fetchImpl: params.fetchImpl, signal });
   if (bboxRes.code === 'MUNICIPAL_BBOX_AMBIGUOUS') {
     return { ok: false, code: 'MUNICIPAL_BBOX_AMBIGUOUS', reason: 'Limite municipal ambíguo — apply bloqueado (fail-closed)', versionId: version.id, territoryId };
   }
@@ -397,9 +456,15 @@ export async function applyDatasetVersion(params: ApplyParams): Promise<ApplyRes
   const counters = emptyCounters();
   const conflicts: Array<{ name: string; reason: string }> = [];
 
+  // Cancelado durante OSM/bbox/validação? Nenhuma transação é iniciada.
+  if (signal.aborted) return abortResult();
+
   // ── 4) TRANSAÇÃO: CAS→APPLYING, escrita, CAS→APPLIED. Falha => rollback. ───
   try {
     await prisma.$transaction(async (tx: PrismaLike) => {
+      // Rechecagem imediatamente antes do CAS: cancelado => nenhuma escrita.
+      if (signal.aborted) { const e: any = new Error('abort antes do CAS'); e.code = '__ABORT__'; throw e; }
+
       // CAS PREVIEWED→APPLYING DENTRO da tx. Se outra corrida venceu, count!=1
       // => lança APPLY_CONFLICT => rollback (nada escrito, status intocado).
       const toApplying = await tx.territorial_dataset_versions.updateMany({
@@ -410,11 +475,17 @@ export async function applyDatasetVersion(params: ApplyParams): Promise<ApplyRes
         const e: any = new Error('Concorrência: versão não está mais PREVIEWED'); e.code = 'APPLY_CONFLICT'; throw e;
       }
 
-      // Escrita idempotente de bairros/geofences (todos na mesma tx).
+      // Escrita idempotente de bairros/geofences (todos na mesma tx). Antes de
+      // cada bairro, checa cancelamento: aborta ANTES da próxima escrita =>
+      // rollback integral (APPLYING revertido, sem parciais, nunca APPLIED).
       for (const nb of parsed) {
+        if (signal.aborted) { const e: any = new Error('abort durante loop de bairros'); e.code = '__ABORT__'; throw e; }
         // eslint-disable-next-line no-await-in-loop
         await applyOneNeighborhood(tx, nb, territoryId, bbox, counters, conflicts);
       }
+
+      // Rechecagem antes de finalizar: cancelado => rollback (não marca APPLIED).
+      if (signal.aborted) { const e: any = new Error('abort antes de APPLIED'); e.code = '__ABORT__'; throw e; }
 
       // CAS APPLYING→APPLIED + applied_at, ainda na tx.
       const toApplied = await tx.territorial_dataset_versions.updateMany({
@@ -426,10 +497,18 @@ export async function applyDatasetVersion(params: ApplyParams): Promise<ApplyRes
       }
     });
   } catch (err: any) {
-    const known: ApplyCode[] = ['APPLY_CONFLICT', 'INVALID_GEOMETRY', 'NEIGHBORHOOD_IDENTITY_CONFLICT'];
+    // Cancelamento/deadline: rollback já ocorreu; NUNCA APPLIED. Classifica.
+    if (err?.code === '__ABORT__' || signal.aborted) {
+      return { ...abortResult(), versionId: version.id, territoryId, from: 'PREVIEWED' };
+    }
+    const known: ApplyCode[] = [
+      'APPLY_CONFLICT', 'INVALID_GEOMETRY',
+      'NEIGHBORHOOD_IDENTITY_CONFLICT', 'NEIGHBORHOOD_TERRITORY_CONFLICT',
+    ];
     const code: ApplyCode = known.includes(err?.code) ? err.code : 'APPLY_CONFLICT';
     const reason = err?.message || 'Falha no apply — rollback integral aplicado';
-    return { ok: false, code, reason, versionId: version.id, territoryId, from: 'PREVIEWED' };
+    // Conflito territorial retorna a lista de conflitos encontrados.
+    return { ok: false, code, reason, versionId: version.id, territoryId, from: 'PREVIEWED', counters, conflicts };
   }
 
   return {

@@ -1021,6 +1021,9 @@ const applyDatasetSchema = z.object({
 // transação única; rollback integral em falha. Auditoria SEM GeoJSON completo.
 router.post('/:id/prepare-city/datasets/:versionId/apply', async (req: Request, res: Response) => {
   const ctx = auditCtx(req);
+  const reqAbort = new AbortController();
+  const onClose = () => reqAbort.abort();
+  req.on('close', onClose);
   try {
     const parsed = applyDatasetSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -1031,6 +1034,7 @@ router.post('/:id/prepare-city/datasets/:versionId/apply', async (req: Request, 
       territoryId: req.params.id,
       versionId: req.params.versionId,
       createdBy: ctx.adminId,
+      signal: reqAbort.signal,
       prisma,
     });
 
@@ -1041,17 +1045,20 @@ router.post('/:id/prepare-city/datasets/:versionId/apply', async (req: Request, 
         CITY_UF_MISSING: 400, INVALID_STATUS_TRANSITION: 409,
         NORMALIZED_KEY_MISSING: 422, CHECKSUM_MISMATCH: 409,
         INVALID_GEOJSON: 422, INVALID_GEOMETRY: 422,
+        MUNICIPAL_BBOX_UNAVAILABLE: 422, MUNICIPAL_BBOX_AMBIGUOUS: 409,
+        NEIGHBORHOOD_IDENTITY_CONFLICT: 409, NEIGHBORHOOD_TERRITORY_CONFLICT: 409,
         APPLY_CONFLICT: 409, S3_LOAD_FAILED: 502,
+        APPLY_ABORTED: 499, APPLY_DEADLINE_EXCEEDED: 504,
       };
       const status = map[result.code] ?? 422;
       // Auditoria da falha — SEM conteúdo de GeoJSON.
       audit({
         adminId: ctx.adminId, adminEmail: ctx.adminEmail,
         action: 'prepare_city_dataset_apply_failed', entityType: 'territorial_dataset_version', entityId: req.params.versionId,
-        newValue: { territoryId: req.params.id, code: result.code, from: result.from },
+        newValue: { territoryId: req.params.id, code: result.code, from: result.from, conflicts: result.counters?.conflicts ?? 0 },
         ipAddress: ctx.ip, userAgent: ctx.ua,
       });
-      return res.status(status).json({ success: false, error: result.reason, code: result.code });
+      return res.status(status).json({ success: false, error: result.reason, code: result.code, conflicts: result.conflicts });
     }
 
     // Auditoria de sucesso — created/updated/unchanged/conflicts/skipped, SEM GeoJSON.
@@ -1084,6 +1091,8 @@ router.post('/:id/prepare-city/datasets/:versionId/apply', async (req: Request, 
     });
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error?.message || 'Erro ao aplicar dataset' });
+  } finally {
+    req.off('close', onClose);
   }
 });
 
