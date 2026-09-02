@@ -34,6 +34,7 @@ import {
   type DatasetVersionRow,
 } from './territorial-dataset-store';
 import { resolveVersionOwnership } from './territorial-dataset-review.service';
+import { resolveMunicipalBBox } from './municipal-bbox-resolver';
 import {
   validateNeighborhoodGeoJSON,
   normalizeNeighborhoodName,
@@ -54,6 +55,9 @@ export type ApplyCode =
   | 'CHECKSUM_MISMATCH'
   | 'INVALID_GEOJSON'
   | 'INVALID_GEOMETRY'
+  | 'MUNICIPAL_BBOX_UNAVAILABLE'
+  | 'MUNICIPAL_BBOX_AMBIGUOUS'
+  | 'NEIGHBORHOOD_IDENTITY_CONFLICT'
   | 'APPLY_CONFLICT'
   | 'S3_LOAD_FAILED';
 
@@ -88,6 +92,13 @@ export interface ApplyParams {
   /** Limite de bytes ao reler o normalized.geojson. */
   maxNormalizedBytes?: number;
   createdBy?: string | null;
+  /**
+   * Injeção para testes: resolvedor de bbox municipal. Default = resolveMunicipalBBox
+   * (Fase 1). Recebe (prisma, city, uf, {territoryId, signal, fetchImpl}).
+   */
+  resolveBBox?: typeof resolveMunicipalBBox;
+  /** fetch injetável repassado ao resolvedor de bbox municipal (OSM/Overpass). */
+  fetchImpl?: typeof fetch;
 }
 
 function emptyCounters(): ApplyCounters {
@@ -97,6 +108,21 @@ function emptyCounters(): ApplyCounters {
 /** Geometria da feature para os campos coordinates/geom. */
 function geometryToGeoJSONString(nb: ParsedNeighborhood): string {
   return JSON.stringify({ type: nb.geometryType, coordinates: nb.coordinates });
+}
+
+/**
+ * Representação canônica de uma geometria GeoJSON {type,coordinates} para
+ * comparação de idempotência. Estável quanto à ordem de chaves. Aceita tanto o
+ * objeto completo {type,coordinates} (formato histórico da coluna coordinates)
+ * quanto — defensivamente — apenas o array de coordinates. NÃO altera o formato
+ * armazenado; só normaliza para comparar.
+ */
+function canonicalGeo(value: any): string {
+  if (value && typeof value === 'object' && !Array.isArray(value) && 'coordinates' in value) {
+    return JSON.stringify({ type: value.type ?? null, coordinates: value.coordinates });
+  }
+  // Valor legado que porventura só tenha o array de coordinates.
+  return JSON.stringify({ type: null, coordinates: value });
 }
 
 /**
@@ -178,15 +204,31 @@ async function applyOneNeighborhood(
   // Validação PostGIS (lança INVALID_GEOMETRY => rollback integral).
   await assertGeometryValid(tx, geojsonStr, bbox);
 
-  const existing = await tx.neighborhoods.findFirst({
-    where: { name: nb.name, city: nb.city },
+  // ── Identidade por NOME NORMALIZADO (não comparação exata). ────────────────
+  //  Busca bairros da cidade alvo e compara pelo nome normalizado
+  //  (trim + colapsa espaços + lower). Exatamente 1 match → reutiliza;
+  //  0 → cria; >1 já existentes no banco → fail-closed (NÃO escolhe
+  //  arbitrariamente, NÃO faz dedupe destrutivo).
+  const targetKey = normalizeNeighborhoodName(nb.name);
+  const cityRows: any[] = await tx.neighborhoods.findMany({
+    where: { city: nb.city },
     select: {
       id: true,
+      name: true,
       territory_id: true,
       area_type: true,
       neighborhood_geofences: { select: { coordinates: true } },
     },
   });
+  const matches = cityRows.filter((r) => normalizeNeighborhoodName(r.name) === targetKey);
+  if (matches.length > 1) {
+    const e: any = new Error(
+      `Identidade ambígua: ${matches.length} bairros existentes normalizam para "${targetKey}" em ${nb.city}`,
+    );
+    e.code = 'NEIGHBORHOOD_IDENTITY_CONFLICT';
+    throw e; // rollback integral — não dedupe automático
+  }
+  const existing = matches[0] ?? null;
 
   // CONFLITO: bairro pertence a outro território (não sobrescreve/apaga).
   if (existing && existing.territory_id != null && existing.territory_id !== territoryId) {
@@ -201,16 +243,18 @@ async function applyOneNeighborhood(
   if (existing) {
     neighborhoodId = existing.id;
     // Detecta "unchanged": mesmo território e mesma geometria já gravada.
+    // A coluna coordinates guarda o GeoJSON COMPLETO {type,coordinates}
+    // (mesmo formato que geometryToGeoJSONString). Comparação canônica.
     const sameTerritory = existing.territory_id === territoryId;
     const currentGeo = existing.neighborhood_geofences?.coordinates != null
-      ? JSON.stringify(existing.neighborhood_geofences.coordinates)
+      ? canonicalGeo(existing.neighborhood_geofences.coordinates)
       : null;
-    const nextGeo = JSON.stringify(nb.coordinates);
+    const nextGeo = canonicalGeo(JSON.parse(geojsonStr));
     const sameGeo = currentGeo != null && currentGeo === nextGeo;
 
     if (sameTerritory && sameGeo) {
       counters.unchanged++;
-      return; // idempotente: nada a fazer
+      return; // idempotente: nada a fazer (sem update de bairro, sem geofence)
     }
 
     await tx.neighborhoods.update({
@@ -318,8 +362,24 @@ export async function applyDatasetVersion(params: ApplyParams): Promise<ApplyRes
   const city = (territory.city_name || territory.name || '').trim();
   const uf = (territory.uf || '').trim() || null;
 
-  // Revalidação estrutural + WGS84 + bbox (derivado do próprio arquivo).
-  const bbox = deriveBBox(fc);
+  // ── 3b) BBOX MUNICIPAL CONFIÁVEL, resolvido ANTES da transação (read-only). ─
+  //  NÃO usa o envelope do próprio normalized.geojson (validação circular não
+  //  protege contra dataset da cidade errada). Reutiliza a infraestrutura da
+  //  Fase 1 (municipal-bbox-resolver): limite OSM admin_level=8 (primário) →
+  //  cobertura existente do território (fallback). Ambíguo/indisponível =>
+  //  fail-closed, ANTES de qualquer escrita. O bbox fica CONGELADO e é passado
+  //  à validação/transação (nenhuma chamada externa longa dentro da tx).
+  const resolveBBox = params.resolveBBox ?? resolveMunicipalBBox;
+  const bboxRes = await resolveBBox(prisma, city, uf, { territoryId, fetchImpl: params.fetchImpl });
+  if (bboxRes.code === 'MUNICIPAL_BBOX_AMBIGUOUS') {
+    return { ok: false, code: 'MUNICIPAL_BBOX_AMBIGUOUS', reason: 'Limite municipal ambíguo — apply bloqueado (fail-closed)', versionId: version.id, territoryId };
+  }
+  if (bboxRes.code !== 'OK' || !bboxRes.bbox) {
+    return { ok: false, code: 'MUNICIPAL_BBOX_UNAVAILABLE', reason: 'Limite municipal confiável indisponível — apply bloqueado', versionId: version.id, territoryId };
+  }
+  const bbox: CityBoundingBox = bboxRes.bbox; // congelado
+
+  // Revalidação estrutural + WGS84 + bbox MUNICIPAL confiável (não circular).
   const validation = validateNeighborhoodGeoJSON(fc, {
     expectedCity: city || undefined,
     expectedUf: uf,
@@ -366,9 +426,8 @@ export async function applyDatasetVersion(params: ApplyParams): Promise<ApplyRes
       }
     });
   } catch (err: any) {
-    const code: ApplyCode = err?.code === 'APPLY_CONFLICT' ? 'APPLY_CONFLICT'
-      : err?.code === 'INVALID_GEOMETRY' ? 'INVALID_GEOMETRY'
-      : 'APPLY_CONFLICT';
+    const known: ApplyCode[] = ['APPLY_CONFLICT', 'INVALID_GEOMETRY', 'NEIGHBORHOOD_IDENTITY_CONFLICT'];
+    const code: ApplyCode = known.includes(err?.code) ? err.code : 'APPLY_CONFLICT';
     const reason = err?.message || 'Falha no apply — rollback integral aplicado';
     return { ok: false, code, reason, versionId: version.id, territoryId, from: 'PREVIEWED' };
   }
@@ -385,28 +444,3 @@ export async function applyDatasetVersion(params: ApplyParams): Promise<ApplyRes
   };
 }
 
-/** Deriva um bbox do próprio arquivo (envelope, sem margem) para a checagem. */
-function deriveBBox(fc: NeighborhoodFeatureCollection): CityBoundingBox | null {
-  let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
-  let found = false;
-  const visit = (ring: any) => {
-    if (!Array.isArray(ring)) return;
-    for (const pt of ring) {
-      if (Array.isArray(pt) && Number.isFinite(pt[0]) && Number.isFinite(pt[1])) {
-        if (pt[0] < minLon) minLon = pt[0];
-        if (pt[0] > maxLon) maxLon = pt[0];
-        if (pt[1] < minLat) minLat = pt[1];
-        if (pt[1] > maxLat) maxLat = pt[1];
-        found = true;
-      }
-    }
-  };
-  for (const f of fc?.features ?? []) {
-    const g: any = f?.geometry;
-    if (!g) continue;
-    if (g.type === 'Polygon') for (const ring of g.coordinates ?? []) visit(ring);
-    else if (g.type === 'MultiPolygon') for (const poly of g.coordinates ?? []) for (const ring of poly ?? []) visit(ring);
-  }
-  if (!found) return null;
-  return { minLon, maxLon, minLat, maxLat };
-}
