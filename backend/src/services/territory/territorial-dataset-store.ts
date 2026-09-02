@@ -16,7 +16,10 @@
 import { createHash, randomUUID } from 'crypto';
 import type { AcquiredDataset } from './providers/territorial-dataset-provider';
 
-export type DatasetStatus = 'DRAFT' | 'PREVIEWED' | 'APPLIED' | 'REJECTED';
+// APPLYING (Fase 3B) é um estado transitório durante o apply transacional.
+// NÃO exige migration: a coluna `status` é TEXT livre (String @default("DRAFT")),
+// sem enum/CHECK no banco. Este union é apenas o contrato de tipo TypeScript.
+export type DatasetStatus = 'DRAFT' | 'PREVIEWED' | 'APPLYING' | 'APPLIED' | 'REJECTED';
 
 export const DATASET_BUCKET = process.env.TERRITORIAL_DATASET_BUCKET
   || process.env.AWS_S3_BUCKET
