@@ -2381,6 +2381,7 @@ model operational_territories {
   insurance_coverages  operational_insurance_coverages[]
   financial_cost_centers         financial_cost_centers[]          @relation("financial_cost_centers_territory")
   financial_recognition_policies financial_recognition_policies[]  @relation("financial_recognition_policies_territory")
+  territorial_dataset_versions   territorial_dataset_versions[]    @relation("territorial_dataset_versions_territory")
 
   @@unique([name, level, parent_id])
   @@index([level])
@@ -5288,6 +5289,7 @@ model territorial_dataset_versions {
   id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   city               String
   uf                 String    @db.VarChar(2)
+  territory_id       String?
   provider_id        String
   source             String
   source_url         String?
@@ -5308,9 +5310,12 @@ model territorial_dataset_versions {
   notes              String?
   checksum           String?
 
+  territory          operational_territories? @relation("territorial_dataset_versions_territory", fields: [territory_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
   @@index([city, uf])
   @@index([status])
   @@index([provider_id])
+  @@index([territory_id])
   @@index([uf, city, created_at(sort: Desc)])
   @@map("territorial_dataset_versions")
 }

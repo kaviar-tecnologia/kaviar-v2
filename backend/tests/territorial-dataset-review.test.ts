@@ -376,3 +376,57 @@ describe('versionId com city/UF divergente', () => {
     expect(prisma.__state.versions[0].status).toBe('DRAFT');
   });
 });
+
+// ─── FASE 3A: territory_id como autoridade primária de isolamento ────────────
+describe('FASE 3A — isolamento por territory_id', () => {
+  const T1 = { id: 'terr-1', name: 'Cariacica', city_name: 'Cariacica', uf: 'ES', level: 'city', status: 'planning' };
+  const T2 = { id: 'terr-2', name: 'Cariacica Sede', city_name: 'Cariacica', uf: 'ES', level: 'city', status: 'planning' };
+
+  it('2) versão com territory_id correto passa isolamento', async () => {
+    const prisma = makePrisma(draftVersion({ territory_id: 'terr-1' }), { territory: T1, territories: [T1, T2] });
+    const r = await previewDatasetVersion({ territoryId: 'terr-1', versionId: 'v1', prisma, getObject: okGetObject });
+    // Mesmo com T1/T2 ambíguos por city+uf, territory_id resolve → sucesso.
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.status).toBe('PREVIEWED');
+  });
+
+  it('3) versão com territory_id de OUTRO território → mismatch', async () => {
+    const prisma = makePrisma(draftVersion({ territory_id: 'terr-2' }), { territory: T1, territories: [T1, T2] });
+    let s3 = false;
+    const r = await previewDatasetVersion({ territoryId: 'terr-1', versionId: 'v1', prisma, getObject: async () => { s3 = true; return VALID_BODY; } });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe('DATASET_TERRITORY_MISMATCH');
+    expect(s3).toBe(false); // bloqueado antes do S3
+    expect(prisma.__state.versions[0].status).toBe('DRAFT');
+  });
+
+  it('4) city/UF iguais mas territory_id diferente → bloqueia PELO territory_id (não passa)', async () => {
+    // T1 e T2 têm a mesma city+uf; a versão aponta para T2. Preview em T1 falha.
+    const prisma = makePrisma(draftVersion({ territory_id: 'terr-2' }), { territory: T1, territories: [T1, T2] });
+    const r = await rejectDatasetVersion({ territoryId: 'terr-1', versionId: 'v1', prisma });
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe('DATASET_TERRITORY_MISMATCH');
+    expect(prisma.__state.versions[0].status).toBe('DRAFT'); // sem transição
+  });
+
+  it('5) legado territory_id NULL + city/UF inequívoco → continua funcionando', async () => {
+    const OTHER = { id: 'terr-vitoria', name: 'Vitória', city_name: 'Vitória', uf: 'ES', level: 'city' };
+    const prisma = makePrisma(draftVersion({ territory_id: null }), { territory: T1, territories: [T1, OTHER] });
+    const r = await previewDatasetVersion({ territoryId: 'terr-1', versionId: 'v1', prisma, getObject: okGetObject });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.status).toBe('PREVIEWED');
+  });
+
+  it('6) legado territory_id NULL + city/UF ambíguo → continua fail-closed', async () => {
+    const prisma = makePrisma(draftVersion({ territory_id: null }), { territory: T1, territories: [T1, T2] });
+    let s3 = false;
+    const r = await previewDatasetVersion({ territoryId: 'terr-1', versionId: 'v1', prisma, getObject: async () => { s3 = true; return VALID_BODY; } });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe('DATASET_TERRITORY_AMBIGUOUS');
+    expect(s3).toBe(false);
+  });
+});

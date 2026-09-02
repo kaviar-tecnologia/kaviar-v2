@@ -257,6 +257,8 @@ describe('acquireCityDataset — persistência DRAFT e segurança', () => {
     expect(prisma.__state.created.source_verified).toBe(false);
     expect(prisma.__state.created.is_official).toBe(false);
     expect(prisma.__state.created.provider_id).toBe('osm-overpass');
+    // FASE 3A: territory_id explícito gravado a partir do território resolvido
+    expect(prisma.__state.created.territory_id).toBe('t1');
   });
 
   it('zero features válidas → NÃO persiste (NO_VALID_FEATURES), sem criar linha nem S3', async () => {
