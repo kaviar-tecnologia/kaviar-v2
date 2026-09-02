@@ -17,6 +17,7 @@ import {
   listTerritoryDatasets,
 } from '../services/territory/territorial-dataset-review.service';
 import { applyDatasetVersion } from '../services/territory/territorial-dataset-apply.service';
+import { wireRequestAbort } from '../services/territory/http-abort';
 
 const router = Router();
 router.use(authenticateAdmin, requireSuperAdmin);
@@ -1021,9 +1022,9 @@ const applyDatasetSchema = z.object({
 // transação única; rollback integral em falha. Auditoria SEM GeoJSON completo.
 router.post('/:id/prepare-city/datasets/:versionId/apply', async (req: Request, res: Response) => {
   const ctx = auditCtx(req);
-  const reqAbort = new AbortController();
-  const onClose = () => reqAbort.abort();
-  req.on('close', onClose);
+  // Semântica real Node/Express: req 'aborted' + res 'close' guardado por
+  // !res.writableEnded. Listeners removidos no finally (cleanup).
+  const { signal, cleanup } = wireRequestAbort(req, res);
   try {
     const parsed = applyDatasetSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -1034,7 +1035,7 @@ router.post('/:id/prepare-city/datasets/:versionId/apply', async (req: Request, 
       territoryId: req.params.id,
       versionId: req.params.versionId,
       createdBy: ctx.adminId,
-      signal: reqAbort.signal,
+      signal,
       prisma,
     });
 
@@ -1092,7 +1093,7 @@ router.post('/:id/prepare-city/datasets/:versionId/apply', async (req: Request, 
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error?.message || 'Erro ao aplicar dataset' });
   } finally {
-    req.off('close', onClose);
+    cleanup();
   }
 });
 

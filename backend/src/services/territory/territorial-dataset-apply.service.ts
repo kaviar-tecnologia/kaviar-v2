@@ -113,8 +113,15 @@ function emptyCounters(): ApplyCounters {
 }
 
 /**
- * Deadline TOTAL do apply (ms). Mantido abaixo do idle timeout do ALB (60s),
- * com folga para auditoria/serialização. Alinhado ao padrão da aquisição.
+ * Deadline TOTAL do apply (ms). Mantido abaixo do idle timeout do ALB.
+ * EVIDÊNCIA (verificação read-only): a infra versionada cria o ALB `kaviar-alb`
+ * sem definir `idle_timeout.timeout_seconds` (infra/aws/aws-phase4b-ecs-alb.sh
+ * create-load-balancer) e as únicas modify-load-balancer-attributes
+ * (infra/aws/aws-phase6-https.sh) setam apenas access_logs — portanto o idle
+ * timeout é o PADRÃO da AWS = 60s. (A API DescribeLoadBalancerAttributes foi
+ * tentada mas retornou AccessDenied para o usuário atual; a fonte autoritativa
+ * usada é a IaC versionada.) 45s deixa 15s de folga p/ auditoria/serialização.
+ * Alinhado ao PREVIEW_TOTAL_DEADLINE_MS (45s) e ao padrão da aquisição.
  */
 export const APPLY_TOTAL_DEADLINE_MS = 45_000;
 
@@ -398,14 +405,17 @@ async function runApply(
   if (signal.aborted) return abortResult();
 
   // ── 3) RELÊ e REVALIDA o normalized do S3 (não confia no frontend). ────────
+  //  Propaga o signal: cancelamento/deadline aborta o GetObject/stream e NÃO
+  //  espera carregar o objeto inteiro.
   let loaded;
   try {
     loaded = await loadNormalizedFromS3(
       version.s3_normalized_key,
-      { s3: params.s3, getObject: params.getObject },
+      { s3: params.s3, getObject: params.getObject, signal },
       params.maxNormalizedBytes,
     );
   } catch (err: any) {
+    if (err?.code === 'ABORTED' || signal.aborted) return abortResult();
     return { ok: false, code: err?.code || 'S3_LOAD_FAILED', reason: err?.message || 'Falha ao reler normalized.geojson' };
   }
 

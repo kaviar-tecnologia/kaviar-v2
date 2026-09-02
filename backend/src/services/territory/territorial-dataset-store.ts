@@ -61,7 +61,7 @@ export function checksumOf(normalizedGeoJSON: unknown): string {
 
 // ─── Persistência (injetável; não roda no import) ────────────────────────────
 
-export type S3Like = { send: (cmd: any) => Promise<any> };
+export type S3Like = { send: (cmd: any, options?: any) => Promise<any> };
 export type PrismaLike = any;
 
 export interface PersistDatasetInput {
@@ -249,16 +249,24 @@ export interface LoadNormalizedResult {
  *  - limite de bytes (rejeita ANTES do parse pesado quando possível);
  *  - checksum calculado sobre os bytes efetivamente lidos;
  *  - parse defensivo (JSON inválido → erro);
- *  - `getObject` INJETÁVEL (testes sem S3 real).
+ *  - `getObject` INJETÁVEL (testes sem S3 real);
+ *  - `signal` OPCIONAL: propagado ao S3 SDK (abortSignal) e verificado
+ *    antes/depois da leitura. Se cancelado/deadline durante o GetObject/stream,
+ *    lança erro com .code='ABORTED' e NÃO retorna corpo para parse.
+ * Compatível: getObject injetável pode ignorar o 3º parâmetro (signal).
  * Não grava nada.
  */
 export async function loadNormalizedFromS3(
   key: string,
-  deps: { s3?: S3Like; getObject?: (bucket: string, key: string) => Promise<string> } = {},
+  deps: { s3?: S3Like; getObject?: (bucket: string, key: string, signal?: AbortSignal) => Promise<string>; signal?: AbortSignal } = {},
   maxBytes: number = MAX_NORMALIZED_BYTES,
 ): Promise<LoadNormalizedResult> {
+  const signal = deps.signal;
+  if (signal?.aborted) { const e: any = new Error('Leitura do S3 cancelada'); e.code = 'ABORTED'; throw e; }
   const get = deps.getObject ?? defaultGetObject(deps.s3);
-  const body = await get(DATASET_BUCKET, key);
+  const body = await get(DATASET_BUCKET, key, signal);
+  // Se cancelou durante a leitura, não parseia o stream interrompido.
+  if (signal?.aborted) { const e: any = new Error('Leitura do S3 cancelada'); e.code = 'ABORTED'; throw e; }
   // Limite sobre BYTES UTF-8 efetivamente lidos (não .length de caracteres).
   const bytes = Buffer.byteLength(body, 'utf8');
   if (bytes > maxBytes) {
@@ -307,15 +315,28 @@ export async function transitionStatus(
 }
 
 function defaultGetObject(s3?: S3Like) {
-  return async (bucket: string, key: string): Promise<string> => {
+  return async (bucket: string, key: string, signal?: AbortSignal): Promise<string> => {
     const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
     const client: S3Like = s3 ?? new S3Client({ region: process.env.AWS_REGION || 'us-east-2' });
-    const out: any = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
-    // AWS SDK v3: Body é stream; transformToString quando disponível.
-    if (out?.Body?.transformToString) return await out.Body.transformToString('utf-8');
-    // Fallback: concatena chunks.
+    // AWS SDK v3: send aceita { abortSignal } — cancela GetObject em andamento.
+    const out: any = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }), signal ? { abortSignal: signal } : undefined);
+    if (signal?.aborted) { const e: any = new Error('GetObject cancelado'); e.code = 'ABORTED'; throw e; }
+    // Lê o Body como stream, verificando cancelamento a cada chunk; se abortar,
+    // destrói o stream e NÃO espera o objeto inteiro.
     const chunks: Buffer[] = [];
-    for await (const c of out.Body as any) chunks.push(Buffer.from(c));
-    return Buffer.concat(chunks).toString('utf-8');
+    const body: any = out.Body;
+    if (body && typeof body[Symbol.asyncIterator] === 'function') {
+      for await (const c of body) {
+        if (signal?.aborted) {
+          try { body.destroy?.(); } catch { /* best-effort */ }
+          const e: any = new Error('Stream do S3 cancelado'); e.code = 'ABORTED'; throw e;
+        }
+        chunks.push(Buffer.from(c));
+      }
+      return Buffer.concat(chunks).toString('utf-8');
+    }
+    // Fallback: SDK com transformToString (sem iteração de chunks).
+    if (body?.transformToString) return await body.transformToString('utf-8');
+    return String(body ?? '');
   };
 }

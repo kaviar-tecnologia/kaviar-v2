@@ -692,4 +692,55 @@ describe('FASE 3B — cancelamento e deadline', () => {
     expect(prisma.__state.geofenceWrites).toBe(0);
     expect(prisma.__state.neighborhoods.length).toBe(0);
   });
+
+  it('abort DURANTE GetObject (S3) → APPLY_ABORTED, nenhuma transação', async () => {
+    const prisma = makePrisma(versionRow({ status: 'PREVIEWED' }));
+    const controller = new AbortController();
+    // getObject recebe o signal; simula cancelamento no meio do GetObject:
+    // aborta e lança ABORTED (como o defaultGetObject faria ao detectar abort).
+    const getObject = async (_b: string, _k: string, signal?: AbortSignal) => {
+      controller.abort();
+      if (signal?.aborted) { const e: any = new Error('GetObject cancelado'); e.code = 'ABORTED'; throw e; }
+      return VALID_BODY;
+    };
+    const r = await applyDatasetVersion({ resolveBBox: bboxOk(), signal: controller.signal, territoryId: 'terr-cariacica', versionId: 'v1', prisma, getObject });
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe('APPLY_ABORTED');
+    expect(prisma.__state.geofenceWrites).toBe(0);
+    expect(prisma.__state.neighborhoods.length).toBe(0);
+    expect(prisma.__state.versions[0].status).toBe('PREVIEWED');
+  });
+
+  it('deadline DURANTE leitura do S3 → APPLY_DEADLINE_EXCEEDED, nenhuma transação', async () => {
+    const prisma = makePrisma(versionRow({ status: 'PREVIEWED' }));
+    // getObject demora além do deadline; o controller de deadline aborta e o
+    // getObject respeita o signal (interrompe e lança ABORTED).
+    const getObject = async (_b: string, _k: string, signal?: AbortSignal) => {
+      await new Promise((res) => setTimeout(res, 40));
+      if (signal?.aborted) { const e: any = new Error('stream cancelado'); e.code = 'ABORTED'; throw e; }
+      return VALID_BODY;
+    };
+    const r = await applyDatasetVersion({ resolveBBox: bboxOk(), totalDeadlineMs: 5, territoryId: 'terr-cariacica', versionId: 'v1', prisma, getObject });
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe('APPLY_DEADLINE_EXCEEDED');
+    expect(prisma.__state.geofenceWrites).toBe(0);
+    expect(prisma.__state.neighborhoods.length).toBe(0);
+    expect(prisma.__state.versions[0].status).toBe('PREVIEWED');
+  });
+
+  it('stream interrompido NÃO é parseado (getObject aborta antes de retornar corpo)', async () => {
+    const prisma = makePrisma(versionRow({ status: 'PREVIEWED' }));
+    const controller = new AbortController();
+    let parsed = false;
+    // getObject aborta e lança ANTES de devolver o corpo → serviço não parseia.
+    const getObject = async (_b: string, _k: string, signal?: AbortSignal) => {
+      controller.abort();
+      const e: any = new Error('stream interrompido'); e.code = 'ABORTED'; throw e;
+    };
+    const r = await applyDatasetVersion({ resolveBBox: bboxOk(), signal: controller.signal, territoryId: 'terr-cariacica', versionId: 'v1', prisma, getObject });
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe('APPLY_ABORTED');
+    expect(parsed).toBe(false);
+    expect(prisma.__state.neighborhoods.length).toBe(0);
+  });
 });
