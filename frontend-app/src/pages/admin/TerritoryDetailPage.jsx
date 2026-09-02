@@ -4,6 +4,7 @@ import { Box, Typography, Card, CardContent, Tabs, Tab, Table, TableBody, TableC
 import { ArrowBack, Edit, PersonAdd, Delete, Map } from '@mui/icons-material';
 import { API_BASE_URL } from '../../config/api';
 import MotoPassengerCompliance from '../../components/admin/MotoPassengerCompliance';
+import TerritorialDatasetSection from '../../components/admin/TerritorialDatasetSection';
 import { formatDate } from '../../utils/formatDate';
 
 const STATUS_COLORS = { planning: '#6B7280', preparation: '#D97706', active: '#059669', inactive: '#DC2626' };
@@ -132,6 +133,9 @@ export default function TerritoryDetailPage() {
               isSuperAdmin={JSON.parse(localStorage.getItem('kaviar_admin_user') || '{}').role === 'SUPER_ADMIN'}
               onTerritoryUpdate={fetchTerritory}
             />
+
+            {/* Fase 4: Dataset territorial (ACQUIRE → PREVIEW → APPLY), somente SUPER_ADMIN */}
+            <TerritorialDatasetSection territory={t} token={token} />
           </CardContent>
         </Card>
       )}
