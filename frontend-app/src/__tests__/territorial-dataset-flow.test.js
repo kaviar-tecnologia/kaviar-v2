@@ -11,14 +11,36 @@ const previewed = { id: 'v1', status: 'PREVIEWED', applied_at: null };
 const applied = { id: 'v1', status: 'APPLIED', applied_at: '2026-09-02T04:52:51Z' };
 const rejected = { id: 'v1', status: 'REJECTED', applied_at: null };
 
-describe('RBAC isSuperAdmin', () => {
-  it('true para SUPER_ADMIN', () => {
-    expect(isSuperAdmin(() => JSON.stringify({ role: 'SUPER_ADMIN' }))).toBe(true);
+describe('RBAC isSuperAdmin (fonte oficial: kaviar_admin_data)', () => {
+  // getItem simula o localStorage real: só kaviar_admin_data carrega role.
+  const store = (data) => (k) => (k === 'kaviar_admin_data' ? JSON.stringify(data) : null);
+
+  it('true para SUPER_ADMIN em kaviar_admin_data', () => {
+    expect(isSuperAdmin(store({ id: 'a1', role: 'SUPER_ADMIN', name: 'X' }))).toBe(true);
   });
   it('false para outros papéis', () => {
-    expect(isSuperAdmin(() => JSON.stringify({ role: 'FINANCE' }))).toBe(false);
+    expect(isSuperAdmin(store({ role: 'FINANCE' }))).toBe(false);
+    expect(isSuperAdmin(store({ role: 'TERRITORIAL_MANAGER' }))).toBe(false);
+  });
+  it('REGRESSÃO: sessão real onde kaviar_admin_user NÃO tem role, mas kaviar_admin_data tem → true', () => {
+    // reproduz o bug reportado: kaviar_admin_user sem role; a fonte correta é kaviar_admin_data.
+    const getItem = (k) => {
+      if (k === 'kaviar_admin_user') return JSON.stringify({ id: 'a1' }); // sem role
+      if (k === 'kaviar_admin_data') return JSON.stringify({ id: 'a1', role: 'SUPER_ADMIN' });
+      return null;
+    };
+    expect(isSuperAdmin(getItem)).toBe(true);
+  });
+  it('fail-closed: sem kaviar_admin_data → false', () => {
     expect(isSuperAdmin(() => null)).toBe(false);
+  });
+  it('fail-closed: JSON inválido → false', () => {
     expect(isSuperAdmin(() => 'lixo{')).toBe(false);
+  });
+  it('não confia em kaviar_admin_user (fonte errada) para conceder acesso', () => {
+    // Mesmo que kaviar_admin_user tivesse role, a função lê kaviar_admin_data.
+    const getItem = (k) => (k === 'kaviar_admin_user' ? JSON.stringify({ role: 'SUPER_ADMIN' }) : null);
+    expect(isSuperAdmin(getItem)).toBe(false); // kaviar_admin_data ausente → false
   });
 });
 

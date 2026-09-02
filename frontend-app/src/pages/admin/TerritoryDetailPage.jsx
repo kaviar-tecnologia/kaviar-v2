@@ -21,7 +21,7 @@ export default function TerritoryDetailPage() {
   const [saving, setSaving] = useState(false);
   const [prepareOpen, setPrepareOpen] = useState(false);
   const token = localStorage.getItem('kaviar_admin_token');
-  const isSuperAdmin = JSON.parse(localStorage.getItem('kaviar_admin_user') || '{}').role === 'SUPER_ADMIN';
+  const isSuperAdmin = JSON.parse(localStorage.getItem('kaviar_admin_data') || '{}').role === 'SUPER_ADMIN';
 
   const fetchTerritory = async () => {
     try {
@@ -130,7 +130,7 @@ export default function TerritoryDetailPage() {
             <MotoPassengerCompliance
               territoryId={id}
               motoPassengerEnabled={t.moto_passenger_enabled || false}
-              isSuperAdmin={JSON.parse(localStorage.getItem('kaviar_admin_user') || '{}').role === 'SUPER_ADMIN'}
+              isSuperAdmin={JSON.parse(localStorage.getItem('kaviar_admin_data') || '{}').role === 'SUPER_ADMIN'}
               onTerritoryUpdate={fetchTerritory}
             />
 
