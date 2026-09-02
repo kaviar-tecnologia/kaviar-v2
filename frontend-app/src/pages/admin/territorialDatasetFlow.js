@@ -59,6 +59,24 @@ export function availableActions({ superAdmin, dataset }) {
 }
 
 /**
+ * Gating do BOTÃO PRINCIPAL "Aplicar dataset" (abre o modal). UX fail-closed:
+ * o botão só fica habilitado quando já existe uma PRÉVIA VÁLIDA carregada para a
+ * MESMA version (preview.versionId === dataset.id) e canProceed === true.
+ * Não substitui canConfirmApply — que continua sendo a segunda barreira
+ * independente (checkbox + revalidação no momento do confirm).
+ */
+export function canOpenApply({ superAdmin, dataset, preview, inFlight }) {
+  if (!superAdmin) return false;
+  if (inFlight) return false;
+  if (!dataset || dataset.status !== DATASET_STATUS.PREVIEWED) return false;
+  if (dataset.applied_at) return false;
+  if (!preview) return false;
+  if (preview.versionId !== dataset.id) return false;
+  if (preview.canProceed !== true) return false;
+  return true;
+}
+
+/**
  * Gating do apply: só habilita "Confirmar aplicação" quando TODAS as condições
  * são verdadeiras. Fail-closed por padrão.
  *

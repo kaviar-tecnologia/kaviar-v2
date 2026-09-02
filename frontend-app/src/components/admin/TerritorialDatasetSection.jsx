@@ -5,7 +5,7 @@ import {
 } from '@mui/material';
 import { CloudDownload, Preview as PreviewIcon, PlayArrow, Block } from '@mui/icons-material';
 import {
-  DATASET_STATUS, isSuperAdmin, latestDataset, availableActions, canConfirmApply,
+  DATASET_STATUS, isSuperAdmin, latestDataset, availableActions, canConfirmApply, canOpenApply,
   shortChecksum, fetchDatasets, acquireDataset, previewDataset, rejectDataset, applyDataset,
 } from '../../pages/admin/territorialDatasetFlow';
 import { formatDate } from '../../utils/formatDate';
@@ -190,10 +190,19 @@ export default function TerritorialDatasetSection({ territory, token }) {
           </Button>
         )}
         {actions.canApply && (
-          <Button variant="contained" startIcon={<PlayArrow />} disabled={inFlight} onClick={openConfirm}
-            data-testid="btn-apply" sx={{ bgcolor: '#059669' }}>
-            Aplicar dataset
-          </Button>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+            <Button variant="contained" startIcon={<PlayArrow />}
+              disabled={inFlight || !canOpenApply({ superAdmin, dataset, preview, inFlight })}
+              onClick={openConfirm}
+              data-testid="btn-apply" sx={{ bgcolor: '#059669' }}>
+              Aplicar dataset
+            </Button>
+            {!canOpenApply({ superAdmin, dataset, preview, inFlight }) && (
+              <Typography variant="caption" sx={{ color: '#D97706' }} data-testid="apply-hint">
+                Gere/revise a prévia desta versão para habilitar a aplicação.
+              </Typography>
+            )}
+          </Box>
         )}
         {actions.canReject && (
           <Button variant="outlined" color="error" startIcon={<Block />} disabled={inFlight} onClick={onReject}

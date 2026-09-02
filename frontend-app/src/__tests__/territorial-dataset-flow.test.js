@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  DATASET_STATUS, isSuperAdmin, latestDataset, availableActions, canConfirmApply,
+  DATASET_STATUS, isSuperAdmin, latestDataset, availableActions, canConfirmApply, canOpenApply,
   shortChecksum, normalizeError, fetchDatasets, acquireDataset, previewDataset,
   rejectDataset, applyDataset,
 } from '../pages/admin/territorialDatasetFlow';
@@ -53,6 +53,29 @@ describe('availableActions (state machine)', () => {
   });
   it('REJECTED → permite adquirir de novo', () => {
     expect(availableActions({ ...SA, dataset: rejected }).canAcquire).toBe(true);
+  });
+});
+
+describe('canOpenApply (gating do BOTÃO PRINCIPAL "Aplicar dataset")', () => {
+  const validPreview = { versionId: 'v1', canProceed: true };
+  const okArgs = { superAdmin: true, dataset: previewed, preview: validPreview, inFlight: false };
+  it('PREVIEWED + preview válida da mesma version → habilitado (sem exigir checkbox aqui)', () => {
+    expect(canOpenApply(okArgs)).toBe(true);
+  });
+  it('PREVIEWED + preview null → DESABILITADO', () => {
+    expect(canOpenApply({ ...okArgs, preview: null })).toBe(false);
+  });
+  it('PREVIEWED + preview de OUTRA version → DESABILITADO', () => {
+    expect(canOpenApply({ ...okArgs, preview: { versionId: 'OUTRA', canProceed: true } })).toBe(false);
+  });
+  it('PREVIEWED + canProceed=false → DESABILITADO', () => {
+    expect(canOpenApply({ ...okArgs, preview: { versionId: 'v1', canProceed: false } })).toBe(false);
+  });
+  it('não SUPER_ADMIN / inFlight / não-PREVIEWED / já aplicado → DESABILITADO', () => {
+    expect(canOpenApply({ ...okArgs, superAdmin: false })).toBe(false);
+    expect(canOpenApply({ ...okArgs, inFlight: true })).toBe(false);
+    expect(canOpenApply({ ...okArgs, dataset: draft })).toBe(false);
+    expect(canOpenApply({ ...okArgs, dataset: { ...previewed, applied_at: '2026-09-02' } })).toBe(false);
   });
 });
 
