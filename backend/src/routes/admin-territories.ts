@@ -16,6 +16,8 @@ import {
   rejectDatasetVersion,
   listTerritoryDatasets,
 } from '../services/territory/territorial-dataset-review.service';
+import { applyDatasetVersion } from '../services/territory/territorial-dataset-apply.service';
+import { wireRequestAbort } from '../services/territory/http-abort';
 
 const router = Router();
 router.use(authenticateAdmin, requireSuperAdmin);
@@ -1005,6 +1007,93 @@ router.post('/:id/prepare-city/confirm', async (req: Request, res: Response) => 
     res.json({ success: true, mode: 'executed', data: result });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error?.message || 'Erro ao executar preparação' });
+  }
+});
+
+const applyDatasetSchema = z.object({
+  // Confirmação explícita obrigatória (mesma disciplina do /confirm legado).
+  confirm: z.literal(true),
+});
+
+// POST /api/admin/territories/:id/prepare-city/datasets/:versionId/apply
+// FASE 3B — apply transacional/idempotente de uma dataset version PREVIEWED.
+// Somente SUPER_ADMIN (router.use requireSuperAdmin). NÃO altera o /confirm legado.
+// Ownership territorial validado antes da escrita; PREVIEWED→APPLYING→APPLIED em
+// transação única; rollback integral em falha. Auditoria SEM GeoJSON completo.
+router.post('/:id/prepare-city/datasets/:versionId/apply', async (req: Request, res: Response) => {
+  const ctx = auditCtx(req);
+  // Semântica real Node/Express: req 'aborted' + res 'close' guardado por
+  // !res.writableEnded. Listeners removidos no finally (cleanup).
+  const { signal, cleanup } = wireRequestAbort(req, res);
+  try {
+    const parsed = applyDatasetSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: 'Confirmação explícita (confirm=true) é obrigatória.' });
+    }
+
+    const result = await applyDatasetVersion({
+      territoryId: req.params.id,
+      versionId: req.params.versionId,
+      createdBy: ctx.adminId,
+      signal,
+      prisma,
+    });
+
+    if (!result.ok) {
+      const map: Record<string, number> = {
+        TERRITORY_NOT_FOUND: 404, DATASET_NOT_FOUND: 404,
+        DATASET_TERRITORY_MISMATCH: 403, DATASET_TERRITORY_AMBIGUOUS: 409,
+        CITY_UF_MISSING: 400, INVALID_STATUS_TRANSITION: 409,
+        NORMALIZED_KEY_MISSING: 422, CHECKSUM_MISMATCH: 409,
+        INVALID_GEOJSON: 422, INVALID_GEOMETRY: 422,
+        MUNICIPAL_BBOX_UNAVAILABLE: 422, MUNICIPAL_BBOX_AMBIGUOUS: 409,
+        NEIGHBORHOOD_IDENTITY_CONFLICT: 409, NEIGHBORHOOD_TERRITORY_CONFLICT: 409,
+        APPLY_CONFLICT: 409, S3_LOAD_FAILED: 502,
+        APPLY_ABORTED: 499, APPLY_DEADLINE_EXCEEDED: 504,
+      };
+      const status = map[result.code] ?? 422;
+      // Auditoria da falha — SEM conteúdo de GeoJSON.
+      audit({
+        adminId: ctx.adminId, adminEmail: ctx.adminEmail,
+        action: 'prepare_city_dataset_apply_failed', entityType: 'territorial_dataset_version', entityId: req.params.versionId,
+        newValue: { territoryId: req.params.id, code: result.code, from: result.from, conflicts: result.counters?.conflicts ?? 0 },
+        ipAddress: ctx.ip, userAgent: ctx.ua,
+      });
+      return res.status(status).json({ success: false, error: result.reason, code: result.code, conflicts: result.conflicts });
+    }
+
+    // Auditoria de sucesso — created/updated/unchanged/conflicts/skipped, SEM GeoJSON.
+    audit({
+      adminId: ctx.adminId, adminEmail: ctx.adminEmail,
+      action: 'prepare_city_dataset_applied', entityType: 'territorial_dataset_version', entityId: result.versionId ?? req.params.versionId,
+      newValue: {
+        territoryId: result.territoryId,
+        from: result.from, to: result.to,
+        created: result.counters?.created,
+        updated: result.counters?.updated,
+        unchanged: result.counters?.unchanged,
+        conflicts: result.counters?.conflicts,
+        skipped: result.counters?.skipped,
+        geofencesWritten: result.counters?.geofencesWritten,
+      },
+      ipAddress: ctx.ip, userAgent: ctx.ua,
+    });
+
+    return res.json({
+      success: true,
+      mode: 'applied',
+      data: {
+        versionId: result.versionId,
+        territoryId: result.territoryId,
+        status: result.to,
+        counters: result.counters,
+        conflicts: result.conflicts,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || 'Erro ao aplicar dataset' });
+  } finally {
+    cleanup();
   }
 });
 
