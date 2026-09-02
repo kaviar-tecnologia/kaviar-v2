@@ -16,10 +16,16 @@ export const DATASET_STATUS = {
   REJECTED: 'REJECTED',
 };
 
-/** True somente para SUPER_ADMIN. Reutiliza o mecanismo RBAC existente (localStorage). */
+/**
+ * True somente para SUPER_ADMIN. Reutiliza a fonte OFICIAL de RBAC do Admin:
+ * `localStorage['kaviar_admin_data']` (gravado no login com data.data.user, que
+ * inclui `role`) — a MESMA fonte usada por ProtectedAdminRoute e demais páginas.
+ * Fail-closed: qualquer ausência/erro → false. NÃO confia apenas na presença de
+ * token; o backend (requireSuperAdmin) permanece a barreira definitiva.
+ */
 export function isSuperAdmin(getItem = (k) => localStorage.getItem(k)) {
   try {
-    const raw = getItem('kaviar_admin_user') || '{}';
+    const raw = getItem('kaviar_admin_data') || '{}';
     return JSON.parse(raw).role === 'SUPER_ADMIN';
   } catch {
     return false;
