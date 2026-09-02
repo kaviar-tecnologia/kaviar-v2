@@ -18,6 +18,7 @@ export default function TerritoryDetailPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving] = useState(false);
+  const [regulatoryNotes, setRegulatoryNotes] = useState('');
   const token = localStorage.getItem('kaviar_admin_token');
 
   const fetchTerritory = async () => {
@@ -52,6 +53,10 @@ export default function TerritoryDetailPage() {
   if (!territory) return <Typography>Território não encontrado</Typography>;
 
   const t = territory;
+
+  useEffect(() => {
+    setRegulatoryNotes(t.regulatory_notes || '');
+  }, [t.regulatory_notes]);
 
   return (
     <Box>
@@ -112,10 +117,17 @@ export default function TerritoryDetailPage() {
                 </Box>
                 {t.regulatory_checked_at && <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Última verificação</Typography><Typography variant="body2">{formatDate(t.regulatory_checked_at, { showTime: true })}</Typography></Box>}
               </Box>
-              <TextField label="Notas regulatórias" value={t.regulatory_notes || ''} onChange={() => {}} onBlur={async (e) => {
-                if (e.target.value !== (t.regulatory_notes || '')) {
-                  const res = await fetch(`${API_BASE_URL}/api/admin/territories/${id}`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ regulatory_notes: e.target.value }) });
-                  if ((await res.json()).success) fetchTerritory();
+              <TextField label="Notas regulatórias" value={regulatoryNotes} onChange={(e) => setRegulatoryNotes(e.target.value)} onBlur={async () => {
+                const nextValue = regulatoryNotes;
+                if (nextValue !== (t.regulatory_notes || '')) {
+                  const res = await fetch(`${API_BASE_URL}/api/admin/territories/${id}`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ regulatory_notes: nextValue }) });
+                  const json = await res.json();
+                  if (json.success) {
+                    const updatedValue = json.data?.regulatory_notes ?? nextValue;
+                    setRegulatoryNotes(updatedValue);
+                    setTerritory((prev) => prev ? { ...prev, regulatory_notes: updatedValue } : prev);
+                    fetchTerritory();
+                  }
                 }
               }} fullWidth size="small" multiline rows={2} sx={{ mt: 1 }} InputLabelProps={{ shrink: true }} />
             </Box>
