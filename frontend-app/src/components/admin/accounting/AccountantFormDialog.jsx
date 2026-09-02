@@ -86,8 +86,8 @@ export default function AccountantFormDialog({ open, mode, accountantId, onClose
   const validate = () => {
     if (!form.nome_completo.trim()) return 'Nome completo é obrigatório.';
     if (!form.email.trim()) return 'Email é obrigatório.';
-    if (mode === 'create' && (!form.cpf.trim() || form.cpf.replace(/\D/g, '').length !== 11)) {
-      return 'CPF deve ter 11 dígitos.';
+    if (mode === 'create' && form.cpf.trim() && form.cpf.replace(/\D/g, '').length !== 11) {
+      return 'CPF, quando informado, deve ter 11 dígitos.';
     }
     return null;
   };
@@ -112,7 +112,8 @@ export default function AccountantFormDialog({ open, mode, accountantId, onClose
         is_responsible_accountant: form.is_responsible_accountant,
       };
       if (mode === 'create') {
-        payload.cpf = form.cpf.replace(/\D/g, '');
+        const cpfDigits = form.cpf.replace(/\D/g, '');
+        payload.cpf = cpfDigits || null;
       }
       if (mode === 'edit') {
         await updateAccountant(accountantId, payload);
@@ -141,7 +142,7 @@ export default function AccountantFormDialog({ open, mode, accountantId, onClose
             <TextField id="accountant-nome-completo" label="Nome Completo" value={form.nome_completo} onChange={handleChange('nome_completo')} required size="small" />
             <TextField id="accountant-email" label="Email" value={form.email} onChange={handleChange('email')} type="email" required size="small" />
             {mode === 'create' ? (
-              <TextField id="accountant-cpf" label="CPF" value={form.cpf} onChange={handleChange('cpf')} size="small" placeholder="Somente números" inputProps={{ maxLength: 14 }} />
+              <TextField id="accountant-cpf" label="CPF (opcional)" value={form.cpf} onChange={handleChange('cpf')} size="small" placeholder="Somente números, se necessário" inputProps={{ maxLength: 14 }} />
             ) : (
               <TextField id="accountant-cpf" label="CPF (mascarado)" value={form.cpf} size="small" disabled />
             )}

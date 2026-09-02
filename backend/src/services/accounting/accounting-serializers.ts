@@ -9,8 +9,9 @@ function serializeAdminSummary(admin: any) {
   return { id: admin.id, name: admin.name, role: admin.role };
 }
 
-function maskCpf(cpf: string): string {
-  if (!cpf || cpf.length < 2) return '***.***.***-**';
+function maskCpf(cpf: string | null | undefined): string | null {
+  if (!cpf) return null;
+  if (cpf.length < 2) return '***.***.***-**';
   const last2 = cpf.slice(-2);
   return `***.***.***-${last2}`;
 }

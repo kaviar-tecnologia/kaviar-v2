@@ -21,10 +21,13 @@ const entityTypeColors = {
 };
 
 const scopeLabels = {
-  FULL: 'Acesso Completo',
+  COMPLETO: 'Acesso Completo',
   FISCAL: 'Fiscal',
   CONTABIL: 'Contábil',
-  DEPARTAMENTO_PESSOAL: 'Departamento Pessoal',
+  FOLHA: 'Folha / Departamento Pessoal',
+  SOCIETARIO: 'Societário',
+  FINANCEIRO: 'Financeiro',
+  MUNICIPAL: 'Municipal',
 };
 
 const cardStyle = { bgcolor: '#1A1F2E', border: '1px solid rgba(212,175,55,0.15)', borderRadius: 2 };

@@ -71,7 +71,7 @@ export default function LinkFormDialog({ open, mode, linkId, onClose, onSuccess 
           setForm({
             accountant_id: link.accountant_id || '',
             legal_entity_id: link.legal_entity_id || '',
-            scope: link.scope || 'FULL',
+            scope: link.scope || 'COMPLETO',
             can_view: link.can_view ?? true, can_upload: link.can_upload ?? false, can_download: link.can_download ?? true, can_request_correction: link.can_request_correction ?? false, can_mark_processed: link.can_mark_processed ?? false, can_close_period: link.can_close_period ?? false,
             inherits_children: link.inherits_children ?? false,
             starts_at: link.starts_at ? link.starts_at.slice(0, 10) : '',

@@ -109,7 +109,7 @@ export const createAccountantSchema = z.object({
   accounting_firm_id: z.string().uuid(),
   nome_completo: strictTrimmedString(300),
   email: z.string().email().max(255),
-  cpf: z.string().regex(cpfRegex, 'CPF deve conter exatamente 11 dígitos'),
+  cpf: z.string().regex(cpfRegex, 'CPF deve conter exatamente 11 dígitos').optional().nullable(),
   crc: optionalNullableTrimmedString(30),
   crc_uf: z.string().regex(ufRegex).optional().nullable(),
   job_title: optionalNullableTrimmedString(100),
