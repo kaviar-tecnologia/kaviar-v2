@@ -286,6 +286,48 @@ router.post('/reset-password', accountantPasswordResetRateLimit, async (req: Req
 // GET /me (authenticated)
 // ═══════════════════════════════════════════════════════════════════
 
+// Shared include + serializer for the authenticated accountant profile.
+// Exposes ONLY safe/read-safe fields — never password_hash, tokens or internal ids beyond own.
+const PROFILE_INCLUDE = {
+  firm: { select: { id: true, razao_social: true, nome_fantasia: true, crc: true, crc_uf: true, telefone: true } },
+  entity_links: {
+    where: { status: 'ACTIVE' as const },
+    include: {
+      legal_entity: { select: { id: true, razao_social: true, nome_fantasia: true, cnpj: true } },
+    },
+  },
+};
+
+function serializeAccountantProfile(accountant: any) {
+  return {
+    id: accountant.id,
+    email: accountant.email,
+    nome_completo: accountant.nome_completo,
+    cpf: accountant.cpf,
+    crc: accountant.crc,
+    crc_uf: accountant.crc_uf,
+    job_title: accountant.job_title ?? null,
+    department: accountant.department ?? null,
+    is_responsible_accountant: accountant.is_responsible_accountant ?? false,
+    status: accountant.status,
+    mfa_enabled: accountant.mfa_enabled,
+    last_login_at: accountant.last_login_at,
+    firm: accountant.firm,
+    entity_links: (accountant.entity_links || []).map((link: any) => ({
+      id: link.id,
+      scope: link.scope,
+      is_primary: link.is_primary,
+      can_view: link.can_view,
+      can_upload: link.can_upload,
+      can_download: link.can_download,
+      can_request_correction: link.can_request_correction,
+      can_mark_processed: link.can_mark_processed,
+      can_close_period: link.can_close_period,
+      legal_entity: link.legal_entity,
+    })),
+  };
+}
+
 router.get('/me', authenticateAccountant, async (req: Request, res: Response) => {
   try {
     const { id } = (req as any).accountant;
@@ -293,48 +335,98 @@ router.get('/me', authenticateAccountant, async (req: Request, res: Response) =>
 
     const accountant = await prisma.accountants.findUnique({
       where: { id },
-      include: {
-        firm: { select: { id: true, razao_social: true, nome_fantasia: true } },
-        entity_links: {
-          where: { status: 'ACTIVE' },
-          include: {
-            legal_entity: { select: { id: true, razao_social: true, nome_fantasia: true, cnpj: true } },
-          },
-        },
-      },
+      include: PROFILE_INCLUDE,
     });
 
     if (!accountant) {
       return res.status(404).json({ success: false, error: 'Contador não encontrado' });
     }
 
-    return res.status(200).json({
-      success: true,
-      data: {
-        id: accountant.id,
-        email: accountant.email,
-        nome_completo: accountant.nome_completo,
-        cpf: accountant.cpf,
-        crc: accountant.crc,
-        crc_uf: accountant.crc_uf,
-        job_title: accountant.job_title ?? null,
-        department: accountant.department ?? null,
-        is_responsible_accountant: accountant.is_responsible_accountant ?? false,
-        status: accountant.status,
-        mfa_enabled: accountant.mfa_enabled,
-        last_login_at: accountant.last_login_at,
-        firm: accountant.firm,
-        entity_links: accountant.entity_links.map((link) => ({
-          id: link.id,
-          scope: link.scope,
-          is_primary: link.is_primary,
-          can_view: link.can_view,
-          can_upload: link.can_upload,
-          can_download: link.can_download,
-          legal_entity: link.legal_entity,
-        })),
-      },
+    return res.status(200).json({ success: true, data: serializeAccountantProfile(accountant) });
+  } catch (err) {
+    return handleError(err, res);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// PATCH /me (authenticated) — edita apenas dados pessoais seguros
+// ═══════════════════════════════════════════════════════════════════
+//
+// Whitelist estrita: nome_completo, job_title, department.
+// A identidade vem SEMPRE do JWT (req.accountant.id); qualquer accountant_id,
+// role, status, permissões, vínculo, escritório ou e-mail enviados no corpo
+// são IGNORADOS. Não há alteração de e-mail neste fluxo.
+const PROFILE_EDITABLE_FIELDS = ['nome_completo', 'job_title', 'department'] as const;
+
+router.patch('/me', authenticateAccountant, async (req: Request, res: Response) => {
+  try {
+    const { id } = (req as any).accountant;
+    const { prisma } = await import('../lib/prisma');
+
+    const body = (req.body || {}) as Record<string, unknown>;
+    const updateData: Record<string, string | null> = {};
+
+    for (const field of PROFILE_EDITABLE_FIELDS) {
+      if (!(field in body)) continue;
+      const raw = body[field];
+
+      // nome_completo é obrigatório se enviado; job_title/department podem ser limpos.
+      if (raw === null || raw === undefined || (typeof raw === 'string' && raw.trim() === '')) {
+        if (field === 'nome_completo') {
+          return res.status(400).json({ success: false, error: 'Nome completo não pode ficar vazio' });
+        }
+        updateData[field] = null;
+        continue;
+      }
+
+      if (typeof raw !== 'string') {
+        return res.status(400).json({ success: false, error: `Campo inválido: ${field}` });
+      }
+      const trimmed = raw.trim();
+      if (trimmed.length > 200) {
+        return res.status(400).json({ success: false, error: `Campo muito longo: ${field}` });
+      }
+      updateData[field] = trimmed;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ success: false, error: 'Nenhum campo editável informado' });
+    }
+
+    // Snapshot para auditoria (apenas campos editáveis).
+    const before = await prisma.accountants.findUnique({
+      where: { id },
+      select: { nome_completo: true, job_title: true, department: true },
     });
+    if (!before) {
+      return res.status(404).json({ success: false, error: 'Contador não encontrado' });
+    }
+
+    const updated = await prisma.accountants.update({
+      where: { id }, // SEMPRE o próprio usuário do JWT
+      data: updateData,
+      include: PROFILE_INCLUDE,
+    });
+
+    // Audit trail — quem, quando, o quê.
+    try {
+      await prisma.$transaction(async (tx) => {
+        await writeAccountingAuditTx(tx, {
+          adminId: id,
+          action: 'ACCOUNTANT_PROFILE_UPDATED',
+          entityType: 'accountant',
+          entityId: id,
+          oldValue: before,
+          newValue: updateData,
+          ipAddress: req.ip || req.socket.remoteAddress,
+          userAgent: req.headers['user-agent'],
+        });
+      });
+    } catch {
+      // best-effort — não falha a resposta por causa da auditoria
+    }
+
+    return res.status(200).json({ success: true, data: serializeAccountantProfile(updated) });
   } catch (err) {
     return handleError(err, res);
   }
