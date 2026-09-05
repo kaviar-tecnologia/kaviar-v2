@@ -302,6 +302,27 @@ class AdminApiService {
   async approveModality(id, review_notes) { return this.patch(`/api/admin/modalities/${id}/approve`, { review_notes }); }
   async rejectModality(id, rejected_reason, review_notes) { return this.patch(`/api/admin/modalities/${id}/reject`, { rejected_reason, review_notes }); }
   async suspendModality(id, review_notes) { return this.patch(`/api/admin/modalities/${id}/suspend`, { review_notes }); }
+
+  // Contas a Pagar — Obrigações (Portal do Contador). READ-ONLY + downloads seguros.
+  async getFinanceObligations(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.get(`/api/admin/finance/obligations${qs ? '?' + qs : ''}`);
+  }
+  async getFinanceObligationsSummary() {
+    return this.get('/api/admin/finance/obligations/summary');
+  }
+  async getFinanceObligationBoletoUrl(id) {
+    return this.get(`/api/admin/finance/obligations/${id}/download-boleto`);
+  }
+  async getFinanceObligationInvoicePdfUrl(id) {
+    return this.get(`/api/admin/finance/obligations/${id}/download-invoice-pdf`);
+  }
+  async getFinanceObligationInvoiceXmlUrl(id) {
+    return this.get(`/api/admin/finance/obligations/${id}/download-invoice-xml`);
+  }
+  async getFinanceObligationProofUrl(id) {
+    return this.get(`/api/admin/finance/obligations/${id}/download-proof`);
+  }
 }
 
 export const adminApi = new AdminApiService();
