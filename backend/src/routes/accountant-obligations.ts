@@ -233,6 +233,13 @@ router.post('/obligations/:id/transition', async (req: Request, res: Response) =
       return res.status(400).json({ success: false, error: 'Anexe o boleto ou guia antes de enviar para a empresa' });
     }
 
+    // Business rule: cannot mark as PROOF_UPLOADED without an actual proof file attached.
+    // Alinha o portal do contador ao fluxo público (public-obligations), que só grava
+    // PROOF_UPLOADED após upload real do comprovante. Impede estado sem arquivo.
+    if (data.status === 'PROOF_UPLOADED' && !ob.proof_storage_key) {
+      return res.status(400).json({ success: false, error: 'Anexe o comprovante de pagamento antes de marcar como comprovante enviado' });
+    }
+
     const newOwner = machine.newOwner[data.status] || ob.action_owner;
     const now = new Date();
 
