@@ -26,12 +26,27 @@
  */
 
 import { Router, Request, Response } from 'express';
+import multer from 'multer';
+import multerS3 from 'multer-s3';
+import { S3Client } from '@aws-sdk/client-s3';
+import crypto from 'crypto';
 import { authenticateAdmin, allowFinanceAccess } from '../middlewares/auth';
 import { prisma } from '../lib/prisma';
-import { generatePresignedGetUrl } from '../services/accounting/accounting-document-storage.service';
+import { generatePresignedGetUrl, getFileExtension, MAX_FILE_SIZE } from '../services/accounting/accounting-document-storage.service';
+import {
+  markObligationPaid,
+  recordProofUploaded,
+  assertProofUploadAllowed,
+  ObligationActionError,
+  PROOF_ALLOWED_MIME,
+} from '../services/accounting/accounting-obligation-actions.service';
 
 const router = Router();
 router.use(authenticateAdmin, allowFinanceAccess);
+
+const BUCKET = process.env.S3_UPLOADS_BUCKET || process.env.AWS_S3_BUCKET || 'kaviar-uploads-847895361928';
+const REGION = process.env.AWS_REGION || 'us-east-2';
+const s3Client = new S3Client({ region: REGION });
 
 // UUID fixo da legal_entity KAVIAR (ver migration 20260805163000_fix_kaviar_entity_uuid).
 // Configurável por env para outros ambientes, com fallback para o valor de produção.
@@ -309,6 +324,114 @@ router.get('/:id/download-proof', async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('[admin-obligations] download-proof error:', err?.message);
     res.status(500).json({ success: false, error: 'Erro interno' });
+  }
+});
+
+// POST /:id/mark-paid — KAVIAR informa que o pagamento foi realizado
+router.post('/:id/mark-paid', async (req: Request, res: Response) => {
+  try {
+    const r = await loadVisibleObligation(req.params.id);
+    if ('notFound' in r || 'forbidden' in r) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    const admin = (req as any).admin;
+    const ip = req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+
+    const updated = await markObligationPaid({
+      obligation: { id: r.ob.id, status: r.ob.status },
+      paidDate: req.body?.paid_date,
+      // KAVIAR é a empresa: actorType COMPANY (padrão do schema), com atribuição do admin.
+      actor: {
+        type: 'COMPANY',
+        ip,
+        userAgent: req.headers['user-agent'],
+        extraDetails: { channel: 'ADMIN', admin_id: admin?.id, admin_role: admin?.role },
+      },
+    });
+
+    res.json({ success: true, data: serializeForAdmin({ ...r.ob, ...updated }) });
+  } catch (err: any) {
+    if (err instanceof ObligationActionError) {
+      return res.status(err.status).json({ success: false, error: err.message });
+    }
+    console.error('[admin-obligations] mark-paid error:', err?.message);
+    res.status(500).json({ success: false, error: 'Erro interno' });
+  }
+});
+
+// POST /:id/upload-proof — KAVIAR anexa comprovante (multipart). Só após PAID/REJECTED.
+router.post('/:id/upload-proof', async (req: Request, res: Response) => {
+  try {
+    const r = await loadVisibleObligation(req.params.id);
+    if ('notFound' in r || 'forbidden' in r) return res.status(404).json({ success: false, error: 'Obrigação não encontrada' });
+
+    const ob = r.ob;
+
+    // Valida estado ANTES de aceitar o arquivo (mesma regra do fluxo público).
+    try {
+      assertProofUploadAllowed(ob.status);
+    } catch (e: any) {
+      if (e instanceof ObligationActionError) return res.status(e.status).json({ success: false, error: e.message });
+      throw e;
+    }
+
+    // Upload seguro para S3 — mesmo bucket/prefixo, MIME e limite de tamanho do fluxo público.
+    let storageKey = '';
+    const upload = multer({
+      storage: multerS3({
+        s3: s3Client,
+        bucket: BUCKET,
+        contentType: multerS3.AUTO_CONTENT_TYPE,
+        key: (_r: any, file: Express.Multer.File, cb: any) => {
+          const ext = getFileExtension(file.originalname);
+          const nonce = crypto.randomBytes(8).toString('hex');
+          storageKey = `accounting-proofs/${ob.id}/${nonce}${ext}`;
+          cb(null, storageKey);
+        },
+      }),
+      limits: { fileSize: MAX_FILE_SIZE },
+      fileFilter: (_r: any, file: Express.Multer.File, cb: any) => {
+        if (!PROOF_ALLOWED_MIME.has(file.mimetype)) return cb(new Error('Tipo não permitido. Use PDF, JPEG ou PNG.'));
+        cb(null, true);
+      },
+    }).single('file');
+
+    await new Promise<void>((resolve, reject) => {
+      upload(req, res, (err: any) => { if (err) reject(err); else resolve(); });
+    });
+
+    const uploadedFile = (req as any).file;
+    if (!uploadedFile) return res.status(400).json({ success: false, error: 'Nenhum arquivo enviado' });
+
+    const admin = (req as any).admin;
+    const ip = req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+
+    const updated = await recordProofUploaded({
+      obligationId: ob.id,
+      currentStatus: ob.status,
+      file: {
+        storageKey,
+        filename: uploadedFile.originalname,
+        mimeType: uploadedFile.mimetype,
+        sizeBytes: uploadedFile.size,
+      },
+      actor: {
+        type: 'COMPANY',
+        ip,
+        userAgent: req.headers['user-agent'],
+        extraDetails: { channel: 'ADMIN', admin_id: admin?.id, admin_role: admin?.role },
+      },
+    });
+
+    res.json({ success: true, data: serializeForAdmin({ ...ob, ...updated }) });
+  } catch (err: any) {
+    if (err instanceof ObligationActionError) {
+      return res.status(err.status).json({ success: false, error: err.message });
+    }
+    if (err.message?.includes('não permitid') || err.message?.includes('Tipo')) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    console.error('[admin-obligations] upload-proof error:', err?.message);
+    res.status(500).json({ success: false, error: 'Erro interno no upload' });
   }
 });
 
