@@ -24,11 +24,15 @@ const OTHER_ID = '00000000-0000-0000-0000-0000000000ff';
 
 // ── Hoisted state/mocks ─────────────────────────────────────────────────
 
-const { prismaMock, authState } = vi.hoisted(() => {
+const { prismaMock, authState, auditSpy } = vi.hoisted(() => {
   const prismaMock: any = {
     accounting_payment_obligations: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
+      update: vi.fn(),
+    },
+    accounting_obligation_audit: {
+      create: vi.fn(async () => ({})),
     },
   };
   return {
@@ -37,10 +41,17 @@ const { prismaMock, authState } = vi.hoisted(() => {
       // Controla o comportamento dos middlewares mockados.
       role: 'SUPER_ADMIN' as string | null,
     },
+    auditSpy: vi.fn(async () => {}),
   };
 });
 
 vi.mock('../src/lib/prisma', () => ({ prisma: prismaMock }));
+
+// O service compartilhado importa prisma + auditObligation deste módulo.
+vi.mock('../src/services/accounting/accounting-obligation-tokens.service', () => ({
+  prisma: prismaMock,
+  auditObligation: auditSpy,
+}));
 
 // Mock dos middlewares de auth: authenticateAdmin injeta req.admin; allowFinanceAccess
 // aplica a MESMA regra de papéis do middleware real (SUPER_ADMIN, EXECUTIVE_ADMIN, FINANCE).
@@ -61,6 +72,8 @@ vi.mock('../src/middlewares/auth', () => ({
 
 vi.mock('../src/services/accounting/accounting-document-storage.service', () => ({
   generatePresignedGetUrl: vi.fn(async () => ({ downloadUrl: 'https://s3.example.com/secure-file', expiresInSeconds: 3600 })),
+  getFileExtension: vi.fn(() => '.pdf'),
+  MAX_FILE_SIZE: 20 * 1024 * 1024,
 }));
 
 const { adminFinanceObligationsRoutes, serializeForAdmin, statusLabel } = await import('../src/routes/admin-finance-obligations');
@@ -119,6 +132,11 @@ function ob(overrides: any = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   authState.role = 'SUPER_ADMIN';
+  prismaMock.accounting_payment_obligations.update.mockImplementation(async ({ where, data }: any) => ({
+    ...ob(),
+    id: where.id,
+    ...data,
+  }));
 });
 
 // ── Unit: serializer / traduções ────────────────────────────────────────
@@ -301,5 +319,108 @@ describe('GET /api/admin/finance/obligations/:id (detalhe)', () => {
     const res = await request(makeApp()).get('/api/admin/finance/obligations/ob-1');
     expect(res.status).toBe(200);
     expect(res.body.data.status).toBe('SENT_TO_COMPANY');
+  });
+});
+
+// ── Fluxo de pagamento pelo admin: mark-paid ────────────────────────────
+
+describe('POST /api/admin/finance/obligations/:id/mark-paid', () => {
+  it('VIEWED → PAID por admin autorizado (200) + audit criado', async () => {
+    prismaMock.accounting_payment_obligations.findUnique.mockResolvedValue(ob({ status: 'VIEWED' }));
+    const res = await request(makeApp()).post('/api/admin/finance/obligations/ob-1/mark-paid').send({ paid_date: '2026-09-04' });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.status).toBe('PAID');
+    expect(prismaMock.accounting_payment_obligations.update).toHaveBeenCalledTimes(1);
+    // audit trail criado com ator COMPANY + atribuição do admin
+    expect(auditSpy).toHaveBeenCalledTimes(1);
+    const auditArg = auditSpy.mock.calls[0][0];
+    expect(auditArg.action).toBe('PAYMENT_INFORMED');
+    expect(auditArg.actorType).toBe('COMPANY');
+    expect(auditArg.details.channel).toBe('ADMIN');
+    expect(auditArg.details.admin_id).toBe('admin-1');
+  });
+
+  it('SCHEDULED → PAID por admin autorizado (200)', async () => {
+    prismaMock.accounting_payment_obligations.findUnique.mockResolvedValue(ob({ status: 'SCHEDULED' }));
+    const res = await request(makeApp()).post('/api/admin/finance/obligations/ob-1/mark-paid').send({});
+    expect(res.status).toBe(200);
+    expect(res.body.data.status).toBe('PAID');
+  });
+
+  it('DRAFT não pode ser pago (404 — não visível)', async () => {
+    prismaMock.accounting_payment_obligations.findUnique.mockResolvedValue(ob({ status: 'DRAFT' }));
+    const res = await request(makeApp()).post('/api/admin/finance/obligations/ob-1/mark-paid').send({});
+    expect(res.status).toBe(404);
+    expect(prismaMock.accounting_payment_obligations.update).not.toHaveBeenCalled();
+  });
+
+  it('estado incompatível (PAID) retorna 400 e não grava', async () => {
+    prismaMock.accounting_payment_obligations.findUnique.mockResolvedValue(ob({ status: 'PAID' }));
+    const res = await request(makeApp()).post('/api/admin/finance/obligations/ob-1/mark-paid').send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/não é possível marcar como pago/i);
+    expect(prismaMock.accounting_payment_obligations.update).not.toHaveBeenCalled();
+  });
+
+  it('obrigação de outra legal_entity não pode ser paga (404)', async () => {
+    prismaMock.accounting_payment_obligations.findUnique.mockResolvedValue(ob({ status: 'VIEWED', legal_entity_id: OTHER_ID }));
+    const res = await request(makeApp()).post('/api/admin/finance/obligations/ob-1/mark-paid').send({});
+    expect(res.status).toBe(404);
+    expect(prismaMock.accounting_payment_obligations.update).not.toHaveBeenCalled();
+  });
+
+  it('FINANCE autorizado (200)', async () => {
+    authState.role = 'FINANCE';
+    prismaMock.accounting_payment_obligations.findUnique.mockResolvedValue(ob({ status: 'VIEWED' }));
+    const res = await request(makeApp()).post('/api/admin/finance/obligations/ob-1/mark-paid').send({});
+    expect(res.status).toBe(200);
+  });
+
+  it('perfil não autorizado recebe 403', async () => {
+    authState.role = 'OPERATOR';
+    const res = await request(makeApp()).post('/api/admin/finance/obligations/ob-1/mark-paid').send({});
+    expect(res.status).toBe(403);
+  });
+
+  it('sem autenticação recebe 401', async () => {
+    authState.role = null;
+    const res = await request(makeApp()).post('/api/admin/finance/obligations/ob-1/mark-paid').send({});
+    expect(res.status).toBe(401);
+  });
+});
+
+// ── Guarda de upload-proof (validação antes de aceitar arquivo) ─────────
+
+describe('POST /api/admin/finance/obligations/:id/upload-proof — guardas', () => {
+  it('DRAFT não pode receber comprovante (404)', async () => {
+    prismaMock.accounting_payment_obligations.findUnique.mockResolvedValue(ob({ status: 'DRAFT' }));
+    const res = await request(makeApp()).post('/api/admin/finance/obligations/ob-1/upload-proof');
+    expect(res.status).toBe(404);
+  });
+
+  it('estado incompatível (VIEWED) → 400 antes do upload', async () => {
+    prismaMock.accounting_payment_obligations.findUnique.mockResolvedValue(ob({ status: 'VIEWED' }));
+    const res = await request(makeApp()).post('/api/admin/finance/obligations/ob-1/upload-proof');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/comprovante só é permitido/i);
+  });
+
+  it('obrigação de outra legal_entity (404)', async () => {
+    prismaMock.accounting_payment_obligations.findUnique.mockResolvedValue(ob({ status: 'PAID', legal_entity_id: OTHER_ID }));
+    const res = await request(makeApp()).post('/api/admin/finance/obligations/ob-1/upload-proof');
+    expect(res.status).toBe(404);
+  });
+
+  it('perfil não autorizado recebe 403', async () => {
+    authState.role = 'OPERATOR';
+    const res = await request(makeApp()).post('/api/admin/finance/obligations/ob-1/upload-proof');
+    expect(res.status).toBe(403);
+  });
+
+  it('sem autenticação recebe 401', async () => {
+    authState.role = null;
+    const res = await request(makeApp()).post('/api/admin/finance/obligations/ob-1/upload-proof');
+    expect(res.status).toBe(401);
   });
 });

@@ -2,13 +2,14 @@ import React, { useEffect, useState } from 'react';
 import {
   Box, Typography, Card, CardContent, Grid, CircularProgress, Alert, Divider,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Chip,
-  Dialog, DialogTitle, DialogContent, DialogActions, Button, IconButton, Tooltip,
+  Dialog, DialogTitle, DialogContent, DialogActions, Button, IconButton, Tooltip, TextField,
 } from '@mui/material';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import CloseIcon from '@mui/icons-material/Close';
 import DescriptionIcon from '@mui/icons-material/Description';
 import RequestQuoteIcon from '@mui/icons-material/RequestQuote';
 import DownloadIcon from '@mui/icons-material/Download';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { adminApi } from '../../services/adminApi';
 
 const formatCents = (cents) => {
@@ -125,6 +126,21 @@ export default function FinancePayablesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [evidenceDialog, setEvidenceDialog] = useState({ open: false, evidence: null, name: '', pixMasked: '', type: '' });
+  // Registrar pagamento
+  const [payDialog, setPayDialog] = useState({ open: false, obligation: null, paidDate: '', submitting: false, error: null });
+  // Enviar comprovante
+  const [uploadingId, setUploadingId] = useState(null);
+  const [actionMsg, setActionMsg] = useState(null);
+
+  const reloadObligations = React.useCallback(() => {
+    return Promise.all([
+      adminApi.getFinanceObligations(),
+      adminApi.getFinanceObligationsSummary(),
+    ]).then(([list, summary]) => {
+      setObligations(list.data || []);
+      setObligationsSummary(summary.data || null);
+    });
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -139,17 +155,11 @@ export default function FinancePayablesPage() {
 
     // Obrigações (Portal do Contador) — carregadas de forma independente para não
     // quebrar a página caso o endpoint falhe.
-    Promise.all([
-      adminApi.getFinanceObligations(),
-      adminApi.getFinanceObligationsSummary(),
-    ]).then(([list, summary]) => {
-      setObligations(list.data || []);
-      setObligationsSummary(summary.data || null);
-    }).catch(e => {
+    reloadObligations().catch(e => {
       setObligationsError(e.message || 'Erro ao carregar cobranças e obrigações');
       setObligations([]);
     });
-  }, []);
+  }, [reloadObligations]);
 
   const openEvidence = (evidence, name, pixMasked, type) => {
     setEvidenceDialog({ open: true, evidence, name, pixMasked, type });
@@ -174,6 +184,45 @@ export default function FinancePayablesPage() {
     }
   };
 
+  // ── Registrar pagamento ──
+  const openPayDialog = (obligation) => {
+    const today = new Date().toISOString().slice(0, 10);
+    setPayDialog({ open: true, obligation, paidDate: today, submitting: false, error: null });
+  };
+  const closePayDialog = () => setPayDialog(prev => ({ ...prev, open: false }));
+  const submitPayment = async () => {
+    setPayDialog(prev => ({ ...prev, submitting: true, error: null }));
+    try {
+      await adminApi.markFinanceObligationPaid(payDialog.obligation.id, payDialog.paidDate || null);
+      await reloadObligations();
+      setActionMsg('Pagamento registrado com sucesso.');
+      setPayDialog({ open: false, obligation: null, paidDate: '', submitting: false, error: null });
+    } catch (e) {
+      setPayDialog(prev => ({ ...prev, submitting: false, error: e.message || 'Falha ao registrar pagamento' }));
+    }
+  };
+
+  // ── Enviar comprovante ──
+  const handleProofUpload = async (obligation, file) => {
+    if (!file) return;
+    setUploadingId(obligation.id);
+    setObligationsError(null);
+    try {
+      await adminApi.uploadFinanceObligationProof(obligation.id, file);
+      await reloadObligations();
+      setActionMsg('Comprovante enviado com sucesso.');
+    } catch (e) {
+      setObligationsError(e.message || 'Falha ao enviar comprovante');
+    } finally {
+      setUploadingId(null);
+    }
+  };
+
+  // Estados em que a KAVIAR pode informar pagamento / enviar comprovante.
+  // Alinhado ao backend (markObligationPaid aceita VIEWED/SCHEDULED; proof aceita PAID/REJECTED).
+  const canMarkPaid = (o) => ['VIEWED', 'SCHEDULED'].includes(o.status);
+  const canUploadProof = (o) => ['PAID', 'REJECTED'].includes(o.status) && !o.has_proof;
+
   if (loading) return <Box display="flex" justifyContent="center" p={4}><CircularProgress /></Box>;
   if (error) return <Alert severity="error">{error}</Alert>;
 
@@ -192,6 +241,10 @@ export default function FinancePayablesPage() {
 
       {obligationsError && (
         <Alert severity="warning" sx={{ mb: 2 }}>{obligationsError}</Alert>
+      )}
+
+      {actionMsg && (
+        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setActionMsg(null)}>{actionMsg}</Alert>
       )}
 
       {/* Resumo */}
@@ -250,6 +303,7 @@ export default function FinancePayablesPage() {
                 <TableCell align="center">Boleto/Guia</TableCell>
                 <TableCell align="center">NF</TableCell>
                 <TableCell align="center">Comprovante</TableCell>
+                <TableCell align="center">Ações</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -319,6 +373,24 @@ export default function FinancePayablesPage() {
                           </span>
                         </Tooltip>
                       ) : '—'}
+                    </TableCell>
+                    <TableCell align="center">
+                      {canMarkPaid(o) && (
+                        <Button size="small" variant="outlined" color="success" sx={{ mr: 0.5, mb: 0.5 }}
+                          onClick={() => openPayDialog(o)}>
+                          Registrar pagamento
+                        </Button>
+                      )}
+                      {canUploadProof(o) && (
+                        <Button size="small" variant="outlined" component="label"
+                          disabled={uploadingId === o.id} startIcon={<UploadFileIcon fontSize="small" />} sx={{ mb: 0.5 }}>
+                          {uploadingId === o.id ? 'Enviando…' : 'Enviar comprovante'}
+                          <input type="file" hidden accept="application/pdf,image/jpeg,image/png"
+                            onChange={(e) => { handleProofUpload(o, e.target.files?.[0]); e.target.value = ''; }} />
+                        </Button>
+                      )}
+                      {o.has_proof && <Typography variant="caption" color="success.main">Comprovante enviado</Typography>}
+                      {!canMarkPaid(o) && !canUploadProof(o) && !o.has_proof && '—'}
                     </TableCell>
                   </TableRow>
                 );
@@ -502,6 +574,35 @@ export default function FinancePayablesPage() {
         pixMasked={evidenceDialog.pixMasked}
         type={evidenceDialog.type}
       />
+
+      {/* REGISTRAR PAGAMENTO DIALOG */}
+      <Dialog open={payDialog.open} onClose={closePayDialog} maxWidth="xs" fullWidth>
+        <DialogTitle>Registrar pagamento</DialogTitle>
+        <DialogContent dividers>
+          {payDialog.obligation && (
+            <Box display="flex" flexDirection="column" gap={1.5}>
+              <Typography variant="body2"><strong>Descrição:</strong> {payDialog.obligation.description}</Typography>
+              <Typography variant="body2"><strong>Beneficiário:</strong> {payDialog.obligation.beneficiary || '—'}</Typography>
+              <Typography variant="body2"><strong>Valor:</strong> {payDialog.obligation.amount_display}</Typography>
+              <TextField
+                label="Data do pagamento"
+                type="date"
+                size="small"
+                value={payDialog.paidDate}
+                onChange={(e) => setPayDialog(prev => ({ ...prev, paidDate: e.target.value }))}
+                InputLabelProps={{ shrink: true }}
+              />
+              {payDialog.error && <Alert severity="error">{payDialog.error}</Alert>}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closePayDialog} disabled={payDialog.submitting}>Cancelar</Button>
+          <Button variant="contained" color="success" onClick={submitPayment} disabled={payDialog.submitting}>
+            {payDialog.submitting ? 'Registrando…' : 'Confirmar pagamento'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

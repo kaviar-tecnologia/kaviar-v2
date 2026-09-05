@@ -323,6 +323,28 @@ class AdminApiService {
   async getFinanceObligationProofUrl(id) {
     return this.get(`/api/admin/finance/obligations/${id}/download-proof`);
   }
+  // Registrar pagamento (KAVIAR informa que pagou). Body JSON opcional { paid_date }.
+  async markFinanceObligationPaid(id, paidDate) {
+    return this.post(`/api/admin/finance/obligations/${id}/mark-paid`, paidDate ? { paid_date: paidDate } : {});
+  }
+  // Enviar comprovante (multipart). Usa FormData — o browser define o boundary.
+  async uploadFinanceObligationProof(id, file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const token = this.getToken();
+    const headers = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const url = `${this.baseURL}/api/admin/finance/obligations/${id}/upload-proof`;
+    const response = await fetch(url, { method: 'POST', headers, body: formData });
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401) throw new Error('Sessão expirada');
+    if (!response.ok) {
+      const error = new Error(data.message || data.error || 'Erro no upload do comprovante');
+      error.response = { status: response.status, data };
+      throw error;
+    }
+    return data;
+  }
 }
 
 export const adminApi = new AdminApiService();

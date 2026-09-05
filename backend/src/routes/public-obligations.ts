@@ -12,6 +12,13 @@ import { S3Client } from '@aws-sdk/client-s3';
 import crypto from 'crypto';
 import { validateObligationToken, auditObligation } from '../services/accounting/accounting-obligation-tokens.service';
 import { generatePresignedGetUrl, getFileExtension, MAX_FILE_SIZE, ALLOWED_MIME_TYPES, ALLOWED_EXTENSIONS } from '../services/accounting/accounting-document-storage.service';
+import {
+  markObligationPaid,
+  recordProofUploaded,
+  assertProofUploadAllowed,
+  ObligationActionError,
+  PROOF_ALLOWED_MIME,
+} from '../services/accounting/accounting-obligation-actions.service';
 import rateLimit from 'express-rate-limit';
 
 const prisma = new PrismaClient();
@@ -138,30 +145,19 @@ router.post('/:token/mark-paid', async (req: Request, res: Response) => {
     if (!result.valid) return res.status(403).json({ success: false, error: result.error });
 
     const ob = result.obligation;
-    const allowedStatuses = ['VIEWED', 'SCHEDULED'];
-    if (!allowedStatuses.includes(ob.status)) {
-      return res.status(400).json({ success: false, error: `Não é possível marcar como pago no status atual: ${ob.status}` });
-    }
+    const ip = req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
 
-    const paidDate = req.body.paid_date;
-    const paidAt = paidDate ? new Date(paidDate + 'T12:00:00Z') : new Date();
-
-    await prisma.accounting_payment_obligations.update({
-      where: { id: ob.id },
-      data: { status: 'PAID', paid_at: paidAt, action_owner: 'COMPANY' },
-    });
-
-    await auditObligation({
-      obligationId: ob.id,
-      action: 'PAYMENT_INFORMED',
-      actorType: 'COMPANY',
-      details: { paid_date: paidDate || new Date().toISOString().slice(0, 10) },
-      ip: req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown',
-      userAgent: req.headers['user-agent'],
+    await markObligationPaid({
+      obligation: ob,
+      paidDate: req.body.paid_date,
+      actor: { type: 'COMPANY', ip, userAgent: req.headers['user-agent'] },
     });
 
     res.json({ success: true, data: { message: 'Pagamento registrado com sucesso.' } });
   } catch (err: any) {
+    if (err instanceof ObligationActionError) {
+      return res.status(err.status).json({ success: false, error: err.message });
+    }
     console.error('[public-obligations] mark-paid error:', err);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
@@ -205,9 +201,12 @@ router.post('/:token/upload-proof', async (req: Request, res: Response) => {
     if (!result.valid) return res.status(403).json({ success: false, error: result.error });
 
     const ob = result.obligation;
-    const allowedStatuses = ['PAID', 'REJECTED'];
-    if (!allowedStatuses.includes(ob.status)) {
-      return res.status(400).json({ success: false, error: 'Envio de comprovante só é permitido após informar o pagamento' });
+    // Validate state BEFORE accepting the file (shared rule).
+    try {
+      assertProofUploadAllowed(ob.status);
+    } catch (e: any) {
+      if (e instanceof ObligationActionError) return res.status(e.status).json({ success: false, error: e.message });
+      throw e;
     }
 
     // Set up multer for proof upload
@@ -226,8 +225,7 @@ router.post('/:token/upload-proof', async (req: Request, res: Response) => {
       }),
       limits: { fileSize: MAX_FILE_SIZE },
       fileFilter: (_r: any, file: Express.Multer.File, cb: any) => {
-        const allowedProofTypes = new Set(['application/pdf', 'image/jpeg', 'image/png']);
-        if (!allowedProofTypes.has(file.mimetype)) return cb(new Error('Tipo não permitido. Use PDF, JPEG ou PNG.'));
+        if (!PROOF_ALLOWED_MIME.has(file.mimetype)) return cb(new Error('Tipo não permitido. Use PDF, JPEG ou PNG.'));
         cb(null, true);
       },
     }).single('file');
@@ -239,31 +237,24 @@ router.post('/:token/upload-proof', async (req: Request, res: Response) => {
     const uploadedFile = (req as any).file;
     if (!uploadedFile) return res.status(400).json({ success: false, error: 'Nenhum arquivo enviado' });
 
-    // Store directly on obligation
-    await prisma.accounting_payment_obligations.update({
-      where: { id: ob.id },
-      data: {
-        proof_storage_key: storageKey,
-        proof_filename: uploadedFile.originalname,
-        proof_mime_type: uploadedFile.mimetype,
-        proof_size_bytes: uploadedFile.size,
-        proof_uploaded_at: new Date(),
-        status: 'PROOF_UPLOADED',
-        action_owner: 'ACCOUNTANT',
-      },
-    });
-
-    await auditObligation({
+    const ip = req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+    await recordProofUploaded({
       obligationId: ob.id,
-      action: 'PROOF_UPLOADED',
-      actorType: 'COMPANY',
-      details: { filename: uploadedFile.originalname, size: uploadedFile.size },
-      ip: req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown',
-      userAgent: req.headers['user-agent'],
+      currentStatus: ob.status,
+      file: {
+        storageKey,
+        filename: uploadedFile.originalname,
+        mimeType: uploadedFile.mimetype,
+        sizeBytes: uploadedFile.size,
+      },
+      actor: { type: 'COMPANY', ip, userAgent: req.headers['user-agent'] },
     });
 
     res.json({ success: true, data: { message: 'Comprovante enviado com sucesso. O contador será notificado.' } });
   } catch (err: any) {
+    if (err instanceof ObligationActionError) {
+      return res.status(err.status).json({ success: false, error: err.message });
+    }
     if (err.message?.includes('não permitid') || err.message?.includes('Tipo')) {
       return res.status(400).json({ success: false, error: err.message });
     }
