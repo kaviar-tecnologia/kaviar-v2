@@ -92,6 +92,19 @@ export function AccountantAuthProvider({ children }) {
     clearSession();
   }, [clearSession]);
 
+  // Re-fetch /me and update context (used after profile updates).
+  const refreshProfile = useCallback(async () => {
+    const meRes = await accountantApi.get('/api/accountant/auth/me');
+    const data = meRes.data?.data || null;
+    setAccountant(data);
+    return data;
+  }, []);
+
+  // Update context directly with a fresh profile object (avoids extra round-trip).
+  const updateAccountant = useCallback((data) => {
+    if (data) setAccountant(data);
+  }, []);
+
   const value = {
     status,
     accountant,
@@ -102,6 +115,8 @@ export function AccountantAuthProvider({ children }) {
     login,
     logout,
     clearSession,
+    refreshProfile,
+    updateAccountant,
   };
 
   return (
