@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, Alert, TouchableOpacity, Animated, ScrollView, AppState, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, Alert, TouchableOpacity, Animated, ScrollView, AppState, StatusBar, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as Location from 'expo-location';
@@ -132,6 +132,7 @@ export default function DriverOnline() {
   const [offerCountdown, setOfferCountdown] = useState('');
   const [soundMuted, setSoundMuted] = useState(false);
   const [pollUnstable, setPollUnstable] = useState(false);
+  const [showLocationDisclosure, setShowLocationDisclosure] = useState(false);
   const pollFailsRef = useRef(0);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
   const locationRef = useRef<NodeJS.Timeout | null>(null);
@@ -414,7 +415,7 @@ export default function DriverOnline() {
     pollRef.current = setTimeout(poll, POLL_BACKOFF[0]);
   };
 
-  const startLocationTracking = async (): Promise<void> => {
+  const startLocationTracking = async (): Promise<boolean> => {
     try {
       const mode = await startBackgroundLocation(ENV.API_URL);
       setLocationPermission(true);
@@ -440,6 +441,7 @@ export default function DriverOnline() {
           setCurrentCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
         } catch (e) { console.warn('[Driver] initial coords failed:', e); }
       }
+      return true;
     } catch (e: any) {
       if (e.message === 'FOREGROUND_DENIED') {
         setLocationPermission(false);
@@ -447,6 +449,7 @@ export default function DriverOnline() {
       } else {
         console.warn('[Driver] startLocationTracking error:', e);
       }
+      return false;
     }
   };
 
@@ -483,15 +486,23 @@ export default function DriverOnline() {
     }
   };
 
-  const handleGoOnline = async () => {
+  const continueGoOnline = async () => {
     setLoading(true);
     try {
+      const trackingReady = await startLocationTracking();
+      if (!trackingReady) {
+        setIsOnline(false);
+        return;
+      }
+
       await driverApi.setAvailability('online');
       setIsOnline(true);
       registerPushToken();
-      await startLocationTracking();
       startPolling();
     } catch (e: any) {
+      stopAll();
+      setIsOnline(false);
+
       if (e?.response?.status === 403 && e?.response?.data?.error === 'DRIVER_NOT_APPROVED') {
         Alert.alert(
           'Cadastro em análise',
@@ -531,6 +542,10 @@ export default function DriverOnline() {
       }
       Alert.alert('Erro', friendlyError(e, 'Erro ao ficar online'));
     } finally { setLoading(false); }
+  };
+
+  const handleGoOnline = () => {
+    setShowLocationDisclosure(true);
   };
 
   const handleGoOffline = async () => {
@@ -877,6 +892,46 @@ export default function DriverOnline() {
         userPhone={userPhone}
         items={drawerItems}
       />
+
+      <Modal
+        visible={showLocationDisclosure}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setShowLocationDisclosure(false)}
+      >
+        <View style={styles.disclosureOverlay}>
+          <View style={styles.disclosureCard}>
+            <Text style={styles.disclosureTitle}>Uso da sua localização</Text>
+            <Text style={styles.disclosureText}>
+              O KAVIAR Motorista usa sua localização precisa para mostrar sua posição no mapa, encontrar passageiros próximos, receber corridas e atualizar sua posição durante o serviço.{'\n\n'}
+              Quando você estiver online ou em uma corrida, o app também poderá acessar sua localização em segundo plano para manter sua posição atualizada mesmo quando o app não estiver aberto na tela.{'\n\n'}
+              Você pode interromper esse uso a qualquer momento ficando offline.
+            </Text>
+            <View style={styles.disclosureActions}>
+              <TouchableOpacity
+                style={[styles.disclosureButton, styles.disclosureSecondaryButton]}
+                onPress={() => setShowLocationDisclosure(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Agora não"
+              >
+                <Text style={styles.disclosureSecondaryButtonText}>Agora não</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.disclosureButton, styles.disclosurePrimaryButton]}
+                onPress={() => {
+                  setShowLocationDisclosure(false);
+                  void continueGoOnline();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Continuar"
+              >
+                <Text style={styles.disclosurePrimaryButtonText}>Continuar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1138,6 +1193,60 @@ const styles = StyleSheet.create({
     color: '#5E6470',
   },
   connectingHint: { fontSize: 12, color: '#5E6470', textAlign: 'center', marginTop: 10, marginBottom: 8 },
+  disclosureOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  disclosureCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#EAEDF2',
+  },
+  disclosureTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#121316',
+    marginBottom: 12,
+  },
+  disclosureText: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: '#374151',
+  },
+  disclosureActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 18,
+  },
+  disclosureButton: {
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+  },
+  disclosureSecondaryButton: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#D0D5DE',
+  },
+  disclosurePrimaryButton: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  disclosureSecondaryButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#5E6470',
+  },
+  disclosurePrimaryButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#121316',
+  },
 
   // Credits
   creditBadge: {
