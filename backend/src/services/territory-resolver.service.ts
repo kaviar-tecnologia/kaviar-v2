@@ -212,7 +212,7 @@ export async function resolveTerritory(
   }
 
   // 4. OUTSIDE service area
-  console.log(`[TerritoryResolver] Outside service area: lat=${lat}, lng=${lng}`);
+  console.log('[TerritoryResolver] Outside service area');
   return {
     resolved: false,
     community: null,
