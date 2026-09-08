@@ -1,4 +1,4 @@
-import { randomUUID, createHash } from 'crypto';
+import { randomUUID } from 'crypto';
 import { Router, Request, Response, NextFunction } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
@@ -9,6 +9,7 @@ import { resolveTerritory } from '../services/territory-resolver.service';
 const router = Router();
 
 const AR_ANON_AUDIENCE = 'ar-public';
+const AR_ANON_ISSUER = 'kaviar-ar-public';
 const AR_ANON_SCOPE = 'ar:territory-context';
 const AR_ANON_TTL_SECONDS = 5 * 60;
 
@@ -65,7 +66,7 @@ type ArContextOutsideResponse = {
 type ArContextResponse = ArContextResolvedResponse | ArContextOutsideResponse;
 
 function getJwtSecret(): string | null {
-  return process.env.AR_PUBLIC_JWT_SECRET || process.env.JWT_SECRET || null;
+  return process.env.AR_PUBLIC_JWT_SECRET || null;
 }
 
 function getRequestId(req: Request): string {
@@ -126,7 +127,10 @@ function authenticateArAnonymousToken(req: Request, res: Response, next: NextFun
   }
 
   try {
-    const decoded = jwt.verify(token, secret, { audience: AR_ANON_AUDIENCE }) as JwtPayload;
+    const decoded = jwt.verify(token, secret, {
+      audience: AR_ANON_AUDIENCE,
+      issuer: AR_ANON_ISSUER,
+    }) as JwtPayload;
     const scope = typeof decoded.scope === 'string' ? decoded.scope : '';
     if (scope !== AR_ANON_SCOPE) {
       res.status(401).json({ error: 'UNAUTHORIZED' });
@@ -153,11 +157,6 @@ const arContextRateLimit = rateLimit({
   max: getRateLimitMax(process.env.AR_CONTEXT_RATE_LIMIT_MAX, DEFAULT_AR_CONTEXT_RATE_LIMIT_MAX),
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
-    const token = getBearerToken(req) || 'no-token';
-    const tokenHash = createHash('sha256').update(token).digest('hex');
-    return `${req.ip}:${tokenHash}`;
-  },
   message: {
     error: 'RATE_LIMIT_EXCEEDED',
   },
@@ -166,7 +165,7 @@ const arContextRateLimit = rateLimit({
 router.post('/auth/anonymous', arAuthRateLimit, (req: Request, res: Response) => {
   const secret = getJwtSecret();
   if (!secret) {
-    return res.status(500).json({ error: 'JWT_NOT_CONFIGURED' });
+    return res.status(503).json({ error: 'JWT_NOT_CONFIGURED' });
   }
 
   const token = jwt.sign(
@@ -174,6 +173,7 @@ router.post('/auth/anonymous', arAuthRateLimit, (req: Request, res: Response) =>
     secret,
     {
       audience: AR_ANON_AUDIENCE,
+      issuer: AR_ANON_ISSUER,
       expiresIn: AR_ANON_TTL_SECONDS,
       jwtid: randomUUID(),
     },
@@ -184,6 +184,7 @@ router.post('/auth/anonymous', arAuthRateLimit, (req: Request, res: Response) =>
     tokenType: 'Bearer',
     expiresIn: AR_ANON_TTL_SECONDS,
     audience: AR_ANON_AUDIENCE,
+    issuer: AR_ANON_ISSUER,
     scope: AR_ANON_SCOPE,
     requestId: getRequestId(req),
   });

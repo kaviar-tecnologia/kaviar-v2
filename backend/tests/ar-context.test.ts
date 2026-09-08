@@ -31,12 +31,19 @@ const app = express();
 app.use(express.json());
 app.use('/api/ar', arContextRoutes);
 
-function makeToken(options?: { expiresIn?: string | number; scope?: string; audience?: string }): string {
+function makeToken(options?: {
+  expiresIn?: string | number;
+  scope?: string;
+  audience?: string;
+  issuer?: string;
+  secret?: string;
+}): string {
   return jwt.sign(
     { scope: options?.scope ?? 'ar:territory-context' },
-    process.env.JWT_SECRET as string,
+    options?.secret ?? (process.env.AR_PUBLIC_JWT_SECRET as string),
     {
       audience: options?.audience ?? 'ar-public',
+      issuer: options?.issuer ?? 'kaviar-ar-public',
       expiresIn: options?.expiresIn ?? '5m',
       jwtid: `jti-${Math.random().toString(36).slice(2)}`,
     },
@@ -63,8 +70,8 @@ function baseNeighborhoodRecord(overrides?: Record<string, unknown>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  process.env.JWT_SECRET = 'test-secret';
-  delete process.env.AR_PUBLIC_JWT_SECRET;
+  process.env.JWT_SECRET = 'general-jwt-secret';
+  process.env.AR_PUBLIC_JWT_SECRET = 'ar-public-jwt-secret';
 
   resolveTerritoryMock.mockResolvedValue({
     resolved: true,
@@ -90,10 +97,12 @@ describe('AR context public endpoints', () => {
     expect(res.body.tokenType).toBe('Bearer');
     expect(res.body.expiresIn).toBe(300);
     expect(res.body.audience).toBe('ar-public');
+    expect(res.body.issuer).toBe('kaviar-ar-public');
     expect(res.body.scope).toBe('ar:territory-context');
 
     const decoded = jwt.decode(res.body.token) as jwt.JwtPayload;
     expect(decoded.aud).toBe('ar-public');
+    expect(decoded.iss).toBe('kaviar-ar-public');
     expect(decoded.scope).toBe('ar:territory-context');
     expect(decoded.iat).toBeTypeOf('number');
     expect(decoded.exp).toBeTypeOf('number');
@@ -123,6 +132,47 @@ describe('AR context public endpoints', () => {
       .set('Authorization', 'Bearer invalid-token')
       .send({ latitude: -22.9, longitude: -43.2 });
     expect(invalidRes.status).toBe(401);
+  });
+
+  it('3.1) rejeita token assinado apenas com JWT_SECRET geral', async () => {
+    const tokenWithGeneralSecret = makeToken({ secret: process.env.JWT_SECRET as string });
+    const res = await request(app)
+      .post('/api/ar/context/territory')
+      .set('Authorization', `Bearer ${tokenWithGeneralSecret}`)
+      .send({ latitude: -22.9, longitude: -43.2 });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('UNAUTHORIZED');
+  });
+
+  it('3.2) rejeita token com issuer incorreto', async () => {
+    const wrongIssuerToken = makeToken({ issuer: 'wrong-issuer' });
+    const res = await request(app)
+      .post('/api/ar/context/territory')
+      .set('Authorization', `Bearer ${wrongIssuerToken}`)
+      .send({ latitude: -22.9, longitude: -43.2 });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('UNAUTHORIZED');
+  });
+
+  it('3.3) falha fechado sem AR_PUBLIC_JWT_SECRET', async () => {
+    delete process.env.AR_PUBLIC_JWT_SECRET;
+    const authRes = await request(app).post('/api/ar/auth/anonymous').send({});
+    expect(authRes.status).toBe(503);
+    expect(authRes.body.error).toBe('JWT_NOT_CONFIGURED');
+
+    const tokenWithGeneralSecret = jwt.sign(
+      { scope: 'ar:territory-context' },
+      process.env.JWT_SECRET as string,
+      { audience: 'ar-public', issuer: 'kaviar-ar-public', expiresIn: '5m', jwtid: 'jti-general-only' },
+    );
+    const contextRes = await request(app)
+      .post('/api/ar/context/territory')
+      .set('Authorization', `Bearer ${tokenWithGeneralSecret}`)
+      .send({ latitude: -22.9, longitude: -43.2 });
+    expect(contextRes.status).toBe(401);
+    expect(contextRes.body.error).toBe('UNAUTHORIZED');
   });
 
   it('4) retorna 400 para latitude inválida', async () => {
@@ -358,14 +408,14 @@ describe('AR context public endpoints', () => {
     expect(JSON.stringify(logPayload)).not.toContain('geohash');
   });
 
-  it('16) aplica rate limit específico com 429', async () => {
-    const token = makeToken();
+  it('16) rate limit por IP não é contornado ao variar tokens inválidos', async () => {
     let lastStatus = 0;
 
     for (let i = 0; i < 31; i++) {
+      const variedInvalidToken = `invalid-token-${i}`;
       const response = await request(app)
         .post('/api/ar/context/territory')
-        .set('Authorization', `Bearer ${token}`)
+        .set('Authorization', `Bearer ${variedInvalidToken}`)
         .send({ latitude: -22.9, longitude: -43.2 });
       lastStatus = response.status;
       if (lastStatus === 429) break;
