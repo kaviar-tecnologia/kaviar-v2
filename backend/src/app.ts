@@ -167,6 +167,7 @@ app.use((req, res, next) => {
 
   const allowedOrigins = new Set([
     'https://app.kaviar.com.br',
+    'https://ar.kaviar.com.br',
     'https://kaviar.com.br',
     'https://www.kaviar.com.br',
     'https://d29p7cirgjqbxl.cloudfront.net',
