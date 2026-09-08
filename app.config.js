@@ -103,6 +103,8 @@ export default {
             minSdkVersion: 29,
             targetSdkVersion: 36,
             compileSdkVersion: 36,
+            enableMinifyInReleaseBuilds: variant === 'driver',
+            enableShrinkResourcesInReleaseBuilds: variant === 'driver',
           }
         }
       ],
