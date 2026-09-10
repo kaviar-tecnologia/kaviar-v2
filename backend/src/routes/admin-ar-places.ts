@@ -5,18 +5,27 @@ import { applyTerritoryScope } from '../middlewares/territory-scope';
 import { requireTerritoryScope } from '../middlewares/require-territory-scope';
 import {
   arPlaceCreateBodySchema,
+  arPlaceChangeRequestRejectBodySchema,
+  arPlaceChangeRequestParamsSchema,
   arPlaceIdParamSchema,
   arPlaceListQuerySchema,
   arPlacePatchBodySchema,
 } from '../services/ar-places/ar-places-validation';
 import {
+  approveAdminArPlaceChangeRequest,
   ArPlaceServiceError,
   createAdminArPlace,
+  getAdminArPlacePendingChangeRequest,
   getAdminArPlaceById,
   listAdminArPlaces,
+  rejectAdminArPlaceChangeRequest,
   updateAdminArPlace,
 } from '../services/ar-places/ar-places.service';
-import { serializeArPlaceDetail, serializeArPlaceListItem } from '../services/ar-places/ar-places-serializers';
+import {
+  serializeArPlaceChangeRequest,
+  serializeArPlaceDetail,
+  serializeArPlaceListItem,
+} from '../services/ar-places/ar-places-serializers';
 
 const router = Router();
 
@@ -108,6 +117,71 @@ router.patch(
       const updated = await updateAdminArPlace(parsedParams.data.id, parsedBody.data, admin, scope);
       if (!updated) return res.status(404).json({ success: false, error: 'Local AR não encontrado' });
       return res.json({ success: true, data: serializeArPlaceDetail(updated) });
+    } catch (error) {
+      return serviceError(res, error);
+    }
+  },
+);
+
+router.get(
+  '/places/:id/change-request',
+  requireRole(['SUPER_ADMIN', 'TERRITORIAL_MANAGER', 'TERRITORIAL_OPERATOR']),
+  requireTerritoryScope,
+  async (req: Request, res: Response) => {
+    try {
+      const parsed = arPlaceIdParamSchema.safeParse(req.params);
+      if (!parsed.success) return validationError(res, parsed.error);
+
+      const admin = (req as any).admin;
+      const scope = (req as any).territoryScope;
+      const row = await getAdminArPlacePendingChangeRequest(parsed.data.id, admin, scope);
+      return res.json({ success: true, data: serializeArPlaceChangeRequest(row) });
+    } catch (error) {
+      return serviceError(res, error);
+    }
+  },
+);
+
+router.post(
+  '/places/:id/change-request/:requestId/approve',
+  requireRole(['SUPER_ADMIN']),
+  requireTerritoryScope,
+  async (req: Request, res: Response) => {
+    try {
+      const parsed = arPlaceChangeRequestParamsSchema.safeParse(req.params);
+      if (!parsed.success) return validationError(res, parsed.error);
+
+      const admin = (req as any).admin;
+      const scope = (req as any).territoryScope;
+      const row = await approveAdminArPlaceChangeRequest(parsed.data.id, parsed.data.requestId, admin, scope);
+      return res.json({ success: true, data: serializeArPlaceChangeRequest(row) });
+    } catch (error) {
+      return serviceError(res, error);
+    }
+  },
+);
+
+router.post(
+  '/places/:id/change-request/:requestId/reject',
+  requireRole(['SUPER_ADMIN']),
+  requireTerritoryScope,
+  async (req: Request, res: Response) => {
+    try {
+      const parsedParams = arPlaceChangeRequestParamsSchema.safeParse(req.params);
+      if (!parsedParams.success) return validationError(res, parsedParams.error);
+      const parsedBody = arPlaceChangeRequestRejectBodySchema.safeParse(req.body);
+      if (!parsedBody.success) return validationError(res, parsedBody.error);
+
+      const admin = (req as any).admin;
+      const scope = (req as any).territoryScope;
+      const row = await rejectAdminArPlaceChangeRequest(
+        parsedParams.data.id,
+        parsedParams.data.requestId,
+        admin,
+        scope,
+        parsedBody.data.reason,
+      );
+      return res.json({ success: true, data: serializeArPlaceChangeRequest(row) });
     } catch (error) {
       return serviceError(res, error);
     }

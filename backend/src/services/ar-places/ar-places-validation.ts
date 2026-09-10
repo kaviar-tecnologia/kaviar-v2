@@ -27,6 +27,11 @@ export const arPlaceIdParamSchema = z.object({
   id: z.string().uuid('id inválido'),
 });
 
+export const arPlaceChangeRequestParamsSchema = z.object({
+  id: z.string().uuid('id inválido'),
+  requestId: z.string().uuid('requestId inválido'),
+});
+
 export const arPlacePlaceIdParamSchema = z.object({
   placeId: z.string().regex(PLACE_ID_REGEX, 'placeId inválido'),
 });
@@ -74,6 +79,10 @@ export const arPlaceCreateBodySchema = z.object({
     (value) => (typeof value === 'string' ? value.trim() : value),
     z.string().min(1).max(120).regex(TERRITORY_ID_REGEX, 'territory_id inválido').nullable().optional(),
   ),
+  owner_partner_id: z.preprocess(
+    (value) => (typeof value === 'string' ? value.trim() : value),
+    z.string().min(1).max(120).nullable().optional(),
+  ),
   status: z.nativeEnum(ar_place_status).optional(),
   content: arPlaceContentInputSchema.optional(),
 });
@@ -99,6 +108,10 @@ export const arPlacePatchBodySchema = z
       (value) => (typeof value === 'string' ? value.trim() : value),
       z.string().min(1).max(120).regex(TERRITORY_ID_REGEX, 'territory_id inválido').nullable().optional(),
     ),
+    owner_partner_id: z.preprocess(
+      (value) => (typeof value === 'string' ? value.trim() : value),
+      z.string().min(1).max(120).nullable().optional(),
+    ),
     status: z.nativeEnum(ar_place_status).optional(),
     content: arPlaceContentInputSchema.optional(),
   })
@@ -114,3 +127,31 @@ export const arPlacePatchBodySchema = z
 export type ArPlaceListQuery = z.infer<typeof arPlaceListQuerySchema>;
 export type ArPlaceCreateBody = z.infer<typeof arPlaceCreateBodySchema>;
 export type ArPlacePatchBody = z.infer<typeof arPlacePatchBodySchema>;
+
+export const partnerArPlaceChangeRequestBodySchema = z
+  .object({
+    name: requiredTrimmedString(255).optional(),
+    address: optionalTrimmedString(500),
+    summary: optionalTrimmedString(400),
+    description: optionalTrimmedString(4000),
+    learn_more: optionalTrimmedString(1000),
+    useful_info: optionalTrimmedString(4000),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      Object.keys(value).some((key) => {
+        const typed = value as Record<string, unknown>;
+        return typed[key] !== undefined;
+      }),
+    { message: 'Nenhuma alteração enviada' },
+  );
+
+export const arPlaceChangeRequestRejectBodySchema = z
+  .object({
+    reason: optionalTrimmedString(500),
+  })
+  .strict();
+
+export type PartnerArPlaceChangeRequestBody = z.infer<typeof partnerArPlaceChangeRequestBodySchema>;
+export type ArPlaceChangeRequestRejectBody = z.infer<typeof arPlaceChangeRequestRejectBodySchema>;

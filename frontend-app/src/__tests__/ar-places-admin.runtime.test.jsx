@@ -71,11 +71,14 @@ vi.mock('@mui/material', () => {
   };
 });
 
-const { listArPlaces, createArPlace, getArPlaceById, updateArPlace, apiGet } = vi.hoisted(() => ({
+const { listArPlaces, createArPlace, getArPlaceById, updateArPlace, getArPlaceChangeRequest, approveArPlaceChangeRequest, rejectArPlaceChangeRequest, apiGet } = vi.hoisted(() => ({
   listArPlaces: vi.fn(),
   createArPlace: vi.fn(),
   getArPlaceById: vi.fn(),
   updateArPlace: vi.fn(),
+  getArPlaceChangeRequest: vi.fn(),
+  approveArPlaceChangeRequest: vi.fn(),
+  rejectArPlaceChangeRequest: vi.fn(),
   apiGet: vi.fn(),
 }));
 
@@ -84,6 +87,9 @@ vi.mock('../services/adminArPlacesService', () => ({
   createArPlace,
   getArPlaceById,
   updateArPlace,
+  getArPlaceChangeRequest,
+  approveArPlaceChangeRequest,
+  rejectArPlaceChangeRequest,
 }));
 
 vi.mock('../api', () => ({
@@ -139,10 +145,16 @@ describe('ArPlacesPage runtime behavior', () => {
     createArPlace.mockReset();
     getArPlaceById.mockReset();
     updateArPlace.mockReset();
+    getArPlaceChangeRequest.mockReset();
+    approveArPlaceChangeRequest.mockReset();
+    rejectArPlaceChangeRequest.mockReset();
     apiGet.mockReset();
     listArPlaces.mockResolvedValue({ data: [] });
     createArPlace.mockResolvedValue({ success: true });
     updateArPlace.mockResolvedValue({ success: true });
+    getArPlaceChangeRequest.mockResolvedValue({ data: null });
+    approveArPlaceChangeRequest.mockResolvedValue({ success: true });
+    rejectArPlaceChangeRequest.mockResolvedValue({ success: true });
     apiGet.mockResolvedValue({ data: { data: [{ id: 't-1', name: 'Rio' }] } });
   });
 

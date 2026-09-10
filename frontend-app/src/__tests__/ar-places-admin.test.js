@@ -82,13 +82,21 @@ describe('ArPlacesPage - campos, filtros e conteúdo pt-BR', () => {
     expect(src).toContain('label="Descrição"');
     expect(src).toContain('label="Saiba mais"');
     expect(src).toContain('label="Informações úteis"');
-    expect(src).toContain('label="Regra de grounding"');
-    expect(src).toContain('label="Limite/boundary"');
+    expect(src).toContain('label="Regras de fonte da IA"');
+    expect(src).toContain('label="Limites da IA"');
   });
 
   it('operator fica sem ações de edição/criação', () => {
     expect(src).toContain('const isOperator = role === \'TERRITORIAL_OPERATOR\'');
     expect(src).toContain('{!isOperator && (');
+  });
+
+  it('permite vincular parceiro owner e revisar pendências no modal', () => {
+    expect(src).toContain('label="Parceiro owner"');
+    expect(src).toContain('Alteração pendente');
+    expect(src).toContain('Comparativo simples');
+    expect(src).toContain('Aprovar alteração');
+    expect(src).toContain('Rejeitar alteração');
   });
 });
 
@@ -99,10 +107,13 @@ describe('adminArPlacesService - contratos de API', () => {
     expect(src).toContain("const BASE_PATH = '/api/admin/ar/places'");
   });
 
-  it('expõe list/get/create/update', () => {
+  it('expõe list/get/create/update e revisão pendente', () => {
     expect(src).toContain('export async function listArPlaces');
     expect(src).toContain('export async function getArPlaceById');
     expect(src).toContain('export async function createArPlace');
     expect(src).toContain('export async function updateArPlace');
+    expect(src).toContain('export async function getArPlaceChangeRequest');
+    expect(src).toContain('export async function approveArPlaceChangeRequest');
+    expect(src).toContain('export async function rejectArPlaceChangeRequest');
   });
 });
