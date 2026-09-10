@@ -39,6 +39,10 @@ type EditableSnapshot = {
   useful_info: string | null;
 };
 
+const PENDING_CHANGE_STATUS = 'PENDING';
+const APPROVED_CHANGE_STATUS = 'APPROVED';
+const REJECTED_CHANGE_STATUS = 'REJECTED';
+
 const arPlaceContentSelect = {
   id: true,
   locale: true,
@@ -294,6 +298,36 @@ function overlayEditableSnapshot(base: EditableSnapshot, body: PartnerArPlaceCha
   };
 }
 
+function getPendingInvalidationReason(ownerChanged: boolean, typeChangedAwayFromHotel: boolean) {
+  if (ownerChanged && typeChangedAwayFromHotel) {
+    return 'Pendência invalidada porque o ownership do local mudou e o local deixou de ser HOTEL para autoatendimento.';
+  }
+  if (ownerChanged) {
+    return 'Pendência invalidada porque o ownership do local mudou.';
+  }
+  return 'Pendência invalidada porque o local deixou de ser HOTEL para autoatendimento.';
+}
+
+async function rejectPendingChangeRequestsForPlace(
+  tx: Prisma.TransactionClient,
+  placeId: string,
+  actorId: string,
+  reason: string,
+) {
+  await tx.ar_place_partner_change_requests.updateMany({
+    where: {
+      ar_place_id: placeId,
+      status: PENDING_CHANGE_STATUS,
+    },
+    data: {
+      status: REJECTED_CHANGE_STATUS,
+      reviewed_by_admin_id: actorId,
+      reviewed_at: new Date(),
+      rejection_reason: reason,
+    },
+  });
+}
+
 function buildAdminArPlaceInclude(includePendingRequest = false) {
   return {
     territory: { select: { id: true, name: true, city_name: true, uf: true } },
@@ -433,7 +467,7 @@ export async function updateAdminArPlace(
       id,
       ...buildScopeWhere(actor.role, scope),
     },
-    select: { id: true, status: true, territory_id: true, type: true },
+    select: { id: true, status: true, territory_id: true, type: true, owner_partner_id: true },
   });
   if (!existing) {
     throw new ArPlaceServiceError(404, 'Local AR não encontrado');
@@ -473,6 +507,13 @@ export async function updateAdminArPlace(
   if (body.owner_partner_id !== undefined) {
     data.owner_partner = body.owner_partner_id ? { connect: { id: body.owner_partner_id } } : { disconnect: true };
   }
+  const nextType = body.type ?? existing.type;
+  const ownerChanged = body.owner_partner_id !== undefined && body.owner_partner_id !== existing.owner_partner_id;
+  const typeChangedAwayFromHotel = existing.type === 'HOTEL' && nextType !== 'HOTEL';
+  const shouldInvalidatePendingChangeRequests = ownerChanged || typeChangedAwayFromHotel;
+  const pendingInvalidationReason = shouldInvalidatePendingChangeRequests
+    ? getPendingInvalidationReason(ownerChanged, typeChangedAwayFromHotel)
+    : null;
 
   try {
     return await prisma.$transaction(async (tx) => {
@@ -480,6 +521,10 @@ export async function updateAdminArPlace(
         where: { id },
         data,
       });
+
+      if (shouldInvalidatePendingChangeRequests && pendingInvalidationReason) {
+        await rejectPendingChangeRequestsForPlace(tx, id, actor.id, pendingInvalidationReason);
+      }
 
       if (body.content) {
         const locale = normalizeLocale(body.content.locale);
@@ -551,34 +596,62 @@ export async function approveAdminArPlaceChangeRequest(
     throw new ArPlaceServiceError(403, 'Apenas SUPER_ADMIN pode aprovar alterações pendentes');
   }
 
-  const place = await prisma.ar_places.findFirst({
-    where: {
-      id: placeId,
-      ...buildScopeWhere(actor.role, scope),
-    },
-    include: {
-      contents: {
-        orderBy: { created_at: 'asc' },
-        select: arPlaceContentSelect,
-      },
-      change_requests: {
-        where: { id: requestId, status: 'PENDING' },
-        take: 1,
-        select: changeRequestSelect,
-      },
-    },
-  });
-
-  if (!place) {
-    throw new ArPlaceServiceError(404, 'Local AR não encontrado');
-  }
-  const request = place.change_requests[0];
-  if (!request) {
-    throw new ArPlaceServiceError(404, 'Alteração pendente não encontrada');
-  }
-
   try {
     return await prisma.$transaction(async (tx) => {
+      const place = await tx.ar_places.findFirst({
+        where: {
+          id: placeId,
+          ...buildScopeWhere(actor.role, scope),
+        },
+        include: {
+          contents: {
+            orderBy: { created_at: 'asc' },
+            select: arPlaceContentSelect,
+          },
+          change_requests: {
+            where: { id: requestId },
+            take: 1,
+            select: changeRequestSelect,
+          },
+        },
+      });
+
+      if (!place) {
+        throw new ArPlaceServiceError(404, 'Local AR não encontrado');
+      }
+      if (place.type !== 'HOTEL') {
+        throw new ArPlaceServiceError(409, 'Alteração pendente só pode ser revisada para locais HOTEL nesta fase');
+      }
+
+      const request = place.change_requests[0];
+      if (!request) {
+        throw new ArPlaceServiceError(404, 'Alteração pendente não encontrada');
+      }
+      if (request.status !== PENDING_CHANGE_STATUS) {
+        throw new ArPlaceServiceError(409, 'Alteração pendente já foi revisada ou invalidada');
+      }
+      if (!place.owner_partner_id || request.partner_id !== place.owner_partner_id) {
+        throw new ArPlaceServiceError(409, 'Ownership do local mudou ou foi removido. A alteração pendente não pode mais ser aplicada.');
+      }
+
+      const claim = await tx.ar_place_partner_change_requests.updateMany({
+        where: {
+          id: requestId,
+          ar_place_id: placeId,
+          partner_id: place.owner_partner_id,
+          status: PENDING_CHANGE_STATUS,
+        },
+        data: {
+          status: APPROVED_CHANGE_STATUS,
+          reviewed_by_admin_id: actor.id,
+          reviewed_at: new Date(),
+          rejection_reason: null,
+        },
+      });
+      if (claim.count !== 1) {
+        throw new ArPlaceServiceError(409, 'Alteração pendente já foi revisada ou invalidada');
+      }
+
       await tx.ar_places.update({
         where: { id: placeId },
         data: {
@@ -612,16 +685,14 @@ export async function approveAdminArPlaceChangeRequest(
         },
       });
 
-      return tx.ar_place_partner_change_requests.update({
+      const reviewed = await tx.ar_place_partner_change_requests.findFirst({
         where: { id: requestId },
-        data: {
-          status: 'APPROVED',
-          reviewed_by_admin_id: actor.id,
-          reviewed_at: new Date(),
-          rejection_reason: null,
-        },
         select: changeRequestSelect,
       });
+      if (!reviewed) {
+        throw new ArPlaceServiceError(404, 'Alteração pendente não encontrada');
+      }
+      return reviewed;
     });
   } catch (error) {
     normalizeUniqueError(error);
@@ -640,38 +711,68 @@ export async function rejectAdminArPlaceChangeRequest(
   if (actor.role !== 'SUPER_ADMIN') {
     throw new ArPlaceServiceError(403, 'Apenas SUPER_ADMIN pode rejeitar alterações pendentes');
   }
-
-  const place = await prisma.ar_places.findFirst({
-    where: {
-      id: placeId,
-      ...buildScopeWhere(actor.role, scope),
-    },
-    select: {
-      id: true,
-      change_requests: {
-        where: { id: requestId, status: 'PENDING' },
-        take: 1,
-        select: { id: true },
+  return prisma.$transaction(async (tx) => {
+    const place = await tx.ar_places.findFirst({
+      where: {
+        id: placeId,
+        ...buildScopeWhere(actor.role, scope),
       },
-    },
-  });
+      select: {
+        id: true,
+        type: true,
+        owner_partner_id: true,
+        change_requests: {
+          where: { id: requestId },
+          take: 1,
+          select: changeRequestSelect,
+        },
+      },
+    });
 
-  if (!place) {
-    throw new ArPlaceServiceError(404, 'Local AR não encontrado');
-  }
-  if (!place.change_requests[0]) {
-    throw new ArPlaceServiceError(404, 'Alteração pendente não encontrada');
-  }
+    if (!place) {
+      throw new ArPlaceServiceError(404, 'Local AR não encontrado');
+    }
+    if (place.type !== 'HOTEL') {
+      throw new ArPlaceServiceError(409, 'Alteração pendente só pode ser revisada para locais HOTEL nesta fase');
+    }
 
-  return prisma.ar_place_partner_change_requests.update({
-    where: { id: requestId },
-    data: {
-      status: 'REJECTED',
-      reviewed_by_admin_id: actor.id,
-      reviewed_at: new Date(),
-      rejection_reason: reason || null,
-    },
-    select: changeRequestSelect,
+    const request = place.change_requests[0];
+    if (!request) {
+      throw new ArPlaceServiceError(404, 'Alteração pendente não encontrada');
+    }
+    if (request.status !== PENDING_CHANGE_STATUS) {
+      throw new ArPlaceServiceError(409, 'Alteração pendente já foi revisada ou invalidada');
+    }
+    if (!place.owner_partner_id || request.partner_id !== place.owner_partner_id) {
+      throw new ArPlaceServiceError(409, 'Ownership do local mudou ou foi removido. A alteração pendente não pode mais ser aplicada.');
+    }
+
+    const rejected = await tx.ar_place_partner_change_requests.updateMany({
+      where: {
+        id: requestId,
+        ar_place_id: placeId,
+        partner_id: place.owner_partner_id,
+        status: PENDING_CHANGE_STATUS,
+      },
+      data: {
+        status: REJECTED_CHANGE_STATUS,
+        reviewed_by_admin_id: actor.id,
+        reviewed_at: new Date(),
+        rejection_reason: reason || null,
+      },
+    });
+    if (rejected.count !== 1) {
+      throw new ArPlaceServiceError(409, 'Alteração pendente já foi revisada ou invalidada');
+    }
+
+    const reviewed = await tx.ar_place_partner_change_requests.findFirst({
+      where: { id: requestId },
+      select: changeRequestSelect,
+    });
+    if (!reviewed) {
+      throw new ArPlaceServiceError(404, 'Alteração pendente não encontrada');
+    }
+    return reviewed;
   });
 }
 
@@ -688,7 +789,7 @@ export async function listPartnerOwnedHotelArPlaces(actor: PartnerActor) {
         take: 1,
       },
       change_requests: {
-        where: { status: 'PENDING' },
+        where: { status: PENDING_CHANGE_STATUS },
         orderBy: { created_at: 'desc' },
         take: 1,
         select: changeRequestSelect,
@@ -711,7 +812,7 @@ export async function getPartnerOwnedHotelArPlaceById(placeId: string, actor: Pa
         select: arPlaceContentSelect,
       },
       change_requests: {
-        where: { status: 'PENDING' },
+        where: { status: PENDING_CHANGE_STATUS },
         orderBy: { created_at: 'desc' },
         take: 1,
         select: changeRequestSelect,
@@ -798,7 +899,7 @@ export async function upsertPartnerOwnedHotelArPlaceChangeRequest(
           ar_place_id: placeId,
           partner_id: actor.partnerId,
           submitted_by_partner_user_id: actor.userId,
-          status: 'PENDING',
+          status: PENDING_CHANGE_STATUS,
           locale: nextSnapshot.locale,
           name: nextSnapshot.name,
           address: nextSnapshot.address,

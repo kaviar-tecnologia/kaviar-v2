@@ -36,11 +36,11 @@ CREATE TABLE "ar_place_partner_change_requests" (
     ON UPDATE CASCADE,
   CONSTRAINT "ar_place_partner_change_requests_partner_id_fkey"
     FOREIGN KEY ("partner_id") REFERENCES "territorial_partners"("id")
-    ON DELETE CASCADE
+    ON DELETE RESTRICT
     ON UPDATE CASCADE,
   CONSTRAINT "ar_place_partner_change_requests_submitted_by_partner_user_id_fkey"
     FOREIGN KEY ("submitted_by_partner_user_id") REFERENCES "partner_users"("id")
-    ON DELETE CASCADE
+    ON DELETE RESTRICT
     ON UPDATE CASCADE
 );
 

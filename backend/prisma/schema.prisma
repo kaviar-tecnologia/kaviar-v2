@@ -3348,8 +3348,8 @@ model ar_place_partner_change_requests {
   updated_at                  DateTime  @updatedAt
 
   place                       ar_places             @relation(fields: [ar_place_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  partner                     territorial_partners  @relation(fields: [partner_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  submitted_by                partner_users         @relation("ArPlaceChangeRequestSubmitter", fields: [submitted_by_partner_user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  partner                     territorial_partners  @relation(fields: [partner_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  submitted_by                partner_users         @relation("ArPlaceChangeRequestSubmitter", fields: [submitted_by_partner_user_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([ar_place_id, status], map: "idx_ar_place_partner_change_requests_place_status")
   @@index([partner_id, status], map: "idx_ar_place_partner_change_requests_partner_status")

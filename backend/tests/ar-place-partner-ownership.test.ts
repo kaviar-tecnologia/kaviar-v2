@@ -214,6 +214,11 @@ const { authState, scopeState, dbState, prismaMock, nextUuid } = vi.hoisted(() =
       }),
     },
     ar_place_partner_change_requests: {
+      findFirst: vi.fn(async ({ where, select }: any) => {
+        const found = state.changeRequests.find((item) => filterChangeRequest(item, where));
+        if (!found) return null;
+        return project(found, select);
+      }),
       create: vi.fn(async ({ data, select }: any) => {
         const created = {
           id: nextUuid(3000 + state.changeRequests.length + 1),
@@ -232,6 +237,15 @@ const { authState, scopeState, dbState, prismaMock, nextUuid } = vi.hoisted(() =
         if (index === -1) throw new Error('not found');
         state.changeRequests[index] = { ...state.changeRequests[index], ...data, updated_at: now() };
         return project(state.changeRequests[index], select);
+      }),
+      updateMany: vi.fn(async ({ where, data }: any) => {
+        let count = 0;
+        state.changeRequests = state.changeRequests.map((item) => {
+          if (!filterChangeRequest(item, where)) return item;
+          count += 1;
+          return { ...item, ...data, updated_at: now() };
+        });
+        return { count };
       }),
     },
     territorial_partners: {
@@ -475,6 +489,43 @@ describe('AR partner ownership + hotel self-service', () => {
     expect(publicRes.body.data.content.summary).toBe('Resumo publicado');
   });
 
+  it('troca de ownership invalida a pendência antiga e preserva histórico sem afetar o publicado', async () => {
+    const place = seedApprovedHotel({ place_id: 'hotel-owner-switch' });
+
+    const pending = await request(app)
+      .put(`/api/partner/ar-places/${place.id}/change-request`)
+      .set('Authorization', `Bearer ${partnerToken('partner-a')}`)
+      .send({ summary: 'Resumo do owner A' });
+    expect(pending.status).toBe(200);
+
+    const switchOwner = await request(app)
+      .patch(`/api/admin/ar/places/${place.id}`)
+      .send({ owner_partner_id: 'partner-b' });
+    expect(switchOwner.status).toBe(200);
+    expect(switchOwner.body.data.owner_partner_id).toBe('partner-b');
+    expect(switchOwner.body.data.pending_change_request).toBeNull();
+
+    expect(dbState.changeRequests).toHaveLength(1);
+    expect(dbState.changeRequests[0].status).toBe('REJECTED');
+    expect(dbState.changeRequests[0].partner_id).toBe('partner-a');
+    expect(dbState.changeRequests[0].rejection_reason).toContain('ownership do local mudou');
+
+    const approveOld = await request(app).post(
+      `/api/admin/ar/places/${place.id}/change-request/${pending.body.data.id}/approve`,
+    );
+    expect(approveOld.status).toBe(409);
+
+    const publicRes = await request(app).get(`/api/public/ar/places/by-place-id/${place.place_id}?locale=pt-BR`);
+    expect(publicRes.status).toBe(200);
+    expect(publicRes.body.data.content.summary).toBe('Resumo publicado');
+
+    const partnerBRes = await request(app)
+      .get(`/api/partner/ar-places/${place.id}`)
+      .set('Authorization', `Bearer ${partnerToken('partner-b')}`);
+    expect(partnerBRes.status).toBe(200);
+    expect(partnerBRes.body.data.pending_change_request).toBeNull();
+  });
+
   it('aprovação admin aplica a proposta em transação sem mudar governança da IA', async () => {
     const place = seedApprovedHotel();
 
@@ -523,6 +574,31 @@ describe('AR partner ownership + hotel self-service', () => {
     const publicRes = await request(app).get(`/api/public/ar/places/by-place-id/${place.place_id}?locale=pt-BR`);
     expect(publicRes.status).toBe(200);
     expect(publicRes.body.data.content.description).toBe('Descrição publicada');
+  });
+
+  it('approve e reject falham de forma segura se a request já não estiver PENDING', async () => {
+    const place = seedApprovedHotel({ place_id: 'hotel-atomic-review' });
+
+    const pending = await request(app)
+      .put(`/api/partner/ar-places/${place.id}/change-request`)
+      .set('Authorization', `Bearer ${partnerToken('partner-a')}`)
+      .send({ description: 'Nova descrição' });
+    expect(pending.status).toBe(200);
+
+    const approve = await request(app).post(
+      `/api/admin/ar/places/${place.id}/change-request/${pending.body.data.id}/approve`,
+    );
+    expect(approve.status).toBe(200);
+
+    const rejectAfterApprove = await request(app).post(
+      `/api/admin/ar/places/${place.id}/change-request/${pending.body.data.id}/reject`,
+    );
+    expect(rejectAfterApprove.status).toBe(409);
+
+    const approveAgain = await request(app).post(
+      `/api/admin/ar/places/${place.id}/change-request/${pending.body.data.id}/approve`,
+    );
+    expect(approveAgain.status).toBe(409);
   });
 
   it('somente SUPER_ADMIN aprova ou rejeita pendências', async () => {
