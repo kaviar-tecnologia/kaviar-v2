@@ -74,10 +74,18 @@ describe('ArPlacesPage - campos, filtros e conteúdo pt-BR', () => {
     expect(src).toContain('label="placeId"');
     expect(src).toContain('label="Latitude"');
     expect(src).toContain('label="Longitude"');
+    expect(src).toContain('label="Telefone"');
+    expect(src).toContain('label="WhatsApp"');
+    expect(src).toContain('label="Site"');
+    expect(src).toContain('label="Instagram"');
   });
 
   it('envia conteúdo em locale pt-BR', () => {
     expect(src).toContain("locale: 'pt-BR'");
+    expect(src).toContain('phone: form.phone.trim() || null');
+    expect(src).toContain('whatsapp: form.whatsapp.trim() || null');
+    expect(src).toContain('website_url: form.website_url.trim() || null');
+    expect(src).toContain('instagram_url: form.instagram_url.trim() || null');
     expect(src).toContain('label="Resumo"');
     expect(src).toContain('label="Descrição"');
     expect(src).toContain('label="Saiba mais"');

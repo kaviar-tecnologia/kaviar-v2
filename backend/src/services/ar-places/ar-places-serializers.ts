@@ -36,6 +36,10 @@ type ArPlaceWithRelations = {
   city: string;
   state: string;
   address: string | null;
+  phone?: string | null;
+  whatsapp?: string | null;
+  website_url?: string | null;
+  instagram_url?: string | null;
   latitude: unknown;
   longitude: unknown;
   status: ar_place_status;
@@ -148,6 +152,10 @@ export function serializeArPlaceListItem(record: ArPlaceWithRelations) {
     city: record.city,
     state: record.state,
     address: record.address,
+    phone: record.phone ?? null,
+    whatsapp: record.whatsapp ?? null,
+    website_url: record.website_url ?? null,
+    instagram_url: record.instagram_url ?? null,
     latitude: toNumber(record.latitude),
     longitude: toNumber(record.longitude),
     status: record.status,
@@ -177,6 +185,10 @@ export function serializeArPlaceDetail(record: ArPlaceWithRelations) {
     city: record.city,
     state: record.state,
     address: record.address,
+    phone: record.phone ?? null,
+    whatsapp: record.whatsapp ?? null,
+    website_url: record.website_url ?? null,
+    instagram_url: record.instagram_url ?? null,
     latitude: toNumber(record.latitude),
     longitude: toNumber(record.longitude),
     status: record.status,
@@ -228,6 +240,10 @@ export function serializePublicArPlace(record: ArPlaceWithRelations, locale: 'pt
     city: record.city,
     state: record.state,
     address: record.address,
+    ...(record.phone ? { phone: record.phone } : {}),
+    ...(record.whatsapp ? { whatsapp: record.whatsapp } : {}),
+    ...(record.website_url ? { website_url: record.website_url } : {}),
+    ...(record.instagram_url ? { instagram_url: record.instagram_url } : {}),
     latitude: toNumber(record.latitude),
     longitude: toNumber(record.longitude),
     territory: record.territory

@@ -60,6 +60,10 @@ const defaultForm = {
   city: '',
   state: '',
   address: '',
+  phone: '',
+  whatsapp: '',
+  website_url: '',
+  instagram_url: '',
   latitude: '',
   longitude: '',
   territory_id: '',
@@ -178,6 +182,10 @@ export default function ArPlacesPage() {
       city: record.city,
       state: record.state,
       address: record.address || '',
+      phone: record.phone || '',
+      whatsapp: record.whatsapp || '',
+      website_url: record.website_url || '',
+      instagram_url: record.instagram_url || '',
       latitude: String(record.latitude),
       longitude: String(record.longitude),
       territory_id: record.territory_id || '',
@@ -233,6 +241,10 @@ export default function ArPlacesPage() {
       city: form.city.trim(),
       state: form.state.trim().toUpperCase(),
       address: form.address.trim() || null,
+      phone: form.phone.trim() || null,
+      whatsapp: form.whatsapp.trim() || null,
+      website_url: form.website_url.trim() || null,
+      instagram_url: form.instagram_url.trim() || null,
       latitude: Number(form.latitude),
       longitude: Number(form.longitude),
       territory_id: form.territory_id || null,
@@ -411,6 +423,10 @@ export default function ArPlacesPage() {
             <Grid item xs={12} md={8}><TextField fullWidth label="Endereço" value={form.address} onChange={(e) => setForm((prev) => ({ ...prev, address: e.target.value }))} /></Grid>
             <Grid item xs={12} md={2}><TextField fullWidth label="Latitude" value={form.latitude} onChange={(e) => setForm((prev) => ({ ...prev, latitude: e.target.value }))} /></Grid>
             <Grid item xs={12} md={2}><TextField fullWidth label="Longitude" value={form.longitude} onChange={(e) => setForm((prev) => ({ ...prev, longitude: e.target.value }))} /></Grid>
+            <Grid item xs={12} md={3}><TextField fullWidth label="Telefone" value={form.phone} onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))} /></Grid>
+            <Grid item xs={12} md={3}><TextField fullWidth label="WhatsApp" value={form.whatsapp} onChange={(e) => setForm((prev) => ({ ...prev, whatsapp: e.target.value }))} /></Grid>
+            <Grid item xs={12} md={3}><TextField fullWidth label="Site" value={form.website_url} onChange={(e) => setForm((prev) => ({ ...prev, website_url: e.target.value }))} /></Grid>
+            <Grid item xs={12} md={3}><TextField fullWidth label="Instagram" value={form.instagram_url} onChange={(e) => setForm((prev) => ({ ...prev, instagram_url: e.target.value }))} /></Grid>
             <Grid item xs={12} md={6}>
               <TextField fullWidth select label="Território" value={form.territory_id} onChange={(e) => setForm((prev) => ({ ...prev, territory_id: e.target.value }))}>
                 <MenuItem value="">Sem território</MenuItem>

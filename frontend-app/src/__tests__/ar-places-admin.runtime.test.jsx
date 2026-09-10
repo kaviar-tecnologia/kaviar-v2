@@ -168,7 +168,23 @@ describe('ArPlacesPage runtime behavior', () => {
       data: [{ id: 'p-1', name: 'Hotel X', place_id: 'hotel-x', type: 'HOTEL', city: 'Rio', state: 'RJ', status: 'DRAFT', territory: null }],
     });
     getArPlaceById.mockResolvedValue({
-      data: { id: 'p-1', name: 'Hotel X', place_id: 'hotel-x', type: 'HOTEL', city: 'Rio', state: 'RJ', latitude: -22.9, longitude: -43.2, status: 'DRAFT', territory_id: null, contents: [] },
+      data: {
+        id: 'p-1',
+        name: 'Hotel X',
+        place_id: 'hotel-x',
+        type: 'HOTEL',
+        city: 'Rio',
+        state: 'RJ',
+        phone: '+5521999999999',
+        whatsapp: null,
+        website_url: 'https://hotel.example.com/',
+        instagram_url: 'https://www.instagram.com/hotelx/',
+        latitude: -22.9,
+        longitude: -43.2,
+        status: 'DRAFT',
+        territory_id: null,
+        contents: [],
+      },
     });
 
     const { container, unmount } = renderPage();
@@ -194,7 +210,23 @@ describe('ArPlacesPage runtime behavior', () => {
       data: [{ id: 'p-1', name: 'Hotel X', place_id: 'hotel-x', type: 'HOTEL', city: 'Rio', state: 'RJ', status: 'DRAFT', territory: null }],
     });
     getArPlaceById.mockResolvedValue({
-      data: { id: 'p-1', name: 'Hotel X', place_id: 'hotel-x', type: 'HOTEL', city: 'Rio', state: 'RJ', latitude: -22.9, longitude: -43.2, status: 'DRAFT', territory_id: null, contents: [] },
+      data: {
+        id: 'p-1',
+        name: 'Hotel X',
+        place_id: 'hotel-x',
+        type: 'HOTEL',
+        city: 'Rio',
+        state: 'RJ',
+        phone: '+5521999999999',
+        whatsapp: null,
+        website_url: 'https://hotel.example.com/',
+        instagram_url: 'https://www.instagram.com/hotelx/',
+        latitude: -22.9,
+        longitude: -43.2,
+        status: 'DRAFT',
+        territory_id: null,
+        contents: [],
+      },
     });
 
     const { container, unmount } = renderPage();
@@ -254,9 +286,53 @@ describe('ArPlacesPage runtime behavior', () => {
     expect(createPayload).toHaveProperty('name');
     expect(createPayload).toHaveProperty('city');
     expect(createPayload).toHaveProperty('state');
+    expect(createPayload).toHaveProperty('phone', null);
+    expect(createPayload).toHaveProperty('whatsapp', null);
+    expect(createPayload).toHaveProperty('website_url', null);
+    expect(createPayload).toHaveProperty('instagram_url', null);
     expect(createPayload).toHaveProperty('latitude');
     expect(createPayload).toHaveProperty('longitude');
     expect(createPayload.status).toBeUndefined();
+    unmount();
+  });
+
+  it('formulário carrega contatos atuais ao editar', async () => {
+    setRole('SUPER_ADMIN');
+    listArPlaces.mockResolvedValue({
+      data: [{ id: 'p-1', name: 'Hotel X', place_id: 'hotel-x', type: 'HOTEL', city: 'Rio', state: 'RJ', status: 'DRAFT', territory: null }],
+    });
+    getArPlaceById.mockResolvedValue({
+      data: {
+        id: 'p-1',
+        name: 'Hotel X',
+        place_id: 'hotel-x',
+        type: 'HOTEL',
+        city: 'Rio',
+        state: 'RJ',
+        address: 'Rua A',
+        phone: '+552133334444',
+        whatsapp: '+5521999999999',
+        website_url: 'https://hotel.example.com/',
+        instagram_url: 'https://www.instagram.com/hotelx/',
+        latitude: -22.9,
+        longitude: -43.2,
+        status: 'DRAFT',
+        territory_id: null,
+        contents: [],
+      },
+    });
+
+    const { container, unmount } = renderPage();
+    await flush();
+
+    const editBtn = Array.from(container.querySelectorAll('button')).find((btn) => btn.textContent === 'Editar');
+    act(() => editBtn.click());
+    await flush();
+
+    expect(inputByLabel(container, 'Telefone')?.value).toBe('+552133334444');
+    expect(inputByLabel(container, 'WhatsApp')?.value).toBe('+5521999999999');
+    expect(inputByLabel(container, 'Site')?.value).toBe('https://hotel.example.com/');
+    expect(inputByLabel(container, 'Instagram')?.value).toBe('https://www.instagram.com/hotelx/');
     unmount();
   });
 

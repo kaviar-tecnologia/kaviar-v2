@@ -92,6 +92,10 @@ const { authState, scopeState, dbState, prismaMock } = vi.hoisted(() => {
           city: data.city,
           state: data.state,
           address: data.address ?? null,
+          phone: data.phone ?? null,
+          whatsapp: data.whatsapp ?? null,
+          website_url: data.website_url ?? null,
+          instagram_url: data.instagram_url ?? null,
           latitude: data.latitude,
           longitude: data.longitude,
           status: data.status ?? 'DRAFT',
@@ -436,6 +440,107 @@ describe('admin ar places CRUD and RBAC', () => {
     expect(getRes.body.data.contents[0].summary).toBe('Resumo 3');
   });
 
+  it('create persiste contatos normalizados e serializer admin retorna os campos', async () => {
+    const res = await request(app).post('/api/admin/ar/places').send({
+      place_id: 'commerce-contatos',
+      name: 'Comércio com contatos',
+      type: 'COMMERCE',
+      city: 'Rio de Janeiro',
+      state: 'RJ',
+      address: 'Rua do Comércio, 10',
+      phone: '(21) 3333-4444',
+      whatsapp: '21 99999-9999',
+      website_url: 'https://example.com/menu',
+      instagram_url: 'https://instagram.com/bar.do_halfe',
+      latitude: -22.91,
+      longitude: -43.18,
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.phone).toBe('+552133334444');
+    expect(res.body.data.whatsapp).toBe('+5521999999999');
+    expect(res.body.data.website_url).toBe('https://example.com/menu');
+    expect(res.body.data.instagram_url).toBe('https://www.instagram.com/bar.do_halfe/');
+  });
+
+  it('update altera contatos e update com null remove o valor anterior', async () => {
+    const created = await request(app).post('/api/admin/ar/places').send({
+      place_id: 'commerce-update-contatos',
+      name: 'Comércio update contatos',
+      type: 'COMMERCE',
+      city: 'Rio de Janeiro',
+      state: 'RJ',
+      phone: '(21) 3333-4444',
+      whatsapp: '21 99999-9999',
+      website_url: 'https://example.com',
+      instagram_url: 'https://www.instagram.com/comercio/',
+      latitude: -22.91,
+      longitude: -43.18,
+    });
+    const id = created.body.data.id;
+
+    const patch1 = await request(app).patch(`/api/admin/ar/places/${id}`).send({
+      phone: '+14155550101',
+      whatsapp: null,
+      website_url: 'http://example.org/ofertas',
+      instagram_url: null,
+    });
+    expect(patch1.status).toBe(200);
+    expect(patch1.body.data.phone).toBe('+14155550101');
+    expect(patch1.body.data.whatsapp).toBeNull();
+    expect(patch1.body.data.website_url).toBe('http://example.org/ofertas');
+    expect(patch1.body.data.instagram_url).toBeNull();
+
+    const patch2 = await request(app).patch(`/api/admin/ar/places/${id}`).send({
+      phone: '   ',
+      website_url: '   ',
+    });
+    expect(patch2.status).toBe(200);
+    expect(patch2.body.data.phone).toBeNull();
+    expect(patch2.body.data.website_url).toBeNull();
+  });
+
+  it('rejeita contatos inválidos com erro claro de validação', async () => {
+    const phoneRes = await request(app).post('/api/admin/ar/places').send({
+      place_id: 'contato-telefone-invalido',
+      name: 'Telefone inválido',
+      type: 'COMMERCE',
+      city: 'Rio de Janeiro',
+      state: 'RJ',
+      phone: '12345',
+      latitude: -22.91,
+      longitude: -43.18,
+    });
+    expect(phoneRes.status).toBe(400);
+    expect(phoneRes.body.error).toContain('Telefone/WhatsApp inválido');
+
+    const websiteRes = await request(app).post('/api/admin/ar/places').send({
+      place_id: 'contato-site-invalido',
+      name: 'Site inválido',
+      type: 'COMMERCE',
+      city: 'Rio de Janeiro',
+      state: 'RJ',
+      website_url: 'ftp://example.com',
+      latitude: -22.91,
+      longitude: -43.18,
+    });
+    expect(websiteRes.status).toBe(400);
+    expect(websiteRes.body.error).toContain('Site inválido');
+
+    const instagramRes = await request(app).post('/api/admin/ar/places').send({
+      place_id: 'contato-instagram-invalido',
+      name: 'Instagram inválido',
+      type: 'COMMERCE',
+      city: 'Rio de Janeiro',
+      state: 'RJ',
+      instagram_url: 'https://www.instagram.com/p/abc123/',
+      latitude: -22.91,
+      longitude: -43.18,
+    });
+    expect(instagramRes.status).toBe(400);
+    expect(instagramRes.body.error).toContain('Instagram inválido');
+  });
+
   it('FINANCE é bloqueado', async () => {
     authState.admin = { id: 'f-1', role: 'FINANCE' };
     const res = await request(app).get('/api/admin/ar/places');
@@ -580,6 +685,10 @@ describe('public ar place endpoint only returns APPROVED', () => {
     const create = await request(app).post('/api/admin/ar/places').send({
       ...basePayload,
       place_id: 'status-approved',
+      phone: '(21) 3333-4444',
+      whatsapp: '21 99999-9999',
+      website_url: 'https://example.com',
+      instagram_url: 'https://instagram.com/publico',
       territory_id: '11111111-1111-4111-8111-111111111111',
       content: {
         locale: 'pt-BR',
@@ -598,6 +707,10 @@ describe('public ar place endpoint only returns APPROVED', () => {
     const res = await request(app).get('/api/public/ar/places/by-place-id/status-approved');
     expect(res.status).toBe(200);
     expect(res.body.data.placeId).toBe('status-approved');
+    expect(res.body.data.phone).toBe('+552133334444');
+    expect(res.body.data.whatsapp).toBe('+5521999999999');
+    expect(res.body.data.website_url).toBe('https://example.com/');
+    expect(res.body.data.instagram_url).toBe('https://www.instagram.com/publico/');
     expect(res.body.data.content.locale).toBe('pt-BR');
     expect(res.body.data.content.summary).toBe('Resumo público');
     expect(res.body.data.content.description).toBe('Descrição pública');
@@ -612,5 +725,22 @@ describe('public ar place endpoint only returns APPROVED', () => {
     expect(res.body.data.territory.city).toBe('Rio de Janeiro');
     expect(res.body.data.territory.state).toBe('RJ');
     expect(res.body.data.territory.id).toBeUndefined();
+  });
+
+  it('local antigo sem contatos continua funcionando no endpoint público', async () => {
+    const create = await request(app).post('/api/admin/ar/places').send({
+      ...basePayload,
+      place_id: 'status-approved-sem-contatos',
+    });
+    const id = create.body.data.id;
+    await request(app).patch(`/api/admin/ar/places/${id}`).send({ status: 'SUBMITTED' });
+    await request(app).patch(`/api/admin/ar/places/${id}`).send({ status: 'APPROVED' });
+
+    const res = await request(app).get('/api/public/ar/places/by-place-id/status-approved-sem-contatos');
+    expect(res.status).toBe(200);
+    expect(res.body.data.phone).toBeUndefined();
+    expect(res.body.data.whatsapp).toBeUndefined();
+    expect(res.body.data.website_url).toBeUndefined();
+    expect(res.body.data.instagram_url).toBeUndefined();
   });
 });
