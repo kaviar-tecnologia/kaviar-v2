@@ -58,3 +58,35 @@ export async function updateArPlace(id, payload) {
     toError(error, 'Erro ao atualizar local AR.');
   }
 }
+
+export async function getArPlaceChangeRequest(id) {
+  try {
+    const response = await api.get(`${BASE_PATH}/${encodeURIComponent(id)}/change-request`);
+    return response.data;
+  } catch (error) {
+    toError(error, 'Erro ao carregar alteração pendente.');
+  }
+}
+
+export async function approveArPlaceChangeRequest(id, requestId) {
+  try {
+    const response = await api.post(
+      `${BASE_PATH}/${encodeURIComponent(id)}/change-request/${encodeURIComponent(requestId)}/approve`,
+    );
+    return response.data;
+  } catch (error) {
+    toError(error, 'Erro ao aprovar alteração pendente.');
+  }
+}
+
+export async function rejectArPlaceChangeRequest(id, requestId, payload = {}) {
+  try {
+    const response = await api.post(
+      `${BASE_PATH}/${encodeURIComponent(id)}/change-request/${encodeURIComponent(requestId)}/reject`,
+      payload,
+    );
+    return response.data;
+  } catch (error) {
+    toError(error, 'Erro ao rejeitar alteração pendente.');
+  }
+}

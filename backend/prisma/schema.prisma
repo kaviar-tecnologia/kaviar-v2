@@ -2172,6 +2172,8 @@ model territorial_partners {
   transactions        partner_transactions[]
   users               partner_users[]
   member_payments     partner_member_payments[]
+  owned_ar_places     ar_places[]                    @relation("ArPlaceOwnerPartner")
+  ar_place_change_requests ar_place_partner_change_requests[]
   territory           operational_territories? @relation(fields: [territory_id], references: [id])
 
   @@index([status])
@@ -2297,6 +2299,7 @@ model partner_users {
 
   partner         territorial_partners      @relation(fields: [partner_id], references: [id])
   password_resets partner_password_resets[]
+  ar_place_change_requests ar_place_partner_change_requests[] @relation("ArPlaceChangeRequestSubmitter")
 
   @@index([partner_id])
 }
@@ -3277,26 +3280,30 @@ model commerce_withdrawal_requests {
 }
 
 model ar_places {
-  id          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  place_id    String          @unique @db.VarChar(120)
-  name        String          @db.VarChar(255)
-  type        ar_place_type
-  city        String          @db.VarChar(120)
-  state       String          @db.VarChar(2)
-  address     String?
-  latitude    Decimal         @db.Decimal(10, 8)
-  longitude   Decimal         @db.Decimal(11, 8)
-  status      ar_place_status @default(DRAFT)
-  territory_id String?
-  created_at  DateTime        @default(now())
-  updated_at  DateTime        @updatedAt
+  id               String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  place_id         String          @unique @db.VarChar(120)
+  name             String          @db.VarChar(255)
+  type             ar_place_type
+  city             String          @db.VarChar(120)
+  state            String          @db.VarChar(2)
+  address          String?
+  latitude         Decimal         @db.Decimal(10, 8)
+  longitude        Decimal         @db.Decimal(11, 8)
+  status           ar_place_status @default(DRAFT)
+  territory_id     String?
+  owner_partner_id String?
+  created_at       DateTime        @default(now())
+  updated_at       DateTime        @updatedAt
 
-  territory operational_territories? @relation(fields: [territory_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  contents  ar_place_contents[]
+  territory        operational_territories?          @relation(fields: [territory_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  owner_partner    territorial_partners?             @relation("ArPlaceOwnerPartner", fields: [owner_partner_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  contents         ar_place_contents[]
+  change_requests  ar_place_partner_change_requests[]
 
   @@index([type], map: "idx_ar_places_type")
   @@index([status], map: "idx_ar_places_status")
   @@index([territory_id], map: "idx_ar_places_territory")
+  @@index([owner_partner_id], map: "idx_ar_places_owner_partner")
   @@index([city, state], map: "idx_ar_places_city_state")
   @@map("ar_places")
 }
@@ -3319,6 +3326,35 @@ model ar_place_contents {
   @@unique([ar_place_id, locale], map: "uq_ar_place_contents_place_locale")
   @@index([locale], map: "idx_ar_place_contents_locale")
   @@map("ar_place_contents")
+}
+
+model ar_place_partner_change_requests {
+  id                          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ar_place_id                 String    @db.Uuid
+  partner_id                  String
+  submitted_by_partner_user_id String
+  status                      String    @default("PENDING") @db.VarChar(20)
+  locale                      ar_place_locale @default(PT_BR)
+  name                        String    @db.VarChar(255)
+  address                     String?
+  summary                     String?
+  description                 String?
+  learn_more                  String?
+  useful_info                 String?
+  reviewed_by_admin_id        String?
+  reviewed_at                 DateTime?
+  rejection_reason            String?
+  created_at                  DateTime  @default(now())
+  updated_at                  DateTime  @updatedAt
+
+  place                       ar_places             @relation(fields: [ar_place_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  partner                     territorial_partners  @relation(fields: [partner_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  submitted_by                partner_users         @relation("ArPlaceChangeRequestSubmitter", fields: [submitted_by_partner_user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([ar_place_id, status], map: "idx_ar_place_partner_change_requests_place_status")
+  @@index([partner_id, status], map: "idx_ar_place_partner_change_requests_partner_status")
+  @@index([submitted_by_partner_user_id], map: "idx_ar_place_partner_change_requests_submitter")
+  @@map("ar_place_partner_change_requests")
 }
 
 // ─── Equipe do Gestor Territorial ───────────────────────────────────────────

@@ -1,10 +1,31 @@
 import { useState, useEffect } from 'react';
-import { Box, Typography, TextField, Button, Grid, Table, TableBody, TableCell, TableHead, TableRow, Chip, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, MenuItem, Select, FormControl, InputLabel, Tabs, Tab } from '@mui/material';
+import { Alert, Box, Typography, TextField, Button, Grid, Table, TableBody, TableCell, TableHead, TableRow, Chip, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, MenuItem, Select, FormControl, InputLabel, Tabs, Tab } from '@mui/material';
 import { QRCodeSVG } from 'qrcode.react';
 import { API_BASE_URL } from '../config/api';
 import { formatDate } from '../utils/formatDate';
 
 const gold = '#B8942E';
+
+const defaultArPlaceForm = {
+  id: '',
+  name: '',
+  address: '',
+  summary: '',
+  description: '',
+  learn_more: '',
+  useful_info: '',
+};
+
+export function buildPartnerArPlaceChangeRequestPayload(form) {
+  return {
+    name: form.name.trim(),
+    address: form.address.trim() || null,
+    summary: form.summary.trim() || null,
+    description: form.description.trim() || null,
+    learn_more: form.learn_more.trim() || null,
+    useful_info: form.useful_info.trim() || null,
+  };
+}
 
 export default function PartnerPortal() {
   const [token, setToken] = useState(localStorage.getItem('kaviar_partner_token') || '');
@@ -33,6 +54,11 @@ export default function PartnerPortal() {
   const [payMonth, setPayMonth] = useState(new Date().toISOString().slice(0, 7));
   const [payDialog, setPayDialog] = useState(false);
   const [payForm, setPayForm] = useState({ member_id: '', amount: '', payment_method: 'pix', notes: '' });
+  const [arPlaces, setArPlaces] = useState([]);
+  const [arPlaceDialog, setArPlaceDialog] = useState(false);
+  const [arPlaceForm, setArPlaceForm] = useState(defaultArPlaceForm);
+  const [arPlaceError, setArPlaceError] = useState('');
+  const [arPlaceSaving, setArPlaceSaving] = useState(false);
 
   const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
@@ -47,24 +73,71 @@ export default function PartnerPortal() {
     } else { setLoginError(data.error || 'Erro no login'); }
   };
 
+  const openArPlaceDialog = async (id) => {
+    setArPlaceError('');
+    const res = await fetch(`${API_BASE_URL}/api/partner/ar-places/${id}`, { headers });
+    const data = await res.json();
+    if (!data.success) {
+      setArPlaceError(data.error || 'Erro ao carregar hotel');
+      return;
+    }
+    const content = data.data?.pending_change_request || data.data?.content || {};
+    setArPlaceForm({
+      id: data.data.id,
+      name: content.name || data.data.name || '',
+      address: content.address || data.data.address || '',
+      summary: content.summary || '',
+      description: content.description || '',
+      learn_more: content.learn_more || '',
+      useful_info: content.useful_info || '',
+    });
+    setArPlaceDialog(true);
+  };
+
+  const handleSaveArPlaceChange = async () => {
+    if (!arPlaceForm.id) return;
+    setArPlaceSaving(true);
+    setArPlaceError('');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/partner/ar-places/${arPlaceForm.id}/change-request`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(buildPartnerArPlaceChangeRequestPayload(arPlaceForm)),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        setArPlaceError(data.error || 'Erro ao salvar alteração');
+        return;
+      }
+      setArPlaceDialog(false);
+      setArPlaceForm(defaultArPlaceForm);
+      fetchData();
+    } finally {
+      setArPlaceSaving(false);
+    }
+  };
+
   const fetchData = async () => {
     if (!token) return;
     try {
-      const [meRes, memRes, txRes, drRes] = await Promise.all([
+      const [meRes, memRes, txRes, drRes, arRes] = await Promise.all([
         fetch(`${API_BASE_URL}/api/partner/me`, { headers }),
         fetch(`${API_BASE_URL}/api/partner/members`, { headers }),
         fetch(`${API_BASE_URL}/api/partner/transactions?reference_month=${month}`, { headers }),
         fetch(`${API_BASE_URL}/api/partner/drivers`, { headers }),
+        fetch(`${API_BASE_URL}/api/partner/ar-places`, { headers }),
       ]);
       const me = await meRes.json();
       const mem = await memRes.json();
       const tx = await txRes.json();
       const dr = await drRes.json();
+      const ar = await arRes.json();
       if (me.success) setUser(me.data);
       else { setToken(''); localStorage.removeItem('kaviar_partner_token'); return; }
       if (mem.success) setMembers(mem.data);
       if (tx.success) { setTransactions(tx.data.transactions); setSummary({ income_total: tx.data.income_total, expense_total: tx.data.expense_total, balance: tx.data.balance, members_active: tx.data.members_active, members_paid: tx.data.members_paid, members_overdue: tx.data.members_overdue }); setMensalidade(tx.data.mensalidade || []); }
       if (dr.success) { setDrivers(dr.data.drivers || []); setPendingDrivers(dr.data.pending_requests || 0); }
+      if (ar.success) setArPlaces(ar.data || []);
     } catch { setToken(''); localStorage.removeItem('kaviar_partner_token'); }
   };
 
@@ -199,6 +272,7 @@ export default function PartnerPortal() {
           <Tab label="Corridas" />
           <Tab label="Gestão" />
           <Tab label="Mensalidades" />
+          <Tab label="KAVIAR AR" />
         </Tabs>
 
         {/* Tab 0: Corridas */}
@@ -385,6 +459,59 @@ export default function PartnerPortal() {
           ))}
         </Box>)}
 
+        {/* Tab 3: KAVIAR AR */}
+        {portalTab === 3 && (
+          <Box>
+            <Typography variant="h6" sx={{ color: gold, fontWeight: 700, mb: 1 }}>
+              Meu Hotel
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#999', mb: 2 }}>
+              Edite somente as informações operacionais do seu hotel. A versão publicada continua ativa até a revisão da KAVIAR.
+            </Typography>
+
+            {arPlaceError && <Alert severity="error" sx={{ mb: 2 }}>{arPlaceError}</Alert>}
+
+            {arPlaces.length === 0 && (
+              <Box sx={{ p: 2, border: '1px solid #222', borderRadius: 2 }}>
+                <Typography sx={{ color: '#999' }}>
+                  Nenhum hotel KAVIAR AR vinculado a este parceiro.
+                </Typography>
+              </Box>
+            )}
+
+            {arPlaces.map((place) => (
+              <Box key={place.id} sx={{ p: 2, mb: 1.5, border: '1px solid #222', borderRadius: 2 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, alignItems: 'center', flexWrap: 'wrap', mb: 1 }}>
+                  <Box>
+                    <Typography sx={{ color: '#E8E3D5', fontWeight: 700 }}>{place.name}</Typography>
+                    <Typography variant="caption" sx={{ color: '#888' }}>{place.city}/{place.state} • {place.place_id}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                    <Chip label={place.status} size="small" sx={{ bgcolor: '#333', color: '#fff' }} />
+                    {place.pending_change_request && <Chip label="Alteração pendente" size="small" sx={{ bgcolor: '#8a6d1f', color: '#fff' }} />}
+                  </Box>
+                </Box>
+
+                {place.pending_change_request && (
+                  <Alert severity="warning" sx={{ mb: 1.5 }}>
+                    Alteração pendente. A versão publicada continua ativa até revisão da KAVIAR.
+                  </Alert>
+                )}
+
+                <Typography variant="body2" sx={{ color: '#E8E3D5', mb: 0.75, whiteSpace: 'pre-wrap' }}>
+                  {place.content?.summary || 'Sem resumo publicado.'}
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#888', display: 'block', mb: 1.5 }}>
+                  Última atualização: {formatDate(place.updated_at)}
+                </Typography>
+                <Button variant="contained" onClick={() => openArPlaceDialog(place.id)} sx={{ bgcolor: gold, '&:hover': { bgcolor: '#9A7B24' } }}>
+                  Editar meu hotel
+                </Button>
+              </Box>
+            ))}
+          </Box>
+        )}
+
         {/* Dialog registrar pagamento */}
         <Dialog open={payDialog} onClose={() => setPayDialog(false)} PaperProps={{ sx: { bgcolor: '#1a1a1a', color: '#E8E3D5' } }}>
           <DialogTitle sx={{ color: gold }}>Registrar pagamento</DialogTitle>
@@ -411,6 +538,26 @@ export default function PartnerPortal() {
                 if (d2.success) setMemberPayments(d2.data);
               } else { alert(data.error); }
             }}>Registrar</Button>
+          </DialogActions>
+        </Dialog>
+
+        <Dialog open={arPlaceDialog} onClose={() => !arPlaceSaving && setArPlaceDialog(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { bgcolor: '#111', color: '#E8E3D5' } }}>
+          <DialogTitle sx={{ color: gold }}>Meu Hotel</DialogTitle>
+          <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pt: '8px !important' }}>
+            <Alert severity="info">
+              Envie apenas dados operacionais do hotel. Regras da IA, status e governança continuam sob revisão da KAVIAR.
+            </Alert>
+            {arPlaceError && <Alert severity="error">{arPlaceError}</Alert>}
+            <TextField label="Nome" value={arPlaceForm.name} onChange={(e) => setArPlaceForm({ ...arPlaceForm, name: e.target.value })} fullWidth sx={{ '& .MuiOutlinedInput-root': { color: '#E8E3D5' }, '& .MuiInputLabel-root': { color: '#888' }, '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }} />
+            <TextField label="Endereço" value={arPlaceForm.address} onChange={(e) => setArPlaceForm({ ...arPlaceForm, address: e.target.value })} fullWidth sx={{ '& .MuiOutlinedInput-root': { color: '#E8E3D5' }, '& .MuiInputLabel-root': { color: '#888' }, '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }} />
+            <TextField label="Resumo" value={arPlaceForm.summary} onChange={(e) => setArPlaceForm({ ...arPlaceForm, summary: e.target.value })} fullWidth sx={{ '& .MuiOutlinedInput-root': { color: '#E8E3D5' }, '& .MuiInputLabel-root': { color: '#888' }, '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }} />
+            <TextField label="Descrição" value={arPlaceForm.description} onChange={(e) => setArPlaceForm({ ...arPlaceForm, description: e.target.value })} multiline minRows={3} fullWidth sx={{ '& .MuiOutlinedInput-root': { color: '#E8E3D5' }, '& .MuiInputLabel-root': { color: '#888' }, '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }} />
+            <TextField label="Saiba mais" value={arPlaceForm.learn_more} onChange={(e) => setArPlaceForm({ ...arPlaceForm, learn_more: e.target.value })} fullWidth sx={{ '& .MuiOutlinedInput-root': { color: '#E8E3D5' }, '& .MuiInputLabel-root': { color: '#888' }, '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }} />
+            <TextField label="Informações úteis" value={arPlaceForm.useful_info} onChange={(e) => setArPlaceForm({ ...arPlaceForm, useful_info: e.target.value })} multiline minRows={2} fullWidth sx={{ '& .MuiOutlinedInput-root': { color: '#E8E3D5' }, '& .MuiInputLabel-root': { color: '#888' }, '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }} />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setArPlaceDialog(false)} sx={{ color: '#888' }} disabled={arPlaceSaving}>Cancelar</Button>
+            <Button variant="contained" onClick={handleSaveArPlaceChange} sx={{ bgcolor: gold }} disabled={arPlaceSaving}>Enviar para revisão</Button>
           </DialogActions>
         </Dialog>
 

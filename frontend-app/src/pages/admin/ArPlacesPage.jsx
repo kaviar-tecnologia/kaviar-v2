@@ -21,12 +21,28 @@ import {
   Typography,
 } from '@mui/material';
 import { Add, Edit, Refresh } from '@mui/icons-material';
-import { listArPlaces, createArPlace, getArPlaceById, updateArPlace } from '../../services/adminArPlacesService';
+import {
+  listArPlaces,
+  createArPlace,
+  getArPlaceById,
+  updateArPlace,
+  getArPlaceChangeRequest,
+  approveArPlaceChangeRequest,
+  rejectArPlaceChangeRequest,
+} from '../../services/adminArPlacesService';
 import api from '../../api';
 import { canEditArPlaces, getAllowedArPlaceTransitions } from './arPlacesPermissions';
 
 const TYPE_OPTIONS = ['HOTEL', 'COMMERCE', 'TOURISM', 'CARE', 'PET', 'AIRPORT'];
 const STATUS_OPTIONS = ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'INACTIVE'];
+const PENDING_COMPARISON_FIELDS = [
+  { key: 'name', label: 'Nome' },
+  { key: 'address', label: 'Endereço' },
+  { key: 'summary', label: 'Resumo' },
+  { key: 'description', label: 'Descrição' },
+  { key: 'learn_more', label: 'Saiba mais' },
+  { key: 'useful_info', label: 'Informações úteis' },
+];
 
 const defaultFilters = {
   type: '',
@@ -47,6 +63,7 @@ const defaultForm = {
   latitude: '',
   longitude: '',
   territory_id: '',
+  owner_partner_id: '',
   status: 'DRAFT',
   summary: '',
   description: '',
@@ -73,6 +90,16 @@ function stateChipColor(status) {
   return 'default';
 }
 
+function getPublishedValue(record, field) {
+  if (!record) return '—';
+  if (field === 'name' || field === 'address') return record[field] || '—';
+  return record.contents?.[0]?.[field] || '—';
+}
+
+function getPendingValue(record, field) {
+  return record?.[field] || '—';
+}
+
 export default function ArPlacesPage() {
   const role = getAdminRole();
   const isSuperAdmin = role === 'SUPER_ADMIN';
@@ -82,12 +109,15 @@ export default function ArPlacesPage() {
 
   const [filters, setFilters] = useState(defaultFilters);
   const [territories, setTerritories] = useState([]);
+  const [partners, setPartners] = useState([]);
   const [places, setPlaces] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
+  const [selectedPlace, setSelectedPlace] = useState(null);
+  const [pendingChange, setPendingChange] = useState(null);
 
   const availableTransitions = useMemo(
     () => getAllowedArPlaceTransitions(role, form.status),
@@ -107,6 +137,16 @@ export default function ArPlacesPage() {
     }
   }
 
+  async function loadPartners() {
+    if (!(isSuperAdmin || isManager)) return;
+    try {
+      const response = await api.get('/api/admin/territorial-partners?status=active');
+      setPartners((response.data?.data || []).map((item) => ({ id: item.id, name: item.name })));
+    } catch {
+      setPartners([]);
+    }
+  }
+
   async function loadPlaces(nextFilters = filters) {
     setLoading(true);
     setError('');
@@ -120,8 +160,41 @@ export default function ArPlacesPage() {
     }
   }
 
+  async function refreshOpenPlace(placeId) {
+    const [placePayload, changePayload] = await Promise.all([
+      getArPlaceById(placeId),
+      getArPlaceChangeRequest(placeId),
+    ]);
+
+    const record = placePayload.data;
+    const content = (record.contents || []).find((item) => item.locale === 'pt-BR') || record.contents?.[0] || {};
+    setSelectedPlace(record);
+    setPendingChange(changePayload.data || record.pending_change_request || null);
+    setForm({
+      id: record.id,
+      place_id: record.place_id,
+      name: record.name,
+      type: record.type,
+      city: record.city,
+      state: record.state,
+      address: record.address || '',
+      latitude: String(record.latitude),
+      longitude: String(record.longitude),
+      territory_id: record.territory_id || '',
+      owner_partner_id: record.owner_partner_id || '',
+      status: record.status,
+      summary: content.summary || '',
+      description: content.description || '',
+      learn_more: content.learn_more || '',
+      useful_info: content.useful_info || '',
+      grounding_rule: content.grounding_rule || '',
+      boundary_rule: content.boundary_rule || '',
+    });
+  }
+
   useEffect(() => {
     loadTerritories();
+    loadPartners();
   }, []);
 
   useEffect(() => {
@@ -129,34 +202,19 @@ export default function ArPlacesPage() {
   }, [filters.type, filters.status, filters.city, filters.state, filters.territoryId]);
 
   function openCreateDialog() {
-    setForm({ ...defaultForm, territory_id: territories.length === 1 ? territories[0].id : '', status: 'DRAFT' });
+    setSelectedPlace(null);
+    setPendingChange(null);
+    setForm({
+      ...defaultForm,
+      territory_id: territories.length === 1 ? territories[0].id : '',
+      status: 'DRAFT',
+    });
     setDialogOpen(true);
   }
 
   async function openEditDialog(placeId) {
     try {
-      const payload = await getArPlaceById(placeId);
-      const record = payload.data;
-      const content = (record.contents || []).find((item) => item.locale === 'pt-BR') || record.contents?.[0] || {};
-      setForm({
-        id: record.id,
-        place_id: record.place_id,
-        name: record.name,
-        type: record.type,
-        city: record.city,
-        state: record.state,
-        address: record.address || '',
-        latitude: String(record.latitude),
-        longitude: String(record.longitude),
-        territory_id: record.territory_id || '',
-        status: record.status,
-        summary: content.summary || '',
-        description: content.description || '',
-        learn_more: content.learn_more || '',
-        useful_info: content.useful_info || '',
-        grounding_rule: content.grounding_rule || '',
-        boundary_rule: content.boundary_rule || '',
-      });
+      await refreshOpenPlace(placeId);
       setDialogOpen(true);
       setError('');
     } catch (requestError) {
@@ -178,6 +236,7 @@ export default function ArPlacesPage() {
       latitude: Number(form.latitude),
       longitude: Number(form.longitude),
       territory_id: form.territory_id || null,
+      owner_partner_id: form.owner_partner_id || null,
       content: {
         locale: 'pt-BR',
         summary: form.summary || null,
@@ -192,14 +251,47 @@ export default function ArPlacesPage() {
     try {
       if (form.id) {
         await updateArPlace(form.id, { ...basePayload, status: form.status });
+        await refreshOpenPlace(form.id);
       } else {
         await createArPlace(basePayload);
+        setDialogOpen(false);
+        setForm(defaultForm);
+        setSelectedPlace(null);
+        setPendingChange(null);
       }
-      setDialogOpen(false);
-      setForm(defaultForm);
       await loadPlaces();
     } catch (requestError) {
       setError(requestError.message || 'Erro ao salvar local AR.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleApprovePending() {
+    if (!form.id || !pendingChange?.id) return;
+    setSaving(true);
+    setError('');
+    try {
+      await approveArPlaceChangeRequest(form.id, pendingChange.id);
+      await refreshOpenPlace(form.id);
+      await loadPlaces();
+    } catch (requestError) {
+      setError(requestError.message || 'Erro ao aprovar alteração pendente.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRejectPending() {
+    if (!form.id || !pendingChange?.id) return;
+    setSaving(true);
+    setError('');
+    try {
+      await rejectArPlaceChangeRequest(form.id, pendingChange.id, {});
+      await refreshOpenPlace(form.id);
+      await loadPlaces();
+    } catch (requestError) {
+      setError(requestError.message || 'Erro ao rejeitar alteração pendente.');
     } finally {
       setSaving(false);
     }
@@ -266,6 +358,7 @@ export default function ArPlacesPage() {
                 <TableCell>Tipo</TableCell>
                 <TableCell>Cidade/UF</TableCell>
                 <TableCell>Território</TableCell>
+                <TableCell>Parceiro owner</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell align="right">Ações</TableCell>
               </TableRow>
@@ -278,7 +371,13 @@ export default function ArPlacesPage() {
                   <TableCell>{place.type}</TableCell>
                   <TableCell>{place.city}/{place.state}</TableCell>
                   <TableCell>{place.territory?.name || '—'}</TableCell>
-                  <TableCell><Chip size="small" label={place.status} color={stateChipColor(place.status)} /></TableCell>
+                  <TableCell>{place.owner_partner?.name || '—'}</TableCell>
+                  <TableCell>
+                    <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
+                      <Chip size="small" label={place.status} color={stateChipColor(place.status)} />
+                      {place.pending_change_request && <Chip size="small" label="Alteração pendente" color="warning" />}
+                    </Box>
+                  </TableCell>
                   <TableCell align="right">
                     {canEdit && (
                       <Button size="small" startIcon={<Edit />} onClick={() => openEditDialog(place.id)}>
@@ -319,6 +418,12 @@ export default function ArPlacesPage() {
               </TextField>
             </Grid>
             <Grid item xs={12} md={6}>
+              <TextField fullWidth select label="Parceiro owner" value={form.owner_partner_id} onChange={(e) => setForm((prev) => ({ ...prev, owner_partner_id: e.target.value }))}>
+                <MenuItem value="">Sem parceiro owner</MenuItem>
+                {partners.map((partner) => <MenuItem key={partner.id} value={partner.id}>{partner.name}</MenuItem>)}
+              </TextField>
+            </Grid>
+            <Grid item xs={12} md={6}>
               <Typography variant="body2" sx={{ mb: 1 }}>
                 Status atual: <strong>{form.status}</strong>
               </Typography>
@@ -342,14 +447,60 @@ export default function ArPlacesPage() {
                 </Box>
               )}
             </Grid>
-            <Grid item xs={12}><Typography variant="subtitle2">Conteúdo (pt-BR)</Typography></Grid>
+            <Grid item xs={12}><Typography variant="subtitle2">Conteúdo publicado (pt-BR)</Typography></Grid>
             <Grid item xs={12}><TextField fullWidth label="Resumo" value={form.summary} onChange={(e) => setForm((prev) => ({ ...prev, summary: e.target.value }))} /></Grid>
             <Grid item xs={12}><TextField fullWidth multiline minRows={3} label="Descrição" value={form.description} onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))} /></Grid>
             <Grid item xs={12}><TextField fullWidth label="Saiba mais" value={form.learn_more} onChange={(e) => setForm((prev) => ({ ...prev, learn_more: e.target.value }))} /></Grid>
             <Grid item xs={12}><TextField fullWidth multiline minRows={2} label="Informações úteis" value={form.useful_info} onChange={(e) => setForm((prev) => ({ ...prev, useful_info: e.target.value }))} /></Grid>
-            <Grid item xs={12}><TextField fullWidth label="Regra de grounding" value={form.grounding_rule} onChange={(e) => setForm((prev) => ({ ...prev, grounding_rule: e.target.value }))} /></Grid>
-            <Grid item xs={12}><TextField fullWidth label="Limite/boundary" value={form.boundary_rule} onChange={(e) => setForm((prev) => ({ ...prev, boundary_rule: e.target.value }))} /></Grid>
+            <Grid item xs={12}><TextField fullWidth label="Regras de fonte da IA" value={form.grounding_rule} onChange={(e) => setForm((prev) => ({ ...prev, grounding_rule: e.target.value }))} /></Grid>
+            <Grid item xs={12}><TextField fullWidth label="Limites da IA" value={form.boundary_rule} onChange={(e) => setForm((prev) => ({ ...prev, boundary_rule: e.target.value }))} /></Grid>
           </Grid>
+
+          {form.id && pendingChange && (
+            <Box sx={{ mt: 3 }}>
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                Existe uma alteração pendente enviada pelo parceiro. A versão publicada continua ativa até a revisão da KAVIAR.
+              </Alert>
+              <Typography variant="subtitle2" sx={{ mb: 1.5 }}>Comparativo simples</Typography>
+              <Grid container spacing={1.5}>
+                {PENDING_COMPARISON_FIELDS.map((field) => (
+                  <Grid item xs={12} md={6} key={field.key}>
+                    <Card variant="outlined">
+                      <CardContent>
+                        <Typography variant="subtitle2" sx={{ mb: 1 }}>{field.label}</Typography>
+                        <Typography variant="caption" color="text.secondary">Publicado atualmente</Typography>
+                        <Typography variant="body2" sx={{ mb: 1.5, whiteSpace: 'pre-wrap' }}>
+                          {getPublishedValue(selectedPlace, field.key)}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">Proposto pelo parceiro</Typography>
+                        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                          {getPendingValue(pendingChange, field.key)}
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                ))}
+              </Grid>
+              <Box sx={{ display: 'flex', gap: 1, mt: 2, flexWrap: 'wrap' }}>
+                <Chip size="small" label={`Pendente desde ${new Date(pendingChange.created_at).toLocaleString('pt-BR')}`} />
+                {pendingChange.partner?.name && <Chip size="small" label={`Parceiro: ${pendingChange.partner.name}`} />}
+              </Box>
+              {isSuperAdmin ? (
+                <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
+                  <Button variant="contained" color="success" disabled={saving} onClick={handleApprovePending}>
+                    Aprovar alteração
+                  </Button>
+                  <Button variant="outlined" color="error" disabled={saving} onClick={handleRejectPending}>
+                    Rejeitar alteração
+                  </Button>
+                </Box>
+              ) : (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                  Apenas SUPER_ADMIN pode aprovar ou rejeitar a alteração pendente.
+                </Typography>
+              )}
+            </Box>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)} disabled={saving}>Cancelar</Button>

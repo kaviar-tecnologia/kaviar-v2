@@ -1,14 +1,21 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 import { randomInt, createHash } from 'crypto';
 import { config } from '../config';
+import { prisma } from '../lib/prisma';
 import { emailService } from '../services/email/email.service';
 import { whatsappEvents } from '../modules/whatsapp';
+import {
+  ArPlaceServiceError,
+  getPartnerOwnedHotelArPlaceById,
+  listPartnerOwnedHotelArPlaces,
+  upsertPartnerOwnedHotelArPlaceChangeRequest,
+} from '../services/ar-places/ar-places.service';
+import { arPlaceIdParamSchema, partnerArPlaceChangeRequestBodySchema } from '../services/ar-places/ar-places-validation';
+import { serializeArPlaceChangeRequest, serializePartnerArPlace } from '../services/ar-places/ar-places-serializers';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 function hashCode(code: string): string {
   return createHash('sha256').update(code).digest('hex');
@@ -26,6 +33,13 @@ function authenticatePartner(req: Request, res: Response, next: NextFunction) {
   } catch {
     return res.status(401).json({ success: false, error: 'Token inválido' });
   }
+}
+
+function arPlaceServiceError(res: Response, error: unknown, fallbackMessage: string) {
+  if (error instanceof ArPlaceServiceError) {
+    return res.status(error.status).json({ success: false, error: error.message });
+  }
+  return res.status(500).json({ success: false, error: fallbackMessage });
 }
 
 // --- Login ---
@@ -241,6 +255,51 @@ router.get('/drivers', authenticatePartner, async (req: Request, res: Response) 
     });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Erro' });
+  }
+});
+
+router.get('/ar-places', authenticatePartner, async (req: Request, res: Response) => {
+  try {
+    const { partnerId, userId } = (req as any).partnerUser;
+    const rows = await listPartnerOwnedHotelArPlaces({ partnerId, userId });
+    return res.json({ success: true, data: rows.map(serializePartnerArPlace) });
+  } catch (error) {
+    return arPlaceServiceError(res, error, 'Erro ao listar locais AR');
+  }
+});
+
+router.get('/ar-places/:id', authenticatePartner, async (req: Request, res: Response) => {
+  const parsed = arPlaceIdParamSchema.safeParse(req.params);
+  if (!parsed.success) {
+    return res.status(400).json({ success: false, error: parsed.error.issues[0]?.message || 'id inválido' });
+  }
+
+  try {
+    const { partnerId, userId } = (req as any).partnerUser;
+    const row = await getPartnerOwnedHotelArPlaceById(parsed.data.id, { partnerId, userId });
+    return res.json({ success: true, data: serializePartnerArPlace(row) });
+  } catch (error) {
+    return arPlaceServiceError(res, error, 'Erro ao carregar local AR');
+  }
+});
+
+router.put('/ar-places/:id/change-request', authenticatePartner, async (req: Request, res: Response) => {
+  const parsedParams = arPlaceIdParamSchema.safeParse(req.params);
+  if (!parsedParams.success) {
+    return res.status(400).json({ success: false, error: parsedParams.error.issues[0]?.message || 'id inválido' });
+  }
+
+  const parsedBody = partnerArPlaceChangeRequestBodySchema.safeParse(req.body);
+  if (!parsedBody.success) {
+    return res.status(400).json({ success: false, error: parsedBody.error.issues[0]?.message || 'Payload inválido' });
+  }
+
+  try {
+    const { partnerId, userId } = (req as any).partnerUser;
+    const row = await upsertPartnerOwnedHotelArPlaceChangeRequest(parsedParams.data.id, parsedBody.data, { partnerId, userId });
+    return res.json({ success: true, data: serializeArPlaceChangeRequest(row) });
+  } catch (error) {
+    return arPlaceServiceError(res, error, 'Erro ao salvar alteração pendente');
   }
 });
 
