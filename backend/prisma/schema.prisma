@@ -169,6 +169,30 @@ enum financial_transaction_link_type {
   ACCOUNTANT_REVIEW
 }
 
+enum ar_place_type {
+  HOTEL
+  COMMERCE
+  TOURISM
+  CARE
+  PET
+  AIRPORT
+}
+
+enum ar_place_status {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  INACTIVE
+}
+
+enum ar_place_locale {
+  PT_BR
+  EN
+  ES
+  FR
+}
+
 model admins {
   id                          String              @id @default(uuid())
   name                        String
@@ -2379,6 +2403,7 @@ model operational_territories {
   shadow_results       wallet_shadow_results[]
   moto_compliance      moto_passenger_compliance?
   insurance_coverages  operational_insurance_coverages[]
+  ar_places            ar_places[]
   financial_cost_centers         financial_cost_centers[]          @relation("financial_cost_centers_territory")
   financial_recognition_policies financial_recognition_policies[]  @relation("financial_recognition_policies_territory")
   territorial_dataset_versions   territorial_dataset_versions[]    @relation("territorial_dataset_versions_territory")
@@ -3249,6 +3274,51 @@ model commerce_withdrawal_requests {
 
   @@index([commerce_account_id, status], map: "idx_commerce_withdrawals_account")
   @@index([status], map: "idx_commerce_withdrawals_status")
+}
+
+model ar_places {
+  id          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  place_id    String          @unique @db.VarChar(120)
+  name        String          @db.VarChar(255)
+  type        ar_place_type
+  city        String          @db.VarChar(120)
+  state       String          @db.VarChar(2)
+  address     String?
+  latitude    Decimal         @db.Decimal(10, 8)
+  longitude   Decimal         @db.Decimal(11, 8)
+  status      ar_place_status @default(DRAFT)
+  territory_id String?        @db.Uuid
+  created_at  DateTime        @default(now())
+  updated_at  DateTime        @updatedAt
+
+  territory operational_territories? @relation(fields: [territory_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  contents  ar_place_contents[]
+
+  @@index([type], map: "idx_ar_places_type")
+  @@index([status], map: "idx_ar_places_status")
+  @@index([territory_id], map: "idx_ar_places_territory")
+  @@index([city, state], map: "idx_ar_places_city_state")
+  @@map("ar_places")
+}
+
+model ar_place_contents {
+  id           String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ar_place_id  String          @db.Uuid
+  locale       ar_place_locale
+  summary      String?
+  description  String?
+  learn_more   String?
+  useful_info  String?
+  grounding_rule String?
+  boundary_rule  String?
+  created_at   DateTime        @default(now())
+  updated_at   DateTime        @updatedAt
+
+  place ar_places @relation(fields: [ar_place_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([ar_place_id, locale], map: "uq_ar_place_contents_place_locale")
+  @@index([locale], map: "idx_ar_place_contents_locale")
+  @@map("ar_place_contents")
 }
 
 // ─── Equipe do Gestor Territorial ───────────────────────────────────────────

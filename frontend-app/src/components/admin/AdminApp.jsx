@@ -97,6 +97,8 @@ import ManagerHome from "../../pages/admin/ManagerHome";
 import AccountingPortalPage from "../../pages/admin/accounting/AccountingPortalPage";
 import KaviarAiPage from "../../pages/admin/KaviarAiPage";
 import ExecutiveHome from "../../pages/admin/ExecutiveHome";
+import ArPlacesPage from "../../pages/admin/ArPlacesPage";
+import { canAccessArPlaces } from "../../pages/admin/arPlacesPermissions";
 import kaviarLogo from "../../assets/logo-kaviar-full.svg";
 import { useState, useEffect } from 'react';
 
@@ -193,6 +195,7 @@ function AdminHome() {
   const isSuperAdmin = admin?.role === 'SUPER_ADMIN';
   const canAccessFinance = ['SUPER_ADMIN', 'FINANCE'].includes(admin?.role);
   const canAccessOperations = ['SUPER_ADMIN', 'OPERATOR', 'TERRITORIAL_MANAGER', 'TERRITORIAL_OPERATOR'].includes(admin?.role);
+  const canAccessArPlacesMenu = canAccessArPlaces(admin?.role);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchModules, setSearchModules] = useState('');
@@ -446,7 +449,7 @@ function AdminHome() {
       {/* Atalhos de Gerenciamento */}
       <Box sx={{ mb: 4 }}>
         {(() => {
-          const SECTION_COLORS = { 'Operação': '#D97706', 'Pessoas e Território': '#2563EB', 'Comercial': '#059669', 'Financeiro': '#7C3AED', 'Governança e Estratégia': '#DC2626' };
+          const SECTION_COLORS = { 'Operação': '#D97706', 'Pessoas e Território': '#2563EB', 'Comercial': '#059669', 'KAVIAR AR': '#0EA5E9', 'Financeiro': '#7C3AED', 'Governança e Estratégia': '#DC2626' };
           const sections = [
             { section: 'Operação', items: [
               { Icon: DirectionsCar, title: 'Corridas', desc: 'Gestão operacional de corridas', to: '/admin/rides' },
@@ -498,6 +501,9 @@ function AdminHome() {
               ...(isSuperAdmin ? [{ Icon: Storefront, title: 'Comércios — Admin', desc: 'Financeiro, portal e ativações avançadas', to: '/admin/commerce' }] : []),
               ...(isSuperAdmin ? [{ Icon: Public, title: 'Landing de Motoristas', desc: 'Gerenciar cidades e landing de captação', to: '/admin/driver-city-landings' }] : []),
             ]},
+            ...(canAccessArPlacesMenu ? [{ section: 'KAVIAR AR', items: [
+              { Icon: Public, title: 'Locais AR', desc: 'Cadastro administrativo de locais para experiências KAVIAR AR', to: '/admin/ar-places' },
+            ]}] : []),
             { section: 'Financeiro', items: [
               ...(canAccessFinance ? [
                 { Icon: SmartToy, title: 'Chat KAVIAR', desc: 'Assistente operacional — consulta corridas, documentos e finanças.', to: '/admin/chat-kaviar' },
@@ -532,7 +538,7 @@ function AdminHome() {
             <>
               <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', mb: 2, flexWrap: 'wrap' }}>
                 <TextField size="small" placeholder="Buscar módulo..." value={searchModules} onChange={e => setSearchModules(e.target.value)} sx={{ minWidth: 200, '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
-                {['Todos', 'Operação', 'Pessoas e Território', 'Comercial', 'Financeiro', 'Governança e Estratégia'].map(f => {
+                {['Todos', 'Operação', 'Pessoas e Território', 'Comercial', 'KAVIAR AR', 'Financeiro', 'Governança e Estratégia'].map(f => {
                   const chipColor = SECTION_COLORS[f] || '#B8942E';
                   return <Chip key={f} label={f} size="small" onClick={() => setFilterSection(f)} sx={{ fontWeight: 600, bgcolor: filterSection === f ? chipColor : '#fff', color: filterSection === f ? '#fff' : chipColor, border: `1px solid ${chipColor}${filterSection === f ? '' : '40'}`, cursor: 'pointer', '&:hover': { bgcolor: filterSection === f ? chipColor : `${chipColor}10` } }} />;
                 })}
@@ -1136,6 +1142,7 @@ export default function AdminApp() {
           <Route path="/regulatorio" element={<ProtectedAdminRoute requireSuperAdmin><RegulatoryCitiesPage /></ProtectedAdminRoute>} />
           <Route path="/insurance-coverages" element={<ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'TERRITORIAL_MANAGER', 'TERRITORIAL_OPERATOR']}><InsuranceCoveragesPage /></ProtectedAdminRoute>} />
           <Route path="/commerce" element={<ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'TERRITORIAL_MANAGER']}><CommerceAccountsPage /></ProtectedAdminRoute>} />
+          <Route path="/ar-places" element={<ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'TERRITORIAL_MANAGER', 'TERRITORIAL_OPERATOR']}><ArPlacesPage /></ProtectedAdminRoute>} />
           <Route path="/manager-emergency-alerts" element={<ProtectedAdminRoute allowedRoles={['TERRITORIAL_MANAGER', 'SUPER_ADMIN']}><ManagerEmergencyAlerts /></ProtectedAdminRoute>} />
           <Route path="/investidores" element={<ProtectedAdminRoute requireSuperAdmin><InvestorsPage /></ProtectedAdminRoute>} />
           <Route path="/manager-women" element={<ProtectedAdminRoute allowedRoles={['TERRITORIAL_MANAGER', 'SUPER_ADMIN']}><ManagerWomenCoverage /></ProtectedAdminRoute>} />
