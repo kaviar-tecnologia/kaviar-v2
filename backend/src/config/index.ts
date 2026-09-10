@@ -2,6 +2,20 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const defaultDevCorsOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:5174',
+  'http://localhost:4173',
+  'http://localhost:4174',
+];
+
+const frontendOriginsFromEnv = (process.env.FRONTEND_URL || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 export const config = {
   port: process.env.PORT || 3001,
   nodeEnv: process.env.NODE_ENV || 'development',
@@ -74,6 +88,7 @@ export const config = {
   },
 
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
+  devCorsOrigins: Array.from(new Set([...defaultDevCorsOrigins, ...frontendOriginsFromEnv])),
 };
 
 // Validate required environment variables
