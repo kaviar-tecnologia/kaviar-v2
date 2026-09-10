@@ -564,7 +564,16 @@ describe('public ar place endpoint only returns APPROVED', () => {
     const create = await request(app).post('/api/admin/ar/places').send({
       ...basePayload,
       place_id: 'status-approved',
-      content: { locale: 'pt-BR', summary: 'Resumo público' },
+      territory_id: '11111111-1111-4111-8111-111111111111',
+      content: {
+        locale: 'pt-BR',
+        summary: 'Resumo público',
+        description: 'Descrição pública',
+        learn_more: 'Saiba mais',
+        useful_info: 'Info útil',
+        grounding_rule: 'Regra de grounding',
+        boundary_rule: 'Regra de limite',
+      },
     });
     const id = create.body.data.id;
     await request(app).patch(`/api/admin/ar/places/${id}`).send({ status: 'SUBMITTED' });
@@ -574,5 +583,18 @@ describe('public ar place endpoint only returns APPROVED', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.placeId).toBe('status-approved');
     expect(res.body.data.content.locale).toBe('pt-BR');
+    expect(res.body.data.content.summary).toBe('Resumo público');
+    expect(res.body.data.content.description).toBe('Descrição pública');
+    expect(res.body.data.content.learn_more).toBe('Saiba mais');
+    expect(res.body.data.content.useful_info).toBe('Info útil');
+    expect(res.body.data.content.grounding_rule).toBe('Regra de grounding');
+    expect(res.body.data.content.boundary_rule).toBe('Regra de limite');
+    expect(res.body.data.content.id).toBeUndefined();
+    expect(res.body.data.content.created_at).toBeUndefined();
+    expect(res.body.data.content.updated_at).toBeUndefined();
+    expect(res.body.data.territory.name).toBe('Rio');
+    expect(res.body.data.territory.city).toBe('Rio de Janeiro');
+    expect(res.body.data.territory.state).toBe('RJ');
+    expect(res.body.data.territory.id).toBeUndefined();
   });
 });

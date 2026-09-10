@@ -62,6 +62,18 @@ export function serializeArPlaceContent(content: ArPlaceContent) {
   };
 }
 
+function serializePublicArPlaceContent(content: ArPlaceContent) {
+  return {
+    locale: localeToPublicMap[content.locale],
+    summary: content.summary,
+    description: content.description,
+    learn_more: content.learn_more,
+    useful_info: content.useful_info,
+    grounding_rule: content.grounding_rule,
+    boundary_rule: content.boundary_rule,
+  };
+}
+
 export function serializeArPlaceListItem(record: ArPlaceWithRelations) {
   return {
     id: record.id,
@@ -133,12 +145,11 @@ export function serializePublicArPlace(record: ArPlaceWithRelations, locale: 'pt
     longitude: toNumber(record.longitude),
     territory: record.territory
       ? {
-          id: record.territory.id,
           name: record.territory.name,
           city: record.territory.city_name,
           state: record.territory.uf,
         }
       : null,
-    content: preferredContent ? serializeArPlaceContent(preferredContent) : null,
+    content: preferredContent ? serializePublicArPlaceContent(preferredContent) : null,
   };
 }
