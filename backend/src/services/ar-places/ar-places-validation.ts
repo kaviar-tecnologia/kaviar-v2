@@ -1,5 +1,10 @@
 import { ar_place_status, ar_place_type } from '@prisma/client';
 import { z } from 'zod';
+import {
+  normalizeOptionalArPlacePhone,
+  normalizeOptionalInstagramProfileUrl,
+  normalizeOptionalWebsiteUrl,
+} from './ar-place-contact-normalization';
 
 const PLACE_ID_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const TERRITORY_ID_REGEX = /^[A-Za-z0-9_-]+$/;
@@ -20,6 +25,44 @@ const optionalTrimmedString = (max = 2000) =>
 
 const requiredTrimmedString = (max = 255) =>
   z.preprocess((value) => (typeof value === 'string' ? value.trim() : value), z.string().min(1).max(max));
+
+const optionalNormalizedString = (
+  normalizer: (value: string | null | undefined) => string | null,
+  invalidTypeMessage: string,
+) =>
+  z
+    .union([z.string(), z.null(), z.undefined()])
+    .transform((value, ctx) => {
+      if (value === undefined) return undefined;
+      if (value === null) return null;
+      try {
+        return normalizer(value);
+      } catch (error) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: error instanceof Error ? error.message : invalidTypeMessage,
+        });
+        return z.NEVER;
+      }
+    });
+
+const optionalPhoneField = () =>
+  optionalNormalizedString(
+    normalizeOptionalArPlacePhone,
+    'Telefone/WhatsApp inválido',
+  );
+
+const optionalWebsiteField = () =>
+  optionalNormalizedString(
+    normalizeOptionalWebsiteUrl,
+    'Site inválido. Informe uma URL absoluta.',
+  );
+
+const optionalInstagramField = () =>
+  optionalNormalizedString(
+    normalizeOptionalInstagramProfileUrl,
+    'Instagram inválido. Informe uma URL absoluta HTTPS de perfil.',
+  );
 
 export const localeInputSchema = z.enum(['pt-BR', 'en', 'es', 'fr']);
 
@@ -73,6 +116,10 @@ export const arPlaceCreateBodySchema = z.object({
     z.string().regex(/^[A-Z]{2}$/, 'state deve ter duas letras'),
   ),
   address: optionalTrimmedString(500),
+  phone: optionalPhoneField(),
+  whatsapp: optionalPhoneField(),
+  website_url: optionalWebsiteField(),
+  instagram_url: optionalInstagramField(),
   latitude: z.coerce.number().min(-90).max(90),
   longitude: z.coerce.number().min(-180).max(180),
   territory_id: z.preprocess(
@@ -102,6 +149,10 @@ export const arPlacePatchBodySchema = z
       )
       .optional(),
     address: optionalTrimmedString(500),
+    phone: optionalPhoneField(),
+    whatsapp: optionalPhoneField(),
+    website_url: optionalWebsiteField(),
+    instagram_url: optionalInstagramField(),
     latitude: z.coerce.number().min(-90).max(90).optional(),
     longitude: z.coerce.number().min(-180).max(180).optional(),
     territory_id: z.preprocess(

@@ -435,6 +435,10 @@ export async function createAdminArPlace(
         city: body.city,
         state: body.state,
         address: body.address || null,
+        phone: body.phone ?? null,
+        whatsapp: body.whatsapp ?? null,
+        website_url: body.website_url ?? null,
+        instagram_url: body.instagram_url ?? null,
         latitude: body.latitude,
         longitude: body.longitude,
         status: targetStatus,
@@ -501,6 +505,10 @@ export async function updateAdminArPlace(
   if (body.city !== undefined) data.city = body.city;
   if (body.state !== undefined) data.state = body.state;
   if (body.address !== undefined) data.address = body.address;
+  if (body.phone !== undefined) data.phone = body.phone;
+  if (body.whatsapp !== undefined) data.whatsapp = body.whatsapp;
+  if (body.website_url !== undefined) data.website_url = body.website_url;
+  if (body.instagram_url !== undefined) data.instagram_url = body.instagram_url;
   if (body.latitude !== undefined) data.latitude = body.latitude;
   if (body.longitude !== undefined) data.longitude = body.longitude;
   if (body.territory_id !== undefined) data.territory = body.territory_id ? { connect: { id: body.territory_id } } : { disconnect: true };
