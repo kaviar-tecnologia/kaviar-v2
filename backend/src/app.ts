@@ -173,11 +173,7 @@ app.use((req, res, next) => {
     'https://kaviar.com.br',
     'https://www.kaviar.com.br',
     'https://d29p7cirgjqbxl.cloudfront.net',
-    ...(process.env.NODE_ENV !== 'production' ? [
-      'http://localhost:5173',
-      'http://localhost:4173',
-      'http://localhost:4174',
-    ] : []),
+    ...(process.env.NODE_ENV !== 'production' ? config.devCorsOrigins : []),
   ]);
 
   res.header('Vary', 'Origin');
