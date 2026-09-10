@@ -98,7 +98,10 @@ import AccountingPortalPage from "../../pages/admin/accounting/AccountingPortalP
 import KaviarAiPage from "../../pages/admin/KaviarAiPage";
 import ExecutiveHome from "../../pages/admin/ExecutiveHome";
 import ArPlacesPage from "../../pages/admin/ArPlacesPage";
-import { canAccessArPlaces } from "../../pages/admin/arPlacesPermissions";
+import {
+  AR_PLACES_DASHBOARD_CARD,
+  canAccessArPlaces,
+} from "../../pages/admin/arPlacesPermissions";
 import kaviarLogo from "../../assets/logo-kaviar-full.svg";
 import { useState, useEffect } from 'react';
 
@@ -502,7 +505,7 @@ function AdminHome() {
               ...(isSuperAdmin ? [{ Icon: Public, title: 'Landing de Motoristas', desc: 'Gerenciar cidades e landing de captação', to: '/admin/driver-city-landings' }] : []),
             ]},
             ...(canAccessArPlacesMenu ? [{ section: 'KAVIAR AR', items: [
-              { Icon: Public, title: 'Locais AR', desc: 'Cadastro administrativo de locais para experiências KAVIAR AR', to: '/admin/ar-places' },
+              { Icon: Public, title: AR_PLACES_DASHBOARD_CARD.title, desc: AR_PLACES_DASHBOARD_CARD.desc, to: AR_PLACES_DASHBOARD_CARD.to },
             ]}] : []),
             { section: 'Financeiro', items: [
               ...(canAccessFinance ? [
