@@ -1,4 +1,9 @@
 export const AR_PLACES_ALLOWED_ROLES = ['SUPER_ADMIN', 'TERRITORIAL_MANAGER', 'TERRITORIAL_OPERATOR'];
+export const AR_PLACES_DASHBOARD_CARD = {
+  title: 'KAVIAR AR — Locais',
+  desc: 'Acessar locais AR de hotéis, comércios, turismo, CARE, Pet e aeroportos.',
+  to: '/admin/ar-places',
+};
 
 const SUPER_ADMIN_TRANSITIONS = {
   DRAFT: [{ nextStatus: 'SUBMITTED', label: 'Enviar para análise' }],

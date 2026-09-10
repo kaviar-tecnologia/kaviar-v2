@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Container, Typography, Box, Card, CardContent, Grid, Button, CircularProgress, Alert, TextField, MenuItem, Dialog, DialogTitle, DialogContent, DialogActions, Chip } from '@mui/material';
-import { DirectionsCar, Explore, Handshake, Apartment, Description, PersonAdd, AddBusiness, GroupAdd, AccountBalance, Star, Pets, Shield, Storefront, ChatBubble, BarChart } from '@mui/icons-material';
+import { DirectionsCar, Explore, Handshake, Apartment, Description, PersonAdd, AddBusiness, GroupAdd, AccountBalance, Star, Pets, Shield, Storefront, ChatBubble, BarChart, Public } from '@mui/icons-material';
 import { API_BASE_URL } from '../../config/api';
+import { AR_PLACES_DASHBOARD_CARD, canAccessArPlaces } from './arPlacesPermissions';
 
 const GOLD = '#C99A16';
 const GOLD_LIVE = '#E0B324';
@@ -39,6 +40,7 @@ export default function ManagerHome() {
 
   const adminData = localStorage.getItem('kaviar_admin_data');
   const admin = adminData ? JSON.parse(adminData) : null;
+  const canAccessArPlacesCard = canAccessArPlaces(admin?.role);
   const token = localStorage.getItem('kaviar_admin_token');
   const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
 
@@ -296,6 +298,7 @@ export default function ManagerHome() {
             { Icon: AddBusiness, title: 'CRM KAVIAR', desc: 'Leads, prospecção e comércios locais', to: '/admin/crm' },
             { Icon: Description, title: 'Consulta Regulatória Municipal', desc: 'Documento institucional e envio via WhatsApp oficial', to: '/admin/regulatory-consultation' },
             { Icon: Storefront, title: 'Comércios do Território', desc: 'Cadastre, organize e acompanhe os negócios locais', to: '/admin/commerce' },
+            ...(canAccessArPlacesCard ? [{ Icon: Public, title: AR_PLACES_DASHBOARD_CARD.title, desc: AR_PLACES_DASHBOARD_CARD.desc, to: AR_PLACES_DASHBOARD_CARD.to }] : []),
             { Icon: Shield, title: 'KAVIAR para Mulheres', desc: 'Indicadores e acompanhamento territorial', to: '/admin/manager-women' },
             { Icon: Shield, title: 'Alertas do Território', desc: 'Acompanhe alertas de emergência do seu território', to: '/admin/manager-emergency-alerts' },
             { Icon: GroupAdd, title: 'Minha Equipe', desc: 'Cadastro interno de captadores e operadores', to: '/admin/manager-team' },

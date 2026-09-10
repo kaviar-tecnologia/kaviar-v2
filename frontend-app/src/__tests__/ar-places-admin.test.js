@@ -2,15 +2,17 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { canAccessArPlaces } from '../pages/admin/arPlacesPermissions';
+import { AR_PLACES_DASHBOARD_CARD, canAccessArPlaces } from '../pages/admin/arPlacesPermissions';
 
 describe('AdminApp - seção KAVIAR AR e RBAC de rota', () => {
   const src = readFileSync(resolve(__dirname, '../components/admin/AdminApp.jsx'), 'utf8');
+  const managerHomeSrc = readFileSync(resolve(__dirname, '../pages/admin/ManagerHome.jsx'), 'utf8');
+  const operatorHomeSrc = readFileSync(resolve(__dirname, '../pages/admin/OperatorHome.jsx'), 'utf8');
 
   it('expõe seção KAVIAR AR com Locais AR', () => {
     expect(src).toContain("section: 'KAVIAR AR'");
-    expect(src).toContain("title: 'Locais AR'");
-    expect(src).toContain("to: '/admin/ar-places'");
+    expect(src).toContain('AR_PLACES_DASHBOARD_CARD.title');
+    expect(src).toContain('AR_PLACES_DASHBOARD_CARD.to');
   });
 
   it('rota /admin/ar-places permite SUPER_ADMIN, TERRITORIAL_MANAGER, TERRITORIAL_OPERATOR', () => {
@@ -28,6 +30,31 @@ describe('AdminApp - seção KAVIAR AR e RBAC de rota', () => {
     expect(canAccessArPlaces('TERRITORIAL_MANAGER')).toBe(true);
     expect(canAccessArPlaces('TERRITORIAL_OPERATOR')).toBe(true);
     expect(canAccessArPlaces('FINANCE')).toBe(false);
+  });
+
+  it('usa descrição neutra do card para todos os papéis permitidos', () => {
+    expect(AR_PLACES_DASHBOARD_CARD).toMatchObject({
+      title: 'KAVIAR AR — Locais',
+      desc: 'Acessar locais AR de hotéis, comércios, turismo, CARE, Pet e aeroportos.',
+      to: '/admin/ar-places',
+    });
+  });
+
+  it('gestor e operador não renderizam AdminHome na raiz, então precisam do atalho em suas homes', () => {
+    expect(src).toContain("if (admin?.role === 'TERRITORIAL_OPERATOR') return <OperatorHome />;");
+    expect(src).toContain("if (admin?.role === 'TERRITORIAL_MANAGER') return <ManagerHome />;");
+  });
+
+  it('ManagerHome inclui o card de Locais AR para os roles permitidos', () => {
+    expect(managerHomeSrc).toContain('canAccessArPlaces(admin?.role)');
+    expect(managerHomeSrc).toContain('AR_PLACES_DASHBOARD_CARD.title');
+    expect(managerHomeSrc).toContain('AR_PLACES_DASHBOARD_CARD.to');
+  });
+
+  it('OperatorHome inclui o card de Locais AR para os roles permitidos', () => {
+    expect(operatorHomeSrc).toContain('canAccessArPlaces(admin?.role)');
+    expect(operatorHomeSrc).toContain('AR_PLACES_DASHBOARD_CARD.title');
+    expect(operatorHomeSrc).toContain('AR_PLACES_DASHBOARD_CARD.to');
   });
 });
 
