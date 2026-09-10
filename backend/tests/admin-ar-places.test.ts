@@ -8,6 +8,7 @@ const { authState, scopeState, dbState, prismaMock } = vi.hoisted(() => {
   const territories = new Map<string, { id: string; name: string; city_name: string | null; uf: string | null }>([
     ['11111111-1111-4111-8111-111111111111', { id: '11111111-1111-4111-8111-111111111111', name: 'Rio', city_name: 'Rio de Janeiro', uf: 'RJ' }],
     ['22222222-2222-4222-8222-222222222222', { id: '22222222-2222-4222-8222-222222222222', name: 'Niterói', city_name: 'Niterói', uf: 'RJ' }],
+    ['territory-rj-city', { id: 'territory-rj-city', name: 'Rio', city_name: 'Rio de Janeiro', uf: 'RJ' }],
   ]);
 
   const state = {
@@ -240,6 +241,21 @@ describe('admin ar places CRUD and RBAC', () => {
     });
     expect(res.status).toBe(201);
     expect(res.body.data.status).toBe('DRAFT');
+  });
+
+  it('aceita territory_id textual compatível com operational_territories.id', async () => {
+    const res = await request(app).post('/api/admin/ar/places').send({
+      place_id: 'hotel-territorio-textual',
+      name: 'Hotel Território Textual',
+      type: 'HOTEL',
+      city: 'Rio de Janeiro',
+      state: 'RJ',
+      latitude: -22.91,
+      longitude: -43.18,
+      territory_id: 'territory-rj-city',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.data.territory_id).toBe('territory-rj-city');
   });
 
   it('SUPER_ADMIN não pode criar diretamente como APPROVED', async () => {
