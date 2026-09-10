@@ -652,13 +652,20 @@ export async function approveAdminArPlaceChangeRequest(
         throw new ArPlaceServiceError(409, 'Alteração pendente já foi revisada ou invalidada');
       }
 
-      await tx.ar_places.update({
-        where: { id: placeId },
+      const updatedPlace = await tx.ar_places.updateMany({
+        where: {
+          id: placeId,
+          owner_partner_id: request.partner_id,
+          type: 'HOTEL',
+        },
         data: {
           name: request.name,
           address: request.address,
         },
       });
+      if (updatedPlace.count !== 1) {
+        throw new ArPlaceServiceError(409, 'Ownership do local mudou ou o local deixou de ser HOTEL antes da publicação da alteração.');
+      }
 
       await tx.ar_place_contents.upsert({
         where: {

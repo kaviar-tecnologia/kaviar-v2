@@ -20,6 +20,7 @@ const { authState, scopeState, dbState, prismaMock, nextUuid } = vi.hoisted(() =
     changeRequests: [] as any[],
     territories,
     partners,
+    failConditionalApproveWrite: false,
   };
 
   function now() {
@@ -61,14 +62,14 @@ const { authState, scopeState, dbState, prismaMock, nextUuid } = vi.hoisted(() =
     return true;
   }
 
-  function project(record: any, select: any) {
+  function project(record: any, select: any, stateRef = state) {
     if (!select) return { ...record };
     const projected: Record<string, unknown> = {};
     Object.entries(select).forEach(([key, value]) => {
       if (!value) return;
       if (key === 'partner' && typeof value === 'object') {
-        const partner = state.partners.get(record.partner_id) || null;
-        projected.partner = partner ? project(partner, (value as any).select) : null;
+        const partner = stateRef.partners.get(record.partner_id) || null;
+        projected.partner = partner ? project(partner, (value as any).select, stateRef) : null;
         return;
       }
       projected[key] = record[key];
@@ -76,8 +77,8 @@ const { authState, scopeState, dbState, prismaMock, nextUuid } = vi.hoisted(() =
     return projected;
   }
 
-  function hydrateChangeRequests(placeId: string, include: any) {
-    let rows = state.changeRequests.filter((item) => item.ar_place_id === placeId);
+  function hydrateChangeRequests(placeId: string, include: any, stateRef = state) {
+    let rows = stateRef.changeRequests.filter((item) => item.ar_place_id === placeId);
     if (include?.where) {
       rows = rows.filter((item) => filterChangeRequest(item, include.where));
     }
@@ -85,186 +86,221 @@ const { authState, scopeState, dbState, prismaMock, nextUuid } = vi.hoisted(() =
       rows = rows.slice().sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     }
     if (include?.take) rows = rows.slice(0, include.take);
-    return rows.map((item) => project(item, include.select));
+    return rows.map((item) => project(item, include.select, stateRef));
   }
 
-  function hydratePlace(place: any, include: any) {
+  function hydratePlace(place: any, include: any, stateRef = state) {
     const base = { ...place };
     if (include?.territory) {
-      base.territory = place.territory_id ? state.territories.get(place.territory_id) || null : null;
+      base.territory = place.territory_id ? stateRef.territories.get(place.territory_id) || null : null;
     }
     if (include?.owner_partner) {
-      const partner = place.owner_partner_id ? state.partners.get(place.owner_partner_id) || null : null;
-      base.owner_partner = partner ? project(partner, include.owner_partner.select) : null;
+      const partner = place.owner_partner_id ? stateRef.partners.get(place.owner_partner_id) || null : null;
+      base.owner_partner = partner ? project(partner, include.owner_partner.select, stateRef) : null;
     }
     if (include?.contents) {
-      let contents = state.contents.filter((item) => item.ar_place_id === place.id);
+      let contents = stateRef.contents.filter((item) => item.ar_place_id === place.id);
       if (include.contents.where?.locale) {
         contents = contents.filter((item) => item.locale === include.contents.where.locale);
       }
       if (include.contents.orderBy?.created_at === 'asc') {
         contents = contents.slice().sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
       }
-      base.contents = contents.slice(0, include.contents.take || contents.length).map((item) => project(item, include.contents.select));
+      base.contents = contents.slice(0, include.contents.take || contents.length).map((item) => project(item, include.contents.select, stateRef));
     }
     if (include?.change_requests) {
-      base.change_requests = hydrateChangeRequests(place.id, include.change_requests);
+      base.change_requests = hydrateChangeRequests(place.id, include.change_requests, stateRef);
     }
     return base;
   }
 
-  const prismaMock: any = {
-    ar_places: {
-      findMany: vi.fn(async ({ where, include }: any) =>
-        state.places.filter((place) => filterPlace(place, where)).map((place) => hydratePlace(place, include)),
-      ),
-      findFirst: vi.fn(async ({ where, include, select }: any) => {
-        const found = state.places.find((place) => filterPlace(place, where));
-        if (!found) return null;
-        if (select) {
-          const selected: Record<string, unknown> = {};
-          Object.keys(select).forEach((key) => {
-            if (!select[key]) return;
-            if (key === 'change_requests') {
-              selected.change_requests = hydrateChangeRequests(found.id, select.change_requests);
-              return;
-            }
-            selected[key] = found[key];
-          });
-          return selected;
-        }
-        return hydratePlace(found, include);
-      }),
-      findUnique: vi.fn(async ({ where, include }: any) => {
-        const found = state.places.find((place) => place.id === where.id);
-        if (!found) return null;
-        return hydratePlace(found, include);
-      }),
-      create: vi.fn(async ({ data, include }: any) => {
-        const created = {
-          id: nextUuid(state.places.length + 1),
-          place_id: data.place_id,
-          name: data.name,
-          type: data.type,
-          city: data.city,
-          state: data.state,
-          address: data.address ?? null,
-          latitude: data.latitude,
-          longitude: data.longitude,
-          status: data.status ?? 'DRAFT',
-          territory_id: data.territory_id ?? null,
-          owner_partner_id: data.owner_partner_id ?? null,
-          created_at: now(),
-          updated_at: now(),
-        };
-        state.places.push(created);
-        if (data.contents?.create) {
-          state.contents.push({
-            id: nextUuid(1000 + state.contents.length + 1),
-            ar_place_id: created.id,
-            ...data.contents.create,
+  function createRuntime(stateRef: typeof state) {
+    return {
+      ar_places: {
+        findMany: vi.fn(async ({ where, include }: any) =>
+          stateRef.places.filter((place) => filterPlace(place, where)).map((place) => hydratePlace(place, include, stateRef)),
+        ),
+        findFirst: vi.fn(async ({ where, include, select }: any) => {
+          const found = stateRef.places.find((place) => filterPlace(place, where));
+          if (!found) return null;
+          if (select) {
+            const selected: Record<string, unknown> = {};
+            Object.keys(select).forEach((key) => {
+              if (!select[key]) return;
+              if (key === 'change_requests') {
+                selected.change_requests = hydrateChangeRequests(found.id, select.change_requests, stateRef);
+                return;
+              }
+              selected[key] = found[key];
+            });
+            return selected;
+          }
+          return hydratePlace(found, include, stateRef);
+        }),
+        findUnique: vi.fn(async ({ where, include }: any) => {
+          const found = stateRef.places.find((place) => place.id === where.id);
+          if (!found) return null;
+          return hydratePlace(found, include, stateRef);
+        }),
+        create: vi.fn(async ({ data, include }: any) => {
+          const created = {
+            id: nextUuid(stateRef.places.length + 1),
+            place_id: data.place_id,
+            name: data.name,
+            type: data.type,
+            city: data.city,
+            state: data.state,
+            address: data.address ?? null,
+            latitude: data.latitude,
+            longitude: data.longitude,
+            status: data.status ?? 'DRAFT',
+            territory_id: data.territory_id ?? null,
+            owner_partner_id: data.owner_partner_id ?? null,
             created_at: now(),
             updated_at: now(),
+          };
+          stateRef.places.push(created);
+          if (data.contents?.create) {
+            stateRef.contents.push({
+              id: nextUuid(1000 + stateRef.contents.length + 1),
+              ar_place_id: created.id,
+              ...data.contents.create,
+              created_at: now(),
+              updated_at: now(),
+            });
+          }
+          return hydratePlace(created, include, stateRef);
+        }),
+        update: vi.fn(async ({ where, data }: any) => {
+          const index = stateRef.places.findIndex((item) => item.id === where.id);
+          if (index === -1) throw new Error('not found');
+          const current = stateRef.places[index];
+          const next = {
+            ...current,
+            ...data,
+            territory_id: data.territory
+              ? data.territory.disconnect
+                ? null
+                : data.territory.connect.id
+              : current.territory_id,
+            owner_partner_id: data.owner_partner
+              ? data.owner_partner.disconnect
+                ? null
+                : data.owner_partner.connect.id
+              : current.owner_partner_id,
+            updated_at: now(),
+          };
+          delete next.territory;
+          delete next.owner_partner;
+          stateRef.places[index] = next;
+          return { ...next };
+        }),
+        updateMany: vi.fn(async ({ where, data }: any) => {
+          if (stateRef.failConditionalApproveWrite && where?.owner_partner_id && where?.type === 'HOTEL') {
+            return { count: 0 };
+          }
+          let count = 0;
+          stateRef.places = stateRef.places.map((item) => {
+            if (!filterPlace(item, where)) return item;
+            count += 1;
+            const next = {
+              ...item,
+              ...data,
+              updated_at: now(),
+            };
+            delete next.territory;
+            delete next.owner_partner;
+            return next;
           });
-        }
-        return hydratePlace(created, include);
-      }),
-      update: vi.fn(async ({ where, data }: any) => {
-        const index = state.places.findIndex((item) => item.id === where.id);
-        if (index === -1) throw new Error('not found');
-        const current = state.places[index];
-        const next = {
-          ...current,
-          ...data,
-          territory_id: data.territory
-            ? data.territory.disconnect
-              ? null
-              : data.territory.connect.id
-            : current.territory_id,
-          owner_partner_id: data.owner_partner
-            ? data.owner_partner.disconnect
-              ? null
-              : data.owner_partner.connect.id
-            : current.owner_partner_id,
-          updated_at: now(),
-        };
-        delete next.territory;
-        delete next.owner_partner;
-        state.places[index] = next;
-        return { ...next };
-      }),
-    },
-    ar_place_contents: {
-      upsert: vi.fn(async ({ where, update, create }: any) => {
-        const key = where.ar_place_id_locale;
-        const index = state.contents.findIndex((item) => item.ar_place_id === key.ar_place_id && item.locale === key.locale);
-        if (index >= 0) {
-          state.contents[index] = { ...state.contents[index], ...update, updated_at: now() };
-          return { ...state.contents[index] };
-        }
-        const created = {
-          id: nextUuid(2000 + state.contents.length + 1),
-          ...create,
-          ar_place_id: key.ar_place_id,
-          created_at: now(),
-          updated_at: now(),
-        };
-        state.contents.push(created);
-        return created;
-      }),
-    },
-    ar_place_partner_change_requests: {
-      findFirst: vi.fn(async ({ where, select }: any) => {
-        const found = state.changeRequests.find((item) => filterChangeRequest(item, where));
-        if (!found) return null;
-        return project(found, select);
-      }),
-      create: vi.fn(async ({ data, select }: any) => {
-        const created = {
-          id: nextUuid(3000 + state.changeRequests.length + 1),
-          ...data,
-          reviewed_by_admin_id: null,
-          reviewed_at: null,
-          rejection_reason: null,
-          created_at: now(),
-          updated_at: now(),
-        };
-        state.changeRequests.push(created);
-        return project(created, select);
-      }),
-      update: vi.fn(async ({ where, data, select }: any) => {
-        const index = state.changeRequests.findIndex((item) => item.id === where.id);
-        if (index === -1) throw new Error('not found');
-        state.changeRequests[index] = { ...state.changeRequests[index], ...data, updated_at: now() };
-        return project(state.changeRequests[index], select);
-      }),
-      updateMany: vi.fn(async ({ where, data }: any) => {
-        let count = 0;
-        state.changeRequests = state.changeRequests.map((item) => {
-          if (!filterChangeRequest(item, where)) return item;
-          count += 1;
-          return { ...item, ...data, updated_at: now() };
-        });
-        return { count };
-      }),
-    },
-    territorial_partners: {
-      findUnique: vi.fn(async ({ where, select }: any) => {
-        const partner = state.partners.get(where.id) || null;
-        if (!partner) return null;
-        return select ? project(partner, select) : clone(partner);
-      }),
-    },
-    operational_territories: {
-      findUnique: vi.fn(async ({ where }: any) => state.territories.get(where.id) || null),
-    },
+          return { count };
+        }),
+      },
+      ar_place_contents: {
+        upsert: vi.fn(async ({ where, update, create }: any) => {
+          const key = where.ar_place_id_locale;
+          const index = stateRef.contents.findIndex((item) => item.ar_place_id === key.ar_place_id && item.locale === key.locale);
+          if (index >= 0) {
+            stateRef.contents[index] = { ...stateRef.contents[index], ...update, updated_at: now() };
+            return { ...stateRef.contents[index] };
+          }
+          const created = {
+            id: nextUuid(2000 + stateRef.contents.length + 1),
+            ...create,
+            ar_place_id: key.ar_place_id,
+            created_at: now(),
+            updated_at: now(),
+          };
+          stateRef.contents.push(created);
+          return created;
+        }),
+      },
+      ar_place_partner_change_requests: {
+        findFirst: vi.fn(async ({ where, select }: any) => {
+          const found = stateRef.changeRequests.find((item) => filterChangeRequest(item, where));
+          if (!found) return null;
+          return project(found, select, stateRef);
+        }),
+        create: vi.fn(async ({ data, select }: any) => {
+          const created = {
+            id: nextUuid(3000 + stateRef.changeRequests.length + 1),
+            ...data,
+            reviewed_by_admin_id: null,
+            reviewed_at: null,
+            rejection_reason: null,
+            created_at: now(),
+            updated_at: now(),
+          };
+          stateRef.changeRequests.push(created);
+          return project(created, select, stateRef);
+        }),
+        update: vi.fn(async ({ where, data, select }: any) => {
+          const index = stateRef.changeRequests.findIndex((item) => item.id === where.id);
+          if (index === -1) throw new Error('not found');
+          stateRef.changeRequests[index] = { ...stateRef.changeRequests[index], ...data, updated_at: now() };
+          return project(stateRef.changeRequests[index], select, stateRef);
+        }),
+        updateMany: vi.fn(async ({ where, data }: any) => {
+          let count = 0;
+          stateRef.changeRequests = stateRef.changeRequests.map((item) => {
+            if (!filterChangeRequest(item, where)) return item;
+            count += 1;
+            return { ...item, ...data, updated_at: now() };
+          });
+          return { count };
+        }),
+      },
+      territorial_partners: {
+        findUnique: vi.fn(async ({ where, select }: any) => {
+          const partner = stateRef.partners.get(where.id) || null;
+          if (!partner) return null;
+          return select ? project(partner, select, stateRef) : clone(partner);
+        }),
+      },
+      operational_territories: {
+        findUnique: vi.fn(async ({ where }: any) => stateRef.territories.get(where.id) || null),
+      },
+    };
+  }
+
+  const runtime = createRuntime(state);
+
+  const prismaMock: any = {
+    ...runtime,
     $transaction: vi.fn(async (callback: any) => {
-      const tx = {
-        ar_places: prismaMock.ar_places,
-        ar_place_contents: prismaMock.ar_place_contents,
-        ar_place_partner_change_requests: prismaMock.ar_place_partner_change_requests,
+      const draftState = {
+        places: clone(state.places),
+        contents: clone(state.contents),
+        changeRequests: clone(state.changeRequests),
+        territories: state.territories,
+        partners: state.partners,
+        failConditionalApproveWrite: state.failConditionalApproveWrite,
       };
-      return callback(tx);
+      const tx = createRuntime(draftState);
+      const result = await callback(tx);
+      state.places = draftState.places;
+      state.contents = draftState.contents;
+      state.changeRequests = draftState.changeRequests;
+      return result;
     }),
   };
 
@@ -378,6 +414,7 @@ beforeEach(() => {
   dbState.places = [];
   dbState.contents = [];
   dbState.changeRequests = [];
+  dbState.failConditionalApproveWrite = false;
 });
 
 describe('AR partner ownership + hotel self-service', () => {
@@ -599,6 +636,32 @@ describe('AR partner ownership + hotel self-service', () => {
       `/api/admin/ar/places/${place.id}/change-request/${pending.body.data.id}/approve`,
     );
     expect(approveAgain.status).toBe(409);
+  });
+
+  it('rollbacka o claim APPROVED se o write condicional do place falhar com count=0', async () => {
+    const place = seedApprovedHotel({ place_id: 'hotel-approve-race' });
+
+    const pending = await request(app)
+      .put(`/api/partner/ar-places/${place.id}/change-request`)
+      .set('Authorization', `Bearer ${partnerToken('partner-a')}`)
+      .send({ name: 'Hotel Race', summary: 'Resumo race' });
+    expect(pending.status).toBe(200);
+
+    dbState.failConditionalApproveWrite = true;
+
+    const approve = await request(app).post(
+      `/api/admin/ar/places/${place.id}/change-request/${pending.body.data.id}/approve`,
+    );
+    expect(approve.status).toBe(409);
+
+    expect(dbState.changeRequests).toHaveLength(1);
+    expect(dbState.changeRequests[0].status).toBe('PENDING');
+    expect(dbState.changeRequests[0].reviewed_at).toBeNull();
+
+    const publicRes = await request(app).get(`/api/public/ar/places/by-place-id/${place.place_id}?locale=pt-BR`);
+    expect(publicRes.status).toBe(200);
+    expect(publicRes.body.data.name).toBe('Hotel Publicado');
+    expect(publicRes.body.data.content.summary).toBe('Resumo publicado');
   });
 
   it('somente SUPER_ADMIN aprova ou rejeita pendências', async () => {
