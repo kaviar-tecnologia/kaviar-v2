@@ -19,7 +19,7 @@ CREATE TABLE "ar_places" (
     "latitude" DECIMAL(10,8) NOT NULL,
     "longitude" DECIMAL(11,8) NOT NULL,
     "status" "ar_place_status" NOT NULL DEFAULT 'DRAFT',
-    "territory_id" UUID,
+    "territory_id" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
     CONSTRAINT "ar_places_pkey" PRIMARY KEY ("id")

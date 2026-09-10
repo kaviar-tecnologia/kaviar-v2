@@ -2,6 +2,7 @@ import { ar_place_status, ar_place_type } from '@prisma/client';
 import { z } from 'zod';
 
 const PLACE_ID_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const TERRITORY_ID_REGEX = /^[A-Za-z0-9_-]+$/;
 
 const optionalTrimmedString = (max = 2000) =>
   z.preprocess(
@@ -38,7 +39,10 @@ export const arPlaceListQuerySchema = z.object({
     (value) => (typeof value === 'string' ? value.trim().toUpperCase() : value),
     z.string().regex(/^[A-Z]{2}$/, 'state deve ter duas letras').optional(),
   ),
-  territoryId: z.string().uuid('territoryId inválido').optional(),
+  territoryId: z.preprocess(
+    (value) => (typeof value === 'string' ? value.trim() : value),
+    z.string().min(1).max(120).regex(TERRITORY_ID_REGEX, 'territoryId inválido').optional(),
+  ),
 });
 
 export const arPlaceContentInputSchema = z.object({
@@ -66,7 +70,10 @@ export const arPlaceCreateBodySchema = z.object({
   address: optionalTrimmedString(500),
   latitude: z.coerce.number().min(-90).max(90),
   longitude: z.coerce.number().min(-180).max(180),
-  territory_id: z.string().uuid('territory_id inválido').nullable().optional(),
+  territory_id: z.preprocess(
+    (value) => (typeof value === 'string' ? value.trim() : value),
+    z.string().min(1).max(120).regex(TERRITORY_ID_REGEX, 'territory_id inválido').nullable().optional(),
+  ),
   status: z.nativeEnum(ar_place_status).optional(),
   content: arPlaceContentInputSchema.optional(),
 });
@@ -88,7 +95,10 @@ export const arPlacePatchBodySchema = z
     address: optionalTrimmedString(500),
     latitude: z.coerce.number().min(-90).max(90).optional(),
     longitude: z.coerce.number().min(-180).max(180).optional(),
-    territory_id: z.string().uuid('territory_id inválido').nullable().optional(),
+    territory_id: z.preprocess(
+      (value) => (typeof value === 'string' ? value.trim() : value),
+      z.string().min(1).max(120).regex(TERRITORY_ID_REGEX, 'territory_id inválido').nullable().optional(),
+    ),
     status: z.nativeEnum(ar_place_status).optional(),
     content: arPlaceContentInputSchema.optional(),
   })

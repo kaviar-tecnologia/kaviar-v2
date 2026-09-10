@@ -31,6 +31,17 @@ O workflow:
 
 Nao troque o `DATABASE_URL` do backend runtime para uma credencial admin.
 
+## Banco novo vs banco existente
+
+- Banco existente (incluindo producao): continuar usando `prisma migrate deploy` no fluxo oficial acima.
+- Banco novo/vazio (DR, cold start local, CI bootstrap): usar `backend/scripts/bootstrap-new-database.sh`.
+
+Baseline atual para bootstrap de banco novo:
+
+- `backend/prisma/bootstrap/20260910_current`
+
+As migrations historicas em `backend/prisma/migrations` permanecem preservadas e nao devem ser reescritas para esse fluxo.
+
 ## Validacoes antes de rodar
 
 Confirmar que o backend atual esta saudavel:

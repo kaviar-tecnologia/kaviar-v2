@@ -2,8 +2,23 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BOOTSTRAP_DIR="$ROOT_DIR/prisma/bootstrap/20260712_current"
+BOOTSTRAP_ROOT_DIR="$ROOT_DIR/prisma/bootstrap"
+BOOTSTRAP_VERSION="${BOOTSTRAP_VERSION:-}"
 DRIFT_ONLY="${DRIFT_ONLY:-0}"
+
+fail() {
+  echo "ABORT: $*" >&2
+  exit 1
+}
+
+if [[ -n "$BOOTSTRAP_VERSION" ]]; then
+  BOOTSTRAP_DIR="$BOOTSTRAP_ROOT_DIR/$BOOTSTRAP_VERSION"
+else
+  BOOTSTRAP_DIR="$(find "$BOOTSTRAP_ROOT_DIR" -mindepth 1 -maxdepth 1 -type d -name '*_current' | sort | tail -n 1)"
+fi
+
+[[ -n "${BOOTSTRAP_DIR:-}" ]] || fail "no bootstrap baseline directory found under $BOOTSTRAP_ROOT_DIR"
+[[ -d "$BOOTSTRAP_DIR" ]] || fail "bootstrap baseline directory not found: $BOOTSTRAP_DIR"
 
 PRE_SQL="$BOOTSTRAP_DIR/pre-bootstrap.sql"
 BASELINE_SQL="$BOOTSTRAP_DIR/baseline.sql"
@@ -12,10 +27,10 @@ CUTOFF_FILE="$BOOTSTRAP_DIR/migration-cutoff.txt"
 SCHEMA_FILE="$ROOT_DIR/prisma/schema.prisma"
 MIGRATIONS_DIR="$ROOT_DIR/prisma/migrations"
 
-fail() {
-  echo "ABORT: $*" >&2
-  exit 1
-}
+[[ -f "$PRE_SQL" ]] || fail "missing pre-bootstrap.sql in $BOOTSTRAP_DIR"
+[[ -f "$BASELINE_SQL" ]] || fail "missing baseline.sql in $BOOTSTRAP_DIR"
+[[ -f "$POST_SQL" ]] || fail "missing post-prisma-objects.sql in $BOOTSTRAP_DIR"
+[[ -f "$CUTOFF_FILE" ]] || fail "missing migration-cutoff.txt in $BOOTSTRAP_DIR"
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || fail "missing command: $1"
@@ -97,6 +112,32 @@ allowed_drop_views = {
   "neighborhood_stats",
 }
 
+allowed_uuid_text_defaults = {
+  "annual_incentive_ledger",
+  "annual_incentive_payout_attempts",
+  "annual_incentive_payout_outbox",
+  "annual_incentive_payouts",
+  "annual_incentive_request_allocations",
+  "annual_incentive_requests",
+  "annual_incentive_webhook_events",
+  "development_jobs",
+  "driver_badge_events",
+  "driver_payout_destinations",
+  "financial_obligation_allocations",
+  "financial_obligations",
+  "financial_payee_destinations",
+  "financial_payees",
+  "financial_payment_audit",
+  "financial_payout_attempts",
+  "financial_payout_outbox",
+  "financial_payouts",
+  "financial_provider_events",
+  "financial_recurring_obligations",
+  "knowledge_articles",
+}
+
+allowed_add_foreign_keys = set()
+
 statement_re = re.compile(r"(?ms)(.+?;)")
 raw_statements = [s.strip() for s in statement_re.findall(text) if s.strip()]
 
@@ -147,6 +188,30 @@ for stmt in raw_statements:
       recognized.append(("DROP VIEW", obj))
       continue
     unknown.append(("DROP VIEW", obj, clean))
+    continue
+
+  m = re.match(
+    r'^ALTER TABLE\s+"([^"]+)"\s+ALTER COLUMN\s+"id"\s+SET DEFAULT\s+gen_random_uuid\(\)::text(?:,\s*ALTER COLUMN\s+"correlation_id"\s+SET DEFAULT\s+gen_random_uuid\(\)::text)?\s*;$',
+    clean,
+    re.I | re.S,
+  )
+  if m:
+    table_name = m.group(1)
+    if table_name in allowed_uuid_text_defaults:
+      recognized.append(("ALTER DEFAULT UUID::TEXT", table_name))
+      continue
+    unknown.append(("ALTER DEFAULT UUID::TEXT", table_name, clean))
+    continue
+
+  m = re.match(r'^ALTER TABLE\s+"([^"]+)"\s+ADD CONSTRAINT\s+"([^"]+)"\s+FOREIGN KEY\s*\(.+\)\s+REFERENCES\s+"[^"]+"\s*\("?[^\)"]+"?\).+;$', clean, re.I | re.S)
+  if m:
+    table_name = m.group(1)
+    con_name = m.group(2)
+    key = f"{table_name}.{con_name}"
+    if key in allowed_add_foreign_keys:
+      recognized.append(("ADD FOREIGN KEY", key))
+      continue
+    unknown.append(("ADD FOREIGN KEY", key, clean))
     continue
 
   unknown.append(("UNKNOWN STATEMENT", "n/a", clean))

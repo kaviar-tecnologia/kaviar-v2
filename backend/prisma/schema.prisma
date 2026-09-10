@@ -3287,7 +3287,7 @@ model ar_places {
   latitude    Decimal         @db.Decimal(10, 8)
   longitude   Decimal         @db.Decimal(11, 8)
   status      ar_place_status @default(DRAFT)
-  territory_id String?        @db.Uuid
+  territory_id String?
   created_at  DateTime        @default(now())
   updated_at  DateTime        @updatedAt
 
