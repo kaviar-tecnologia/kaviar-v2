@@ -28,7 +28,6 @@ import { KAVIAR_SOLUTION_IMAGES } from '../../src/components/kaviarSolutionAsset
 
 const POLL_INTERVAL = 5000;
 const POLL_BACKOFF = [5000, 8000, 12000, 15000]; // normal, 1 fail, 2 fails, 3+ fails
-const LOCATION_INTERVAL = 15000;
 
 const haversineKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
   const R = 6371;
@@ -127,7 +126,6 @@ export default function DriverOnline() {
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const [gpsEnabled, setGpsEnabled] = useState(true);
   const [locationPermission, setLocationPermission] = useState(true);
-  const [backgroundDenied, setBackgroundDenied] = useState(false);
   const [currentCoords, setCurrentCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [offerCountdown, setOfferCountdown] = useState('');
   const [soundMuted, setSoundMuted] = useState(false);
@@ -135,13 +133,11 @@ export default function DriverOnline() {
   const [showLocationDisclosure, setShowLocationDisclosure] = useState(false);
   const pollFailsRef = useRef(0);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
-  const locationRef = useRef<NodeJS.Timeout | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
   const soundMutedRef = useRef(false);
   const expiredOfferIdsRef = useRef<Set<string>>(new Set());
   const pendingOfferRef = useRef<RideOffer | null>(null);
   const isOnlineRef = useRef(false);
-  const backgroundDeniedRef = useRef(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   // Drawer state
@@ -151,7 +147,6 @@ export default function DriverOnline() {
 
   // Keep refs in sync for AppState callback
   useEffect(() => { isOnlineRef.current = isOnline; }, [isOnline]);
-  useEffect(() => { backgroundDeniedRef.current = backgroundDenied; }, [backgroundDenied]);
   useEffect(() => { soundMutedRef.current = soundMuted; }, [soundMuted]);
 
   // No reconnection auto-start here — AppState resume handler already covers this
@@ -218,22 +213,7 @@ export default function DriverOnline() {
       if (pollRef.current) clearTimeout(pollRef.current);
       startPolling();
 
-      // 4. Reinicia location foreground se background negado
-      if (backgroundDeniedRef.current) {
-        if (locationRef.current) clearInterval(locationRef.current);
-        const send = async () => {
-          try {
-            const loc = await Location.getCurrentPositionAsync({});
-            setCurrentCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
-            await driverApi.sendLocation(loc.coords.latitude, loc.coords.longitude);
-          } catch (e) {
-            console.warn('[Driver] sendLocation failed:', e);
-          }
-        };
-        locationRef.current = setInterval(send, LOCATION_INTERVAL);
-      }
-
-      // 5. Verifica corrida ativa e GPS
+      // 4. Verifica corrida ativa e GPS
       checkCurrentRide();
       checkGps();
       checkLocationPermission();
@@ -417,30 +397,15 @@ export default function DriverOnline() {
 
   const startLocationTracking = async (): Promise<boolean> => {
     try {
-      const mode = await startBackgroundLocation(ENV.API_URL);
+      await startBackgroundLocation(ENV.API_URL);
       setLocationPermission(true);
-      if (mode === 'foreground') {
-        // Background denied — fallback to foreground polling
-        setBackgroundDenied(true);
-        const send = async () => {
-          try {
-            const loc = await Location.getCurrentPositionAsync({});
-            setCurrentCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
-            await driverApi.sendLocation(loc.coords.latitude, loc.coords.longitude);
-          } catch (e) {
-            console.warn('[Driver] sendLocation failed:', e);
-          }
-        };
-        await send();
-        locationRef.current = setInterval(send, LOCATION_INTERVAL);
-      } else {
-        setBackgroundDenied(false);
-        // Get initial coords for UI
-        try {
-          const loc = await Location.getCurrentPositionAsync({});
-          setCurrentCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
-        } catch (e) { console.warn('[Driver] initial coords failed:', e); }
-      }
+
+      // Get initial coords for UI
+      try {
+        const loc = await Location.getCurrentPositionAsync({});
+        setCurrentCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+      } catch (e) { console.warn('[Driver] initial coords failed:', e); }
+
       return true;
     } catch (e: any) {
       if (e.message === 'FOREGROUND_DENIED') {
@@ -455,9 +420,7 @@ export default function DriverOnline() {
 
   const stopAll = () => {
     if (pollRef.current) clearTimeout(pollRef.current);
-    if (locationRef.current) clearInterval(locationRef.current);
     pollRef.current = null;
-    locationRef.current = null;
     pollFailsRef.current = 0;
     setPollUnstable(false);
     stopBackgroundLocation().catch(() => {});
@@ -697,12 +660,6 @@ export default function DriverOnline() {
           <Text style={styles.bannerText}>Saldo baixo. <Text style={{ fontWeight: '700' }}>Adicionar saldo</Text></Text>
         </TouchableOpacity>
       )}
-      {backgroundDenied && isOnline && (
-        <View style={styles.banner}>
-          <Ionicons name="navigate-outline" size={16} color={COLORS.warning} />
-          <Text style={styles.bannerText}>Localização em segundo plano negada. Ao usar Waze ou minimizar, sua posição não será atualizada.</Text>
-        </View>
-      )}
       {pollUnstable && isOnline && (
         <View style={[styles.banner, { backgroundColor: '#2a2a45' }]}>
           <Ionicons name="cloud-offline-outline" size={16} color={COLORS.textSecondary} />
@@ -905,7 +862,7 @@ export default function DriverOnline() {
             <Text style={styles.disclosureTitle}>Uso da sua localização</Text>
             <Text style={styles.disclosureText}>
               O KAVIAR Motorista usa sua localização precisa para mostrar sua posição no mapa, encontrar passageiros próximos, receber corridas e atualizar sua posição durante o serviço.{'\n\n'}
-              Quando você estiver online ou em uma corrida, o app também poderá acessar sua localização em segundo plano para manter sua posição atualizada mesmo quando o app não estiver aberto na tela.{'\n\n'}
+              Enquanto você estiver online ou em uma corrida, o KAVIAR continuará compartilhando sua localização mesmo se você minimizar o aplicativo. O Android mostrará uma notificação enquanto esse recurso estiver ativo.{'\n\n'}
               Você pode interromper esse uso a qualquer momento ficando offline.
             </Text>
             <View style={styles.disclosureActions}>

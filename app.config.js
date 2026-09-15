@@ -10,8 +10,8 @@ const config = {
     adaptiveIcon: './assets/adaptive-icon-driver.png',
     scheme: 'kaviar-driver',
     projectId: '01426c18-feb5-44f2-94f1-dab900d8bc85',
-    version: '1.12.2',
-    versionCode: 7,
+    version: '1.12.3',
+    versionCode: 8,
   },
   passenger: {
     name: 'Kaviar Passageiro',
@@ -37,10 +37,9 @@ const basePermissions = [
   'VIBRATE',
 ];
 
-// Motorista: precisa de background location para tracking durante corrida
+// Motorista: usa serviço de localização em primeiro plano enquanto estiver online
 const driverPermissions = [
   ...basePermissions,
-  'ACCESS_BACKGROUND_LOCATION',
   'FOREGROUND_SERVICE',
   'FOREGROUND_SERVICE_LOCATION',
   'POST_NOTIFICATIONS',
@@ -69,7 +68,7 @@ export default {
       bundleIdentifier: variantConfig.package,
       infoPlist: {
         NSLocationAlwaysAndWhenInUseUsageDescription: variant === 'driver'
-          ? 'O Kaviar Motorista usa sua localização em segundo plano para enviar sua posição ao passageiro durante a corrida.'
+          ? 'O Kaviar Motorista usa sua localização enquanto você estiver online ou em uma corrida para manter sua posição atualizada e permitir o acompanhamento da corrida.'
           : undefined,
         NSLocationWhenInUseUsageDescription: variant === 'driver'
           ? 'O Kaviar Motorista usa sua localização para encontrar corridas próximas e navegar até o passageiro.'
@@ -114,12 +113,12 @@ export default {
         'expo-location',
         {
           locationAlwaysAndWhenInUsePermission: variant === 'driver'
-            ? 'O Kaviar Motorista usa sua localização em segundo plano para enviar sua posição ao passageiro durante a corrida.'
+            ? 'O Kaviar Motorista usa sua localização enquanto você estiver online ou em uma corrida para manter sua posição atualizada e permitir o acompanhamento da corrida.'
             : undefined,
           locationWhenInUsePermission: variant === 'driver'
             ? 'O Kaviar Motorista usa sua localização para encontrar corridas próximas.'
             : 'O Kaviar usa sua localização para encontrar motoristas próximos.',
-          isAndroidBackgroundLocationEnabled: variant === 'driver',
+          isAndroidBackgroundLocationEnabled: false,
           isAndroidForegroundServiceEnabled: variant === 'driver',
         }
       ],

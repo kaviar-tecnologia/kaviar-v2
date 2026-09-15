@@ -80,10 +80,10 @@ Primeira versão de preparação para publicação na Google Play, com melhorias
 
 Use a conta de teste de motorista informada no Play Console.
 
-Após login, acesse a tela principal do motorista, coloque o motorista online e verifique a função de disponibilidade. A localização é usada para manter o motorista disponível, receber corridas próximas e atualizar sua posição durante corridas.
+Após login, acesse a tela principal do motorista e toque em **Ficar Online**. O KAVIAR apresenta primeiro a explicação **Uso da sua localização** e somente depois solicita a permissão de localização do Android.
 
-A localização em segundo plano é usada somente quando o motorista está online ou em corrida. Ela não é usada para publicidade, venda de dados ou rastreamento fora do contexto operacional da plataforma.
+Enquanto o motorista escolhe permanecer online, o Android mantém a atualização de localização por meio de um serviço em primeiro plano com notificação persistente. A localização é usada para disponibilidade operacional, corridas próximas e acompanhamento de corridas.
 
-### Justificativa curta de localização em segundo plano
+### Uso de localização no Motorista
 
-O KAVIAR Motorista usa localização em segundo plano para manter o motorista disponível quando está online, receber corridas próximas e permitir acompanhamento da corrida pelo passageiro e pela operação. Sem essa permissão, a função principal do app de mobilidade não funciona corretamente.
+O KAVIAR Motorista não solicita `ACCESS_BACKGROUND_LOCATION`. A continuidade da atualização de posição com o aplicativo minimizado é realizada por um serviço de localização em primeiro plano (`FOREGROUND_SERVICE_LOCATION`) com notificação persistente ao usuário.

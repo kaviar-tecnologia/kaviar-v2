@@ -52,14 +52,14 @@
       <li>Melhorar nossos serviços.</li>
     </ul>
 
-    <h2>3. Localização em segundo plano (Motorista)</h2>
-    <p>O app Kaviar Motorista coleta localização em segundo plano <strong>apenas quando o motorista está online e disponível para corridas</strong>. A finalidade é:</p>
+    <h2>3. Localização do Motorista</h2>
+    <p>O app Kaviar Motorista usa a localização <strong>somente enquanto o motorista escolhe permanecer online ou durante uma corrida</strong>. A finalidade é:</p>
     <ul>
       <li>Permitir que o motorista receba solicitações de corrida de passageiros próximos.</li>
       <li>Enviar a posição do motorista ao passageiro durante a corrida para acompanhamento em tempo real.</li>
       <li>Calcular distância e tempo estimado de chegada.</li>
     </ul>
-    <p>O motorista pode desativar a coleta a qualquer momento ficando offline no app. O app Passageiro coleta localização <strong>apenas em primeiro plano</strong>, durante a solicitação e acompanhamento de corridas.</p>
+    <p>No Android, enquanto o motorista estiver online, o KAVIAR utiliza um serviço de localização em primeiro plano, identificado por uma notificação persistente. Isso permite continuar atualizando a localização quando o aplicativo estiver minimizado, sem solicitar a permissão <code>ACCESS_BACKGROUND_LOCATION</code>. O motorista pode interromper esse compartilhamento a qualquer momento ficando offline no app. O app Passageiro usa localização durante a solicitação e o acompanhamento de corridas.</p>
 
     <h2>4. Pagamentos</h2>
     <p>As corridas são pagas diretamente entre passageiro e motorista (dinheiro ou Pix). A KAVIAR não processa pagamentos de corridas. Os créditos operacionais do motorista na plataforma são gerenciados internamente para controle de disponibilidade do serviço.</p>
