@@ -173,19 +173,22 @@ Passageiro:
 
 Motorista:
 
-1. Localizacao foreground
+1. Localizacao precisa
 - `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`.
+- Utilizada quando o motorista escolhe permanecer online ou durante uma corrida.
 
-2. Localizacao background
-- `ACCESS_BACKGROUND_LOCATION`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_LOCATION`.
+2. Servico de localizacao em primeiro plano
+- `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_LOCATION`.
+- Mantem a atualizacao de posicao quando o app esta minimizado, com notificacao persistente do Android.
+- A versao 1.12.3 (8) nao solicita `ACCESS_BACKGROUND_LOCATION`.
 
 3. Notificacoes
 - `POST_NOTIFICATIONS`.
 
-Risco alto de revisao (Motorista):
-- Background location exige justificativa muito clara em Play Console (video/telas/policy coerente).
-- Mensagens in-app e descricao na loja devem refletir exatamente o uso (online/corrida/tracking).
-- Justificativa recomendada: usada somente quando o motorista está online, disponível ou em corrida, para despacho, acompanhamento da corrida, segurança operacional e atualização de rota/status.
+Atencao na revisao (Motorista):
+- O disclosure interno deve aparecer imediatamente antes da solicitacao da permissao de localizacao do Android.
+- Mensagens in-app, politica de privacidade e Play Console devem refletir o uso quando o motorista esta online ou em corrida.
+- Nao declarar `ACCESS_BACKGROUND_LOCATION` para a versao 1.12.3 (8), pois essa permissao nao existe no AAB.
 
 ---
 

@@ -59,8 +59,8 @@ Necessário para Play Console:
 - [ ] Conta de teste de motorista aprovado
 - [ ] Conta de teste de motorista pendente, se necessário
 - [ ] Data Safety preenchido
-- [ ] Declaração de localização em segundo plano
-- [ ] Vídeo ou instrução demonstrando uso da localização, se solicitado pelo Play Console
+- [ ] Confirmar que o AAB do Motorista não declara `ACCESS_BACKGROUND_LOCATION`
+- [ ] Vídeo ou instrução demonstrando o fluxo de localização, se solicitado pelo Play Console
 
 ## Páginas legais públicas
 
@@ -97,11 +97,12 @@ Passageiro:
 Motorista:
 
 - Localização precisa
-- Localização em segundo plano
-- Serviço de localização em primeiro plano
+- Serviço de localização em primeiro plano (`FOREGROUND_SERVICE_LOCATION`)
 - Câmera
 - Armazenamento/imagem
 - Notificações
+
+O Motorista não solicita `ACCESS_BACKGROUND_LOCATION`.
 
 ## Contas de teste para revisão
 
@@ -119,8 +120,10 @@ Incluir no Play Console:
 1. Baixe o app.
 2. Faça login com a conta de teste informada.
 3. No Passageiro, acesse a tela inicial, solicitação de corrida e mensagens.
-4. No Motorista, faça login com conta aprovada, fique online e veja a função de localização usada para disponibilidade e corridas.
-5. A localização em segundo plano é usada somente quando o motorista está online ou em corrida.
+4. No Motorista, faça login com conta aprovada e toque em **Ficar Online**.
+5. Verifique que o aviso **Uso da sua localização** aparece antes da solicitação de permissão do Android.
+6. Após autorizar, verifique o status online e a notificação persistente de compartilhamento de localização.
+7. O app não solicita `ACCESS_BACKGROUND_LOCATION` nem a opção **Permitir o tempo todo**.
 
 ## Antes de produção pública
 

@@ -27,50 +27,16 @@ Mapeamento para preencher o formulário "Data safety" no Google Play Console.
 - Comunicação entre usuários ocorre por canais oficiais do KAVIAR (cards de status operacional)
 
 ### Localização
-- Coletada apenas em **primeiro plano** (foreground)
-- Finalidade: encontrar motoristas próximos e acompanhar corrida
+- Utilizada quando o motorista escolhe permanecer **online** ou durante uma corrida.
+- Quando o app é minimizado, o Android mantém as atualizações por meio de um **serviço de localização em primeiro plano** com notificação persistente.
+- Ao ficar offline, o serviço de localização é interrompido.
+- A versão 1.12.3 (8) não solicita `ACCESS_BACKGROUND_LOCATION`.
 
 ---
 
-## Kaviar Motorista
+## Uso de localização com o app minimizado (Motorista)
 
-### Dados coletados
-
-| Tipo de dado | Coletado | Compartilhado | Finalidade | Obrigatório |
-|---|---|---|---|---|
-| Nome | ✅ | Com passageiro (durante corrida) | Funcionalidade do app | Sim |
-| E-mail | ✅ | Não | Gerenciamento de conta | Sim |
-| Telefone | ✅ | Não | Gerenciamento de conta, segurança, comunicação operacional | Sim |
-| Documentos (CNH) | ✅ | Não | Verificação de identidade | Sim |
-| Dados do veículo | ✅ | Não | Funcionalidade do app | Sim |
-| Chave Pix | ✅ | Não | Pagamentos/ganhos do motorista | Não (opcional) |
-| Localização aproximada | ✅ | Com passageiro (durante corrida) | Funcionalidade do app | Sim |
-| Localização precisa | ✅ | Com passageiro (durante corrida) | Funcionalidade do app | Sim |
-| Histórico de corridas | ✅ | Não | Funcionalidade do app | Sim |
-| Device ID / tokens push | ✅ | Não | Funcionalidade do app (notificações) | Sim |
-
-### Práticas de segurança
-- ✅ Dados criptografados em trânsito (TLS)
-- ✅ Usuário pode solicitar exclusão de dados
-- ❌ Dados NÃO são vendidos a terceiros
-
-### Telefone
-- Coletado para cadastro, segurança, suporte e comunicação operacional (notificações WhatsApp server-side)
-- **Não é compartilhado diretamente** entre motorista e passageiro pelo app
-- Comunicação entre usuários ocorre por canais oficiais do KAVIAR (cards de status operacional)
-
-### Localização
-- Coletada em **primeiro plano e segundo plano** (foreground + background)
-- Finalidade: receber corridas quando disponível, enviar posição ao passageiro durante corrida
-- O motorista controla: fica offline = para de coletar
-
----
-
-## Justificativa para localização em segundo plano (Motorista)
-
-Texto para o formulário do Google Play:
-
-> O Kaviar Motorista é um app de transporte comunitário. A localização em segundo plano é necessária para que o motorista possa receber solicitações de corrida de passageiros próximos enquanto o app está minimizado. Sem essa permissão, o motorista perderia corridas quando o app não estiver em primeiro plano. A coleta é ativada apenas quando o motorista escolhe ficar "online" e pode ser desativada a qualquer momento ficando "offline". A localização também é usada para enviar a posição do motorista ao passageiro em tempo real durante a corrida.
+> O KAVIAR Motorista usa localização quando o motorista escolhe permanecer online ou durante uma corrida. Com o app minimizado, as atualizações continuam por `FOREGROUND_SERVICE_LOCATION`, com notificação persistente. A versão 1.12.3 (8) não solicita `ACCESS_BACKGROUND_LOCATION` nem a opção "Permitir o tempo todo".
 
 ---
 
@@ -79,10 +45,11 @@ Texto para o formulário do Google Play:
 ### Motorista
 | Permissão | Justificativa |
 |-----------|---------------|
-| ACCESS_FINE_LOCATION | Posição precisa para matching com passageiros |
-| ACCESS_BACKGROUND_LOCATION | Receber corridas com app minimizado |
-| FOREGROUND_SERVICE_LOCATION | Manter rastreamento durante corrida ativa |
-| POST_NOTIFICATIONS | Alertar sobre novas corridas |
+| ACCESS_FINE_LOCATION | Posição precisa para matching e acompanhamento da corrida |
+| ACCESS_COARSE_LOCATION | Localização aproximada quando aplicável |
+| FOREGROUND_SERVICE | Executar o serviço visível enquanto o motorista permanece online |
+| FOREGROUND_SERVICE_LOCATION | Manter atualizações de localização com notificação persistente |
+| POST_NOTIFICATIONS | Alertas de corrida e notificações operacionais |
 | INTERNET | Comunicação com servidor |
 | VIBRATE | Alerta tátil de nova corrida |
 
@@ -95,6 +62,7 @@ Texto para o formulário do Google Play:
 | VIBRATE | Alerta tátil |
 
 ### Permissões NÃO solicitadas
+- ❌ `ACCESS_BACKGROUND_LOCATION`
 - ❌ Contatos
 - ❌ SMS
 - ❌ Chamadas telefônicas
@@ -109,27 +77,18 @@ Texto para o formulário do Google Play:
 
 **Permissões de badge** (Samsung, Huawei, Oppo, etc.) — injetadas automaticamente pelo expo-notifications para badge count. Inofensivas.
 
-### Permissões reais do APK Motorista (v1.11.20)
-```
-ACCESS_BACKGROUND_LOCATION
+### Permissões de localização verificadas no AAB Motorista v1.12.3 (8)
+
+```text
 ACCESS_COARSE_LOCATION
 ACCESS_FINE_LOCATION
 FOREGROUND_SERVICE
 FOREGROUND_SERVICE_LOCATION
-INTERNET
-MODIFY_AUDIO_SETTINGS
-POST_NOTIFICATIONS
-READ_EXTERNAL_STORAGE
-RECORD_AUDIO
-SYSTEM_ALERT_WINDOW
-VIBRATE
-WRITE_EXTERNAL_STORAGE
-ACCESS_NETWORK_STATE
-ACCESS_WIFI_STATE
-CAMERA
-RECEIVE_BOOT_COMPLETED
-WAKE_LOCK
 ```
+
+O AAB v1.12.3 (8) foi verificado e **não contém `ACCESS_BACKGROUND_LOCATION`**.
+
+A lista acima registra somente as permissões relacionadas à localização e ao serviço de localização.
 
 ### Permissões reais do APK Passageiro (v1.11.3)
 ```
@@ -151,4 +110,4 @@ WAKE_LOCK
 FOREGROUND_SERVICE
 ```
 
-**Nota:** O passageiro NÃO tem `ACCESS_BACKGROUND_LOCATION` ✅
+**Nota:** Na versão atual, nem o Motorista v1.12.3 (8) nem o Passageiro solicitam `ACCESS_BACKGROUND_LOCATION` ✅

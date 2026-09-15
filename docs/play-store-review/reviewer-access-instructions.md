@@ -45,25 +45,30 @@ Fluxo para teste:
 
 1. Abrir o app KAVIAR Motorista.
 2. Fazer login com a conta de teste.
-3. Permitir localização quando solicitado.
-4. Acessar a tela principal do motorista.
-5. Colocar o motorista online.
-6. Verificar que o app usa localização para manter disponibilidade operacional.
-7. Verificar notificações, status online e telas de viagem, se disponíveis.
+3. Acessar a tela principal do motorista.
+4. Tocar em **Ficar Online**.
+5. Verificar que o KAVIAR apresenta primeiro a tela **Uso da sua localização**.
+6. Tocar em **Continuar** e, somente então, conceder a permissão de localização solicitada pelo Android.
+7. Verificar que o motorista fica online e que o Android exibe a notificação persistente **Kaviar Motorista — Compartilhando localização**.
+8. Verificar notificações, status online e telas de viagem, se disponíveis.
 
-## Localização em segundo plano no Motorista
+## Localização no Motorista
 
-O KAVIAR Motorista usa localização em segundo plano somente quando o motorista está online ou em corrida.
+O KAVIAR Motorista usa localização quando o próprio motorista escolhe permanecer online ou durante uma corrida.
 
-Essa permissão é necessária para:
+No Android, quando o motorista permanece online, a atualização de posição é executada por um **serviço de localização em primeiro plano (foreground service)**, identificado por uma notificação persistente.
 
-- manter o motorista disponível na plataforma;
+O app não solicita `ACCESS_BACKGROUND_LOCATION` e não solicita ao usuário a opção **Permitir o tempo todo**.
+
+A localização é utilizada para:
+
+- manter o motorista operacionalmente disponível;
 - receber corridas próximas;
-- atualizar posição durante a corrida;
+- atualizar a posição durante a corrida;
 - permitir acompanhamento pelo passageiro;
 - apoiar segurança e suporte operacional.
 
-A localização em segundo plano não é usada para publicidade, venda de dados ou rastreamento fora do contexto operacional da plataforma.
+A localização não é usada para publicidade, venda de dados ou rastreamento fora do contexto operacional da plataforma.
 
 ## Observações para o Play Console
 

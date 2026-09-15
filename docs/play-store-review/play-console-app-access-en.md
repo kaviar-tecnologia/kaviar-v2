@@ -45,25 +45,30 @@ Test flow:
 
 1. Open the KAVIAR Driver app.
 2. Sign in with the provided test account.
-3. Allow location permission when requested.
-4. Open the main driver screen.
-5. Set the driver status to online.
-6. Verify that location is used to keep the driver operationally available.
-7. Check notifications, online status, and ride screens if available.
+3. Open the main driver screen.
+4. Tap **Go Online**.
+5. Verify that KAVIAR first displays the in-app **Location Usage** disclosure.
+6. Tap **Continue** and only then grant the Android location permission.
+7. Verify that the driver becomes online and Android displays the persistent **Kaviar Motorista — Compartilhando localização** notification.
+8. Check notifications, online status, and ride screens if available.
 
-## Background location usage in KAVIAR Driver
+## Location usage in KAVIAR Driver
 
-KAVIAR Driver uses background location only when the driver is online or during a ride.
+KAVIAR Driver uses location when the driver explicitly chooses to remain online or during a ride.
 
-This permission is required to:
+On Android, while the driver remains online, location updates are performed through a **foreground location service** with a persistent notification.
 
-- keep the driver available on the platform;
+The app does not request `ACCESS_BACKGROUND_LOCATION` and does not ask the user to select **Allow all the time**.
+
+Location is used to:
+
+- keep the driver operationally available;
 - receive nearby ride requests;
 - update the driver's position during a ride;
-- allow the passenger to follow the ride progress;
+- allow the passenger to follow ride progress;
 - support safety and operational support.
 
-Background location is not used for advertising, selling data, or tracking outside the operational context of the mobility platform.
+Location is not used for advertising, selling data, or tracking outside the operational context of the mobility platform.
 
 ## Google Play Console notes
 

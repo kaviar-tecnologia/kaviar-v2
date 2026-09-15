@@ -1,4 +1,4 @@
-# KAVIAR Motorista - Declaração de Localização em Segundo Plano
+# KAVIAR Motorista - Uso de Localização no Android
 
 ## App
 
@@ -8,66 +8,88 @@ KAVIAR Motorista
 
 com.kaviar.driver
 
+## Versão
+
+- Version name: 1.12.3
+- Version code: 8
+
 ## Permissões relacionadas
+
+O KAVIAR Motorista utiliza:
 
 - android.permission.ACCESS_FINE_LOCATION
 - android.permission.ACCESS_COARSE_LOCATION
-- android.permission.ACCESS_BACKGROUND_LOCATION
+- android.permission.FOREGROUND_SERVICE
 - android.permission.FOREGROUND_SERVICE_LOCATION
 
-## Funcionalidade principal que exige localização
+O aplicativo **não solicita**:
 
-A localização em segundo plano é usada para manter o motorista disponível na plataforma enquanto ele está online e apto a receber viagens.
+- android.permission.ACCESS_BACKGROUND_LOCATION
 
-Sem essa permissão, o app não consegue executar corretamente sua função principal: conectar passageiros a motoristas próximos, acompanhar corridas aceitas e manter a operação de mobilidade funcionando com segurança.
+## Funcionalidade principal que utiliza localização
+
+A localização é necessária para conectar passageiros a motoristas próximos, manter a posição operacional do motorista atualizada e permitir o acompanhamento de uma corrida.
+
+O uso é iniciado somente depois que o próprio motorista escolhe **Ficar Online**.
+
+Antes da solicitação da permissão de localização do Android, o aplicativo apresenta uma explicação dentro do KAVIAR informando como e por que a localização será utilizada.
 
 ## Quando a localização é usada
 
-A localização é usada quando:
+A localização é utilizada quando:
 
-1. O motorista entra no app e fica online.
-2. O motorista está disponível para receber chamadas de corrida.
+1. O motorista escolhe ficar online.
+2. O motorista está disponível para receber solicitações de corrida.
 3. O motorista aceita uma corrida.
 4. A corrida está em andamento.
-5. O sistema precisa atualizar posição operacional para cálculo de rota, proximidade e acompanhamento.
+5. A posição precisa ser atualizada para proximidade, rota e acompanhamento operacional.
 
-## Por que não basta localização apenas em primeiro plano
+Quando o motorista escolhe ficar offline, o serviço de localização é interrompido.
 
-O motorista pode estar com o app aberto, minimizado ou com a tela bloqueada enquanto está online, aguardando chamada ou realizando uma corrida.
+## Funcionamento com o aplicativo minimizado
 
-Se a localização funcionar apenas enquanto a tela do app está aberta, a plataforma pode:
+Enquanto o motorista permanece online, o Android executa um **serviço de localização em primeiro plano (foreground service)**.
 
-- deixar de mostrar o motorista como disponível;
-- deixar de enviar corridas próximas;
-- perder atualização de posição durante a corrida;
-- prejudicar o acompanhamento pelo passageiro;
-- prejudicar segurança e suporte operacional.
+Esse serviço exibe uma notificação persistente ao usuário:
+
+**Kaviar Motorista — Compartilhando localização**
+
+Isso permite que a posição continue sendo atualizada quando o aplicativo estiver minimizado, sem solicitar a permissão `ACCESS_BACKGROUND_LOCATION`.
+
+O uso permanece visível ao motorista por meio da notificação do Android e pode ser interrompido ficando offline no aplicativo.
 
 ## Benefício para o usuário
 
 Para o passageiro:
 
-- encontrar motoristas próximos;
+- localizar motoristas próximos;
 - acompanhar a chegada do motorista;
-- acompanhar o andamento da corrida;
-- ter mais segurança durante a viagem.
+- acompanhar uma corrida aceita;
+- melhorar estimativas de distância e tempo.
 
 Para o motorista:
 
-- receber chamadas de corrida compatíveis com sua localização;
-- manter-se disponível enquanto está online;
-- executar corridas sem perder rastreamento operacional.
+- receber solicitações compatíveis com sua localização;
+- permanecer disponível enquanto escolhe ficar online;
+- continuar uma corrida sem perder a atualização operacional ao minimizar o aplicativo.
 
 ## Limites de uso
 
-A localização em segundo plano não é usada para publicidade, venda de dados, rastreamento fora do contexto operacional da plataforma ou finalidade não relacionada à mobilidade.
+A localização não é utilizada para publicidade, venda de dados ou rastreamento sem relação com a operação de mobilidade.
 
-A localização é usada apenas para funcionamento da corrida, disponibilidade do motorista, cálculo operacional, segurança e suporte.
+O motorista controla o início e o término do compartilhamento por meio dos estados **Online** e **Offline** do aplicativo.
 
-## Texto curto para o Play Console
+## Fluxo apresentado ao revisor
 
-O KAVIAR Motorista usa localização em segundo plano para manter o motorista disponível quando está online, receber corridas próximas e permitir acompanhamento da corrida pelo passageiro e pela operação. Sem essa permissão, a função principal do app de mobilidade não funciona corretamente.
+1. Autenticar no KAVIAR Motorista.
+2. Tocar em **Ficar Online**.
+3. O KAVIAR apresenta a tela **Uso da sua localização**.
+4. O motorista toca em **Continuar**.
+5. Somente então o Android apresenta a solicitação de permissão de localização.
+6. Após a autorização, o motorista fica online.
+7. O Android exibe a notificação persistente **Kaviar Motorista — Compartilhando localização**.
+8. O aplicativo não solicita a opção **Permitir o tempo todo** e não solicita `ACCESS_BACKGROUND_LOCATION`.
 
-## Texto para tela de explicação ao usuário
+## Texto curto para revisão
 
-O KAVIAR Motorista usa sua localização enquanto você está online ou em corrida para encontrar passageiros próximos, atualizar sua posição durante o trajeto e manter a operação segura. A localização em segundo plano é necessária para que você continue recebendo chamadas e para que a corrida seja acompanhada mesmo com a tela bloqueada ou o app em segundo plano.
+O KAVIAR Motorista usa a localização quando o motorista escolhe permanecer online ou durante uma corrida. No Android, a continuidade da atualização de posição com o aplicativo minimizado é realizada por um serviço de localização em primeiro plano com notificação persistente. A versão 1.12.3 não solicita `ACCESS_BACKGROUND_LOCATION`.
