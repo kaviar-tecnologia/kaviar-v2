@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
@@ -74,6 +74,7 @@ export default function DriverMunicipalRegularization() {
   const [statusData, setStatusData] = useState<any>(null);
   const [docsByType, setDocsByType] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
+  const [showLocationDisclosure, setShowLocationDisclosure] = useState(false);
 
   const statusKey = (statusData?.municipalStatus || 'NOT_STARTED') as string;
   const statusMeta = STATUS_META[statusKey] || { label: statusKey, color: '#1F2937', bg: '#F3F4F6' };
@@ -141,7 +142,8 @@ export default function DriverMunicipalRegularization() {
           setDetectingLocation(false);
         }
       } else {
-        await detectWithCurrentLocation();
+        setDetectingLocation(false);
+        setShowLocationDisclosure(true);
       }
     };
 
@@ -373,11 +375,113 @@ export default function DriverMunicipalRegularization() {
           <Text style={styles.finishBtnText}>Continuar cadastro</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Prominent Disclosure - localização para regularização municipal */}
+      <Modal
+        visible={showLocationDisclosure}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowLocationDisclosure(false)}
+      >
+        <View style={styles.locationDisclosureOverlay}>
+          <View style={styles.locationDisclosureCard}>
+            <Ionicons name="location-outline" size={36} color={COLORS.primary} />
+
+            <Text style={styles.locationDisclosureTitle}>
+              Uso da sua localização
+            </Text>
+
+            <Text style={styles.locationDisclosureText}>
+              O KAVIAR Motorista coleta sua localização precisa para identificar sua cidade e verificar as exigências de regularização municipal aplicáveis ao seu território de atuação.{'\n\n'}
+              Ao tocar em "Continuar", o Android solicitará sua permissão para acessar a localização.
+            </Text>
+
+            <View style={styles.locationDisclosureActions}>
+              <TouchableOpacity
+                style={[styles.locationDisclosureButton, styles.locationDisclosureSecondary]}
+                onPress={() => setShowLocationDisclosure(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Agora não"
+              >
+                <Text style={styles.locationDisclosureSecondaryText}>Agora não</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.locationDisclosureButton, styles.locationDisclosurePrimary]}
+                onPress={() => {
+                  setShowLocationDisclosure(false);
+                  void detectWithCurrentLocation();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Continuar"
+              >
+                <Text style={styles.locationDisclosurePrimaryText}>Continuar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  locationDisclosureOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  locationDisclosureCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+  },
+  locationDisclosureTitle: {
+    marginTop: 12,
+    marginBottom: 12,
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#111827',
+    textAlign: 'center',
+  },
+  locationDisclosureText: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#4B5563',
+  },
+  locationDisclosureActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+  },
+  locationDisclosureButton: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  locationDisclosureSecondary: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  locationDisclosurePrimary: {
+    backgroundColor: COLORS.primary,
+  },
+  locationDisclosureSecondaryText: {
+    color: COLORS.primary,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  locationDisclosurePrimaryText: {
+    color: '#111827',
+    fontSize: 15,
+    fontWeight: '800',
+  },
   container: { flex: 1, backgroundColor: COLORS.background },
   content: { padding: 16, paddingBottom: 40 },
   title: { fontSize: 24, fontWeight: '800', color: COLORS.textPrimary },

@@ -86,9 +86,12 @@ export default function CompleteRide() {
   // Map layout hack: force native redraw on Android
   const [mapPadding, setMapPadding] = useState(1);
 
+  // Prominent Disclosure - localização durante a corrida
+  const [showLocationDisclosure, setShowLocationDisclosure] = useState(false);
+
   useEffect(() => {
     loadRide();
-    startMapTracking();
+    prepareMapTracking();
     startPolling();
     if (params.rideId) setActiveRideId(params.rideId).catch(() => {});
     return () => {
@@ -236,17 +239,35 @@ export default function CompleteRide() {
     } finally { setFetching(false); }
   };
 
+  const beginMapTracking = async () => {
+    locationSubRef.current = await Location.watchPositionAsync(
+      { accuracy: Location.Accuracy.High, distanceInterval: 20, timeInterval: LOCATION_INTERVAL },
+      (loc) => {
+        const { latitude: lat, longitude: lng } = loc.coords;
+        setDriverLocation({ lat, lng });
+      }
+    );
+  };
+
+  const prepareMapTracking = async () => {
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status === 'granted') {
+        await beginMapTracking();
+        return;
+      }
+      setShowLocationDisclosure(true);
+    } catch (e) {
+      console.warn('[CompleteRide] prepareMapTracking failed:', e);
+      setShowLocationDisclosure(true);
+    }
+  };
+
   const startMapTracking = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') return;
-      locationSubRef.current = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, distanceInterval: 20, timeInterval: LOCATION_INTERVAL },
-        (loc) => {
-          const { latitude: lat, longitude: lng } = loc.coords;
-          setDriverLocation({ lat, lng });
-        }
-      );
+      await beginMapTracking();
     } catch (e) {
       console.warn('[CompleteRide] startMapTracking failed:', e);
     }
@@ -817,6 +838,57 @@ export default function CompleteRide() {
         )}
       </View>
 
+      {/* Prominent Disclosure - localização durante a corrida */}
+      <Modal
+        visible={showLocationDisclosure}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowLocationDisclosure(false)}
+      >
+        <View style={st.modalOverlay}>
+          <View style={st.modalCard}>
+            <Ionicons
+              name="location-outline"
+              size={36}
+              color={COLORS.accent}
+              style={{ alignSelf: 'center', marginBottom: 10 }}
+            />
+
+            <Text style={[st.modalTitle, { textAlign: 'center' }]}>
+              Uso da sua localização
+            </Text>
+
+            <Text style={st.locationDisclosureText}>
+              O KAVIAR Motorista coleta sua localização precisa durante a corrida para mostrar sua posição no mapa, acompanhar o deslocamento e manter as informações da viagem atualizadas.{'\n\n'}
+              Ao tocar em "Continuar", o Android solicitará sua permissão para acessar a localização.
+            </Text>
+
+            <View style={st.locationDisclosureActions}>
+              <TouchableOpacity
+                style={[st.locationDisclosureButton, st.locationDisclosureSecondary]}
+                onPress={() => setShowLocationDisclosure(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Agora não"
+              >
+                <Text style={st.locationDisclosureSecondaryText}>Agora não</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[st.locationDisclosureButton, st.locationDisclosurePrimary]}
+                onPress={() => {
+                  setShowLocationDisclosure(false);
+                  void startMapTracking();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Continuar"
+              >
+                <Text style={st.locationDisclosurePrimaryText}>Continuar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={showRideMessageModal} transparent animationType="fade" onRequestClose={() => setShowRideMessageModal(false)}>
         <View style={st.modalOverlay}>
           <View style={st.modalCard}>
@@ -948,6 +1020,42 @@ const st = StyleSheet.create({
   // B3
   cancelLink: { alignItems: 'center', marginTop: 12, paddingVertical: 8 },
   cancelLinkText: { fontSize: 14, color: COLORS.danger, fontWeight: '500' },
+  locationDisclosureText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: COLORS.textSecondary,
+    marginTop: 8,
+  },
+  locationDisclosureActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  locationDisclosureButton: {
+    flex: 1,
+    paddingVertical: 13,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  locationDisclosureSecondary: {
+    borderWidth: 1,
+    borderColor: COLORS.accent,
+  },
+  locationDisclosurePrimary: {
+    backgroundColor: COLORS.accent,
+  },
+  locationDisclosureSecondaryText: {
+    color: COLORS.accent,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  locationDisclosurePrimaryText: {
+    color: COLORS.background,
+    fontSize: 14,
+    fontWeight: '700',
+  },
   modalOverlay: { flex: 1, backgroundColor: COLORS.overlay, justifyContent: 'center', alignItems: 'center', padding: 24 },
   modalCard: { backgroundColor: COLORS.surface, borderRadius: 16, padding: 24, width: '100%', maxWidth: 340, borderWidth: 1, borderColor: COLORS.border },
   modalTitle: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 4 },

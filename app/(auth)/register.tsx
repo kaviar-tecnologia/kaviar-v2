@@ -50,6 +50,7 @@ export default function Register() {
   const [documentCpf, setDocumentCpf] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
+  const [showLocationDisclosure, setShowLocationDisclosure] = useState(false);
   
   // Dados do veículo
   const [vehicleColor, setVehicleColor] = useState('');
@@ -115,12 +116,12 @@ export default function Register() {
     setStep(3);
   };
 
-  // Passo 2: Solicitar localização
+  // Passo 3: exibir disclosure imediatamente antes da permissão de localização
   useEffect(() => {
-    if (step === 3) {
-      requestLocation();
+    if (step === 3 && !location) {
+      setShowLocationDisclosure(true);
     }
-  }, [step]);
+  }, [step, location]);
 
   const requestLocation = async () => {
     try {
@@ -132,7 +133,7 @@ export default function Register() {
           'Localização Obrigatória',
           'O KAVIAR usa sua localização para definir seu território de atuação. Sem ela, não é possível concluir o cadastro.\n\nVá em Configurações > Kaviar > Localização e permita o acesso.',
           [
-            { text: 'Tentar Novamente', onPress: requestLocation },
+            { text: 'Tentar Novamente', onPress: () => setShowLocationDisclosure(true) },
             { text: 'Voltar', onPress: () => setStep(2), style: 'cancel' }
           ]
         );
@@ -245,7 +246,7 @@ export default function Register() {
         'Localização Obrigatória',
         'Precisamos da sua localização para definir seu território. Toque em "Tentar Novamente" para ativar o GPS.',
         [
-          { text: 'Tentar Novamente', onPress: requestLocation },
+          { text: 'Tentar Novamente', onPress: () => setShowLocationDisclosure(true) },
         ]
       );
       return;
@@ -695,6 +696,62 @@ export default function Register() {
         )}
       </View>
 
+      {/* Prominent Disclosure - localização no cadastro */}
+      <Modal
+        visible={showLocationDisclosure}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowLocationDisclosure(false);
+          setStep(2);
+        }}
+      >
+        <View style={styles.locationDisclosureOverlay}>
+          <View style={styles.locationDisclosureCard}>
+            <Ionicons name="location-outline" size={36} color={COLORS.accent} />
+
+            <Text style={styles.locationDisclosureTitle}>
+              Uso da sua localização
+            </Text>
+
+            <Text style={styles.locationDisclosureText}>
+              O KAVIAR Motorista coleta sua localização precisa durante o cadastro para identificar sua cidade e definir seu território de atuação.{'\n\n'}
+              Ao tocar em "Continuar", o Android solicitará sua permissão para acessar a localização.
+            </Text>
+
+            <View style={styles.locationDisclosureActions}>
+              <TouchableOpacity
+                style={[styles.locationDisclosureButton, styles.locationDisclosureSecondary]}
+                onPress={() => {
+                  setShowLocationDisclosure(false);
+                  setStep(2);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Agora não"
+              >
+                <Text style={styles.locationDisclosureSecondaryText}>
+                  Agora não
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.locationDisclosureButton, styles.locationDisclosurePrimary]}
+                onPress={() => {
+                  setShowLocationDisclosure(false);
+                  void requestLocation();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Continuar"
+              >
+                <Text style={styles.locationDisclosurePrimaryText}>
+                  Continuar
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Modal de Termos de Uso */}
       <Modal visible={showTermsModal} animationType="slide" onRequestClose={() => setShowTermsModal(false)}>
         <View style={{ flex: 1, backgroundColor: '#FFF' }}>
@@ -984,6 +1041,64 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
   },
+  locationDisclosureOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  locationDisclosureCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+  },
+  locationDisclosureTitle: {
+    marginTop: 12,
+    marginBottom: 12,
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    textAlign: 'center',
+  },
+  locationDisclosureText: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#555',
+    textAlign: 'left',
+  },
+  locationDisclosureActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+  },
+  locationDisclosureButton: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  locationDisclosureSecondary: {
+    backgroundColor: '#FFF',
+    borderWidth: 1,
+    borderColor: COLORS.accent,
+  },
+  locationDisclosurePrimary: {
+    backgroundColor: COLORS.accent,
+  },
+  locationDisclosureSecondaryText: {
+    color: COLORS.accent,
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  locationDisclosurePrimaryText: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+
   loadingText: {
     marginTop: 12,
     fontSize: 16,
