@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal, SafeAreaView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -376,7 +377,8 @@ export default function Register() {
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <ScrollView style={styles.container}>
       <View style={styles.content}>
         {/* Header */}
         <View style={styles.header}>
@@ -785,7 +787,7 @@ export default function Register() {
             </Text>
             <Text style={styles.termsText}>
               <Text style={styles.termsBold}>4. GEOLOCALIZAÇÃO</Text>{'\n'}
-              Ao utilizar a KAVIAR, o motorista autoriza expressamente a coleta de sua localização geográfica em tempo real para correspondência de corridas, segurança operacional, auditoria e prevenção de fraudes. Sem a localização ativa, o serviço poderá ser limitado ou indisponível.
+              A KAVIAR coleta e usa a localização precisa do motorista para identificar sua área de atuação, encontrar corridas, mostrar sua posição no mapa e atualizar o deslocamento durante o serviço. Enquanto o motorista escolher permanecer online ou estiver em uma corrida, a localização poderá continuar sendo coletada em segundo plano, inclusive com o aplicativo minimizado. O Android exibirá uma notificação enquanto esse recurso estiver ativo. O motorista pode interromper a coleta operacional ficando offline. Sem a localização ativa, o serviço poderá ser limitado ou indisponível.
             </Text>
             <Text style={styles.termsText}>
               <Text style={styles.termsBold}>5. PAGAMENTOS E CHAVE PIX</Text>{'\n'}
@@ -814,7 +816,7 @@ export default function Register() {
             <View style={{ height: 1, backgroundColor: '#DDD', marginVertical: 16 }} />
             <Text style={styles.termsText}>
               <Text style={styles.termsBold}>POLÍTICA DE PRIVACIDADE (LGPD)</Text>{'\n'}
-              A KAVIAR coleta e trata dados pessoais conforme a Lei Geral de Proteção de Dados (LGPD). Os dados coletados incluem: nome, CPF, RG, CNH, endereço, telefone, e-mail, localização em tempo real, histórico de corridas e informações de pagamento. Estes dados são utilizados exclusivamente para operação da plataforma, segurança, auditoria e cumprimento de obrigações legais. O motorista pode solicitar acesso, correção ou exclusão de seus dados a qualquer momento através dos canais oficiais da KAVIAR.
+              A KAVIAR coleta e trata dados pessoais conforme a Lei Geral de Proteção de Dados (LGPD). Os dados coletados incluem: nome, CPF, RG, CNH, endereço, telefone, e-mail, localização precisa para operação do serviço, histórico de corridas e informações de pagamento. Enquanto o motorista estiver online ou em uma corrida, a localização poderá continuar sendo coletada com o aplicativo minimizado para manter a disponibilidade e atualizar sua posição. Estes dados são utilizados para operação da plataforma, segurança, auditoria e cumprimento de obrigações legais. O motorista pode solicitar acesso, correção ou exclusão de seus dados a qualquer momento através dos canais oficiais da KAVIAR.
             </Text>
             <View style={{ height: 20 }} />
           </ScrollView>
@@ -826,7 +828,8 @@ export default function Register() {
           </TouchableOpacity>
         </View>
       </Modal>
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 

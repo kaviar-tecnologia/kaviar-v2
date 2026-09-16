@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Alert, ActivityIndicator, TouchableOpacity, ScrollView } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '../../src/components/Button';
 import { driverApi } from '../../src/api/driver.api';
 import { friendlyError } from '../../src/utils/errorMessage';
@@ -16,6 +17,7 @@ const ADJUSTMENTS = [
 
 export default function AcceptRide() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { offerId, rideId, expiresAt } = useLocalSearchParams<{ offerId: string; rideId: string; expiresAt?: string }>();
   const [loading, setLoading] = useState(false);
   const [offerData, setOfferData] = useState<any>(null);
@@ -115,7 +117,14 @@ export default function AcceptRide() {
 
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.background }}>
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 120 }}>
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{
+        padding: 20,
+        paddingTop: Math.max(insets.top + 12, 20),
+        paddingBottom: 120 + insets.bottom,
+      }}
+    >
       <Text style={s.title}>Nova Corrida</Text>
 
       {countdown != null && countdown > 0 && (
@@ -292,7 +301,12 @@ export default function AcceptRide() {
       )}
 
     </ScrollView>
-    <View style={s.footerButtons}>
+    <View
+      style={[
+        s.footerButtons,
+        { paddingBottom: Math.max(insets.bottom + 16, 32) },
+      ]}
+    >
       <Button
         title={loading ? 'Aceitando...' : selectedAdjustment ? 'Aceitar com ajuste' : 'Aceitar corrida'}
         onPress={handleAccept}

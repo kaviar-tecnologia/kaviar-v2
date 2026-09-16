@@ -25,7 +25,7 @@ CNPJ: 67.783.601/0001-99
 ### Motoristas
 - Nome, CPF, RG, CNH, endereço, telefone e e-mail.
 - Dados do veículo e documentos vinculados.
-- Localização operacional durante disponibilidade e corrida.
+- Localização precisa para operação do serviço. Enquanto o motorista escolher permanecer online ou estiver em uma corrida, a localização poderá continuar sendo coletada em segundo plano, inclusive com o aplicativo minimizado, para manter a disponibilidade, localizar corridas e atualizar a posição durante o serviço. A coleta operacional é interrompida quando o motorista fica offline.
 - Histórico de corridas, avaliações e repasses.
 - Dados bancários/Pix para recebimento.
 

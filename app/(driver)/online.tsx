@@ -861,9 +861,9 @@ export default function DriverOnline() {
           <View style={styles.disclosureCard}>
             <Text style={styles.disclosureTitle}>Uso da sua localização</Text>
             <Text style={styles.disclosureText}>
-              O KAVIAR Motorista usa sua localização precisa para mostrar sua posição no mapa, encontrar passageiros próximos, receber corridas e atualizar sua posição durante o serviço.{'\n\n'}
-              Enquanto você estiver online ou em uma corrida, o KAVIAR continuará compartilhando sua localização mesmo se você minimizar o aplicativo. O Android mostrará uma notificação enquanto esse recurso estiver ativo.{'\n\n'}
-              Você pode interromper esse uso a qualquer momento ficando offline.
+              O KAVIAR Motorista coleta e usa sua localização precisa para mostrar sua posição no mapa, encontrar passageiros próximos, receber corridas e atualizar sua posição durante o serviço.{'\n\n'}
+              Enquanto você estiver online ou em uma corrida, sua localização continuará sendo coletada em segundo plano, inclusive quando o aplicativo estiver minimizado, para manter sua disponibilidade e atualizar sua posição durante o serviço. O Android mostrará uma notificação enquanto esse recurso estiver ativo.{'\n\n'}
+              Você pode interromper essa coleta a qualquer momento ficando offline.
             </Text>
             <View style={styles.disclosureActions}>
               <TouchableOpacity
