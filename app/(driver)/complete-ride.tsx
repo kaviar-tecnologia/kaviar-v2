@@ -455,7 +455,18 @@ export default function CompleteRide() {
   // --- CANCELED ---
   if (rideStatus === 'canceled_by_passenger' || rideStatus === 'canceled_by_driver') {
     return (
-      <View style={[st.container, { justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
+      <View
+        style={[
+          st.container,
+          {
+            justifyContent: 'center',
+            alignItems: 'center',
+            paddingHorizontal: 24,
+            paddingTop: Math.max(insets.top + 24, 24),
+            paddingBottom: Math.max(insets.bottom + 24, 24),
+          },
+        ]}
+      >
         <Text style={{ fontSize: 48, marginBottom: 12 }}>🚫</Text>
         <Text style={st.centeredTitle}>Corrida cancelada</Text>
         <Text style={st.centeredSub}>{rideStatus === 'canceled_by_passenger' ? 'O passageiro cancelou esta corrida.' : 'Corrida cancelada.'}</Text>
@@ -469,7 +480,16 @@ export default function CompleteRide() {
     const credit = completionData.credit;
     const { waitMin, waitCharge, finalPrice } = completionData;
     return (
-      <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+      <ScrollView
+        contentContainerStyle={{
+          flexGrow: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          paddingHorizontal: 24,
+          paddingTop: Math.max(insets.top + 24, 24),
+          paddingBottom: Math.max(insets.bottom + 24, 24),
+        }}
+      >
         <Text style={{ fontSize: 48, marginBottom: 12 }}>✅</Text>
         <Text style={st.centeredTitle}>Corrida finalizada!</Text>
         {(ride as any)?.is_homebound && (
@@ -590,7 +610,15 @@ export default function CompleteRide() {
   return (
     <View style={st.container}>
       {/* Status bar */}
-      <View style={[st.statusBar, { backgroundColor: info.color }]}>
+      <View
+        style={[
+          st.statusBar,
+          {
+            backgroundColor: info.color,
+            paddingTop: Math.max(insets.top + 10, 10),
+          },
+        ]}
+      >
         <Text style={st.statusText}>
           {info.icon} {info.label}
           {rideStatus === 'arrived' && arrivedAt ? `  •  ${fmtWait(waitSeconds)}` : ''}

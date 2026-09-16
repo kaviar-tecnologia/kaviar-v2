@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -55,6 +55,22 @@ export default function DriverProfile() {
       </View>
 
       <WomenPreferenceSection role="driver" />
+
+      <TouchableOpacity
+        style={s.deleteAccountLink}
+        onPress={() => Linking.openURL('https://kaviar.com.br/excluir-conta')}
+        accessibilityRole="link"
+        accessibilityLabel="Excluir conta e dados"
+      >
+        <Ionicons name="trash-outline" size={20} color={COLORS.danger} />
+        <View style={{ flex: 1 }}>
+          <Text style={s.deleteAccountTitle}>Excluir conta e dados</Text>
+          <Text style={s.deleteAccountText}>
+            Consulte as instruções para solicitar a exclusão da sua conta e dos seus dados pessoais.
+          </Text>
+        </View>
+        <Ionicons name="open-outline" size={18} color={COLORS.textMuted} />
+      </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -72,4 +88,27 @@ const s = StyleSheet.create({
   field: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   label: { fontSize: 11, fontWeight: '700', color: COLORS.textMuted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 },
   value: { fontSize: 16, color: COLORS.textPrimary },
+  deleteAccountLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: 20,
+    marginTop: 24,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.danger,
+    backgroundColor: COLORS.surface,
+  },
+  deleteAccountTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.danger,
+    marginBottom: 3,
+  },
+  deleteAccountText: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: COLORS.textSecondary,
+  },
 });
