@@ -129,10 +129,19 @@ export default function AcceptRide() {
 
       <View style={s.card}>
         {/* Territory badges */}
-        {ride?.is_homebound ? (
+        {ride?.is_homebound && offerData?.territory_tier === 'OUTSIDE' ? (
+          <View style={[s.badge, { backgroundColor: '#fff3e0' }]}>
+            <Text style={[s.badgeText, { color: '#e65100' }]}>
+              🏠 Retorno para casa · Fora do seu território
+            </Text>
+            <Text style={s.badgeSub}>
+              O passageiro autorizou ampliar a busca. Confira origem e destino antes de aceitar.
+            </Text>
+          </View>
+        ) : ride?.is_homebound ? (
           <View style={[s.badge, { backgroundColor: '#e8f5e9' }]}>
             <Text style={[s.badgeText, { color: '#2e7d32' }]}>🏠 Retorno para casa</Text>
-            <Text style={s.badgeSub}>Taxa reduzida — passageiro da sua região voltando para casa</Text>
+            <Text style={s.badgeSub}>Passageiro da sua região voltando para casa</Text>
           </View>
         ) : offerData?.territory_tier === 'COMMUNITY' ? (
           <View style={[s.badge, { backgroundColor: '#e3f2fd' }]}>

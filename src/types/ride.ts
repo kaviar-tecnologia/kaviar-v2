@@ -18,6 +18,9 @@ export interface Ride {
   dest_lat: number;
   dest_lng: number;
   destination_text?: string;
+  is_homebound?: boolean;
+  outside_fallback_allowed?: boolean;
+  outside_fallback_consented_at?: string | null;
   requested_at: string;
   accepted_at?: string;
   arrived_at?: string;

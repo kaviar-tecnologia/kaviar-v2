@@ -87,22 +87,34 @@ export default function PassengerMap() {
   const [userAddress, setUserAddress] = useState('Minha localização');
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [showNoDriver, setShowNoDriver] = useState(false);
+  const [outsideFallbackLoading, setOutsideFallbackLoading] = useState(false);
 
   // Community status (Base KAVIAR)
   const [communityStatus, setCommunityStatus] = useState<{ communityName: string; driversOnline: number } | null>(null);
   const noDriverHasOnlinePartners = communityStatus?.driversOnline != null
     ? communityStatus.driversOnline > 0
     : null;
-  const noDriverTitle = ride?.scheduled_for
-    ? 'Agenda ainda sem motorista confirmado'
-    : noDriverHasOnlinePartners === false
-      ? 'Estamos crescendo na sua região'
-      : 'Alta demanda na sua região';
-  const noDriverBody = ride?.scheduled_for
-    ? 'Para este horário, ainda estamos tentando localizar um motorista parceiro disponível na sua região. Você pode buscar novamente agora ou tentar em alguns minutos.'
-    : noDriverHasOnlinePartners === false
-      ? 'Sua área já está recebendo pedidos pelo KAVIAR, mas neste momento ainda estamos ampliando a disponibilidade de motoristas próximos. Tente novamente em alguns minutos ou indique um motorista parceiro para ajudar a melhorar o atendimento na sua região.'
-      : 'Neste momento, sua área está com alta procura por corridas e estamos tentando localizar motoristas parceiros próximos para atender você.\n\nVocê pode tentar novamente agora ou aguardar alguns minutos.';
+  const canOfferOutsideFallback =
+    ride?.status === 'no_driver' &&
+    ride?.is_homebound === true &&
+    ride?.outside_fallback_allowed !== true &&
+    !ride?.scheduled_for;
+
+  const noDriverTitle = canOfferOutsideFallback
+    ? 'Nenhum motorista da sua região disponível'
+    : ride?.scheduled_for
+      ? 'Agenda ainda sem motorista confirmado'
+      : noDriverHasOnlinePartners === false
+        ? 'Estamos crescendo na sua região'
+        : 'Alta demanda na sua região';
+
+  const noDriverBody = canOfferOutsideFallback
+    ? 'Para seu retorno para casa, primeiro procuramos motoristas da sua comunidade e do seu bairro. Se desejar, podemos ampliar a busca para motoristas de outra região. O motorista será informado de que a corrida é fora do território habitual e poderá aceitar ou recusar.'
+    : ride?.scheduled_for
+      ? 'Para este horário, ainda estamos tentando localizar um motorista parceiro disponível na sua região. Você pode buscar novamente agora ou tentar em alguns minutos.'
+      : noDriverHasOnlinePartners === false
+        ? 'Sua área já está recebendo pedidos pelo KAVIAR, mas neste momento ainda estamos ampliando a disponibilidade de motoristas próximos. Tente novamente em alguns minutos ou indique um motorista parceiro para ajudar a melhorar o atendimento na sua região.'
+        : 'Neste momento, sua área está com alta procura por corridas e estamos tentando localizar motoristas parceiros próximos para atender você.\n\nVocê pode tentar novamente agora ou aguardar alguns minutos.';
 
   // Return home card
   const [showReturnCard, setShowReturnCard] = useState(false);
@@ -366,28 +378,58 @@ export default function PassengerMap() {
   };
 
   const recoverActiveRide = async () => {
+    const isRecoverableNoDriver = (candidate: Ride | null) =>
+      candidate?.status === 'no_driver' &&
+      candidate.is_homebound === true &&
+      candidate.outside_fallback_allowed !== true &&
+      !candidate.scheduled_for;
+
     try {
       const active = await passengerApi.getActiveRide();
-      if (active && !['completed', 'canceled_by_passenger', 'canceled_by_driver', 'no_driver'].includes(active.status)) {
+      const recoverable =
+        active &&
+        (
+          !['completed', 'canceled_by_passenger', 'canceled_by_driver', 'no_driver'].includes(active.status) ||
+          isRecoverableNoDriver(active)
+        );
+
+      if (recoverable && active) {
         await persistPassengerRide(active);
         setRide(active);
         stablePhotoUrl.current = active.driver?.photo_url || null;
         stableVehiclePhotoUrl.current = active.driver?.vehicle_photo_url || null;
         setScreen('tracking');
         stopPolling();
-        startPolling(active.id);
+
+        if (isRecoverableNoDriver(active)) {
+          setShowNoDriver(true);
+        } else {
+          startPolling(active.id);
+        }
       } else {
         await persistPassengerRide(null);
       }
     } catch (e) {
       console.warn('[Map] recoverActiveRide failed:', e);
-      // Offline fallback: load cached ride
+
+      // Offline fallback: restaura também o homebound aguardando decisão OUTSIDE.
       const cached = await getPersistedPassengerRide();
-      if (cached && !['completed', 'canceled_by_passenger', 'canceled_by_driver', 'no_driver'].includes(cached.status)) {
+      const recoverableCached =
+        cached &&
+        (
+          !['completed', 'canceled_by_passenger', 'canceled_by_driver', 'no_driver'].includes(cached.status) ||
+          isRecoverableNoDriver(cached)
+        );
+
+      if (recoverableCached && cached) {
         setRide(cached);
         stablePhotoUrl.current = cached.driver?.photo_url || null;
         stableVehiclePhotoUrl.current = cached.driver?.vehicle_photo_url || null;
         setScreen('tracking');
+
+        if (isRecoverableNoDriver(cached)) {
+          setShowNoDriver(true);
+        }
       }
     }
   };
@@ -672,6 +714,30 @@ export default function PassengerMap() {
     return pwd?.lat && pwd?.lng ? { lat: pwd.lat, lng: pwd.lng } : { lat: r.dest_lat, lng: r.dest_lng };
   };
   const handleRetry = () => { stopPolling(); setRide(null); setScreen('idle'); setShowAdjustment(false); adjustmentShownForRef.current = null; setBoardingStatus(null); };
+
+  const handleOutsideFallback = async () => {
+    if (!ride?.id || outsideFallbackLoading) return;
+
+    setOutsideFallbackLoading(true);
+
+    try {
+      await passengerApi.allowOutsideFallback(ride.id);
+
+      const updated = await passengerApi.getRide(ride.id);
+      setRide(updated);
+      persistPassengerRide(updated);
+      setShowNoDriver(false);
+      lastStatusRef.current = updated.status;
+      startPolling(updated.id);
+    } catch (e: any) {
+      Alert.alert(
+        'Não foi possível ampliar a busca',
+        friendlyError(e, 'Tente novamente em alguns instantes.')
+      );
+    } finally {
+      setOutsideFallbackLoading(false);
+    }
+  };
 
   const handleBoardingStatus = async (status: 'at_door' | 'descending' | '2_minutes') => {
     if (!ride) return;
@@ -1471,13 +1537,39 @@ export default function PassengerMap() {
             <Text style={s.modalBody}>{noDriverBody}</Text>
 
             {/* Primary CTAs */}
-            <TouchableOpacity style={s.ctaPrimary} onPress={() => { setShowNoDriver(false); handleRetry(); }}>
-              <Text style={s.ctaPrimaryText}>Buscar novamente</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={s.ctaSecondaryHighlight} onPress={() => { setShowNoDriver(false); resetToIdle(); }}>
-              <Text style={s.ctaSecondaryHighlightText}>Tentar em alguns minutos</Text>
-            </TouchableOpacity>
-            {!ride?.scheduled_for && (
+            {canOfferOutsideFallback ? (
+              <>
+                <TouchableOpacity
+                  style={[s.ctaPrimary, outsideFallbackLoading && { opacity: 0.6 }]}
+                  disabled={outsideFallbackLoading}
+                  onPress={handleOutsideFallback}
+                >
+                  <Text style={s.ctaPrimaryText}>
+                    {outsideFallbackLoading ? 'Ampliando busca...' : 'Sim, ampliar busca'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={s.ctaSecondaryHighlight}
+                  disabled={outsideFallbackLoading}
+                  onPress={() => { setShowNoDriver(false); resetToIdle(); }}
+                >
+                  <Text style={s.ctaSecondaryHighlightText}>
+                    Não, manter apenas minha região
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity style={s.ctaPrimary} onPress={() => { setShowNoDriver(false); handleRetry(); }}>
+                  <Text style={s.ctaPrimaryText}>Buscar novamente</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={s.ctaSecondaryHighlight} onPress={() => { setShowNoDriver(false); resetToIdle(); }}>
+                  <Text style={s.ctaSecondaryHighlightText}>Tentar em alguns minutos</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            {!ride?.scheduled_for && !canOfferOutsideFallback && (
               <TouchableOpacity style={s.ctaLink} onPress={() => { setShowNoDriver(false); router.push('/(passenger)/refer-driver'); }}>
                 <Text style={s.ctaLinkText}>Indicar motorista para minha região</Text>
               </TouchableOpacity>

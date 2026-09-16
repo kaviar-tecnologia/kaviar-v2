@@ -173,7 +173,19 @@ router.get('/active', authenticatePassenger, async (req: Request, res: Response)
     const ride = await prisma.rides_v2.findFirst({
       where: {
         passenger_id: passengerId,
-        status: { in: ['scheduled', 'requested', 'offered', 'pending_adjustment', 'accepted', 'arrived', 'in_progress'] }
+        OR: [
+          {
+            status: {
+              in: ['scheduled', 'requested', 'offered', 'pending_adjustment', 'accepted', 'arrived', 'in_progress']
+            }
+          },
+          {
+            status: 'no_driver',
+            is_homebound: true,
+            outside_fallback_allowed: false,
+            scheduled_for: null,
+          }
+        ]
       },
       orderBy: { updated_at: 'desc' },
       include: { driver: { select: { name: true, vehicle_model: true, vehicle_plate: true, vehicle_color: true, id: true, last_lat: true, last_lng: true, photo_url: true } } }
@@ -360,6 +372,118 @@ router.post('/', authenticatePassenger, async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('[RIDE_CREATE_ERROR]', error);
     res.status(500).json({ error: 'Erro interno. Tente novamente.' });
+  }
+});
+
+// 5.1a Passageiro autoriza busca fora do território no retorno para casa
+router.post('/:ride_id/outside-fallback-consent', authenticatePassenger, async (req: Request, res: Response) => {
+  try {
+    const passengerId = (req as any).passengerId;
+    const { ride_id } = req.params;
+    const { accept } = req.body;
+
+    if (accept !== true) {
+      return res.status(400).json({ error: 'CONSENT_REQUIRED' });
+    }
+
+    const ride = await prisma.rides_v2.findUnique({
+      where: { id: ride_id },
+      select: {
+        id: true,
+        passenger_id: true,
+        status: true,
+        is_homebound: true,
+        outside_fallback_allowed: true,
+        outside_fallback_consented_at: true,
+      }
+    });
+
+    if (!ride || ride.passenger_id !== passengerId) {
+      return res.status(404).json({ error: 'Corrida não encontrada' });
+    }
+
+    if (!ride.is_homebound) {
+      return res.status(400).json({ error: 'OUTSIDE_FALLBACK_ONLY_HOMEBOUND' });
+    }
+
+    if (!ride.outside_fallback_allowed && ride.status !== 'no_driver') {
+      return res.status(409).json({
+        error: 'OUTSIDE_FALLBACK_NOT_AVAILABLE',
+        status: ride.status,
+      });
+    }
+
+    const consentedAt =
+      ride.outside_fallback_consented_at ?? new Date();
+
+    // Transição atômica:
+    // apenas uma requisição consegue mover no_driver -> requested.
+    const transitioned = await prisma.rides_v2.updateMany({
+      where: {
+        id: ride_id,
+        passenger_id: passengerId,
+        is_homebound: true,
+        status: 'no_driver',
+      },
+      data: {
+        outside_fallback_allowed: true,
+        outside_fallback_consented_at: consentedAt,
+        status: 'requested',
+      }
+    });
+
+    const updated = await prisma.rides_v2.findUnique({
+      where: { id: ride_id },
+      select: {
+        id: true,
+        status: true,
+        outside_fallback_allowed: true,
+        outside_fallback_consented_at: true,
+      }
+    });
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Corrida não encontrada' });
+    }
+
+    // Somente quem efetivamente fez a transição inicia o dispatch.
+    if (transitioned.count === 1) {
+      console.log(
+        `[OUTSIDE_FALLBACK_CONSENT] ride_id=${ride_id} passenger_id=${passengerId} homebound=true`
+      );
+
+      setImmediate(() => {
+        dispatcherService.dispatchRide(ride_id).catch(async (err) => {
+          console.error(`[OUTSIDE_FALLBACK_DISPATCH_ERROR] ride_id=${ride_id}`, err);
+
+          // Mantém o consentimento auditável.
+          // Apenas devolve a corrida a no_driver para permitir nova tentativa.
+          await prisma.rides_v2.updateMany({
+            where: {
+              id: ride_id,
+              status: 'requested',
+              outside_fallback_allowed: true,
+            },
+            data: {
+              status: 'no_driver',
+            }
+          }).catch(() => {});
+        });
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        ride_id: updated.id,
+        status: updated.status,
+        outside_fallback_allowed: updated.outside_fallback_allowed,
+        outside_fallback_consented_at: updated.outside_fallback_consented_at,
+      }
+    });
+  } catch (error: any) {
+    console.error('[OUTSIDE_FALLBACK_CONSENT_ERROR]', error);
+    return res.status(500).json({ error: 'Erro interno. Tente novamente.' });
   }
 });
 

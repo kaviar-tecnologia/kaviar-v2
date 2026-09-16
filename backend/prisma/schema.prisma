@@ -1189,6 +1189,8 @@ model rides_v2 {
   ride_type              String       @default("normal")
   service_category       String       @default("CAR_NORMAL")
   is_homebound           Boolean      @default(false)
+  outside_fallback_allowed Boolean    @default(false)
+  outside_fallback_consented_at DateTime?
   idempotency_key        String?
   trip_details           Json?
   scheduled_for          DateTime?
