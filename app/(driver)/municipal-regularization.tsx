@@ -393,7 +393,7 @@ export default function DriverMunicipalRegularization() {
 
             <Text style={styles.locationDisclosureText}>
               O KAVIAR Motorista coleta sua localização precisa para identificar sua cidade e verificar as exigências de regularização municipal aplicáveis ao seu território de atuação.{'\n\n'}
-              Ao tocar em "Continuar", o Android solicitará sua permissão para acessar a localização.
+              Ao tocar em "Concordo e continuar", o Android solicitará sua permissão para acessar a localização.
             </Text>
 
             <View style={styles.locationDisclosureActions}>
@@ -413,9 +413,9 @@ export default function DriverMunicipalRegularization() {
                   void detectWithCurrentLocation();
                 }}
                 accessibilityRole="button"
-                accessibilityLabel="Continuar"
+                accessibilityLabel="Concordo e continuar"
               >
-                <Text style={styles.locationDisclosurePrimaryText}>Continuar</Text>
+                <Text style={styles.locationDisclosurePrimaryText}>Concordo e continuar</Text>
               </TouchableOpacity>
             </View>
           </View>

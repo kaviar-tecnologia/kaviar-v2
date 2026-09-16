@@ -863,6 +863,7 @@ export default function DriverOnline() {
             <Text style={styles.disclosureText}>
               O KAVIAR Motorista coleta e usa sua localização precisa para mostrar sua posição no mapa, encontrar passageiros próximos, receber corridas e atualizar sua posição durante o serviço.{'\n\n'}
               Enquanto você estiver online ou em uma corrida, sua localização continuará sendo coletada em segundo plano, inclusive quando o aplicativo estiver minimizado, para manter sua disponibilidade e atualizar sua posição durante o serviço. O Android mostrará uma notificação enquanto esse recurso estiver ativo.{'\n\n'}
+              Durante uma corrida, sua localização também é compartilhada com o passageiro para permitir o acompanhamento da viagem em tempo real.{'\n\n'}
               Você pode interromper essa coleta a qualquer momento ficando offline.
             </Text>
             <View style={styles.disclosureActions}>
@@ -881,9 +882,9 @@ export default function DriverOnline() {
                   void continueGoOnline();
                 }}
                 accessibilityRole="button"
-                accessibilityLabel="Continuar"
+                accessibilityLabel="Concordo e continuar"
               >
-                <Text style={styles.disclosurePrimaryButtonText}>Continuar</Text>
+                <Text style={styles.disclosurePrimaryButtonText}>Concordo e continuar</Text>
               </TouchableOpacity>
             </View>
           </View>

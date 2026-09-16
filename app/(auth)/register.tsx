@@ -718,7 +718,7 @@ export default function Register() {
 
             <Text style={styles.locationDisclosureText}>
               O KAVIAR Motorista coleta sua localização precisa durante o cadastro para identificar sua cidade e definir seu território de atuação.{'\n\n'}
-              Ao tocar em "Continuar", o Android solicitará sua permissão para acessar a localização.
+              Ao tocar em "Concordo e continuar", o Android solicitará sua permissão para acessar a localização.
             </Text>
 
             <View style={styles.locationDisclosureActions}>
@@ -743,10 +743,10 @@ export default function Register() {
                   void requestLocation();
                 }}
                 accessibilityRole="button"
-                accessibilityLabel="Continuar"
+                accessibilityLabel="Concordo e continuar"
               >
                 <Text style={styles.locationDisclosurePrimaryText}>
-                  Continuar
+                  Concordo e continuar
                 </Text>
               </TouchableOpacity>
             </View>

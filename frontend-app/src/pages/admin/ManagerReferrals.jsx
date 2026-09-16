@@ -72,7 +72,7 @@ export default function ManagerReferrals() {
                 <Button size="small" startIcon={<ContentCopy />} onClick={copyLink} variant="outlined" sx={{ borderColor: GOLD, color: GOLD, fontSize: 12 }}>Copiar link</Button>
                 <Button size="small" startIcon={<Share />} onClick={shareWhatsApp} variant="contained" sx={{ bgcolor: '#25D366', fontSize: 12, '&:hover': { bgcolor: '#1DA851' } }}>WhatsApp</Button>
               </Box>
-              <Typography sx={{ fontSize: 11, color: '#6B7280', mt: 1.5 }}>Compartilhe este link com interessados. Os cadastros enviados passarão por análise da central KAVIAR/USB Tecnok.</Typography>
+              <Typography sx={{ fontSize: 11, color: '#6B7280', mt: 1.5 }}>Compartilhe este link com interessados. Os cadastros enviados passarão por análise da central KAVIAR.</Typography>
             </CardContent>
           </Card>
         ) : (

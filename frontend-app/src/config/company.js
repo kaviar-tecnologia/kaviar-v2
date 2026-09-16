@@ -15,7 +15,7 @@ export const COMPANY = {
   email: 'contato@kaviar.com.br',
   website: 'https://kaviar.com.br',
   // Nota institucional
-  originNote: 'Tecnologia originalmente desenvolvida pela USB Tecnok.',
+  originNote: 'Tecnologia desenvolvida pela KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA.',
   // Footer público (não usar endereço residencial)
   publicFooter: 'KAVIAR — Rio de Janeiro/RJ — Atendimento digital',
 };

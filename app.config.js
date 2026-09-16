@@ -86,7 +86,17 @@ export default {
         ? './google-services.json'
         : './google-services-passenger.json',
       permissions: variant === 'driver' ? driverPermissions : passengerPermissions,
-      blockedPermissions: ['android.permission.RECORD_AUDIO', 'android.permission.SYSTEM_ALERT_WINDOW'],
+      blockedPermissions: variant === 'driver'
+        ? [
+            'android.permission.RECORD_AUDIO',
+            'android.permission.SYSTEM_ALERT_WINDOW',
+            'android.permission.READ_EXTERNAL_STORAGE',
+            'android.permission.WRITE_EXTERNAL_STORAGE',
+          ]
+        : [
+            'android.permission.RECORD_AUDIO',
+            'android.permission.SYSTEM_ALERT_WINDOW',
+          ],
       config: {
         googleMaps: {
           apiKey: process.env.GOOGLE_MAPS_API_KEY || process.env.EXPO_PUBLIC_PLACES_KEY || ''

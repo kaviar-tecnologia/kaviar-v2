@@ -888,7 +888,8 @@ export default function CompleteRide() {
 
             <Text style={st.locationDisclosureText}>
               O KAVIAR Motorista coleta sua localização precisa durante a corrida para mostrar sua posição no mapa, acompanhar o deslocamento e manter as informações da viagem atualizadas.{'\n\n'}
-              Ao tocar em "Continuar", o Android solicitará sua permissão para acessar a localização.
+              Durante a corrida, sua localização também pode ser compartilhada com o passageiro para permitir o acompanhamento da viagem em tempo real.{'\n\n'}
+              Ao tocar em "Concordo e continuar", o Android solicitará sua permissão para acessar a localização.
             </Text>
 
             <View style={st.locationDisclosureActions}>
@@ -908,9 +909,9 @@ export default function CompleteRide() {
                   void startMapTracking();
                 }}
                 accessibilityRole="button"
-                accessibilityLabel="Continuar"
+                accessibilityLabel="Concordo e continuar"
               >
-                <Text style={st.locationDisclosurePrimaryText}>Continuar</Text>
+                <Text style={st.locationDisclosurePrimaryText}>Concordo e continuar</Text>
               </TouchableOpacity>
             </View>
           </View>

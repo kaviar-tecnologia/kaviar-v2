@@ -140,8 +140,8 @@ export default function CommerceAccountsPage() {
           <Box className="print-header" sx={{ display: 'none', '@media print': { display: 'block', mb: 3, borderBottom: '2px solid #B8942E', pb: 2 } }}>
             {isSuperAdmin ? <>
               <Typography sx={{ fontWeight: 800, fontSize: 22, color: '#B8942E' }}>KAVIAR</Typography>
-              <Typography sx={{ fontSize: 11, color: '#374151' }}>Produto da USB Tecnok Manutenção e Instalação de Computadores Ltda</Typography>
-              <Typography sx={{ fontSize: 11, color: '#374151' }}>CNPJ: 07.710.691/0001-66</Typography>
+              <Typography sx={{ fontSize: 11, color: '#374151' }}>KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA</Typography>
+              <Typography sx={{ fontSize: 11, color: '#374151' }}>CNPJ: 67.783.601/0001-99</Typography>
               <Typography sx={{ fontSize: 13, fontWeight: 700, mt: 1 }}>Relatório Financeiro dos Comércios</Typography>
             </> : <>
               <Typography sx={{ fontWeight: 800, fontSize: 20, color: '#B8942E' }}>Relatório do Gestor Territorial — KAVIAR</Typography>
@@ -183,13 +183,13 @@ export default function CommerceAccountsPage() {
             <Button size="small" sx={{ textTransform: 'none', color: '#6B7280' }} onClick={() => window.print()}>🖨️ Imprimir</Button>
             <Button size="small" sx={{ textTransform: 'none', color: '#6B7280' }} onClick={() => {
               const code = `REL-KAV-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${String(new Date().getHours()).padStart(2,'0')}${String(new Date().getMinutes()).padStart(2,'0')}`;
-              const header = isSuperAdmin ? `📊 Relatório KAVIAR Comércio\n🏢 KAVIAR — USB Tecnok\nCNPJ: 07.710.691/0001-66` : `📊 Relatório do Gestor Territorial — KAVIAR\n👤 Gestor: ${admin?.name || '—'}`;
+              const header = isSuperAdmin ? `📊 Relatório KAVIAR Comércio\n🏢 KAVIAR\nCNPJ: 67.783.601/0001-99` : `📊 Relatório do Gestor Territorial — KAVIAR\n👤 Gestor: ${admin?.name || '—'}`;
               const text = `${header}\nCódigo: ${code}\nEmitido: ${new Date().toLocaleString('pt-BR')}\n\n💰 Total vendido: R$ ${((financeSummary?.total_sold||0)/100).toFixed(2)}\n🏦 Comissão KAVIAR: R$ ${((financeSummary?.kaviar_commission||0)/100).toFixed(2)}\n⏳ Pendente: R$ ${((financeSummary?.pending_balance||0)/100).toFixed(2)}\n✅ Disponível: R$ ${((financeSummary?.available_balance||0)/100).toFixed(2)}\n💸 Sacado: R$ ${((financeSummary?.total_withdrawn||0)/100).toFixed(2)}\n\nRelatório operacional e gerencial. Não substitui nota fiscal.`;
               navigator.clipboard.writeText(text); setSnack('Resumo copiado!');
             }}>📋 Copiar</Button>
             {isSuperAdmin && <Button size="small" sx={{ textTransform: 'none', color: '#25D366' }} onClick={() => {
               const code = `REL-KAV-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${String(new Date().getHours()).padStart(2,'0')}${String(new Date().getMinutes()).padStart(2,'0')}`;
-              const text = `📊 Relatório KAVIAR Comércio\n🏢 KAVIAR — USB Tecnok\nCNPJ: 07.710.691/0001-66\nCódigo: ${code}\nEmitido: ${new Date().toLocaleString('pt-BR')}\n\n💰 Total vendido: R$ ${((financeSummary?.total_sold||0)/100).toFixed(2)}\n🏦 Comissão KAVIAR: R$ ${((financeSummary?.kaviar_commission||0)/100).toFixed(2)}\n✅ Disponível: R$ ${((financeSummary?.available_balance||0)/100).toFixed(2)}\n💸 Sacado: R$ ${((financeSummary?.total_withdrawn||0)/100).toFixed(2)}`;
+              const text = `📊 Relatório KAVIAR Comércio\n🏢 KAVIAR\nCNPJ: 67.783.601/0001-99\nCódigo: ${code}\nEmitido: ${new Date().toLocaleString('pt-BR')}\n\n💰 Total vendido: R$ ${((financeSummary?.total_sold||0)/100).toFixed(2)}\n🏦 Comissão KAVIAR: R$ ${((financeSummary?.kaviar_commission||0)/100).toFixed(2)}\n✅ Disponível: R$ ${((financeSummary?.available_balance||0)/100).toFixed(2)}\n💸 Sacado: R$ ${((financeSummary?.total_withdrawn||0)/100).toFixed(2)}`;
               window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
             }}>📱 WhatsApp</Button>}
           </Box>
@@ -215,10 +215,10 @@ export default function CommerceAccountsPage() {
 
           {/* Print-only footer */}
           <Box className="print-footer" sx={{ display: 'none', '@media print': { display: 'block', mt: 4, pt: 2, borderTop: '1px solid #E5E7EB' } }}>
-            {isSuperAdmin ? <Typography sx={{ fontSize: 10, color: '#6B7280' }}>KAVIAR é um produto da USB Tecnok Manutenção e Instalação de Computadores Ltda — CNPJ 07.710.691/0001-66.</Typography>
+            {isSuperAdmin ? <Typography sx={{ fontSize: 10, color: '#6B7280' }}>KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA — CNPJ 67.783.601/0001-99.</Typography>
             : <Typography sx={{ fontSize: 10, color: '#6B7280' }}>Relatório do Gestor Territorial — Base operacional KAVIAR.</Typography>}
             <Typography sx={{ fontSize: 9, color: '#9CA3AF', mt: 0.5 }}>Este relatório possui finalidade operacional e gerencial{isSuperAdmin ? '' : ' do território'}. Não substitui nota fiscal, recibo fiscal ou documento contábil oficial.</Typography>
-            {isSuperAdmin && <Typography sx={{ fontSize: 9, color: '#9CA3AF' }}>Documento gerado eletronicamente. Validação interna KAVIAR/USB Tecnok.</Typography>}
+            {isSuperAdmin && <Typography sx={{ fontSize: 9, color: '#9CA3AF' }}>Documento gerado eletronicamente. Validação interna KAVIAR.</Typography>}
           </Box>
         </Box>
       )}
@@ -283,13 +283,13 @@ export default function CommerceAccountsPage() {
               <Button size="small" sx={{ textTransform: 'none', color: '#6B7280' }} onClick={() => {
                 const w = walletData?.wallet;
                 const code = `REL-KAV-${walletAccount.name.slice(0,3).toUpperCase()}-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${String(new Date().getHours()).padStart(2,'0')}${String(new Date().getMinutes()).padStart(2,'0')}`;
-                const text = `📊 Relatório Individual — KAVIAR Comércio\n🏢 KAVIAR — USB Tecnok\nCNPJ: 07.710.691/0001-66\nCódigo: ${code}\nEmitido: ${new Date().toLocaleString('pt-BR')}\n\n🏪 ${walletAccount.name}\nCategoria: ${walletAccount.category || '—'}\n\n✅ Disponível: R$ ${((w?.available_balance_cents||0)/100).toFixed(2)}\n⏳ Pendente: R$ ${((w?.pending_balance_cents||0)/100).toFixed(2)}\n💰 Total recebido: R$ ${((w?.total_received_cents||0)/100).toFixed(2)}\n💸 Total sacado: R$ ${((w?.total_withdrawn_cents||0)/100).toFixed(2)}\nSaques em aberto: ${withdrawals.filter(x=>['REQUESTED','APPROVED'].includes(x.status)).length}\n\nRelatório operacional. Não substitui nota fiscal.\nKAVIAR — USB Tecnok — CNPJ 07.710.691/0001-66`;
+                const text = `📊 Relatório Individual — KAVIAR Comércio\n🏢 KAVIAR\nCNPJ: 67.783.601/0001-99\nCódigo: ${code}\nEmitido: ${new Date().toLocaleString('pt-BR')}\n\n🏪 ${walletAccount.name}\nCategoria: ${walletAccount.category || '—'}\n\n✅ Disponível: R$ ${((w?.available_balance_cents||0)/100).toFixed(2)}\n⏳ Pendente: R$ ${((w?.pending_balance_cents||0)/100).toFixed(2)}\n💰 Total recebido: R$ ${((w?.total_received_cents||0)/100).toFixed(2)}\n💸 Total sacado: R$ ${((w?.total_withdrawn_cents||0)/100).toFixed(2)}\nSaques em aberto: ${withdrawals.filter(x=>['REQUESTED','APPROVED'].includes(x.status)).length}\n\nRelatório operacional. Não substitui nota fiscal.\nKAVIAR — CNPJ 67.783.601/0001-99`;
                 navigator.clipboard.writeText(text); setSnack('Relatório copiado!');
               }}>📋 Copiar</Button>
               <Button size="small" sx={{ textTransform: 'none', color: '#25D366' }} onClick={() => {
                 const w = walletData?.wallet;
                 const code = `REL-KAV-${walletAccount.name.slice(0,3).toUpperCase()}-${new Date().toISOString().slice(0,10).replace(/-/g,'')}`;
-                const text = `📊 KAVIAR — Relatório\n🏪 ${walletAccount.name}\nCódigo: ${code}\n\n✅ Disponível: R$ ${((w?.available_balance_cents||0)/100).toFixed(2)}\n⏳ Pendente: R$ ${((w?.pending_balance_cents||0)/100).toFixed(2)}\n💰 Recebido: R$ ${((w?.total_received_cents||0)/100).toFixed(2)}\n💸 Sacado: R$ ${((w?.total_withdrawn_cents||0)/100).toFixed(2)}\n\nKAVIAR — USB Tecnok\nCNPJ: 07.710.691/0001-66`;
+                const text = `📊 KAVIAR — Relatório\n🏪 ${walletAccount.name}\nCódigo: ${code}\n\n✅ Disponível: R$ ${((w?.available_balance_cents||0)/100).toFixed(2)}\n⏳ Pendente: R$ ${((w?.pending_balance_cents||0)/100).toFixed(2)}\n💰 Recebido: R$ ${((w?.total_received_cents||0)/100).toFixed(2)}\n💸 Sacado: R$ ${((w?.total_withdrawn_cents||0)/100).toFixed(2)}\n\nKAVIAR\nCNPJ: 67.783.601/0001-99`;
                 window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
               }}>📱 WhatsApp</Button>
             </Box>
@@ -301,8 +301,8 @@ export default function CommerceAccountsPage() {
           <Box id="individual-report" sx={{ display: 'none', '@media print': { display: 'block !important', position: 'fixed', top: 0, left: 0, width: '100%', bgcolor: '#fff', color: '#000', p: 4, zIndex: 9999 } }}>
             <Box sx={{ borderBottom: '2px solid #B8942E', pb: 2, mb: 3 }}>
               <Typography sx={{ fontWeight: 800, fontSize: 22, color: '#B8942E' }}>KAVIAR</Typography>
-              <Typography sx={{ fontSize: 11 }}>Produto da USB Tecnok Manutenção e Instalação de Computadores Ltda</Typography>
-              <Typography sx={{ fontSize: 11 }}>CNPJ: 07.710.691/0001-66</Typography>
+              <Typography sx={{ fontSize: 11 }}>KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA</Typography>
+              <Typography sx={{ fontSize: 11 }}>CNPJ: 67.783.601/0001-99</Typography>
             </Box>
             <Typography sx={{ fontSize: 14, fontWeight: 700, mb: 0.5 }}>Relatório Individual — {walletAccount.name}</Typography>
             <Typography sx={{ fontSize: 11, color: '#6B7280' }}>Categoria: {walletAccount.category || '—'}</Typography>
@@ -316,9 +316,9 @@ export default function CommerceAccountsPage() {
             </Box>
             <Typography sx={{ fontSize: 12, mb: 2 }}>Saques em aberto: {withdrawals.filter(x=>['REQUESTED','APPROVED'].includes(x.status)).length}</Typography>
             <Box sx={{ borderTop: '1px solid #E5E7EB', pt: 2, mt: 3 }}>
-              <Typography sx={{ fontSize: 9, color: '#6B7280' }}>KAVIAR é um produto da USB Tecnok Manutenção e Instalação de Computadores Ltda — CNPJ 07.710.691/0001-66.</Typography>
+              <Typography sx={{ fontSize: 9, color: '#6B7280' }}>KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA — CNPJ 67.783.601/0001-99.</Typography>
               <Typography sx={{ fontSize: 9, color: '#9CA3AF' }}>Este relatório possui finalidade operacional e gerencial. Não substitui nota fiscal, recibo fiscal ou documento contábil oficial.</Typography>
-              <Typography sx={{ fontSize: 9, color: '#9CA3AF' }}>Documento gerado eletronicamente. Validação interna KAVIAR/USB Tecnok.</Typography>
+              <Typography sx={{ fontSize: 9, color: '#9CA3AF' }}>Documento gerado eletronicamente. Validação interna KAVIAR.</Typography>
             </Box>
           </Box>
         )}

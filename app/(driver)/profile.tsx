@@ -57,6 +57,22 @@ export default function DriverProfile() {
       <WomenPreferenceSection role="driver" />
 
       <TouchableOpacity
+        style={s.privacyLink}
+        onPress={() => Linking.openURL('https://kaviar.com.br/privacidade')}
+        accessibilityRole="link"
+        accessibilityLabel="Política de Privacidade"
+      >
+        <Ionicons name="shield-checkmark-outline" size={20} color={COLORS.primary} />
+        <View style={{ flex: 1 }}>
+          <Text style={s.privacyTitle}>Política de Privacidade</Text>
+          <Text style={s.privacyText}>
+            Consulte como a KAVIAR coleta, usa, compartilha e protege seus dados pessoais.
+          </Text>
+        </View>
+        <Ionicons name="open-outline" size={18} color={COLORS.textMuted} />
+      </TouchableOpacity>
+
+      <TouchableOpacity
         style={s.deleteAccountLink}
         onPress={() => Linking.openURL('https://kaviar.com.br/excluir-conta')}
         accessibilityRole="link"
@@ -88,6 +104,29 @@ const s = StyleSheet.create({
   field: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   label: { fontSize: 11, fontWeight: '700', color: COLORS.textMuted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 },
   value: { fontSize: 16, color: COLORS.textPrimary },
+  privacyLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: 20,
+    marginTop: 24,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+  },
+  privacyTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    marginBottom: 3,
+  },
+  privacyText: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: COLORS.textSecondary,
+  },
   deleteAccountLink: {
     flexDirection: 'row',
     alignItems: 'center',

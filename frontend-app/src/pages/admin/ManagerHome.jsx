@@ -380,7 +380,7 @@ export default function ManagerHome() {
         {/* Footer */}
         <Box sx={{ textAlign: 'center', pt: 2, borderTop: '1px solid rgba(201,154,22,0.2)' }}>
           <Typography sx={{ color: TEXT_GRAY, fontSize: 10 }}>
-            KAVIAR é produto da USB Tecnok Manutenção e Instalação de Computadores Ltda — CNPJ 07.710.691/0001-66
+            KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA — CNPJ 67.783.601/0001-99
           </Typography>
           <Typography sx={{ color: '#D1D5DB', fontSize: 9, mt: 0.5 }}>
             Gestor Territorial — acesso operacional restrito ao território vinculado

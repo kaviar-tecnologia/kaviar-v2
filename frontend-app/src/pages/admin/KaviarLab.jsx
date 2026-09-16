@@ -632,7 +632,7 @@ export default function KaviarLab() {
         {!loading && data.length > 0 && (
           <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid #2A2A2A', textAlign: 'center' }}>
             <Typography sx={{ fontSize: 10, color: '#6B7280' }}>
-              KAVIAR é um produto da USB Tecnok Manutenção e Instalação de Computadores Ltda — CNPJ 07.710.691/0001-66
+              KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA — CNPJ 67.783.601/0001-99
             </Typography>
           </Box>
         )}

@@ -32,8 +32,8 @@ const DOCUMENTS = [
   { name: 'Checklist Abertura de Cidade', version: 'v1.0', date: 'Maio/2026', status: 'Operacional', note: 'Passos obrigatórios antes de iniciar operação em nova cidade.', content: checklistCidade },
   { name: 'Política de Relacionamento Institucional', version: 'v1.0', date: 'Maio/2026', status: 'Operacional', note: 'Limites, canais, anticorrupção e postura perante órgão público.', content: politicaRelacionamento },
   { name: 'SMTR Rio — Credenciamento', version: 'v1.0', date: 'Maio/2026', status: 'Diagnóstico', note: 'Decreto 48.612/2021, credenciamento, 1,5% viário, pendências.', content: smtrRio },
-  { name: 'Contrato — Gestor Territorial', version: 'v1.0', date: 'Jun/2026', status: 'Aprovado', note: 'Contrato jurídico operacional entre USB TECNOK e Gestor Territorial da Plataforma KAVIAR.', content: contratoGestor },
-  { name: 'Contrato — Comércio Parceiro Local', version: 'v1.0', date: 'Jun/2026', status: 'Minuta interna', note: 'Contrato de parceria comercial entre USB TECNOK/KAVIAR e comércio parceiro local.', content: contratoComercio },
+  { name: 'Contrato — Gestor Territorial', version: 'v1.0', date: 'Jun/2026', status: 'Aprovado', note: 'Contrato jurídico operacional entre KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA e Gestor Territorial da Plataforma KAVIAR.', content: contratoGestor },
+  { name: 'Contrato — Comércio Parceiro Local', version: 'v1.0', date: 'Jun/2026', status: 'Minuta interna', note: 'Contrato de parceria comercial entre KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA e comércio parceiro local.', content: contratoComercio },
   { name: 'Contrato — Hotel/Pousada Parceira KAVIAR', version: 'v1.0', date: 'Jun/2026', status: 'Minuta interna', note: 'Contrato de parceria operacional e comercial para atendimento de hóspedes, transfers, passeios e combos turísticos pela Plataforma KAVIAR.', content: contratoHotel },
   { name: 'Contrato — Parceiro KAVIAR Pet', version: 'v1.0', date: 'Jun/2026', status: 'Minuta interna', note: 'Contrato de parceria para serviços, atendimento, transporte e benefícios relacionados ao ecossistema KAVIAR Pet.', content: contratoPet },
 ];
