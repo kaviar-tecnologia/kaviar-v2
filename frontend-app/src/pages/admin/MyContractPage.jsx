@@ -10,22 +10,22 @@ const GOLD = '#B8942E';
 const TERM_TEXT = `TERMO DE OPERADOR TERRITORIAL CAPTADOR — KAVIAR v1.0
 
 1. PARTES
-O KAVIAR é produto e plataforma de propriedade da USB Tecnok Manutenção e Instalação de Computadores Ltda, inscrita no CNPJ 07.710.691/0001-66 ("KAVIAR" ou "Plataforma").
+A plataforma KAVIAR é de propriedade da KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA, inscrita no CNPJ 67.783.601/0001-99 ("KAVIAR" ou "Plataforma").
 O Operador Territorial Captador ("Operador") é a pessoa física ou jurídica que aceita este termo para atuar como parceiro/captador autônomo em território definido pela Plataforma.
 
 2. NATUREZA DA RELAÇÃO
-O Operador atua como parceiro/captador autônomo. Não há vínculo empregatício, salário fixo, obrigação de jornada, subordinação ou exclusividade automática entre o Operador e a USB Tecnok/KAVIAR.
+O Operador atua como parceiro/captador autônomo. Não há vínculo empregatício, salário fixo, obrigação de jornada, subordinação ou exclusividade automática entre o Operador e a KAVIAR.
 
 3. TERRITÓRIO
 O território vinculado define a área de atuação e acompanhamento do Operador. O território não confere propriedade, franquia, licença exclusiva nem direito real sobre a área.
 
 4. LIMITAÇÕES
 O Operador NÃO pode:
-• Se apresentar como funcionário, sócio, representante legal ou procurador da USB Tecnok/KAVIAR;
+• Se apresentar como funcionário, sócio, representante legal ou procurador da KAVIAR;
 • Cobrar valores em nome do KAVIAR sem autorização formal por escrito;
 • Prometer aprovação de motoristas, passageiros, parceiros ou comércios;
 • Alterar preços, taxas, comissões, créditos ou regras operacionais da Plataforma;
-• Tomar decisões que vinculem a USB Tecnok/KAVIAR perante terceiros.
+• Tomar decisões que vinculem a KAVIAR perante terceiros.
 
 5. INDICAÇÕES
 O Operador pode indicar motoristas usando seu link de indicação pessoal. Eventual bônus ou benefício por indicação segue exclusivamente as regras vigentes do sistema, podendo ser alteradas pela Plataforma a qualquer momento.
@@ -34,20 +34,20 @@ O Operador pode indicar motoristas usando seu link de indicação pessoal. Event
 O Operador deve manter sigilo sobre dados e informações acessadas no painel, incluindo dados pessoais de motoristas, passageiros e parceiros. O uso deve respeitar a Lei Geral de Proteção de Dados (LGPD) e as políticas de privacidade do KAVIAR.
 
 7. SUSPENSÃO E CANCELAMENTO
-A USB Tecnok/KAVIAR pode suspender ou cancelar o acesso do Operador em caso de fraude, abuso, mau uso, descumprimento deste termo, conduta incompatível ou risco à operação, sem aviso prévio quando justificado por urgência.
+A KAVIAR pode suspender ou cancelar o acesso do Operador em caso de fraude, abuso, mau uso, descumprimento deste termo, conduta incompatível ou risco à operação, sem aviso prévio quando justificado por urgência.
 
 8. ALTERAÇÕES
 Este termo pode ser atualizado pela Plataforma. Mudanças relevantes podem exigir novo aceite. A versão vigente estará sempre disponível no painel do Operador.
 
 9. FORO
-Fica eleito o foro da Comarca da Capital do Estado do Rio de Janeiro/RJ, correspondente à sede da USB Tecnok Manutenção e Instalação de Computadores Ltda, CNPJ 07.710.691/0001-66, salvo disposição específica em contrato definitivo.`;
+Fica eleito o foro da Comarca da Capital do Estado do Rio de Janeiro/RJ, correspondente à sede da KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA, CNPJ 67.783.601/0001-99, salvo disposição específica em contrato definitivo.`;
 
 const RESPONSIBILITIES = [
   'Captar motoristas, parceiros e associações no território',
   'Acompanhar métricas e operação local',
   'Cadastrar interessados para análise da central',
   'Manter sigilo sobre dados acessados (LGPD)',
-  'Reportar problemas à central KAVIAR/USB Tecnok',
+  'Reportar problemas à central KAVIAR',
   'Atuar apenas dentro do território vinculado',
 ];
 
@@ -56,7 +56,7 @@ const LIMITS = [
   'Não pode cobrar valores em nome do KAVIAR sem autorização formal',
   'Não pode alterar preços, taxas ou comissões',
   'Não pode garantir repasses específicos',
-  'Não pode se apresentar como sócio, dono, franqueado ou funcionário da USB Tecnok/KAVIAR',
+  'Não pode se apresentar como sócio, dono, franqueado ou funcionário da KAVIAR',
   'Não pode acessar ou solicitar dados fora do território',
   'Não pode prometer contratos a parceiros ou associações sem validação da central',
 ];
@@ -262,14 +262,14 @@ export default function MyContractPage() {
             <CardContent sx={{ p: 2 }}>
               <Typography sx={{ fontSize: 12, fontWeight: 600, color: '#1A1A1A', mb: 0.5 }}>KAVIAR</Typography>
               <Typography sx={{ fontSize: 12, color: '#6B7280' }}>
-                Produto e plataforma da USB Tecnok Manutenção e Instalação de Computadores Ltda — CNPJ 07.710.691/0001-66.
+                Plataforma KAVIAR — KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA — CNPJ 67.783.601/0001-99.
               </Typography>
             </CardContent>
           </Card>
 
           {/* Aviso legal */}
           <Alert severity="warning" icon={false} sx={{ bgcolor: 'rgba(184,148,46,0.06)', border: '1px solid #E8E5DE', '& .MuiAlert-message': { color: '#6B7280', fontSize: 11, lineHeight: 1.6 } }}>
-            Este acesso é operacional e restrito ao território vinculado. Não transfere propriedade do sistema, franquia, licença exclusiva, sociedade ou vínculo empregatício. O contrato específico do Gestor Territorial será formalizado pela central KAVIAR/USB Tecnok. Valores financeiros exibidos no painel são informativos e estimados até formalização e apuração contratual.
+            Este acesso é operacional e restrito ao território vinculado. Não transfere propriedade do sistema, franquia, licença exclusiva, sociedade ou vínculo empregatício. O contrato específico do Gestor Territorial será formalizado pela central KAVIAR. Valores financeiros exibidos no painel são informativos e estimados até formalização e apuração contratual.
           </Alert>
         </Box>
       </Box>

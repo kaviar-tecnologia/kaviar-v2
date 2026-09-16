@@ -15,7 +15,7 @@ const sections = [
   },
   {
     title: 'Estágio atual',
-    text: 'Operação ativa no Rio de Janeiro. App mobile, painel administrativo, corridas em tempo real, inteligência territorial. Plataforma desenvolvida integralmente pela USB Tecnok.',
+    text: 'Operação ativa no Rio de Janeiro. App mobile, painel administrativo, corridas em tempo real, inteligência territorial. Plataforma desenvolvida pela KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA.',
   },
 ];
 
@@ -115,7 +115,7 @@ export default function InvestorVision() {
         color: '#ddd',
         letterSpacing: '0.02em',
       }}>
-        KAVIAR — USB Tecnok
+        KAVIAR
       </footer>
     </div>
   );

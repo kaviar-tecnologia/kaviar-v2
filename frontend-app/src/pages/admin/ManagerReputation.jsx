@@ -110,7 +110,7 @@ export default function ManagerReputation() {
 
         {/* Disclaimer */}
         <Alert severity="warning" icon={false} sx={{ bgcolor: 'rgba(184,148,46,0.06)', border: '1px solid #E8E5DE', '& .MuiAlert-message': { color: '#6B7280', fontSize: 11 } }}>
-          Visualização somente leitura. Ações de aprovação, suspensão, alteração cadastral ou bloqueio de motoristas são exclusivas da central KAVIAR/USB Tecnok.
+          Visualização somente leitura. Ações de aprovação, suspensão, alteração cadastral ou bloqueio de motoristas são exclusivas da central KAVIAR.
         </Alert>
       </Container>
     </Box>

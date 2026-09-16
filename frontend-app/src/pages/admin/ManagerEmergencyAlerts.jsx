@@ -37,7 +37,7 @@ export default function ManagerEmergencyAlerts() {
       </Box>
 
       <Alert severity="warning" sx={{ mb: 2, bgcolor: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.3)' }}>
-        Este painel não substitui serviços públicos de emergência. Em risco imediato, acione 190, 192 ou os canais públicos competentes. O Gestor Territorial atua como apoio local. A central KAVIAR/USB Tecnok mantém a coordenação, auditoria e encerramento dos alertas.
+        Este painel não substitui serviços públicos de emergência. Em risco imediato, acione 190, 192 ou os canais públicos competentes. O Gestor Territorial atua como apoio local. A central KAVIAR mantém a coordenação, auditoria e encerramento dos alertas.
       </Alert>
 
       <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>

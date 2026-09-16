@@ -158,7 +158,7 @@ export default function OperatorHome() {
         {/* Institutional footer */}
         <Box sx={{ textAlign: 'center', pt: 2, borderTop: '1px solid #E8E5DE' }}>
           <Typography sx={{ color: '#9CA3AF', fontSize: 10 }}>
-            KAVIAR é produto da USB Tecnok Manutenção e Instalação de Computadores Ltda — CNPJ 07.710.691/0001-66
+            KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA — CNPJ 67.783.601/0001-99
           </Typography>
           <Typography sx={{ color: '#D1D5DB', fontSize: 9, mt: 0.5 }}>
             Operador territorial — acesso restrito ao território vinculado
