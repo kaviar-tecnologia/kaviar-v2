@@ -174,7 +174,7 @@ describe('dispatcher municipal fallback', () => {
       origin_lat: -21.0,
       origin_lng: -47.0,
       service_category: 'CAR_NORMAL',
-      origin_neighborhood_id: null,
+      origin_neighborhood_id: 'nb-1',
       dest_neighborhood_id: null,
       origin_community_id: null,
       is_homebound: false,

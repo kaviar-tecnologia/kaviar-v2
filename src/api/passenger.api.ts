@@ -207,6 +207,19 @@ export const passengerApi = {
     return data;
   },
 
+  allowOutsideFallback: async (rideId: string): Promise<{
+    ride_id: string;
+    status: string;
+    outside_fallback_allowed: boolean;
+    outside_fallback_consented_at?: string | null;
+  }> => {
+    const { data } = await apiClient.post(
+      `/api/v2/rides/${rideId}/outside-fallback-consent`,
+      { accept: true }
+    );
+    return data.data;
+  },
+
   sendBoardingStatus: async (rideId: string, status: 'at_door' | 'descending' | '2_minutes'): Promise<void> => {
     await apiClient.post(`/api/v2/rides/${rideId}/boarding-status`, { status });
   },

@@ -118,9 +118,29 @@ export class DispatcherService {
       return;
     }
 
-    const attemptCount = ride.offers.filter(o => o.status === 'expired' || o.status === 'rejected' || o.status === 'canceled').length;
-    if (attemptCount >= this.MAX_ATTEMPTS) {
-      console.log(`[DISPATCHER] Ride ${rideId} reached max attempts (${this.MAX_ATTEMPTS}), setting no_driver`);
+    const failedOffers = ride.offers.filter(
+      o => o.status === 'expired' || o.status === 'rejected' || o.status === 'canceled'
+    );
+
+    const outsideFallbackActive =
+      ride.is_homebound === true &&
+      ride.outside_fallback_allowed === true &&
+      !!ride.outside_fallback_consented_at;
+
+    // Cada fase possui sua própria janela de tentativas:
+    // - antes do consentimento: até MAX_ATTEMPTS no território local
+    // - depois do consentimento: até MAX_ATTEMPTS novas ofertas
+    //   mantendo os motoristas anteriores excluídos.
+    const attemptCount = outsideFallbackActive
+      ? failedOffers.filter(
+          o => o.created_at >= ride.outside_fallback_consented_at!
+        ).length
+      : failedOffers.length;
+
+    const maxAttemptsForRide = this.MAX_ATTEMPTS;
+
+    if (attemptCount >= maxAttemptsForRide) {
+      console.log(`[DISPATCHER] Ride ${rideId} reached max attempts (${maxAttemptsForRide}) in current dispatch phase, setting no_driver`);
       await prisma.rides_v2.update({
         where: { id: rideId },
         data: { status: 'no_driver' }
@@ -150,7 +170,32 @@ export class DispatcherService {
 
     // Pegar o melhor candidato
     const bestCandidate = candidates[0];
-    const matchTier = bestCandidate.same_community ? 'COMMUNITY' : bestCandidate.same_neighborhood ? 'NEIGHBORHOOD' : 'OUTSIDE';
+
+    // Defesa em profundidade:
+    // OUTSIDE só é permitido em retorno para casa com consentimento explícito.
+    const isOutsideCandidate =
+      !bestCandidate.same_community &&
+      !bestCandidate.same_neighborhood;
+
+    const allowOutsideFallback =
+      ride.is_homebound === true &&
+      ride.outside_fallback_allowed === true &&
+      !!ride.outside_fallback_consented_at;
+
+    if (isOutsideCandidate && !allowOutsideFallback) {
+      console.warn(`[DISPATCHER_TERRITORY_BLOCK] ride_id=${rideId} driver_id=${bestCandidate.driver_id} action=no_driver`);
+      await prisma.rides_v2.update({
+        where: { id: rideId },
+        data: { status: 'no_driver' }
+      });
+      return;
+    }
+
+    const matchTier = bestCandidate.same_community
+      ? 'COMMUNITY'
+      : bestCandidate.same_neighborhood
+        ? 'NEIGHBORHOOD'
+        : 'OUTSIDE';
 
     // Criar oferta + atualizar ride atomicamente
     const expiresAt = new Date(Date.now() + this.OFFER_TIMEOUT_SECONDS * 1000);
@@ -318,6 +363,7 @@ export class DispatcherService {
       no_credits: 0,
       wrong_vehicle: 0,
       municipal_block: 0,
+      outside_territory: 0,
     };
 
     const candidates: DriverCandidate[] = [];
@@ -391,20 +437,34 @@ export class DispatcherService {
         }
       }
 
-      // Referência territorial: residência do passageiro (homebound) ou origem da corrida
-      // Fallback: se a origem não tem community resolvida, usar community do passageiro
+      // Referência territorial:
+      // - retorno para casa: território residencial do passageiro
+      // - corrida normal: exclusivamente o território da origem
       const refNeighborhood = ride.is_homebound
         ? ride.passenger?.neighborhood_id
         : ride.origin_neighborhood_id;
       const refCommunity = ride.is_homebound
         ? ride.passenger?.community_id
-        : (ride.origin_community_id || ride.passenger?.community_id);
+        : ride.origin_community_id;
 
       const sameNeighborhood = refNeighborhood &&
                                ds.driver.neighborhood_id === refNeighborhood;
 
       const sameCommunity = refCommunity &&
                             ds.driver.community_id === refCommunity;
+
+      // Regra comunitária KAVIAR:
+      // motorista precisa pertencer à mesma comunidade ou ao mesmo bairro.
+      // Exceção: retorno para casa com consentimento explícito do passageiro.
+      const allowOutsideFallback =
+        ride.is_homebound === true &&
+        ride.outside_fallback_allowed === true &&
+        !!ride.outside_fallback_consented_at;
+
+      if (!sameCommunity && !sameNeighborhood && !allowOutsideFallback) {
+        droppedReasons.outside_territory++;
+        continue;
+      }
 
       // Score = distância GPS pura (desempate operacional dentro de cada tier)
       let score = distance;
