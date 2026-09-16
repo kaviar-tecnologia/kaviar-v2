@@ -7,7 +7,7 @@ Critério: postura conservadora para reduzir risco de rejeicao em revisao.
 ## 0) Contexto e versoes auditadas
 
 - App Passageiro: `com.kaviar.passenger` (versionCode 22).
-- App Motorista: `com.kaviar.driver` (versionCode 6).
+- App Motorista: `com.kaviar.driver` (versao 1.12.3, versionCode 8).
 - API principal: `https://api.kaviar.com.br`.
 - Integrações relevantes identificadas no codigo: Google Maps, Expo Notifications/Push, Asaas, SumUp, AWS S3, Twilio (backend).
 
@@ -61,7 +61,7 @@ Preencher no Data Safety do app Motorista como **coletados**:
 
 3. Localizacao
 - Localizacao aproximada e precisa (foreground)
-- Localizacao em segundo plano (quando online/em corrida)
+- Localizacao precisa durante o servico, inclusive quando o app esta minimizado e nao visivel, por meio de foreground service iniciado pelo motorista; o app nao solicita `ACCESS_BACKGROUND_LOCATION`.
 - Atualizacoes de localizacao para tracking de corrida
 
 4. Dados financeiros/transacionais
@@ -140,7 +140,7 @@ Motorista:
 
 1. Obrigatorio
 - Identificacao pessoal e documental para aprovacao.
-- Localizacao foreground e, para operacao plena, background quando online/corrida.
+- Localizacao precisa durante o uso e, enquanto o motorista permanece online ou em uma corrida, continuidade da coleta com o app minimizado por meio de foreground service; sem `ACCESS_BACKGROUND_LOCATION`.
 
 2. Opcional/condicional
 - Permissao de notificacao.
@@ -217,7 +217,7 @@ Preenchimento recomendado:
 2. Confirmar politica de retencao/exclusao para documentos de motorista (banco + S3).
 3. Confirmar texto final de privacidade e termos ja publicados e alinhados com o formulario do Play.
 4. Confirmar se todos SDKs/servicos de producao estao mapeados (inclusive analytics/crash se houver fora deste recorte).
-5. Revisar screenshots e descricao da Play Store para coerencia com uso de localizacao em background no app Motorista.
+5. Revisar screenshots e descricao da Play Store para coerencia com a continuidade da localizacao quando o app esta minimizado durante o modo online/corrida, usando foreground service e sem `ACCESS_BACKGROUND_LOCATION`.
 
 ---
 
@@ -244,7 +244,7 @@ Finalidades:
 
 - Coleta dados pessoais: Sim (nome, email, telefone, CPF, RG, CNH)
 - Coleta documentos/arquivos: Sim (imagem/PDF de compliance)
-- Coleta localizacao: Sim (foreground e background)
+- Coleta localizacao: Sim (localizacao precisa durante o uso e continuidade quando online/em corrida com o app minimizado via foreground service; sem `ACCESS_BACKGROUND_LOCATION`).
 - Coleta dados financeiros/transacionais: Sim (recargas e status)
 - Coleta IDs do dispositivo/app: Sim (expo token, fcm token)
 - Compartilha dados com terceiros: Sim (pagamentos, infraestrutura, comunicacao, mapas)
