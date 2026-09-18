@@ -860,7 +860,7 @@ export default function DriverOnline() {
       >
         <View style={styles.disclosureOverlay}>
           <View style={styles.disclosureCard}>
-            <Text style={styles.disclosureTitle}>Uso da sua localização</Text>
+            <Text style={styles.disclosureTitle} maxFontSizeMultiplier={1.3}>Uso da sua localização</Text>
 
             <ScrollView
               ref={locationDisclosureScrollRef}
@@ -869,7 +869,7 @@ export default function DriverOnline() {
               showsVerticalScrollIndicator
               persistentScrollbar
             >
-              <Text style={styles.disclosureText}>
+              <Text style={styles.disclosureText} maxFontSizeMultiplier={1.3}>
                 O KAVIAR Motorista coleta e usa sua localização precisa para mostrar sua posição no mapa, encontrar passageiros próximos, receber corridas e atualizar sua posição durante o serviço.{'\n\n'}
                 Enquanto você estiver online ou em uma corrida, sua localização continuará sendo coletada em segundo plano, inclusive quando o aplicativo estiver minimizado, para manter sua disponibilidade e atualizar sua posição durante o serviço. O Android mostrará uma notificação enquanto esse recurso estiver ativo.{'\n\n'}
                 Durante uma corrida, sua localização também é compartilhada com o passageiro para permitir o acompanhamento da viagem em tempo real.{'\n\n'}
@@ -884,7 +884,7 @@ export default function DriverOnline() {
               accessibilityLabel="Ir para o final do aviso de localização"
             >
               <Ionicons name="chevron-down" size={18} color={COLORS.primary} />
-              <Text style={styles.disclosureJumpText}>Ver o final do aviso</Text>
+              <Text style={styles.disclosureJumpText} maxFontSizeMultiplier={1.3}>Ver o final do aviso</Text>
             </TouchableOpacity>
 
             <View style={styles.disclosureActions}>
@@ -894,7 +894,7 @@ export default function DriverOnline() {
                 accessibilityRole="button"
                 accessibilityLabel="Agora não"
               >
-                <Text style={styles.disclosureSecondaryButtonText}>Agora não</Text>
+                <Text style={styles.disclosureSecondaryButtonText} maxFontSizeMultiplier={1.3}>Agora não</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.disclosureButton, styles.disclosurePrimaryButton]}
@@ -905,7 +905,7 @@ export default function DriverOnline() {
                 accessibilityRole="button"
                 accessibilityLabel="Concordo e continuar"
               >
-                <Text style={styles.disclosurePrimaryButtonText}>Concordo e continuar</Text>
+                <Text style={styles.disclosurePrimaryButtonText} maxFontSizeMultiplier={1.3}>Concordo e continuar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1231,10 +1231,14 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   disclosureButton: {
+    flex: 1,
+    minHeight: 44,
     borderRadius: 10,
     paddingVertical: 10,
-    paddingHorizontal: 14,
+    paddingHorizontal: 10,
     borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   disclosureSecondaryButton: {
     backgroundColor: '#FFFFFF',
