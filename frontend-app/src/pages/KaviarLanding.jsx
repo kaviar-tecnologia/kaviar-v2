@@ -15,13 +15,13 @@ import {
 } from '@mui/icons-material';
 import { QRCodeSVG } from 'qrcode.react';
 
-const gold = '#D4AF37';
-const goldSoft = '#F5D980';
-const textPrimary = '#FFFFFF';
-const textSecondary = 'rgba(245,247,250,0.82)';
-const blueSoft = '#8CB8FF';
-const cardBg = 'linear-gradient(160deg, rgba(255,255,255,0.095), rgba(255,255,255,0.055))';
-const cardBorder = 'rgba(255,255,255,0.16)';
+const gold = '#B98A18';
+const goldSoft = '#C79A2B';
+const textPrimary = '#0B1423';
+const textSecondary = 'rgba(20,31,49,0.72)';
+const blueSoft = '#3768B2';
+const cardBg = 'linear-gradient(160deg, rgba(255,255,255,0.96), rgba(247,249,252,0.92))';
+const cardBorder = 'rgba(15,23,42,0.11)';
 const rioHeroImage = '/turismo-replit/generated_images/sugarloaf_mountain_golden_hour.png';
 const rioCityImage = '/turismo-replit/generated_images/luxury_sedan_in_rio_at_night.png';
 const petImage = '/assets/kaviar-pet-real.png';
@@ -173,14 +173,14 @@ export default function KaviarLanding() {
   }, []);
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#0D1420', color: textPrimary, position: 'relative', overflow: 'hidden' }}>
+    <Box sx={{ minHeight: '100vh', bgcolor: '#F4F1EA', color: textPrimary, position: 'relative', overflow: 'hidden' }}>
       <Box
         sx={{
           position: 'absolute',
           inset: 0,
           pointerEvents: 'none',
           background:
-            'radial-gradient(circle at 8% 0%, rgba(226,190,92,0.24), transparent 30%), radial-gradient(circle at 88% 12%, rgba(79,126,207,0.24), transparent 34%), linear-gradient(168deg, #101723 0%, #142238 52%, #0D1728 100%)',
+            'radial-gradient(circle at 8% 0%, rgba(214,175,55,0.18), transparent 32%), radial-gradient(circle at 88% 10%, rgba(77,118,182,0.14), transparent 34%), linear-gradient(168deg, #F7F3EB 0%, #EEF3F8 52%, #F4F1EA 100%)',
         }}
       />
       <Box
@@ -202,7 +202,7 @@ export default function KaviarLanding() {
           top: 0,
           zIndex: 40,
           borderBottom: '1px solid rgba(255,255,255,0.08)',
-          bgcolor: 'rgba(13,20,32,0.82)',
+          bgcolor: 'rgba(250,248,243,0.88)',
           backdropFilter: 'blur(16px)',
         }}
       >
@@ -231,7 +231,7 @@ export default function KaviarLanding() {
                 key={item.label}
                 component="a"
                 href={item.href}
-                sx={{ color: 'rgba(255,255,255,0.82)', textDecoration: 'none', fontSize: 13.5, '&:hover': { color: '#fff' } }}
+                sx={{ color: 'rgba(11,20,35,0.78)', textDecoration: 'none', fontSize: 13.5, '&:hover': { color: '#0B1423' } }}
               >
                 {item.label}
               </Box>
@@ -392,11 +392,11 @@ export default function KaviarLanding() {
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,1fr)', lg: 'repeat(7,1fr)' }, gap: 0.95 }}>
             {serviceCards.map((card) => (
               <Card key={card.title} sx={glassCard(card.accent)}>
-                <CardContent sx={{ p: 1.35, color: '#fff' }}>
+                <CardContent sx={{ p: 1.35, color: '#0B1423' }}>
                   <Box sx={{ width: 34, height: 34, borderRadius: 1.6, display: 'grid', placeItems: 'center', bgcolor: card.accent ? 'rgba(244,114,182,0.16)' : 'rgba(37,99,235,0.16)', color: card.accent ? '#f9a8d4' : blueSoft, mb: 0.85 }}>
                     {card.icon}
                   </Box>
-                  <Typography sx={{ color: '#fff', fontWeight: 700, mb: 0.4, fontSize: 14 }}>{card.title}</Typography>
+                  <Typography sx={{ color: '#0B1423', fontWeight: 700, mb: 0.4, fontSize: 14 }}>{card.title}</Typography>
                   <Typography sx={{ color: textSecondary, fontSize: 12.4, lineHeight: 1.46 }}>{card.text}</Typography>
                 </CardContent>
               </Card>
@@ -405,14 +405,14 @@ export default function KaviarLanding() {
         </SectionSpacing>
 
         <SectionSpacing id="ar">
-          <Card sx={{ borderRadius: 4, border: '1px solid rgba(212,175,55,0.30)', background: 'linear-gradient(145deg, rgba(30,43,64,0.97), rgba(16,28,47,0.97))', boxShadow: '0 26px 82px rgba(0,0,0,0.32)', overflow: 'hidden' }}>
+          <Card sx={{ borderRadius: 4, border: '1px solid rgba(212,175,55,0.30)', background: 'linear-gradient(145deg, rgba(255,255,255,0.98), rgba(239,244,250,0.96))', boxShadow: '0 26px 82px rgba(0,0,0,0.32)', overflow: 'hidden' }}>
             <CardContent sx={{ p: { xs: 2.2, md: 3.0 } }}>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1.05fr 0.95fr' }, gap: { xs: 2.0, lg: 3.0 }, alignItems: 'center' }}>
                 <Box>
                   <Typography sx={{ color: goldSoft, fontSize: 11, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 700, mb: 0.7 }}>
                     KAVIAR AR
                   </Typography>
-                  <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: { xs: '1.7rem', md: '2.35rem' }, lineHeight: 1.08, mb: 0.9 }}>
+                  <Typography sx={{ color: '#0B1423', fontWeight: 700, fontSize: { xs: '1.7rem', md: '2.35rem' }, lineHeight: 1.08, mb: 0.9 }}>
                     Converse com a KAVIAR em realidade aumentada.
                   </Typography>
                   <Typography sx={{ color: textSecondary, lineHeight: 1.7, maxWidth: 690, mb: 1.35 }}>
@@ -508,12 +508,12 @@ export default function KaviarLanding() {
         </SectionSpacing>
 
         <SectionSpacing id="moto">
-          <Card sx={{ borderRadius: 4, border: `1px solid ${cardBorder}`, background: 'linear-gradient(155deg, rgba(25,35,52,0.96), rgba(14,25,43,0.96))', boxShadow: '0 24px 70px rgba(0,0,0,0.30)' }}>
+          <Card sx={{ borderRadius: 4, border: `1px solid ${cardBorder}`, background: 'linear-gradient(155deg, rgba(255,255,255,0.97), rgba(242,246,251,0.95))', boxShadow: '0 24px 70px rgba(0,0,0,0.30)' }}>
             <CardContent sx={{ p: { xs: 2.0, md: 2.8 } }}>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '0.97fr 1.03fr' }, gap: 1.8, alignItems: 'center' }}>
                 <Box>
                   <Typography sx={{ color: blueSoft, fontSize: 11, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 700, mb: 0.65 }}>KAVIAR Moto</Typography>
-                  <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: { xs: '1.5rem', md: '2.02rem' }, mb: 0.7 }}>Mais agilidade para sua cidade.</Typography>
+                  <Typography sx={{ color: '#0B1423', fontWeight: 700, fontSize: { xs: '1.5rem', md: '2.02rem' }, mb: 0.7 }}>Mais agilidade para sua cidade.</Typography>
                   <Typography sx={{ color: textSecondary, lineHeight: 1.68, maxWidth: 620, mb: 1.25 }}>
                     Peça uma moto para deslocamentos rápidos e tenha uma alternativa mais ágil para a mobilidade local.
                   </Typography>
@@ -550,12 +550,12 @@ export default function KaviarLanding() {
         </SectionSpacing>
 
         <SectionSpacing id="pet">
-          <Card sx={{ borderRadius: 4, border: `1px solid rgba(212,175,55,0.26)`, background: 'linear-gradient(155deg, rgba(30,29,25,0.96), rgba(15,22,34,0.96))', boxShadow: '0 24px 70px rgba(0,0,0,0.30)' }}>
+          <Card sx={{ borderRadius: 4, border: `1px solid rgba(212,175,55,0.26)`, background: 'linear-gradient(155deg, rgba(255,252,245,0.98), rgba(246,247,250,0.95))', boxShadow: '0 24px 70px rgba(0,0,0,0.30)' }}>
             <CardContent sx={{ p: { xs: 2.0, md: 2.8 } }}>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 0.95fr' }, gap: 1.8, alignItems: 'center' }}>
                 <Box>
                   <Typography sx={{ color: goldSoft, fontSize: 11, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 700, mb: 0.65 }}>KAVIAR Pet</Typography>
-                  <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: { xs: '1.5rem', md: '2.02rem' }, mb: 0.7 }}>Mobilidade também para quem faz parte da família.</Typography>
+                  <Typography sx={{ color: '#0B1423', fontWeight: 700, fontSize: { xs: '1.5rem', md: '2.02rem' }, mb: 0.7 }}>Mobilidade também para quem faz parte da família.</Typography>
                   <Typography sx={{ color: textSecondary, lineHeight: 1.68, maxWidth: 680, mb: 1.2 }}>
                     Com o KAVIAR Pet, tutores podem solicitar transporte com mais praticidade para levar seus pets a consultas, banho e tosa, passeios, hotéis pet e outros compromissos do dia a dia.
                   </Typography>
@@ -594,7 +594,7 @@ export default function KaviarLanding() {
         </SectionSpacing>
 
         <SectionSpacing id="seguranca">
-          <Card sx={{ borderRadius: 4, border: `1px solid ${cardBorder}`, background: 'linear-gradient(155deg, rgba(26,38,56,0.96), rgba(15,27,43,0.96))', boxShadow: '0 22px 68px rgba(0,0,0,0.28)' }}>
+          <Card sx={{ borderRadius: 4, border: `1px solid ${cardBorder}`, background: 'linear-gradient(155deg, rgba(250,252,255,0.98), rgba(239,244,250,0.96))', boxShadow: '0 22px 68px rgba(0,0,0,0.28)' }}>
             <CardContent sx={{ p: { xs: 2.0, md: 2.6 } }}>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '0.94fr 1.06fr' }, gap: 1.5, alignItems: 'stretch' }}>
                 <Box>
@@ -604,7 +604,7 @@ export default function KaviarLanding() {
                     </Box>
                     <Typography sx={{ color: goldSoft, fontSize: 10.8, letterSpacing: '0.22em', textTransform: 'uppercase' }}>Segurança KAVIAR</Typography>
                   </Box>
-                  <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: { xs: '1.38rem', md: '1.86rem' }, mb: 0.8 }}>Segurança que você sente</Typography>
+                  <Typography sx={{ color: '#0B1423', fontWeight: 700, fontSize: { xs: '1.38rem', md: '1.86rem' }, mb: 0.8 }}>Segurança que você sente</Typography>
                   <Typography sx={{ color: textSecondary, lineHeight: 1.68, mb: 1.05 }}>
                     Validamos motoristas, acompanhamos corridas e oferecemos suporte local. Tudo para você viajar com mais tranquilidade.
                   </Typography>
@@ -627,11 +627,11 @@ export default function KaviarLanding() {
         </SectionSpacing>
 
         <SectionSpacing id="motorista">
-          <Card sx={{ borderRadius: 4, border: `1px solid rgba(212,175,55,0.26)`, background: 'linear-gradient(155deg, rgba(34,31,23,0.96), rgba(16,24,36,0.96))', boxShadow: '0 22px 64px rgba(0,0,0,0.28)' }}>
+          <Card sx={{ borderRadius: 4, border: `1px solid rgba(212,175,55,0.26)`, background: 'linear-gradient(155deg, rgba(255,252,244,0.98), rgba(245,247,250,0.96))', boxShadow: '0 22px 64px rgba(0,0,0,0.28)' }}>
             <CardContent sx={{ p: { xs: 2.0, md: 2.8 } }}>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 0.94fr' }, gap: 1.55, alignItems: 'center' }}>
                 <Box>
-                  <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: { xs: '1.4rem', md: '1.88rem' }, mb: 0.8 }}>Seja um motorista parceiro</Typography>
+                  <Typography sx={{ color: '#0B1423', fontWeight: 700, fontSize: { xs: '1.4rem', md: '1.88rem' }, mb: 0.8 }}>Seja um motorista parceiro</Typography>
                   <Typography sx={{ color: textSecondary, lineHeight: 1.68, mb: 1.05 }}>
                     Mais ganhos, mais liberdade e o suporte de uma plataforma que valoriza você.
                   </Typography>
@@ -669,10 +669,10 @@ export default function KaviarLanding() {
         </SectionSpacing>
 
         <SectionSpacing id="gestores">
-          <Card sx={{ borderRadius: 4, border: `1px solid rgba(212,175,55,0.34)`, background: 'linear-gradient(150deg, rgba(23,34,51,0.96), rgba(13,23,38,0.96))', boxShadow: '0 30px 88px rgba(0,0,0,0.32)' }}>
+          <Card sx={{ borderRadius: 4, border: `1px solid rgba(212,175,55,0.34)`, background: 'linear-gradient(150deg, rgba(255,255,255,0.98), rgba(240,245,251,0.96))', boxShadow: '0 30px 88px rgba(0,0,0,0.32)' }}>
             <CardContent sx={{ p: { xs: 2.0, md: 3.0 } }}>
               <Box sx={{ textAlign: 'center', mb: 1.6 }}>
-                <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: { xs: '1.8rem', md: '2.55rem' }, lineHeight: 1.04, mb: 0.55 }}>
+                <Typography sx={{ color: '#0B1423', fontWeight: 700, fontSize: { xs: '1.8rem', md: '2.55rem' }, lineHeight: 1.04, mb: 0.55 }}>
                   Sua cidade também pode ter KAVIAR
                 </Typography>
                 <Typography sx={{ color: goldSoft, fontSize: { xs: 14.5, md: 17 }, fontWeight: 600, mb: 0.65 }}>Leve uma operação local de mobilidade para sua região.</Typography>
@@ -682,7 +682,7 @@ export default function KaviarLanding() {
               </Box>
 
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '0.94fr 1.06fr' }, gap: 1.6, alignItems: 'stretch' }}>
-                <Box sx={{ borderRadius: 3, border: `1px solid ${cardBorder}`, background: 'rgba(255,255,255,0.03)', p: 1.25 }}>
+                <Box sx={{ borderRadius: 3, border: `1px solid ${cardBorder}`, background: 'rgba(255,255,255,0.72)', p: 1.25 }}>
                   <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: 16.8, mb: 0.55 }}>Oportunidade comercial territorial</Typography>
                   <Typography sx={{ color: textSecondary, lineHeight: 1.65, fontSize: 14, mb: 1.0 }}>
                     Gestores locais podem estruturar uma operação forte para passageiros, motoristas e comércios parceiros, com suporte de uma plataforma feita para o contexto regional.
@@ -741,9 +741,9 @@ export default function KaviarLanding() {
         </SectionSpacing>
 
         <SectionSpacing id="paineis">
-          <Card sx={{ borderRadius: 4, border: `1px solid ${cardBorder}`, background: 'linear-gradient(150deg, rgba(24,36,55,0.96), rgba(14,24,40,0.96))', boxShadow: '0 24px 76px rgba(0,0,0,0.28)' }}>
+          <Card sx={{ borderRadius: 4, border: `1px solid ${cardBorder}`, background: 'linear-gradient(150deg, rgba(255,255,255,0.98), rgba(240,245,251,0.96))', boxShadow: '0 24px 76px rgba(0,0,0,0.28)' }}>
             <CardContent sx={{ p: { xs: 2.0, md: 2.8 } }}>
-              <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: { xs: '1.42rem', md: '1.92rem' }, mb: 0.55 }}>Painéis KAVIAR</Typography>
+              <Typography sx={{ color: '#0B1423', fontWeight: 700, fontSize: { xs: '1.42rem', md: '1.92rem' }, mb: 0.55 }}>Painéis KAVIAR</Typography>
               <Typography sx={{ color: goldSoft, fontWeight: 600, fontSize: { xs: 14.2, md: 16 }, mb: 0.65 }}>Cada parceiro com o acesso certo para operar melhor.</Typography>
               <Typography sx={{ color: textSecondary, lineHeight: 1.68, maxWidth: 860, mb: 1.2 }}>
                 O KAVIAR oferece acessos específicos para gestores, contadores, comércios parceiros e administração, cada um com as permissões necessárias para sua operação.
@@ -752,7 +752,7 @@ export default function KaviarLanding() {
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,1fr)', xl: 'repeat(4,1fr)' }, gap: 0.95 }}>
                 {panelCards.map((card) => (
                   <Box key={card.title} sx={panelCardStyle(card.kind)}>
-                    <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: 15.2, mb: 0.45 }}>{card.title}</Typography>
+                    <Typography sx={{ color: '#0B1423', fontWeight: 700, fontSize: 15.2, mb: 0.45 }}>{card.title}</Typography>
                     <Typography sx={{ color: textSecondary, fontSize: 12.7, lineHeight: 1.5, mb: 1.0 }}>{card.text}</Typography>
                     <Button href={card.href} sx={panelButtonStyle(card.kind)}>
                       {card.button}
@@ -770,7 +770,7 @@ export default function KaviarLanding() {
         <SectionSpacing id="sobre">
           <Card sx={{ borderRadius: 4, border: `1px solid ${cardBorder}`, bgcolor: 'rgba(255,255,255,0.03)' }}>
             <CardContent sx={{ p: { xs: 2.0, md: 2.5 } }}>
-              <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: { xs: '1.3rem', md: '1.72rem' }, mb: 0.65 }}>
+              <Typography sx={{ color: '#0B1423', fontWeight: 700, fontSize: { xs: '1.3rem', md: '1.72rem' }, mb: 0.65 }}>
                 Por que o KAVIAR olha primeiro para o motorista?
               </Typography>
               <Typography sx={{ color: textSecondary, lineHeight: 1.68 }}>
@@ -781,11 +781,11 @@ export default function KaviarLanding() {
         </SectionSpacing>
 
         <SectionSpacing id="download">
-          <Card sx={{ borderRadius: 4, border: `1px solid rgba(212,175,55,0.28)`, background: 'linear-gradient(155deg, rgba(27,39,58,0.96), rgba(14,24,40,0.96))', boxShadow: '0 24px 74px rgba(0,0,0,0.28)' }}>
+          <Card sx={{ borderRadius: 4, border: `1px solid rgba(212,175,55,0.28)`, background: 'linear-gradient(155deg, rgba(255,255,255,0.98), rgba(240,245,251,0.96))', boxShadow: '0 24px 74px rgba(0,0,0,0.28)' }}>
             <CardContent sx={{ p: { xs: 2.0, md: 2.8 } }}>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1.08fr 0.92fr' }, gap: 1.6, alignItems: 'center' }}>
                 <Box>
-                  <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: { xs: '1.42rem', md: '1.92rem' }, mb: 0.65 }}>Baixe agora o app KAVIAR</Typography>
+                  <Typography sx={{ color: '#0B1423', fontWeight: 700, fontSize: { xs: '1.42rem', md: '1.92rem' }, mb: 0.65 }}>Baixe agora o app KAVIAR</Typography>
                   <Typography sx={{ color: textSecondary, lineHeight: 1.68, mb: 1.1 }}>
                     Passageiros acessam o KAVIAR pela Google Play. O app do motorista será direcionado à loja oficial assim que a versão em análise estiver publicada.
                   </Typography>
@@ -812,7 +812,7 @@ export default function KaviarLanding() {
         </SectionSpacing>
       </Container>
 
-      <Box sx={{ borderTop: '1px solid rgba(255,255,255,0.08)', py: 2.8, mt: 0.6, position: 'relative', zIndex: 1 }}>
+      <Box sx={{ borderTop: '1px solid rgba(15,23,42,0.10)', py: 2.8, mt: 0.6, position: 'relative', zIndex: 1, bgcolor: 'rgba(255,255,255,0.56)' }}>
         <Container maxWidth="xl">
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.1fr 1fr 1fr' }, gap: 1.6 }}>
             <Box>
@@ -840,7 +840,7 @@ export default function KaviarLanding() {
                   ['Termos Motorista', '/termos-motorista'],
                   ['Excluir Conta', '/excluir-conta'],
                 ].map((link) => (
-                  <Box key={link[0]} component="a" href={link[1]} sx={{ color: 'rgba(255,255,255,0.66)', textDecoration: 'none', fontSize: 13, '&:hover': { color: '#fff' } }}>
+                  <Box key={link[0]} component="a" href={link[1]} sx={{ color: 'rgba(255,255,255,0.66)', textDecoration: 'none', fontSize: 13, '&:hover': { color: '#0B1423' } }}>
                     {link[0]}
                   </Box>
                 ))}
@@ -850,10 +850,10 @@ export default function KaviarLanding() {
             <Box>
               <Typography sx={{ color: '#fff', fontWeight: 700, mb: 0.65, fontSize: 14 }}>Downloads</Typography>
               <Stack spacing={0.38}>
-                <Box component="a" href={passengerStore} target="_blank" rel="noopener noreferrer" sx={{ color: 'rgba(255,255,255,0.66)', textDecoration: 'none', fontSize: 13, '&:hover': { color: '#fff' } }}>
+                <Box component="a" href={passengerStore} target="_blank" rel="noopener noreferrer" sx={{ color: 'rgba(255,255,255,0.66)', textDecoration: 'none', fontSize: 13, '&:hover': { color: '#0B1423' } }}>
                   KAVIAR Passageiro — Google Play
                 </Box>
-                <Box component="a" href={driverApk} target="_blank" rel="noopener noreferrer" sx={{ color: 'rgba(255,255,255,0.66)', textDecoration: 'none', fontSize: 13, '&:hover': { color: '#fff' } }}>
+                <Box component="a" href={driverApk} target="_blank" rel="noopener noreferrer" sx={{ color: 'rgba(255,255,255,0.66)', textDecoration: 'none', fontSize: 13, '&:hover': { color: '#0B1423' } }}>
                   App do motorista
                 </Box>
               </Stack>
@@ -893,14 +893,14 @@ function panelCardStyle(kind) {
     borderRadius: 2.6,
     border: `1px solid ${cardBorder}`,
     p: 1.2,
-    background: 'rgba(255,255,255,0.04)',
+    background: 'rgba(255,255,255,0.76)',
   };
 
   if (kind === 'gold') {
     return {
       ...base,
       border: '1px solid rgba(212,175,55,0.38)',
-      background: 'linear-gradient(165deg, rgba(26,21,10,0.78), rgba(12,14,18,0.92))',
+      background: 'linear-gradient(165deg, rgba(255,251,239,0.98), rgba(250,247,240,0.96))',
       boxShadow: '0 14px 34px rgba(212,175,55,0.12)',
     };
   }
@@ -909,7 +909,7 @@ function panelCardStyle(kind) {
     return {
       ...base,
       border: '1px solid rgba(37,99,235,0.40)',
-      background: 'linear-gradient(165deg, rgba(11,21,44,0.78), rgba(11,14,18,0.92))',
+      background: 'linear-gradient(165deg, rgba(241,246,255,0.98), rgba(248,250,253,0.96))',
       boxShadow: '0 14px 34px rgba(37,99,235,0.12)',
     };
   }
@@ -917,7 +917,7 @@ function panelCardStyle(kind) {
   return {
     ...base,
     border: '1px solid rgba(255,255,255,0.12)',
-    background: 'rgba(255,255,255,0.025)',
+    background: 'rgba(255,255,255,0.82)',
   };
 }
 
@@ -932,7 +932,7 @@ function panelButtonStyle(kind) {
     py: 0.82,
     textTransform: 'none',
     fontWeight: 600,
-    background: 'rgba(255,255,255,0.04)',
+    background: 'rgba(255,255,255,0.76)',
     '&:hover': {
       background: 'rgba(255,255,255,0.08)',
     },
@@ -940,7 +940,7 @@ function panelButtonStyle(kind) {
 }
 
 const sectionTitle = {
-  color: '#fff',
+  color: '#0B1423',
   textAlign: 'center',
   fontSize: { xs: '1.45rem', md: '1.94rem' },
   fontWeight: 700,
