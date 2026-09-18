@@ -628,19 +628,69 @@ export default function KaviarLanding() {
                   </Button>
                 </Box>
 
-                <Box sx={{ borderRadius: 3, border: `1px solid ${cardBorder}`, bgcolor: 'rgba(255,255,255,0.055)', p: 1.25 }}>
-                  <Box sx={{ borderRadius: 2.2, border: `1px solid rgba(212,175,55,0.26)`, background: 'linear-gradient(160deg, rgba(10,16,24,0.98), rgba(5,8,12,0.98))', p: 1.15 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.85 }}>
-                      <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: 13.6 }}>Corrida aceita</Typography>
-                      <Typography sx={{ color: goldSoft, fontWeight: 700, fontSize: 12.8 }}>Em deslocamento</Typography>
-                    </Box>
-                    <Box sx={{ height: 94, borderRadius: 2, border: `1px solid ${cardBorder}`, background: 'linear-gradient(135deg, rgba(37,99,235,0.18), rgba(212,175,55,0.12))', mb: 0.8, position: 'relative' }}>
-                      <Box sx={{ position: 'absolute', left: 12, top: 12, width: 54, height: 15, borderRadius: 999, bgcolor: 'rgba(255,255,255,0.14)' }} />
-                      <Box sx={{ position: 'absolute', right: 14, top: 14, width: 74, height: 15, borderRadius: 999, bgcolor: 'rgba(212,175,55,0.48)' }} />
-                      <Box sx={{ position: 'absolute', left: 14, bottom: 16, width: 112, height: 2, bgcolor: `${gold}88`, boxShadow: `0 0 14px ${gold}` }} />
-                    </Box>
-                    <Typography sx={{ color: 'rgba(255,255,255,0.72)', fontSize: 12.1, mb: 0.2 }}>Status: Em deslocamento para embarque</Typography>
-                    <Typography sx={{ color: 'rgba(255,255,255,0.62)', fontSize: 11.8 }}>Tela pensada para apoiar a rotina do motorista parceiro.</Typography>
+                <Box
+                  sx={{
+                    borderRadius: 3,
+                    border: '1px solid rgba(185,138,24,0.20)',
+                    background: 'linear-gradient(155deg, rgba(255,255,255,0.98), rgba(246,248,251,0.96))',
+                    p: { xs: 1.35, md: 1.55 },
+                    boxShadow: '0 18px 46px rgba(35,44,58,0.10)',
+                  }}
+                >
+                  <Typography sx={{ color: goldSoft, fontSize: 10.8, letterSpacing: '0.18em', textTransform: 'uppercase', fontWeight: 800, mb: 0.45 }}>
+                    Jornada do motorista
+                  </Typography>
+                  <Typography sx={{ color: '#0B1423', fontWeight: 800, fontSize: { xs: 18, md: 20 }, mb: 1.15 }}>
+                    Comece em três etapas simples.
+                  </Typography>
+
+                  <Stack spacing={0.85}>
+                    {[
+                      ['01', 'Cadastro', 'Crie seu perfil e envie os documentos solicitados.'],
+                      ['02', 'Verificação', 'A KAVIAR analisa a documentação e libera seu acesso quando estiver tudo certo.'],
+                      ['03', 'Fique online', 'Ative sua disponibilidade no app e acompanhe as oportunidades da sua região.'],
+                    ].map(([step, title, text]) => (
+                      <Box
+                        key={step}
+                        sx={{
+                          display: 'grid',
+                          gridTemplateColumns: '46px 1fr',
+                          gap: 1.0,
+                          alignItems: 'center',
+                          borderRadius: 2.2,
+                          border: '1px solid rgba(15,23,42,0.08)',
+                          bgcolor: 'rgba(255,255,255,0.82)',
+                          p: 0.95,
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            width: 42,
+                            height: 42,
+                            borderRadius: '50%',
+                            display: 'grid',
+                            placeItems: 'center',
+                            background: 'linear-gradient(180deg, #F8E6A0 0%, #D4AF37 58%, #B88A1A 100%)',
+                            color: '#0B1423',
+                            fontWeight: 900,
+                            fontSize: 12,
+                            boxShadow: '0 8px 20px rgba(185,138,24,0.18)',
+                          }}
+                        >
+                          {step}
+                        </Box>
+                        <Box>
+                          <Typography sx={{ color: '#0B1423', fontWeight: 800, fontSize: 13.4, mb: 0.18 }}>{title}</Typography>
+                          <Typography sx={{ color: textSecondary, fontSize: 11.8, lineHeight: 1.42 }}>{text}</Typography>
+                        </Box>
+                      </Box>
+                    ))}
+                  </Stack>
+
+                  <Box sx={{ mt: 1.05, borderRadius: 2, bgcolor: 'rgba(55,104,178,0.08)', border: '1px solid rgba(55,104,178,0.12)', px: 1.0, py: 0.8 }}>
+                    <Typography sx={{ color: '#294C7F', fontSize: 11.8, fontWeight: 700 }}>
+                      Tudo é acompanhado pelo app KAVIAR Motorista.
+                    </Typography>
                   </Box>
                 </Box>
               </Box>
@@ -839,6 +889,22 @@ export default function KaviarLanding() {
               </Stack>
             </Box>
           </Box>
+
+          <Box
+            sx={{
+              mt: 2.0,
+              pt: 1.8,
+              borderTop: '1px solid rgba(15,23,42,0.10)',
+              textAlign: 'center',
+            }}
+          >
+            <Typography sx={{ color: 'rgba(20,31,49,0.72)', fontSize: 12.4, lineHeight: 1.6 }}>
+              © 2026 KAVIAR TECNOLOGIA E SERVIÇOS DIGITAIS LTDA. Todos os direitos reservados.
+            </Typography>
+            <Typography sx={{ color: '#8A6715', fontSize: 12.2, fontWeight: 700, mt: 0.15, letterSpacing: '0.02em' }}>
+              Desenvolvido pela equipe KAVIAR Tecnologia.
+            </Typography>
+          </Box>
         </Container>
       </Box>
     </Box>
@@ -905,16 +971,17 @@ function panelButtonStyle(kind) {
   if (kind === 'gold') return buttonGold;
   if (kind === 'blue') return buttonBlue;
   return {
-    border: '1px solid rgba(255,255,255,0.22)',
-    color: 'rgba(255,255,255,0.84)',
+    border: '1px solid rgba(11,20,35,0.28)',
+    color: '#0B1423',
     borderRadius: 999,
     px: 1.7,
     py: 0.82,
     textTransform: 'none',
-    fontWeight: 600,
-    background: 'rgba(255,255,255,0.76)',
+    fontWeight: 700,
+    background: 'rgba(11,20,35,0.045)',
     '&:hover': {
-      background: 'rgba(255,255,255,0.08)',
+      borderColor: 'rgba(11,20,35,0.42)',
+      background: 'rgba(11,20,35,0.085)',
     },
   };
 }
