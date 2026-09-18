@@ -25,6 +25,7 @@ const cardBorder = 'rgba(15,23,42,0.11)';
 const rioHeroImage = '/turismo-replit/generated_images/sugarloaf_mountain_golden_hour.png';
 const arImage = '/turismo-replit/generated_images/sugarloaf_mountain_golden_hour.png';
 const motoImage = '/turismo-replit/generated_images/tijuca_forest_road.png';
+const cityImage = '/turismo-replit/generated_images/professional_chauffeur_service.png';
 const petImage = '/assets/kaviar-pet-real.png';
 
 const passengerStore = 'https://play.google.com/store/apps/details?id=com.kaviar.passenger';
@@ -678,7 +679,7 @@ export default function KaviarLanding() {
 
                 <Box sx={{ borderRadius: 3, border: `1px solid ${cardBorder}`, background: 'linear-gradient(160deg, rgba(11,16,24,0.98), rgba(6,9,14,0.98))', p: 1.25, position: 'relative', overflow: 'hidden' }}>
                   <Box sx={{ position: 'absolute', inset: 0, background: 'radial-gradient(circle at 20% 20%, rgba(212,175,55,0.18), transparent 30%), radial-gradient(circle at 80% 74%, rgba(37,99,235,0.16), transparent 24%)' }} />
-                  <Box sx={{ position: 'relative', height: 172, borderRadius: 2.4, border: `1px solid ${cardBorder}`, backgroundImage: `url(${rioCityImage})`, backgroundSize: 'cover', backgroundPosition: 'center', overflow: 'hidden', mb: 1.0 }}>
+                  <Box sx={{ position: 'relative', height: 172, borderRadius: 2.4, border: `1px solid ${cardBorder}`, backgroundImage: `url(${cityImage})`, backgroundSize: 'cover', backgroundPosition: 'center', overflow: 'hidden', mb: 1.0 }}>
                     <Box sx={{ position: 'absolute', inset: 0, background: 'linear-gradient(116deg, rgba(8,12,20,0.84) 12%, rgba(8,12,20,0.56) 58%, rgba(8,12,20,0.86) 100%)' }} />
                     {[
                       ['20%', '32%'],
