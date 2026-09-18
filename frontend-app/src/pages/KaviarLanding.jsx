@@ -467,10 +467,6 @@ export default function KaviarLanding() {
                     }}
                   >
                     <Box sx={{ position: 'absolute', inset: 18, borderRadius: '50%', border: '1px solid rgba(140,184,255,0.20)' }} />
-                    <Box sx={{ position: 'absolute', left: '50%', top: -16, width: 1, height: 36, bgcolor: 'rgba(245,217,128,0.38)' }} />
-                    <Box sx={{ position: 'absolute', left: '50%', bottom: -16, width: 1, height: 36, bgcolor: 'rgba(245,217,128,0.38)' }} />
-                    <Box sx={{ position: 'absolute', top: '50%', left: -16, height: 1, width: 36, bgcolor: 'rgba(245,217,128,0.38)' }} />
-                    <Box sx={{ position: 'absolute', top: '50%', right: -16, height: 1, width: 36, bgcolor: 'rgba(245,217,128,0.38)' }} />
 
                     <Box
                       sx={{
