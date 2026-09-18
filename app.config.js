@@ -11,7 +11,7 @@ const config = {
     scheme: 'kaviar-driver',
     projectId: '01426c18-feb5-44f2-94f1-dab900d8bc85',
     version: '1.12.3',
-    versionCode: 8,
+    versionCode: 9,
   },
   passenger: {
     name: 'Kaviar Passageiro',
