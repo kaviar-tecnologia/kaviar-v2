@@ -847,12 +847,12 @@ export default function KaviarLanding() {
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.1fr 1fr 1fr' }, gap: 1.6 }}>
             <Box>
               <Typography sx={{ color: goldSoft, fontWeight: 700, letterSpacing: '0.14em', fontSize: 24, mb: 0.55 }}>KAVIAR</Typography>
-              <Typography sx={{ color: 'rgba(255,255,255,0.62)', fontSize: 13, lineHeight: 1.58 }}>KAVIAR TECNOLOGIA E SERVIÇOS DIGITAIS LTDA</Typography>
-              <Typography sx={{ color: 'rgba(255,255,255,0.62)', fontSize: 13, lineHeight: 1.58 }}>Nome fantasia: KAVIAR</Typography>
+              <Typography sx={{ color: textSecondary, fontSize: 13, lineHeight: 1.58 }}>KAVIAR TECNOLOGIA E SERVIÇOS DIGITAIS LTDA</Typography>
+              <Typography sx={{ color: textSecondary, fontSize: 13, lineHeight: 1.58 }}>Nome fantasia: KAVIAR</Typography>
             </Box>
 
             <Box>
-              <Typography sx={{ color: '#fff', fontWeight: 700, mb: 0.65, fontSize: 14 }}>Links</Typography>
+              <Typography sx={{ color: textPrimary, fontWeight: 700, mb: 0.65, fontSize: 14 }}>Links</Typography>
               <Stack spacing={0.38}>
                 {[
                   ['Início', '#top'],
@@ -870,7 +870,7 @@ export default function KaviarLanding() {
                   ['Termos Motorista', '/termos-motorista'],
                   ['Excluir Conta', '/excluir-conta'],
                 ].map((link) => (
-                  <Box key={link[0]} component="a" href={link[1]} sx={{ color: 'rgba(255,255,255,0.66)', textDecoration: 'none', fontSize: 13, '&:hover': { color: '#0B1423' } }}>
+                  <Box key={link[0]} component="a" href={link[1]} sx={{ color: textSecondary, textDecoration: 'none', fontSize: 13, '&:hover': { color: '#0B1423' } }}>
                     {link[0]}
                   </Box>
                 ))}
@@ -878,12 +878,12 @@ export default function KaviarLanding() {
             </Box>
 
             <Box>
-              <Typography sx={{ color: '#fff', fontWeight: 700, mb: 0.65, fontSize: 14 }}>Downloads</Typography>
+              <Typography sx={{ color: textPrimary, fontWeight: 700, mb: 0.65, fontSize: 14 }}>Downloads</Typography>
               <Stack spacing={0.38}>
-                <Box component="a" href={passengerStore} target="_blank" rel="noopener noreferrer" sx={{ color: 'rgba(255,255,255,0.66)', textDecoration: 'none', fontSize: 13, '&:hover': { color: '#0B1423' } }}>
+                <Box component="a" href={passengerStore} target="_blank" rel="noopener noreferrer" sx={{ color: textSecondary, textDecoration: 'none', fontSize: 13, '&:hover': { color: '#0B1423' } }}>
                   KAVIAR Passageiro — Google Play
                 </Box>
-                <Box component="a" href={driverApk} target="_blank" rel="noopener noreferrer" sx={{ color: 'rgba(255,255,255,0.66)', textDecoration: 'none', fontSize: 13, '&:hover': { color: '#0B1423' } }}>
+                <Box component="a" href={driverApk} target="_blank" rel="noopener noreferrer" sx={{ color: textSecondary, textDecoration: 'none', fontSize: 13, '&:hover': { color: '#0B1423' } }}>
                   App do motorista
                 </Box>
               </Stack>
