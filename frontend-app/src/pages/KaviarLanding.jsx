@@ -23,7 +23,7 @@ const blueSoft = '#8CB8FF';
 const cardBg = 'rgba(255,255,255,0.05)';
 const cardBorder = 'rgba(255,255,255,0.11)';
 const rioHeroImage = '/turismo-replit/generated_images/sugarloaf_mountain_golden_hour.png';
-const rioCityImage = '/turismo-replit/generated_images/christ_the_redeemer_majestic.png';
+const rioCityImage = '/turismo-replit/generated_images/luxury_sedan_in_rio_at_night.png';
 const petImage = '/assets/kaviar-pet-real.png';
 
 const passengerStore = 'https://play.google.com/store/apps/details?id=com.kaviar.passenger';
