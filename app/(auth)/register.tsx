@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
@@ -52,7 +52,6 @@ export default function Register() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [showLocationDisclosure, setShowLocationDisclosure] = useState(false);
-  const locationDisclosureScrollRef = useRef<ScrollView>(null);
   
   // Dados do veículo
   const [vehicleColor, setVehicleColor] = useState('');
@@ -717,28 +716,10 @@ export default function Register() {
               Uso da sua localização
             </Text>
 
-            <ScrollView
-              ref={locationDisclosureScrollRef}
-              style={styles.locationDisclosureScroll}
-              contentContainerStyle={styles.locationDisclosureScrollContent}
-              showsVerticalScrollIndicator
-              nestedScrollEnabled
-            >
-              <Text style={styles.locationDisclosureText}>
-                O KAVIAR Motorista coleta sua localização precisa durante o cadastro para identificar sua cidade e definir seu território de atuação.{'\n\n'}
-                Ao tocar em "Concordo e continuar", o Android solicitará sua permissão para acessar a localização.
-              </Text>
-            </ScrollView>
-
-            <TouchableOpacity
-              style={styles.locationDisclosureJumpButton}
-              onPress={() => locationDisclosureScrollRef.current?.scrollToEnd({ animated: true })}
-              accessibilityRole="button"
-              accessibilityLabel="Ir para o final do aviso de localização"
-            >
-              <Ionicons name="chevron-down" size={18} color={COLORS.accent} />
-              <Text style={styles.locationDisclosureJumpText}>Ver o final do aviso</Text>
-            </TouchableOpacity>
+            <Text style={styles.locationDisclosureText}>
+              O KAVIAR Motorista coleta sua localização precisa durante o cadastro para identificar sua cidade e definir seu território de atuação.{'\n\n'}
+              Ao tocar em "Concordo e continuar", o Android solicitará sua permissão para acessar a localização.
+            </Text>
 
             <View style={styles.locationDisclosureActions}>
               <TouchableOpacity
@@ -1074,8 +1055,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 24,
     alignItems: 'center',
-    width: '100%',
-    maxHeight: '92%',
   },
   locationDisclosureTitle: {
     marginTop: 12,
@@ -1085,39 +1064,16 @@ const styles = StyleSheet.create({
     color: '#333',
     textAlign: 'center',
   },
-  locationDisclosureScroll: {
-    width: '100%',
-    flexShrink: 1,
-  },
-  locationDisclosureScrollContent: {
-    paddingBottom: 8,
-  },
   locationDisclosureText: {
     fontSize: 15,
     lineHeight: 22,
     color: '#555',
     textAlign: 'left',
   },
-  locationDisclosureJumpButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginTop: 8,
-  },
-  locationDisclosureJumpText: {
-    color: COLORS.accent,
-    fontSize: 14,
-    fontWeight: '600',
-  },
   locationDisclosureActions: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 12,
-    flexShrink: 0,
-    width: '100%',
+    marginTop: 24,
   },
   locationDisclosureButton: {
     flex: 1,
