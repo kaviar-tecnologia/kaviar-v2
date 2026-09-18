@@ -428,19 +428,82 @@ export default function KaviarLanding() {
                   </Stack>
                 </Box>
 
-                <Box sx={{ minHeight: { xs: 260, md: 330 }, borderRadius: 3.5, border: '1px solid rgba(255,255,255,0.12)', background: 'radial-gradient(circle at 50% 20%, rgba(245,217,128,0.22), transparent 28%), radial-gradient(circle at 70% 70%, rgba(37,99,235,0.20), transparent 30%), rgba(255,255,255,0.035)', position: 'relative', overflow: 'hidden', display: 'grid', placeItems: 'center' }}>
-                  <Box sx={{ position: 'absolute', inset: '10%', borderRadius: '50%', border: '1px solid rgba(212,175,55,0.22)' }} />
-                  <Box sx={{ position: 'absolute', inset: '20%', borderRadius: '50%', border: '1px solid rgba(140,184,255,0.18)' }} />
-                  <Box sx={{ position: 'relative', width: { xs: 132, md: 160 }, height: { xs: 190, md: 230 } }}>
-                    <Box sx={{ position: 'absolute', left: '50%', top: 0, transform: 'translateX(-50%)', width: 58, height: 58, borderRadius: '50%', background: 'linear-gradient(180deg, #F5F5F3, #BFC3C8)', boxShadow: '0 0 28px rgba(245,217,128,0.28)' }} />
-                    <Box sx={{ position: 'absolute', left: '50%', top: 50, transform: 'translateX(-50%)', width: 92, height: 104, borderRadius: '44px 44px 24px 24px', background: 'linear-gradient(180deg, #F4F4F1 0%, #D5D7D8 100%)', border: '1px solid rgba(212,175,55,0.55)' }} />
-                    <Box sx={{ position: 'absolute', left: 30, top: 145, width: 30, height: 76, borderRadius: 16, background: 'linear-gradient(180deg, #EDEDE9, #BFC3C8)', transform: 'rotate(3deg)' }} />
-                    <Box sx={{ position: 'absolute', right: 30, top: 145, width: 30, height: 76, borderRadius: 16, background: 'linear-gradient(180deg, #EDEDE9, #BFC3C8)', transform: 'rotate(-3deg)' }} />
-                    <Typography sx={{ position: 'absolute', top: 92, width: '100%', textAlign: 'center', color: '#8A6A10', fontWeight: 800, fontSize: 13, letterSpacing: '0.08em' }}>KAVIAR</Typography>
+                <Box
+                  sx={{
+                    minHeight: { xs: 300, md: 360 },
+                    borderRadius: 3.8,
+                    border: '1px solid rgba(245,217,128,0.26)',
+                    backgroundImage: `linear-gradient(135deg, rgba(3,7,13,0.82), rgba(5,12,24,0.48)), url(${rioCityImage})`,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    boxShadow: '0 26px 70px rgba(0,0,0,0.42), 0 0 0 1px rgba(255,255,255,0.03) inset',
+                  }}
+                >
+                  <Box sx={{ position: 'absolute', inset: 0, background: 'radial-gradient(circle at 68% 34%, rgba(212,175,55,0.20), transparent 26%), radial-gradient(circle at 18% 78%, rgba(37,99,235,0.22), transparent 30%)' }} />
+
+                  <Box sx={{ position: 'absolute', left: 18, right: 18, top: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, px: 1.05, py: 0.55, borderRadius: 999, border: '1px solid rgba(245,217,128,0.28)', bgcolor: 'rgba(4,8,14,0.66)', backdropFilter: 'blur(12px)' }}>
+                      <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#69F0AE', boxShadow: '0 0 12px rgba(105,240,174,0.8)' }} />
+                      <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: 11.2, letterSpacing: '0.06em' }}>KAVIAR AR LIVE</Typography>
+                    </Box>
+                    <Box sx={{ px: 1.0, py: 0.5, borderRadius: 999, border: '1px solid rgba(255,255,255,0.13)', bgcolor: 'rgba(4,8,14,0.58)', backdropFilter: 'blur(10px)' }}>
+                      <Typography sx={{ color: 'rgba(255,255,255,0.76)', fontSize: 10.8 }}>WebAR • IA</Typography>
+                    </Box>
                   </Box>
-                  <Box sx={{ position: 'absolute', left: 16, right: 16, bottom: 14, borderRadius: 2, border: '1px solid rgba(255,255,255,0.10)', bgcolor: 'rgba(5,9,15,0.72)', px: 1.2, py: 0.9, backdropFilter: 'blur(8px)' }}>
-                    <Typography sx={{ color: goldSoft, fontWeight: 700, fontSize: 12 }}>Assistente KAVIAR</Typography>
-                    <Typography sx={{ color: 'rgba(255,255,255,0.68)', fontSize: 11.5 }}>Voz • Texto • Avatar 3D • WebAR</Typography>
+
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      left: '50%',
+                      top: '50%',
+                      transform: 'translate(-50%, -48%)',
+                      width: { xs: 190, md: 220 },
+                      height: { xs: 190, md: 220 },
+                      borderRadius: '50%',
+                      border: '1px solid rgba(245,217,128,0.26)',
+                      boxShadow: '0 0 55px rgba(212,175,55,0.12)',
+                    }}
+                  >
+                    <Box sx={{ position: 'absolute', inset: 18, borderRadius: '50%', border: '1px solid rgba(140,184,255,0.20)' }} />
+                    <Box sx={{ position: 'absolute', left: '50%', top: -16, width: 1, height: 36, bgcolor: 'rgba(245,217,128,0.38)' }} />
+                    <Box sx={{ position: 'absolute', left: '50%', bottom: -16, width: 1, height: 36, bgcolor: 'rgba(245,217,128,0.38)' }} />
+                    <Box sx={{ position: 'absolute', top: '50%', left: -16, height: 1, width: 36, bgcolor: 'rgba(245,217,128,0.38)' }} />
+                    <Box sx={{ position: 'absolute', top: '50%', right: -16, height: 1, width: 36, bgcolor: 'rgba(245,217,128,0.38)' }} />
+
+                    <Box
+                      sx={{
+                        position: 'absolute',
+                        inset: { xs: 44, md: 50 },
+                        borderRadius: 4,
+                        border: '1px solid rgba(255,255,255,0.14)',
+                        background: 'linear-gradient(160deg, rgba(255,255,255,0.11), rgba(8,14,24,0.74))',
+                        backdropFilter: 'blur(16px)',
+                        display: 'grid',
+                        placeItems: 'center',
+                        boxShadow: '0 20px 50px rgba(0,0,0,0.35)',
+                      }}
+                    >
+                      <Box sx={{ textAlign: 'center' }}>
+                        <Typography sx={{ color: goldSoft, fontWeight: 800, fontSize: { xs: 28, md: 34 }, letterSpacing: '0.12em', lineHeight: 1 }}>K</Typography>
+                        <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: 11.5, mt: 0.75 }}>Assistente KAVIAR</Typography>
+                        <Typography sx={{ color: 'rgba(255,255,255,0.58)', fontSize: 9.8, mt: 0.2 }}>conectado</Typography>
+                      </Box>
+                    </Box>
+                  </Box>
+
+                  <Box sx={{ position: 'absolute', left: 18, bottom: 20, maxWidth: { xs: '76%', md: 310 }, borderRadius: 2.4, border: '1px solid rgba(255,255,255,0.12)', bgcolor: 'rgba(4,8,14,0.72)', px: 1.2, py: 0.95, backdropFilter: 'blur(14px)', zIndex: 2 }}>
+                    <Typography sx={{ color: goldSoft, fontSize: 10.2, fontWeight: 700, mb: 0.25 }}>ASSISTENTE INTELIGENTE</Typography>
+                    <Typography sx={{ color: '#fff', fontSize: 12.5, fontWeight: 600 }}>“Olá. Como posso ajudar você hoje?”</Typography>
+                  </Box>
+
+                  <Box sx={{ position: 'absolute', right: 16, bottom: 18, display: { xs: 'none', sm: 'grid' }, gap: 0.55, zIndex: 2 }}>
+                    {['Voz', 'Texto', '3D', 'Contexto'].map((label) => (
+                      <Box key={label} sx={{ minWidth: 70, borderRadius: 999, border: '1px solid rgba(255,255,255,0.11)', bgcolor: 'rgba(5,10,18,0.68)', px: 1.0, py: 0.45, textAlign: 'center', backdropFilter: 'blur(10px)' }}>
+                        <Typography sx={{ color: 'rgba(255,255,255,0.76)', fontSize: 10.2 }}>{label}</Typography>
+                      </Box>
+                    ))}
                   </Box>
                 </Box>
               </Box>
