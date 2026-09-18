@@ -877,36 +877,38 @@ export default function DriverOnline() {
               </Text>
             </ScrollView>
 
-            <TouchableOpacity
-              style={styles.disclosureJumpButton}
-              onPress={() => locationDisclosureScrollRef.current?.scrollToEnd({ animated: true })}
-              accessibilityRole="button"
-              accessibilityLabel="Ir para o final do aviso de localização"
-            >
-              <Ionicons name="chevron-down" size={18} color={COLORS.primary} />
-              <Text style={styles.disclosureJumpText} maxFontSizeMultiplier={1.3}>Ver o final do aviso</Text>
-            </TouchableOpacity>
+            <View style={styles.disclosureFooter}>
+              <TouchableOpacity
+                style={styles.disclosureJumpButton}
+                onPress={() => locationDisclosureScrollRef.current?.scrollToEnd({ animated: true })}
+                accessibilityRole="button"
+                accessibilityLabel="Ir para o final do aviso de localização"
+              >
+                <Ionicons name="chevron-down" size={18} color={COLORS.primary} />
+                <Text style={styles.disclosureJumpText} maxFontSizeMultiplier={1.3}>Ver o final do aviso</Text>
+              </TouchableOpacity>
 
-            <View style={styles.disclosureActions}>
-              <TouchableOpacity
-                style={[styles.disclosureButton, styles.disclosureSecondaryButton]}
-                onPress={() => setShowLocationDisclosure(false)}
-                accessibilityRole="button"
-                accessibilityLabel="Agora não"
-              >
-                <Text style={styles.disclosureSecondaryButtonText} maxFontSizeMultiplier={1.3}>Agora não</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.disclosureButton, styles.disclosurePrimaryButton]}
-                onPress={() => {
-                  setShowLocationDisclosure(false);
-                  void continueGoOnline();
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Concordo e continuar"
-              >
-                <Text style={styles.disclosurePrimaryButtonText} maxFontSizeMultiplier={1.3}>Concordo e continuar</Text>
-              </TouchableOpacity>
+              <View style={styles.disclosureActions}>
+                <TouchableOpacity
+                  style={[styles.disclosureButton, styles.disclosureSecondaryButton]}
+                  onPress={() => setShowLocationDisclosure(false)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Agora não"
+                >
+                  <Text style={styles.disclosureSecondaryButtonText} maxFontSizeMultiplier={1.3}>Agora não</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.disclosureButton, styles.disclosurePrimaryButton]}
+                  onPress={() => {
+                    setShowLocationDisclosure(false);
+                    void continueGoOnline();
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Concordo e continuar"
+                >
+                  <Text style={styles.disclosurePrimaryButtonText} maxFontSizeMultiplier={1.3}>Concordo e continuar</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </View>
@@ -1201,21 +1203,28 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   disclosureScrollContent: {
-    paddingBottom: 8,
+    paddingBottom: 118,
   },
   disclosureText: {
     fontSize: 14,
     lineHeight: 21,
     color: '#374151',
   },
+  disclosureFooter: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    bottom: 16,
+    backgroundColor: '#FFFFFF',
+    paddingTop: 6,
+  },
   disclosureJumpButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 10,
+    paddingVertical: 8,
     paddingHorizontal: 12,
-    marginTop: 6,
   },
   disclosureJumpText: {
     fontSize: 14,
@@ -1224,11 +1233,9 @@ const styles = StyleSheet.create({
   },
   disclosureActions: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
     gap: 10,
-    marginTop: 8,
+    marginTop: 4,
     width: '100%',
-    flexShrink: 0,
   },
   disclosureButton: {
     flex: 1,
