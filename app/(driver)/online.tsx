@@ -1177,6 +1177,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'center',
     paddingHorizontal: 20,
+    paddingVertical: 24,
   },
   disclosureCard: {
     backgroundColor: '#FFFFFF',
@@ -1185,7 +1186,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#EAEDF2',
     width: '100%',
-    maxHeight: '92%',
+    height: '88%',
+    overflow: 'hidden',
   },
   disclosureTitle: {
     fontSize: 20,
@@ -1194,7 +1196,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   disclosureScroll: {
-    flexShrink: 1,
+    flex: 1,
+    minHeight: 0,
     width: '100%',
   },
   disclosureScrollContent: {
