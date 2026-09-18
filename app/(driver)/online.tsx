@@ -131,6 +131,7 @@ export default function DriverOnline() {
   const [soundMuted, setSoundMuted] = useState(false);
   const [pollUnstable, setPollUnstable] = useState(false);
   const [showLocationDisclosure, setShowLocationDisclosure] = useState(false);
+  const locationDisclosureScrollRef = useRef<ScrollView>(null);
   const pollFailsRef = useRef(0);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
@@ -860,12 +861,32 @@ export default function DriverOnline() {
         <View style={styles.disclosureOverlay}>
           <View style={styles.disclosureCard}>
             <Text style={styles.disclosureTitle}>Uso da sua localização</Text>
-            <Text style={styles.disclosureText}>
-              O KAVIAR Motorista coleta e usa sua localização precisa para mostrar sua posição no mapa, encontrar passageiros próximos, receber corridas e atualizar sua posição durante o serviço.{'\n\n'}
-              Enquanto você estiver online ou em uma corrida, sua localização continuará sendo coletada em segundo plano, inclusive quando o aplicativo estiver minimizado, para manter sua disponibilidade e atualizar sua posição durante o serviço. O Android mostrará uma notificação enquanto esse recurso estiver ativo.{'\n\n'}
-              Durante uma corrida, sua localização também é compartilhada com o passageiro para permitir o acompanhamento da viagem em tempo real.{'\n\n'}
-              Você pode interromper essa coleta a qualquer momento ficando offline.
-            </Text>
+
+            <ScrollView
+              ref={locationDisclosureScrollRef}
+              style={styles.disclosureScroll}
+              contentContainerStyle={styles.disclosureScrollContent}
+              showsVerticalScrollIndicator
+              persistentScrollbar
+            >
+              <Text style={styles.disclosureText}>
+                O KAVIAR Motorista coleta e usa sua localização precisa para mostrar sua posição no mapa, encontrar passageiros próximos, receber corridas e atualizar sua posição durante o serviço.{'\n\n'}
+                Enquanto você estiver online ou em uma corrida, sua localização continuará sendo coletada em segundo plano, inclusive quando o aplicativo estiver minimizado, para manter sua disponibilidade e atualizar sua posição durante o serviço. O Android mostrará uma notificação enquanto esse recurso estiver ativo.{'\n\n'}
+                Durante uma corrida, sua localização também é compartilhada com o passageiro para permitir o acompanhamento da viagem em tempo real.{'\n\n'}
+                Você pode interromper essa coleta a qualquer momento ficando offline.
+              </Text>
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.disclosureJumpButton}
+              onPress={() => locationDisclosureScrollRef.current?.scrollToEnd({ animated: true })}
+              accessibilityRole="button"
+              accessibilityLabel="Ir para o final do aviso de localização"
+            >
+              <Ionicons name="chevron-down" size={18} color={COLORS.primary} />
+              <Text style={styles.disclosureJumpText}>Ver o final do aviso</Text>
+            </TouchableOpacity>
+
             <View style={styles.disclosureActions}>
               <TouchableOpacity
                 style={[styles.disclosureButton, styles.disclosureSecondaryButton]}
@@ -1163,6 +1184,8 @@ const styles = StyleSheet.create({
     padding: 20,
     borderWidth: 1,
     borderColor: '#EAEDF2',
+    width: '100%',
+    maxHeight: '92%',
   },
   disclosureTitle: {
     fontSize: 20,
@@ -1170,16 +1193,39 @@ const styles = StyleSheet.create({
     color: '#121316',
     marginBottom: 12,
   },
+  disclosureScroll: {
+    flexShrink: 1,
+    width: '100%',
+  },
+  disclosureScrollContent: {
+    paddingBottom: 8,
+  },
   disclosureText: {
     fontSize: 14,
     lineHeight: 21,
     color: '#374151',
   },
+  disclosureJumpButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginTop: 6,
+  },
+  disclosureJumpText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
   disclosureActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 10,
-    marginTop: 18,
+    marginTop: 8,
+    width: '100%',
+    flexShrink: 0,
   },
   disclosureButton: {
     borderRadius: 10,
