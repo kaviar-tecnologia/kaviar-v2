@@ -26,16 +26,14 @@ const rioHeroImage = '/turismo-replit/generated_images/sugarloaf_mountain_golden
 const rioCityImage = '/turismo-replit/generated_images/christ_the_redeemer_majestic.png';
 const petImage = '/assets/kaviar-pet-real.png';
 
-const passengerApk = 'https://downloads.kaviar.com.br/kaviar-passageiro-v1.13.8-ota.apk';
+const passengerStore = 'https://play.google.com/store/apps/details?id=com.kaviar.passenger';
 const driverApk = 'https://downloads.kaviar.com.br/kaviar-motorista-v1.12.1-ota.apk';
 
 const navItems = [
-  { label: 'Para você', href: '#solucoes' },
+  { label: 'Soluções', href: '#solucoes' },
+  { label: 'KAVIAR AR', href: '#ar' },
   { label: 'Para motoristas', href: '#motorista' },
-  { label: 'KAVIAR Moto', href: '#moto' },
-  { label: 'KAVIAR Pet', href: '#pet' },
-  { label: 'Para gestores', href: '#gestores' },
-  { label: 'Painéis KAVIAR', href: '#paineis' },
+  { label: 'Cidades e negócios', href: '#gestores' },
   { label: 'Segurança', href: '#seguranca' },
 ];
 
@@ -133,22 +131,29 @@ const managerCards = [
 const panelCards = [
   {
     title: 'Painel do Gestor',
-    text: 'Para gestores territoriais acompanharem motoristas, passageiros, corridas, pedidos de moto, KAVIAR Pet, cadastros e eventos importantes da região.',
+    text: 'Acesso para gestores territoriais acompanharem cadastros, motoristas, passageiros e a operação local.',
     button: 'Acessar Painel do Gestor',
     href: '/admin/login',
     kind: 'gold',
   },
   {
-    title: 'CRM Comercial Local',
-    text: 'Para pizzarias, mercados, pet shops, farmácias, restaurantes, lojas e negócios da cidade administrarem sua presença comercial no KAVIAR.',
-    button: 'Acessar CRM Comercial',
+    title: 'Portal do Contador',
+    text: 'Área dedicada ao escritório contábil para documentos, rotinas fiscais e informações autorizadas da KAVIAR.',
+    button: 'Acessar Portal do Contador',
+    href: '/contador/login',
+    kind: 'blue',
+  },
+  {
+    title: 'Portal do Comércio',
+    text: 'Acesso para comércios parceiros administrarem sua presença, informações e recursos comerciais no ecossistema KAVIAR.',
+    button: 'Acessar Portal do Comércio',
     href: '/comercio/login',
     kind: 'blue',
   },
   {
-    title: 'Super Admin KAVIAR',
-    text: 'Acesso interno da equipe KAVIAR para administração geral da plataforma, auditoria e controle operacional.',
-    button: 'Acesso interno',
+    title: 'Administração KAVIAR',
+    text: 'Acesso reservado à equipe autorizada para administração geral, auditoria e controle operacional da plataforma.',
+    button: 'Acessar Administração',
     href: '/admin/login',
     kind: 'discreet',
   },
@@ -243,7 +248,7 @@ export default function KaviarLanding() {
               onClose={() => setLoginAnchor(null)}
               PaperProps={{ sx: { bgcolor: '#1A1A2E', border: '1px solid rgba(212,175,55,0.3)', borderRadius: 2, mt: 1, minWidth: 220 } }}
             >
-              <MenuItem component="a" href="/commerce" onClick={() => setLoginAnchor(null)} sx={{ color: '#fff', '&:hover': { bgcolor: 'rgba(212,175,55,0.1)' } }}>
+              <MenuItem component="a" href="/comercio/login" onClick={() => setLoginAnchor(null)} sx={{ color: '#fff', '&:hover': { bgcolor: 'rgba(212,175,55,0.1)' } }}>
                 <StorefrontOutlined sx={{ mr: 1.5, color: gold, fontSize: 20 }} /> Comércio
               </MenuItem>
               <MenuItem component="a" href="/contador/login" onClick={() => setLoginAnchor(null)} sx={{ color: '#fff', '&:hover': { bgcolor: 'rgba(212,175,55,0.1)' } }}>
@@ -253,7 +258,7 @@ export default function KaviarLanding() {
                 <AdminPanelSettingsOutlined sx={{ mr: 1.5, color: gold, fontSize: 20 }} /> Administração
               </MenuItem>
             </Menu>
-            <Button href={passengerApk} target="_blank" rel="noopener noreferrer" sx={buttonGoldCompact}>
+            <Button href={passengerStore} target="_blank" rel="noopener noreferrer" sx={buttonGoldCompact}>
               Baixar o app
             </Button>
           </Stack>
@@ -267,24 +272,23 @@ export default function KaviarLanding() {
               KAVIAR
             </Typography>
             <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: { xs: '1.9rem', md: '2.92rem' }, lineHeight: 1.04, maxWidth: 700, mb: 1.25 }}>
-              Mobilidade local brasileira, feita para sua cidade.
+              Mobilidade local, tecnologia e serviços para sua cidade.
             </Typography>
             <Typography sx={{ color: textSecondary, fontSize: { xs: 15, md: 17 }, lineHeight: 1.68, maxWidth: 760, mb: 1.9 }}>
-              Corridas, KAVIAR Moto, KAVIAR Pet, motoristas mulheres, gestores territoriais e comércios parceiros em uma única plataforma.
+              Mobilidade, serviços locais, tecnologia e realidade aumentada conectados em um único ecossistema KAVIAR.
             </Typography>
 
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.0} sx={{ mb: 1.0 }}>
-              <Button href={passengerApk} target="_blank" rel="noopener noreferrer" sx={buttonGold}>
-                Baixar app do passageiro
+              <Button href={passengerStore} target="_blank" rel="noopener noreferrer" sx={buttonGold}>
+                Baixar Passageiro na Google Play
               </Button>
               <Button href={driverApk} target="_blank" rel="noopener noreferrer" sx={buttonBlue}>
-                Baixar app do motorista
+                Quero dirigir com a KAVIAR
               </Button>
               <Button href="#gestores" sx={buttonOutline}>
                 Quero ser gestor KAVIAR
               </Button>
             </Stack>
-            <Typography sx={{ color: 'rgba(255,255,255,0.62)', fontSize: 12.8 }}>Sem Play Store. Baixe direto do nosso site.</Typography>
           </Box>
 
           <Box
@@ -400,6 +404,50 @@ export default function KaviarLanding() {
           </Box>
         </SectionSpacing>
 
+        <SectionSpacing id="ar">
+          <Card sx={{ borderRadius: 4, border: '1px solid rgba(212,175,55,0.30)', background: 'linear-gradient(145deg, rgba(9,17,29,0.98), rgba(7,10,16,0.98))', boxShadow: '0 26px 82px rgba(0,0,0,0.32)', overflow: 'hidden' }}>
+            <CardContent sx={{ p: { xs: 2.2, md: 3.0 } }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1.05fr 0.95fr' }, gap: { xs: 2.0, lg: 3.0 }, alignItems: 'center' }}>
+                <Box>
+                  <Typography sx={{ color: goldSoft, fontSize: 11, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 700, mb: 0.7 }}>
+                    KAVIAR AR
+                  </Typography>
+                  <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: { xs: '1.7rem', md: '2.35rem' }, lineHeight: 1.08, mb: 0.9 }}>
+                    Converse com a KAVIAR em realidade aumentada.
+                  </Typography>
+                  <Typography sx={{ color: textSecondary, lineHeight: 1.7, maxWidth: 690, mb: 1.35 }}>
+                    O KAVIAR AR combina nosso assistente inteligente com uma experiência 3D. O usuário pode conversar por voz ou texto, conhecer os serviços KAVIAR e explorar experiências compatíveis com o ambiente ao seu redor.
+                  </Typography>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.0}>
+                    <Button href="https://ar.kaviar.com.br" target="_blank" rel="noopener noreferrer" sx={buttonGold}>
+                      Experimentar KAVIAR AR
+                    </Button>
+                    <Button href="#solucoes" sx={buttonOutline}>
+                      Conhecer o ecossistema KAVIAR
+                    </Button>
+                  </Stack>
+                </Box>
+
+                <Box sx={{ minHeight: { xs: 260, md: 330 }, borderRadius: 3.5, border: '1px solid rgba(255,255,255,0.12)', background: 'radial-gradient(circle at 50% 20%, rgba(245,217,128,0.22), transparent 28%), radial-gradient(circle at 70% 70%, rgba(37,99,235,0.20), transparent 30%), rgba(255,255,255,0.035)', position: 'relative', overflow: 'hidden', display: 'grid', placeItems: 'center' }}>
+                  <Box sx={{ position: 'absolute', inset: '10%', borderRadius: '50%', border: '1px solid rgba(212,175,55,0.22)' }} />
+                  <Box sx={{ position: 'absolute', inset: '20%', borderRadius: '50%', border: '1px solid rgba(140,184,255,0.18)' }} />
+                  <Box sx={{ position: 'relative', width: { xs: 132, md: 160 }, height: { xs: 190, md: 230 } }}>
+                    <Box sx={{ position: 'absolute', left: '50%', top: 0, transform: 'translateX(-50%)', width: 58, height: 58, borderRadius: '50%', background: 'linear-gradient(180deg, #F5F5F3, #BFC3C8)', boxShadow: '0 0 28px rgba(245,217,128,0.28)' }} />
+                    <Box sx={{ position: 'absolute', left: '50%', top: 50, transform: 'translateX(-50%)', width: 92, height: 104, borderRadius: '44px 44px 24px 24px', background: 'linear-gradient(180deg, #F4F4F1 0%, #D5D7D8 100%)', border: '1px solid rgba(212,175,55,0.55)' }} />
+                    <Box sx={{ position: 'absolute', left: 30, top: 145, width: 30, height: 76, borderRadius: 16, background: 'linear-gradient(180deg, #EDEDE9, #BFC3C8)', transform: 'rotate(3deg)' }} />
+                    <Box sx={{ position: 'absolute', right: 30, top: 145, width: 30, height: 76, borderRadius: 16, background: 'linear-gradient(180deg, #EDEDE9, #BFC3C8)', transform: 'rotate(-3deg)' }} />
+                    <Typography sx={{ position: 'absolute', top: 92, width: '100%', textAlign: 'center', color: '#8A6A10', fontWeight: 800, fontSize: 13, letterSpacing: '0.08em' }}>KAVIAR</Typography>
+                  </Box>
+                  <Box sx={{ position: 'absolute', left: 16, right: 16, bottom: 14, borderRadius: 2, border: '1px solid rgba(255,255,255,0.10)', bgcolor: 'rgba(5,9,15,0.72)', px: 1.2, py: 0.9, backdropFilter: 'blur(8px)' }}>
+                    <Typography sx={{ color: goldSoft, fontWeight: 700, fontSize: 12 }}>Assistente KAVIAR</Typography>
+                    <Typography sx={{ color: 'rgba(255,255,255,0.68)', fontSize: 11.5 }}>Voz • Texto • Avatar 3D • WebAR</Typography>
+                  </Box>
+                </Box>
+              </Box>
+            </CardContent>
+          </Card>
+        </SectionSpacing>
+
         <SectionSpacing id="moto">
           <Card sx={{ borderRadius: 4, border: `1px solid ${cardBorder}`, background: 'linear-gradient(155deg, rgba(8,12,19,0.98), rgba(7,12,22,0.98))', boxShadow: '0 24px 70px rgba(0,0,0,0.30)' }}>
             <CardContent sx={{ p: { xs: 2.0, md: 2.8 } }}>
@@ -411,7 +459,7 @@ export default function KaviarLanding() {
                     Peça uma moto para deslocamentos rápidos e tenha uma alternativa mais ágil para a mobilidade local.
                   </Typography>
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.0}>
-                    <Button href={passengerApk} target="_blank" rel="noopener noreferrer" sx={buttonBlue}>
+                    <Button href={passengerStore} target="_blank" rel="noopener noreferrer" sx={buttonBlue}>
                       Pedir uma moto
                     </Button>
                     <Button href={driverApk} target="_blank" rel="noopener noreferrer" sx={buttonGold}>
@@ -456,8 +504,8 @@ export default function KaviarLanding() {
                     <Button href="#pet" sx={buttonOutline}>
                       Conhecer KAVIAR Pet
                     </Button>
-                    <Button href={passengerApk} target="_blank" rel="noopener noreferrer" sx={buttonGold}>
-                      Baixar app do passageiro
+                    <Button href={passengerStore} target="_blank" rel="noopener noreferrer" sx={buttonGold}>
+                      Baixar Passageiro na Google Play
                     </Button>
                   </Stack>
                 </Box>
@@ -639,10 +687,10 @@ export default function KaviarLanding() {
               <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: { xs: '1.42rem', md: '1.92rem' }, mb: 0.55 }}>Painéis KAVIAR</Typography>
               <Typography sx={{ color: goldSoft, fontWeight: 600, fontSize: { xs: 14.2, md: 16 }, mb: 0.65 }}>Cada parceiro com o acesso certo para operar melhor.</Typography>
               <Typography sx={{ color: textSecondary, lineHeight: 1.68, maxWidth: 860, mb: 1.2 }}>
-                O KAVIAR conecta passageiros, motoristas, gestores territoriais e comércios locais em uma plataforma única, com painéis específicos para cada operação.
+                O KAVIAR oferece acessos específicos para gestores, contadores, comércios parceiros e administração, cada um com as permissões necessárias para sua operação.
               </Typography>
 
-              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3,1fr)' }, gap: 0.95 }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,1fr)', xl: 'repeat(4,1fr)' }, gap: 0.95 }}>
                 {panelCards.map((card) => (
                   <Box key={card.title} sx={panelCardStyle(card.kind)}>
                     <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: 15.2, mb: 0.45 }}>{card.title}</Typography>
@@ -654,7 +702,7 @@ export default function KaviarLanding() {
                 ))}
               </Box>
               <Typography sx={{ color: 'rgba(255,255,255,0.58)', fontSize: 12.1, mt: 0.95 }}>
-                O painel do gestor, o CRM e o acesso interno podem compartilhar a mesma rota, com permissões diferentes por perfil.
+                Os acessos são separados por perfil e mantêm as permissões adequadas para cada tipo de usuário.
               </Typography>
             </CardContent>
           </Card>
@@ -680,11 +728,11 @@ export default function KaviarLanding() {
                 <Box>
                   <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: { xs: '1.42rem', md: '1.92rem' }, mb: 0.65 }}>Baixe agora o app KAVIAR</Typography>
                   <Typography sx={{ color: textSecondary, lineHeight: 1.68, mb: 1.1 }}>
-                    Sem Play Store. Baixe direto do nosso site com segurança e praticidade.
+                    Passageiros acessam o KAVIAR pela Google Play. O app do motorista será direcionado à loja oficial assim que a versão em análise estiver publicada.
                   </Typography>
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.0}>
-                    <Button href={passengerApk} target="_blank" rel="noopener noreferrer" sx={buttonGold}>
-                      Baixar app do passageiro
+                    <Button href={passengerStore} target="_blank" rel="noopener noreferrer" sx={buttonGold}>
+                      Baixar Passageiro na Google Play
                     </Button>
                     <Button href={driverApk} target="_blank" rel="noopener noreferrer" sx={buttonBlue}>
                       Baixar app do motorista
@@ -726,6 +774,7 @@ export default function KaviarLanding() {
                   ['Para gestores', '#gestores'],
                   ['Painéis KAVIAR', '#paineis'],
                   ['Segurança', '#seguranca'],
+                  ['KAVIAR AR', '#ar'],
                   ['Baixar app', '#download'],
                   ['Privacidade', '/privacidade'],
                   ['Termos Passageiro', '/termos-passageiro'],
@@ -742,8 +791,8 @@ export default function KaviarLanding() {
             <Box>
               <Typography sx={{ color: '#fff', fontWeight: 700, mb: 0.65, fontSize: 14 }}>Downloads</Typography>
               <Stack spacing={0.38}>
-                <Box component="a" href={passengerApk} target="_blank" rel="noopener noreferrer" sx={{ color: 'rgba(255,255,255,0.66)', textDecoration: 'none', fontSize: 13, '&:hover': { color: '#fff' } }}>
-                  App do passageiro
+                <Box component="a" href={passengerStore} target="_blank" rel="noopener noreferrer" sx={{ color: 'rgba(255,255,255,0.66)', textDecoration: 'none', fontSize: 13, '&:hover': { color: '#fff' } }}>
+                  KAVIAR Passageiro — Google Play
                 </Box>
                 <Box component="a" href={driverApk} target="_blank" rel="noopener noreferrer" sx={{ color: 'rgba(255,255,255,0.66)', textDecoration: 'none', fontSize: 13, '&:hover': { color: '#fff' } }}>
                   App do motorista
