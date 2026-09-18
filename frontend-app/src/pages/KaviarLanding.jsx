@@ -488,7 +488,7 @@ export default function KaviarLanding() {
                       ))}
                     </Box>
                   </Box>
-                </Box>                </Box>
+                </Box>
               </Box>
             </CardContent>
           </Card>
@@ -567,7 +567,7 @@ export default function KaviarLanding() {
                     <Typography sx={{ color: '#0B1423', fontSize: 12.4, fontWeight: 800, mb: 0.15 }}>Seu pet também vai com você.</Typography>
                     <Typography sx={{ color: 'rgba(20,31,49,0.70)', fontSize: 10.8 }}>Cuidado, praticidade e conforto no deslocamento.</Typography>
                   </Box>
-                </Box>                </Box>
+                </Box>
               </Box>
             </CardContent>
           </Card>
