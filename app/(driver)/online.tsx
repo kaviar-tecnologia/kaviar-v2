@@ -853,65 +853,73 @@ export default function DriverOnline() {
 
       <Modal
         visible={showLocationDisclosure}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
+        animationType="slide"
+        presentationStyle="fullScreen"
         onRequestClose={() => setShowLocationDisclosure(false)}
       >
-        <View style={styles.disclosureOverlay}>
-          <View style={styles.disclosureCard}>
-            <Text style={styles.disclosureTitle} maxFontSizeMultiplier={1.3}>Uso da sua localização</Text>
+        <SafeAreaView style={styles.disclosureScreen} edges={['top', 'bottom']}>
+          <View style={styles.disclosureHeader}>
+            <Text style={styles.disclosureTitle} maxFontSizeMultiplier={1.2}>
+              Uso da sua localização
+            </Text>
+          </View>
 
-            <ScrollView
-              ref={locationDisclosureScrollRef}
-              style={styles.disclosureScroll}
-              contentContainerStyle={styles.disclosureScrollContent}
-              showsVerticalScrollIndicator
-              persistentScrollbar
+          <ScrollView
+            ref={locationDisclosureScrollRef}
+            style={styles.disclosureScroll}
+            contentContainerStyle={styles.disclosureScrollContent}
+            showsVerticalScrollIndicator
+            persistentScrollbar
+          >
+            <Text style={styles.disclosureText} maxFontSizeMultiplier={1.2}>
+              O KAVIAR Motorista coleta e usa sua localização precisa para mostrar sua posição no mapa, encontrar passageiros próximos, receber corridas e atualizar sua posição durante o serviço.{'\n\n'}
+              Enquanto você estiver online ou em uma corrida, sua localização continuará sendo coletada em segundo plano, inclusive quando o aplicativo estiver minimizado, para manter sua disponibilidade e atualizar sua posição durante o serviço. O Android mostrará uma notificação enquanto esse recurso estiver ativo.{'\n\n'}
+              Durante uma corrida, sua localização também é compartilhada com o passageiro para permitir o acompanhamento da viagem em tempo real.{'\n\n'}
+              Você pode interromper essa coleta a qualquer momento ficando offline.
+            </Text>
+          </ScrollView>
+
+          <View style={styles.disclosureFooter}>
+            <TouchableOpacity
+              style={styles.disclosureJumpButton}
+              onPress={() => locationDisclosureScrollRef.current?.scrollToEnd({ animated: true })}
+              accessibilityRole="button"
+              accessibilityLabel="Ir para o final do aviso de localização"
             >
-              <Text style={styles.disclosureText} maxFontSizeMultiplier={1.3}>
-                O KAVIAR Motorista coleta e usa sua localização precisa para mostrar sua posição no mapa, encontrar passageiros próximos, receber corridas e atualizar sua posição durante o serviço.{'\n\n'}
-                Enquanto você estiver online ou em uma corrida, sua localização continuará sendo coletada em segundo plano, inclusive quando o aplicativo estiver minimizado, para manter sua disponibilidade e atualizar sua posição durante o serviço. O Android mostrará uma notificação enquanto esse recurso estiver ativo.{'\n\n'}
-                Durante uma corrida, sua localização também é compartilhada com o passageiro para permitir o acompanhamento da viagem em tempo real.{'\n\n'}
-                Você pode interromper essa coleta a qualquer momento ficando offline.
+              <Ionicons name="chevron-down" size={18} color={COLORS.primary} />
+              <Text style={styles.disclosureJumpText} maxFontSizeMultiplier={1.2}>
+                Ver o final do aviso
               </Text>
-            </ScrollView>
+            </TouchableOpacity>
 
-            <View style={styles.disclosureFooter}>
+            <View style={styles.disclosureActions}>
               <TouchableOpacity
-                style={styles.disclosureJumpButton}
-                onPress={() => locationDisclosureScrollRef.current?.scrollToEnd({ animated: true })}
+                style={[styles.disclosureButton, styles.disclosureSecondaryButton]}
+                onPress={() => setShowLocationDisclosure(false)}
                 accessibilityRole="button"
-                accessibilityLabel="Ir para o final do aviso de localização"
+                accessibilityLabel="Agora não"
               >
-                <Ionicons name="chevron-down" size={18} color={COLORS.primary} />
-                <Text style={styles.disclosureJumpText} maxFontSizeMultiplier={1.3}>Ver o final do aviso</Text>
+                <Text style={styles.disclosureSecondaryButtonText} maxFontSizeMultiplier={1.2}>
+                  Agora não
+                </Text>
               </TouchableOpacity>
 
-              <View style={styles.disclosureActions}>
-                <TouchableOpacity
-                  style={[styles.disclosureButton, styles.disclosureSecondaryButton]}
-                  onPress={() => setShowLocationDisclosure(false)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Agora não"
-                >
-                  <Text style={styles.disclosureSecondaryButtonText} maxFontSizeMultiplier={1.3}>Agora não</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.disclosureButton, styles.disclosurePrimaryButton]}
-                  onPress={() => {
-                    setShowLocationDisclosure(false);
-                    void continueGoOnline();
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Concordo e continuar"
-                >
-                  <Text style={styles.disclosurePrimaryButtonText} maxFontSizeMultiplier={1.3}>Concordo e continuar</Text>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                style={[styles.disclosureButton, styles.disclosurePrimaryButton]}
+                onPress={() => {
+                  setShowLocationDisclosure(false);
+                  void continueGoOnline();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Concordo e continuar"
+              >
+                <Text style={styles.disclosurePrimaryButtonText} maxFontSizeMultiplier={1.2}>
+                  Concordo e continuar
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
@@ -1174,36 +1182,31 @@ const styles = StyleSheet.create({
     color: '#5E6470',
   },
   connectingHint: { fontSize: 12, color: '#5E6470', textAlign: 'center', marginTop: 10, marginBottom: 8 },
-  disclosureOverlay: {
+  disclosureScreen: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 24,
-  },
-  disclosureCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#EAEDF2',
-    width: '100%',
-    height: '88%',
-    overflow: 'hidden',
+  },
+  disclosureHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EAEDF2',
+    flexShrink: 0,
   },
   disclosureTitle: {
     fontSize: 20,
     fontWeight: '800',
     color: '#121316',
-    marginBottom: 12,
   },
   disclosureScroll: {
     flex: 1,
-    minHeight: 0,
     width: '100%',
   },
   disclosureScrollContent: {
-    paddingBottom: 118,
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 24,
   },
   disclosureText: {
     fontSize: 14,
@@ -1211,12 +1214,13 @@ const styles = StyleSheet.create({
     color: '#374151',
   },
   disclosureFooter: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    bottom: 16,
     backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#EAEDF2',
+    paddingHorizontal: 16,
     paddingTop: 6,
+    paddingBottom: 10,
+    flexShrink: 0,
   },
   disclosureJumpButton: {
     flexDirection: 'row',
@@ -1224,7 +1228,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     paddingVertical: 8,
-    paddingHorizontal: 12,
   },
   disclosureJumpText: {
     fontSize: 14,
@@ -1234,12 +1237,11 @@ const styles = StyleSheet.create({
   disclosureActions: {
     flexDirection: 'row',
     gap: 10,
-    marginTop: 4,
     width: '100%',
   },
   disclosureButton: {
     flex: 1,
-    minHeight: 44,
+    minHeight: 48,
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 10,
@@ -1259,11 +1261,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#5E6470',
+    textAlign: 'center',
   },
   disclosurePrimaryButtonText: {
     fontSize: 14,
     fontWeight: '700',
     color: '#121316',
+    textAlign: 'center',
   },
 
   // Credits
