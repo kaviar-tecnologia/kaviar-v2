@@ -131,7 +131,6 @@ export default function DriverOnline() {
   const [soundMuted, setSoundMuted] = useState(false);
   const [pollUnstable, setPollUnstable] = useState(false);
   const [showLocationDisclosure, setShowLocationDisclosure] = useState(false);
-  const locationDisclosureScrollRef = useRef<ScrollView>(null);
   const pollFailsRef = useRef(0);
   const pollRef = useRef<NodeJS.Timeout | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
@@ -865,7 +864,6 @@ export default function DriverOnline() {
           </View>
 
           <ScrollView
-            ref={locationDisclosureScrollRef}
             style={styles.disclosureScroll}
             contentContainerStyle={styles.disclosureScrollContent}
             showsVerticalScrollIndicator
@@ -880,18 +878,6 @@ export default function DriverOnline() {
           </ScrollView>
 
           <View style={styles.disclosureFooter}>
-            <TouchableOpacity
-              style={styles.disclosureJumpButton}
-              onPress={() => locationDisclosureScrollRef.current?.scrollToEnd({ animated: true })}
-              accessibilityRole="button"
-              accessibilityLabel="Ir para o final do aviso de localização"
-            >
-              <Ionicons name="chevron-down" size={18} color={COLORS.primary} />
-              <Text style={styles.disclosureJumpText} maxFontSizeMultiplier={1.2}>
-                Ver o final do aviso
-              </Text>
-            </TouchableOpacity>
-
             <View style={styles.disclosureActions}>
               <TouchableOpacity
                 style={[styles.disclosureButton, styles.disclosureSecondaryButton]}
@@ -899,7 +885,7 @@ export default function DriverOnline() {
                 accessibilityRole="button"
                 accessibilityLabel="Agora não"
               >
-                <Text style={styles.disclosureSecondaryButtonText} maxFontSizeMultiplier={1.2}>
+                <Text style={styles.disclosureSecondaryButtonText} maxFontSizeMultiplier={1.1}>
                   Agora não
                 </Text>
               </TouchableOpacity>
@@ -913,7 +899,7 @@ export default function DriverOnline() {
                 accessibilityRole="button"
                 accessibilityLabel="Concordo e continuar"
               >
-                <Text style={styles.disclosurePrimaryButtonText} maxFontSizeMultiplier={1.2}>
+                <Text style={styles.disclosurePrimaryButtonText} maxFontSizeMultiplier={1.1}>
                   Concordo e continuar
                 </Text>
               </TouchableOpacity>
@@ -1217,22 +1203,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#EAEDF2',
-    paddingHorizontal: 16,
-    paddingTop: 6,
-    paddingBottom: 10,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 12,
     flexShrink: 0,
-  },
-  disclosureJumpButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 8,
-  },
-  disclosureJumpText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.primary,
   },
   disclosureActions: {
     flexDirection: 'row',
@@ -1241,10 +1215,10 @@ const styles = StyleSheet.create({
   },
   disclosureButton: {
     flex: 1,
-    minHeight: 48,
+    minHeight: 46,
     borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 8,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
