@@ -18,10 +18,10 @@ import { QRCodeSVG } from 'qrcode.react';
 const gold = '#D4AF37';
 const goldSoft = '#F5D980';
 const textPrimary = '#FFFFFF';
-const textSecondary = 'rgba(255,255,255,0.74)';
+const textSecondary = 'rgba(245,247,250,0.82)';
 const blueSoft = '#8CB8FF';
-const cardBg = 'rgba(255,255,255,0.05)';
-const cardBorder = 'rgba(255,255,255,0.11)';
+const cardBg = 'linear-gradient(160deg, rgba(255,255,255,0.095), rgba(255,255,255,0.055))';
+const cardBorder = 'rgba(255,255,255,0.16)';
 const rioHeroImage = '/turismo-replit/generated_images/sugarloaf_mountain_golden_hour.png';
 const rioCityImage = '/turismo-replit/generated_images/luxury_sedan_in_rio_at_night.png';
 const petImage = '/assets/kaviar-pet-real.png';
@@ -173,14 +173,14 @@ export default function KaviarLanding() {
   }, []);
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#04070C', color: textPrimary, position: 'relative', overflow: 'hidden' }}>
+    <Box sx={{ minHeight: '100vh', bgcolor: '#0D1420', color: textPrimary, position: 'relative', overflow: 'hidden' }}>
       <Box
         sx={{
           position: 'absolute',
           inset: 0,
           pointerEvents: 'none',
           background:
-            'radial-gradient(circle at 10% 0%, rgba(212,175,55,0.20), transparent 28%), radial-gradient(circle at 84% 10%, rgba(37,99,235,0.22), transparent 30%), linear-gradient(168deg, #03060B 0%, #07101C 54%, #04070C 100%)',
+            'radial-gradient(circle at 8% 0%, rgba(226,190,92,0.24), transparent 30%), radial-gradient(circle at 88% 12%, rgba(79,126,207,0.24), transparent 34%), linear-gradient(168deg, #101723 0%, #142238 52%, #0D1728 100%)',
         }}
       />
       <Box
@@ -191,7 +191,7 @@ export default function KaviarLanding() {
           backgroundImage:
             'linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px)',
           backgroundSize: '52px 52px',
-          opacity: 0.16,
+          opacity: 0.08,
         }}
       />
 
@@ -202,7 +202,7 @@ export default function KaviarLanding() {
           top: 0,
           zIndex: 40,
           borderBottom: '1px solid rgba(255,255,255,0.08)',
-          bgcolor: 'rgba(4,7,12,0.84)',
+          bgcolor: 'rgba(13,20,32,0.82)',
           backdropFilter: 'blur(16px)',
         }}
       >
@@ -304,7 +304,7 @@ export default function KaviarLanding() {
               backgroundPosition: 'center',
             }}
           >
-            <Box sx={{ position: 'absolute', inset: 0, background: 'linear-gradient(118deg, rgba(5,9,15,0.90) 8%, rgba(5,9,15,0.65) 52%, rgba(5,9,15,0.86) 100%), radial-gradient(circle at 18% 14%, rgba(212,175,55,0.22), transparent 30%), radial-gradient(circle at 84% 12%, rgba(37,99,235,0.22), transparent 30%)' }} />
+            <Box sx={{ position: 'absolute', inset: 0, background: 'linear-gradient(118deg, rgba(10,17,28,0.72) 8%, rgba(10,18,31,0.40) 52%, rgba(8,16,29,0.66) 100%), radial-gradient(circle at 18% 14%, rgba(226,190,92,0.28), transparent 32%), radial-gradient(circle at 84% 12%, rgba(76,126,210,0.24), transparent 32%)' }} />
 
             <Box sx={{ position: 'absolute', left: 18, bottom: 18, width: { xs: 150, md: 170 }, borderRadius: 2, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(37,99,235,0.18)', backdropFilter: 'blur(8px)', p: 1.0 }}>
               <Typography sx={{ color: blueSoft, fontSize: 11, fontWeight: 700 }}>Pedir Moto</Typography>
@@ -405,7 +405,7 @@ export default function KaviarLanding() {
         </SectionSpacing>
 
         <SectionSpacing id="ar">
-          <Card sx={{ borderRadius: 4, border: '1px solid rgba(212,175,55,0.30)', background: 'linear-gradient(145deg, rgba(9,17,29,0.98), rgba(7,10,16,0.98))', boxShadow: '0 26px 82px rgba(0,0,0,0.32)', overflow: 'hidden' }}>
+          <Card sx={{ borderRadius: 4, border: '1px solid rgba(212,175,55,0.30)', background: 'linear-gradient(145deg, rgba(30,43,64,0.97), rgba(16,28,47,0.97))', boxShadow: '0 26px 82px rgba(0,0,0,0.32)', overflow: 'hidden' }}>
             <CardContent sx={{ p: { xs: 2.2, md: 3.0 } }}>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1.05fr 0.95fr' }, gap: { xs: 2.0, lg: 3.0 }, alignItems: 'center' }}>
                 <Box>
@@ -508,7 +508,7 @@ export default function KaviarLanding() {
         </SectionSpacing>
 
         <SectionSpacing id="moto">
-          <Card sx={{ borderRadius: 4, border: `1px solid ${cardBorder}`, background: 'linear-gradient(155deg, rgba(8,12,19,0.98), rgba(7,12,22,0.98))', boxShadow: '0 24px 70px rgba(0,0,0,0.30)' }}>
+          <Card sx={{ borderRadius: 4, border: `1px solid ${cardBorder}`, background: 'linear-gradient(155deg, rgba(25,35,52,0.96), rgba(14,25,43,0.96))', boxShadow: '0 24px 70px rgba(0,0,0,0.30)' }}>
             <CardContent sx={{ p: { xs: 2.0, md: 2.8 } }}>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '0.97fr 1.03fr' }, gap: 1.8, alignItems: 'center' }}>
                 <Box>
@@ -550,7 +550,7 @@ export default function KaviarLanding() {
         </SectionSpacing>
 
         <SectionSpacing id="pet">
-          <Card sx={{ borderRadius: 4, border: `1px solid rgba(212,175,55,0.26)`, background: 'linear-gradient(155deg, rgba(14,13,10,0.98), rgba(6,9,14,0.98))', boxShadow: '0 24px 70px rgba(0,0,0,0.30)' }}>
+          <Card sx={{ borderRadius: 4, border: `1px solid rgba(212,175,55,0.26)`, background: 'linear-gradient(155deg, rgba(30,29,25,0.96), rgba(15,22,34,0.96))', boxShadow: '0 24px 70px rgba(0,0,0,0.30)' }}>
             <CardContent sx={{ p: { xs: 2.0, md: 2.8 } }}>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 0.95fr' }, gap: 1.8, alignItems: 'center' }}>
                 <Box>
@@ -594,7 +594,7 @@ export default function KaviarLanding() {
         </SectionSpacing>
 
         <SectionSpacing id="seguranca">
-          <Card sx={{ borderRadius: 4, border: `1px solid ${cardBorder}`, background: 'linear-gradient(155deg, rgba(10,15,24,0.98), rgba(8,13,20,0.96))', boxShadow: '0 22px 68px rgba(0,0,0,0.28)' }}>
+          <Card sx={{ borderRadius: 4, border: `1px solid ${cardBorder}`, background: 'linear-gradient(155deg, rgba(26,38,56,0.96), rgba(15,27,43,0.96))', boxShadow: '0 22px 68px rgba(0,0,0,0.28)' }}>
             <CardContent sx={{ p: { xs: 2.0, md: 2.6 } }}>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '0.94fr 1.06fr' }, gap: 1.5, alignItems: 'stretch' }}>
                 <Box>
@@ -627,7 +627,7 @@ export default function KaviarLanding() {
         </SectionSpacing>
 
         <SectionSpacing id="motorista">
-          <Card sx={{ borderRadius: 4, border: `1px solid rgba(212,175,55,0.26)`, background: 'linear-gradient(155deg, rgba(16,14,9,0.98), rgba(7,10,14,0.98))', boxShadow: '0 22px 64px rgba(0,0,0,0.28)' }}>
+          <Card sx={{ borderRadius: 4, border: `1px solid rgba(212,175,55,0.26)`, background: 'linear-gradient(155deg, rgba(34,31,23,0.96), rgba(16,24,36,0.96))', boxShadow: '0 22px 64px rgba(0,0,0,0.28)' }}>
             <CardContent sx={{ p: { xs: 2.0, md: 2.8 } }}>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 0.94fr' }, gap: 1.55, alignItems: 'center' }}>
                 <Box>
@@ -648,7 +648,7 @@ export default function KaviarLanding() {
                   </Button>
                 </Box>
 
-                <Box sx={{ borderRadius: 3, border: `1px solid ${cardBorder}`, bgcolor: 'rgba(255,255,255,0.03)', p: 1.25 }}>
+                <Box sx={{ borderRadius: 3, border: `1px solid ${cardBorder}`, bgcolor: 'rgba(255,255,255,0.055)', p: 1.25 }}>
                   <Box sx={{ borderRadius: 2.2, border: `1px solid rgba(212,175,55,0.26)`, background: 'linear-gradient(160deg, rgba(10,16,24,0.98), rgba(5,8,12,0.98))', p: 1.15 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.85 }}>
                       <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: 13.6 }}>Corrida aceita</Typography>
@@ -669,7 +669,7 @@ export default function KaviarLanding() {
         </SectionSpacing>
 
         <SectionSpacing id="gestores">
-          <Card sx={{ borderRadius: 4, border: `1px solid rgba(212,175,55,0.34)`, background: 'linear-gradient(150deg, rgba(8,12,20,0.98), rgba(5,8,12,0.98))', boxShadow: '0 30px 88px rgba(0,0,0,0.32)' }}>
+          <Card sx={{ borderRadius: 4, border: `1px solid rgba(212,175,55,0.34)`, background: 'linear-gradient(150deg, rgba(23,34,51,0.96), rgba(13,23,38,0.96))', boxShadow: '0 30px 88px rgba(0,0,0,0.32)' }}>
             <CardContent sx={{ p: { xs: 2.0, md: 3.0 } }}>
               <Box sx={{ textAlign: 'center', mb: 1.6 }}>
                 <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: { xs: '1.8rem', md: '2.55rem' }, lineHeight: 1.04, mb: 0.55 }}>
@@ -741,7 +741,7 @@ export default function KaviarLanding() {
         </SectionSpacing>
 
         <SectionSpacing id="paineis">
-          <Card sx={{ borderRadius: 4, border: `1px solid ${cardBorder}`, background: 'linear-gradient(150deg, rgba(8,13,22,0.98), rgba(5,8,12,0.98))', boxShadow: '0 24px 76px rgba(0,0,0,0.28)' }}>
+          <Card sx={{ borderRadius: 4, border: `1px solid ${cardBorder}`, background: 'linear-gradient(150deg, rgba(24,36,55,0.96), rgba(14,24,40,0.96))', boxShadow: '0 24px 76px rgba(0,0,0,0.28)' }}>
             <CardContent sx={{ p: { xs: 2.0, md: 2.8 } }}>
               <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: { xs: '1.42rem', md: '1.92rem' }, mb: 0.55 }}>Painéis KAVIAR</Typography>
               <Typography sx={{ color: goldSoft, fontWeight: 600, fontSize: { xs: 14.2, md: 16 }, mb: 0.65 }}>Cada parceiro com o acesso certo para operar melhor.</Typography>
@@ -781,7 +781,7 @@ export default function KaviarLanding() {
         </SectionSpacing>
 
         <SectionSpacing id="download">
-          <Card sx={{ borderRadius: 4, border: `1px solid rgba(212,175,55,0.28)`, background: 'linear-gradient(155deg, rgba(12,16,24,0.98), rgba(5,8,12,0.98))', boxShadow: '0 24px 74px rgba(0,0,0,0.28)' }}>
+          <Card sx={{ borderRadius: 4, border: `1px solid rgba(212,175,55,0.28)`, background: 'linear-gradient(155deg, rgba(27,39,58,0.96), rgba(14,24,40,0.96))', boxShadow: '0 24px 74px rgba(0,0,0,0.28)' }}>
             <CardContent sx={{ p: { xs: 2.0, md: 2.8 } }}>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1.08fr 0.92fr' }, gap: 1.6, alignItems: 'center' }}>
                 <Box>
@@ -878,7 +878,7 @@ function glassCard(accent) {
     background: cardBg,
     border: `1px solid ${accent ? 'rgba(244,114,182,0.24)' : cardBorder}`,
     borderRadius: 2.6,
-    boxShadow: '0 12px 30px rgba(0,0,0,0.24)',
+    boxShadow: '0 18px 44px rgba(0,0,0,0.20), 0 1px 0 rgba(255,255,255,0.04) inset',
     backdropFilter: 'blur(14px)',
     transition: 'all 0.2s ease',
     '&:hover': {
