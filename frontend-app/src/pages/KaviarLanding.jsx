@@ -889,6 +889,22 @@ export default function KaviarLanding() {
               </Stack>
             </Box>
           </Box>
+
+          <Box
+            sx={{
+              mt: 2.0,
+              pt: 1.8,
+              borderTop: '1px solid rgba(15,23,42,0.10)',
+              textAlign: 'center',
+            }}
+          >
+            <Typography sx={{ color: 'rgba(20,31,49,0.72)', fontSize: 12.4, lineHeight: 1.6 }}>
+              © 2026 KAVIAR TECNOLOGIA E SERVIÇOS DIGITAIS LTDA. Todos os direitos reservados.
+            </Typography>
+            <Typography sx={{ color: '#8A6715', fontSize: 12.2, fontWeight: 700, mt: 0.15, letterSpacing: '0.02em' }}>
+              Desenvolvido pela equipe KAVIAR Tecnologia.
+            </Typography>
+          </Box>
         </Container>
       </Box>
     </Box>
