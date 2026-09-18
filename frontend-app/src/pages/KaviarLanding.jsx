@@ -955,16 +955,17 @@ function panelButtonStyle(kind) {
   if (kind === 'gold') return buttonGold;
   if (kind === 'blue') return buttonBlue;
   return {
-    border: '1px solid rgba(255,255,255,0.22)',
-    color: 'rgba(255,255,255,0.84)',
+    border: '1px solid rgba(11,20,35,0.28)',
+    color: '#0B1423',
     borderRadius: 999,
     px: 1.7,
     py: 0.82,
     textTransform: 'none',
-    fontWeight: 600,
-    background: 'rgba(255,255,255,0.76)',
+    fontWeight: 700,
+    background: 'rgba(11,20,35,0.045)',
     '&:hover': {
-      background: 'rgba(255,255,255,0.08)',
+      borderColor: 'rgba(11,20,35,0.42)',
+      background: 'rgba(11,20,35,0.085)',
     },
   };
 }
