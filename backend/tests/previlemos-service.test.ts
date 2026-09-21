@@ -177,8 +177,17 @@ describe('previlemos-service', () => {
       )
       .mockResolvedValueOnce(
         jsonResponse(200, {
-          sucesso: true,
-          id: 'seguro_123',
+          NumSeguro: 3482777,
+          TipoSeguro: 'APP - Acidente Pessoal de Passageiro',
+          DataInicial: '2026-09-21T00:00:00',
+          DataFinal: '2026-10-21T00:00:00',
+          Produtor: 'KAVIAR TECNOLOGIA - HML',
+          Segurado: 'MOTORISTA TESTE',
+          Pago: 'Fatura Mensal',
+          Links: {
+            Impressao: 'https://example.test/impressao',
+            Certificado: 'https://example.test/certificado.pdf'
+          }
         })
       );
 
@@ -192,8 +201,8 @@ describe('previlemos-service', () => {
       );
 
     expect(response).toMatchObject({
-      sucesso: true,
-      id: 'seguro_123',
+      NumSeguro: 3482777,
+      TipoSeguro: 'APP - Acidente Pessoal de Passageiro',
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -243,7 +252,13 @@ describe('previlemos-service', () => {
       )
       .mockResolvedValueOnce(
         jsonResponse(200, {
-          sucesso: true,
+          NumSeguro: 3482778,
+          TipoSeguro: 'APP - Acidente Pessoal de Passageiro',
+          DataInicial: '2026-09-21T00:00:00',
+          DataFinal: '2026-10-21T00:00:00',
+          Produtor: 'KAVIAR TECNOLOGIA - HML',
+          Segurado: 'MOTORISTA TESTE',
+          Pago: 'Fatura Mensal'
         })
       );
 
@@ -257,7 +272,7 @@ describe('previlemos-service', () => {
       );
 
     expect(response).toMatchObject({
-      sucesso: true,
+      NumSeguro: 3482778,
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(4);

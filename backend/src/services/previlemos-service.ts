@@ -109,6 +109,29 @@ export interface PrevilemosTokenResponse {
 }
 
 export interface PrevilemosInsuranceResponse {
+  NumSeguro: number;
+  TipoSeguro: string;
+  DataInicial: string;
+  DataFinal: string;
+  Produtor: string;
+  Segurado: string;
+  Pago: string;
+  DetalhePagamento?: {
+    InstituicaoPagamento?: string;
+    VencimentoPagamento?: string;
+    ValorDocumento?: string;
+    NumParcela?: number;
+    DataPagamento?: string;
+  };
+  Veiculo?: {
+    PlacaVeiculo?: string;
+    MarcaVeiculo?: string;
+    ModeloVeiculo?: string;
+  };
+  Links?: {
+    Impressao?: string;
+    Certificado?: string;
+  };
   [key: string]: unknown;
 }
 
@@ -473,7 +496,25 @@ export async function createPrevilemosInsurance(
     );
   }
 
-  return data as PrevilemosInsuranceResponse;
+  const result = data as PrevilemosInsuranceResponse;
+
+  if (
+    !Number.isFinite(Number(result.NumSeguro)) ||
+    !result.TipoSeguro ||
+    !result.DataInicial ||
+    !result.DataFinal
+  ) {
+    throw new PrevilemosError(
+      502,
+      'Resposta inválida do provedor de seguro.',
+      {
+        endpoint: '/api/seguros/faturamento',
+        responseKeys: responseKeys(data),
+      }
+    );
+  }
+
+  return result;
 }
 
 export function isPrevilemosEnabled(): boolean {
