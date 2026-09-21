@@ -461,6 +461,7 @@ model drivers {
   created_at                  DateTime                      @default(now())
   updated_at                  DateTime
   driver_compliance_documents driver_compliance_documents[]
+  insurance_enrollments       driver_insurance_enrollments[]
   badge_events              driver_badge_events[]
   driver_consents             driver_consents?
   driver_modalities           driver_modalities[]
@@ -2690,6 +2691,35 @@ model financial_transaction_links {
   @@index([linked_transaction_id])
   @@index([created_by_admin_id])
   @@map("financial_transaction_links")
+}
+
+model driver_insurance_enrollments {
+  id                  String    @id @default(uuid())
+  driver_id           String
+  provider            String    @db.VarChar(30)
+  status              String    @default("PENDING") @db.VarChar(20)
+  vehicle_plate       String    @db.VarChar(20)
+  valid_from          DateTime  @db.Date
+  valid_until         DateTime  @db.Date
+  cancelled_at        DateTime? @db.Date
+  provider_reference  String?   @db.VarChar(120)
+  request_payload     Json
+  provider_response   Json?
+  last_error_code     String?   @db.VarChar(50)
+  last_error_message  String?
+  attempt_count       Int       @default(0)
+  last_attempt_at     DateTime?
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+
+  driver drivers @relation(fields: [driver_id], references: [id], onDelete: Cascade)
+
+  @@unique([driver_id, provider, vehicle_plate, valid_from], name: "driver_provider_plate_valid_from", map: "ux_driver_insurance_provider_plate_from")
+  @@index([driver_id])
+  @@index([provider, status])
+  @@index([provider_reference])
+  @@index([valid_until])
+  @@map("driver_insurance_enrollments")
 }
 
 model operational_insurance_coverages {
