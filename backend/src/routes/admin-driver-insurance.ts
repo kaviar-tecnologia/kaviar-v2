@@ -14,9 +14,6 @@ import { PrevilemosError } from '../services/previlemos-service';
 
 const router = Router();
 
-router.use(authenticateAdmin);
-router.use(requireSuperAdmin);
-
 const activateSchema = z.object({
   dataInicial: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   dataFinal: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -113,6 +110,8 @@ function handleError(res: any, error: unknown) {
 // POST /api/admin/drivers/:id/insurance/previlemos/activate
 router.post(
   '/drivers/:id/insurance/previlemos/activate',
+  authenticateAdmin,
+  requireSuperAdmin,
   async (req, res) => {
     try {
       const body = activateSchema.parse(req.body);
@@ -136,6 +135,8 @@ router.post(
 // GET /api/admin/drivers/:id/insurance/previlemos
 router.get(
   '/drivers/:id/insurance/previlemos',
+  authenticateAdmin,
+  requireSuperAdmin,
   async (req, res) => {
     try {
       const rows = await listPrevilemosInsurance(req.params.id);
@@ -153,6 +154,8 @@ router.get(
 // POST /api/admin/drivers/:id/insurance/previlemos/:insuranceId/cancel
 router.post(
   '/drivers/:id/insurance/previlemos/:insuranceId/cancel',
+  authenticateAdmin,
+  requireSuperAdmin,
   async (req, res) => {
     try {
       const body = cancelSchema.parse(req.body);
