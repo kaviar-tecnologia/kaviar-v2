@@ -11,6 +11,7 @@ import {
   listPrevilemosInsurance,
 } from '../services/driver-insurance.service';
 import { PrevilemosError } from '../services/previlemos-service';
+import { audit, auditCtx } from '../utils/audit';
 
 const router = Router();
 
@@ -121,6 +122,26 @@ router.post(
         body
       );
 
+      if (!result.idempotent) {
+        const ctx = auditCtx(req);
+        void audit({
+          adminId: ctx.adminId,
+          adminEmail: ctx.adminEmail,
+          action: 'activate_driver_insurance',
+          entityType: 'driver_insurance_enrollment',
+          entityId: result.enrollment.id,
+          newValue: {
+            driverId: req.params.id,
+            provider: 'PREVILEMOS',
+            status: result.enrollment.status,
+            providerReference:
+              result.enrollment.provider_reference,
+          },
+          ipAddress: ctx.ip,
+          userAgent: ctx.ua,
+        });
+      }
+
       return res.status(result.idempotent ? 200 : 201).json({
         success: true,
         idempotent: result.idempotent,
@@ -165,6 +186,26 @@ router.post(
         req.params.insuranceId,
         body.dataCancelamento
       );
+
+      if (!result.idempotent) {
+        const ctx = auditCtx(req);
+        void audit({
+          adminId: ctx.adminId,
+          adminEmail: ctx.adminEmail,
+          action: 'cancel_driver_insurance',
+          entityType: 'driver_insurance_enrollment',
+          entityId: result.enrollment.id,
+          newValue: {
+            driverId: req.params.id,
+            provider: 'PREVILEMOS',
+            status: result.enrollment.status,
+            providerReference:
+              result.enrollment.provider_reference,
+          },
+          ipAddress: ctx.ip,
+          userAgent: ctx.ua,
+        });
+      }
 
       return res.json({
         success: true,

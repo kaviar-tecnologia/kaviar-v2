@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   insuranceFindMany: vi.fn(),
   insuranceCreate: vi.fn(),
   insuranceUpdate: vi.fn(),
+  insuranceUpdateMany: vi.fn(),
   createPrevilemosInsurance: vi.fn(),
 }));
 
@@ -21,6 +22,7 @@ vi.mock('../src/lib/prisma', () => ({
       findMany: mocks.insuranceFindMany,
       create: mocks.insuranceCreate,
       update: mocks.insuranceUpdate,
+      updateMany: mocks.insuranceUpdateMany,
     },
   },
 }));
@@ -225,11 +227,49 @@ describe('driver-insurance.service', () => {
   });
 
   it('cancela seguro ativo mantendo o mesmo NumSeguro', async () => {
-    mocks.insuranceFindFirst.mockResolvedValue({
+    mocks.insuranceFindFirst.mockResolvedValueOnce({
       id: 'insurance-1',
       driver_id: driver.id,
       provider: 'PREVILEMOS',
       status: 'ACTIVE',
+      provider_reference: '3482777',
+      provider_response: {
+        activation: providerResponse,
+      },
+      request_payload: {
+        Tabela: '63C 1',
+        ImportanciaSegurada: 30000,
+        DataInicial: '2026-09-21',
+        DataFinal: '2026-10-21',
+        NumPassageiro: 5,
+        Segurado: {
+          Nome: driver.name,
+          CpfCnpj: driver.document_cpf,
+          Email: driver.email,
+          Celular: driver.phone,
+          DataNascimento: '1990-01-10',
+        },
+        Endereco: activationInput.endereco,
+        Veiculo: {
+          Tipo: 16,
+          Placa: driver.vehicle_plate,
+          Marca: 'FIAT',
+          Modelo: driver.vehicle_model,
+          AnoFabricacao: 2024,
+          AnoModelo: 2025,
+        },
+      },
+    });
+
+    mocks.insuranceUpdateMany.mockResolvedValue({
+      count: 1,
+    });
+
+    mocks.insuranceFindFirst.mockResolvedValueOnce({
+      id: 'insurance-1',
+      driver_id: driver.id,
+      provider: 'PREVILEMOS',
+      status: 'CANCELLING',
       provider_reference: '3482777',
       provider_response: {
         activation: providerResponse,
@@ -303,6 +343,101 @@ describe('driver-insurance.service', () => {
     );
 
     expect(result.idempotent).toBe(true);
+
+    expect(
+      mocks.createPrevilemosInsurance
+    ).not.toHaveBeenCalled();
+  });
+
+  it('não chama Previlemos se outro processo adquiriu retry FAILED', async () => {
+    mocks.driverFindUnique.mockResolvedValue(driver);
+
+    mocks.insuranceFindUnique
+      .mockResolvedValueOnce({
+        id: 'insurance-1',
+        status: 'FAILED',
+      })
+      .mockResolvedValueOnce({
+        id: 'insurance-1',
+        status: 'PENDING',
+      });
+
+    mocks.insuranceUpdateMany.mockResolvedValue({
+      count: 0,
+    });
+
+    const result = await activatePrevilemosInsurance(
+      driver.id,
+      activationInput
+    );
+
+    expect(result.idempotent).toBe(true);
+    expect(result.enrollment.status).toBe('PENDING');
+    expect(
+      mocks.createPrevilemosInsurance
+    ).not.toHaveBeenCalled();
+  });
+
+  it('não adquire cancelamento quando a data civil é inválida', async () => {
+    mocks.insuranceFindFirst.mockResolvedValueOnce({
+      id: 'insurance-1',
+      driver_id: driver.id,
+      provider: 'PREVILEMOS',
+      status: 'ACTIVE',
+      provider_reference: '3482777',
+    });
+
+    await expect(
+      cancelPrevilemosInsurance(
+        driver.id,
+        'insurance-1',
+        '2026-02-31'
+      )
+    ).rejects.toMatchObject({
+      code: 'INVALID_DATE',
+      statusCode: 400,
+    });
+
+    expect(
+      mocks.insuranceUpdateMany
+    ).not.toHaveBeenCalled();
+
+    expect(
+      mocks.createPrevilemosInsurance
+    ).not.toHaveBeenCalled();
+  });
+
+  it('impede dois cancelamentos concorrentes', async () => {
+    mocks.insuranceFindFirst
+      .mockResolvedValueOnce({
+        id: 'insurance-1',
+        driver_id: driver.id,
+        provider: 'PREVILEMOS',
+        status: 'ACTIVE',
+        provider_reference: '3482777',
+      })
+      .mockResolvedValueOnce({
+        id: 'insurance-1',
+        driver_id: driver.id,
+        provider: 'PREVILEMOS',
+        status: 'CANCELLING',
+        provider_reference: '3482777',
+      });
+
+    mocks.insuranceUpdateMany.mockResolvedValue({
+      count: 0,
+    });
+
+    await expect(
+      cancelPrevilemosInsurance(
+        driver.id,
+        'insurance-1',
+        '2026-09-22'
+      )
+    ).rejects.toMatchObject({
+      code: 'INSURANCE_CANCELLATION_IN_PROGRESS',
+      statusCode: 409,
+    });
 
     expect(
       mocks.createPrevilemosInsurance

@@ -65,9 +65,17 @@ function civilDate(value: string): Date {
     );
   }
 
-  const date = new Date(`${value}T00:00:00.000Z`);
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
 
-  if (Number.isNaN(date.getTime())) {
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
     throw new DriverInsuranceError(
       400,
       'INVALID_DATE',
@@ -160,6 +168,7 @@ export async function activatePrevilemosInsurance(
 
   const validFrom = civilDate(input.dataInicial);
   const validUntil = civilDate(input.dataFinal);
+  civilDate(input.dataNascimento);
 
   if (validFrom.getTime() > validUntil.getTime()) {
     throw new DriverInsuranceError(
@@ -210,40 +219,41 @@ export async function activatePrevilemosInsurance(
 
   const payload = buildPrevilemosInsurancePayload(providerInput);
 
-  const existing =
+  const uniqueWhere = {
+    driver_provider_plate_valid_from: {
+      driver_id: driver.id,
+      provider: PROVIDER,
+      vehicle_plate: plate,
+      valid_from: validFrom,
+    },
+  };
+
+  let existing =
     await prisma.driver_insurance_enrollments.findUnique({
-      where: {
-        driver_provider_plate_valid_from: {
-          driver_id: driver.id,
-          provider: PROVIDER,
-          vehicle_plate: plate,
-          valid_from: validFrom,
-        },
-      },
+      where: uniqueWhere,
     });
 
   /*
-   * Idempotência:
-   * ACTIVE      -> já existe, não chama a seguradora novamente
-   * PENDING     -> não arrisca duplicar após requisição concorrente
-   * REVIEW      -> situação ambígua; exige análise manual
-   * CANCELLED   -> não recria automaticamente a mesma vigência
+   * Qualquer estado diferente de FAILED bloqueia nova chamada externa.
+   * FAILED pode ser retomado, mas somente um processo consegue fazer
+   * a transição atômica FAILED -> PENDING.
    */
-  if (
-    existing &&
-    ['ACTIVE', 'PENDING', 'REVIEW', 'CANCELLED'].includes(
-      existing.status
-    )
-  ) {
+  if (existing && existing.status !== 'FAILED') {
     return {
       enrollment: existing,
       idempotent: true,
     };
   }
 
-  const enrollment = existing
-    ? await prisma.driver_insurance_enrollments.update({
-        where: { id: existing.id },
+  let enrollment = existing;
+
+  if (existing) {
+    const claimed =
+      await prisma.driver_insurance_enrollments.updateMany({
+        where: {
+          id: existing.id,
+          status: 'FAILED',
+        },
         data: {
           status: 'PENDING',
           valid_until: validUntil,
@@ -254,20 +264,83 @@ export async function activatePrevilemosInsurance(
           attempt_count: { increment: 1 },
           last_attempt_at: new Date(),
         },
-      })
-    : await prisma.driver_insurance_enrollments.create({
-        data: {
-          driver_id: driver.id,
-          provider: PROVIDER,
-          status: 'PENDING',
-          vehicle_plate: plate,
-          valid_from: validFrom,
-          valid_until: validUntil,
-          request_payload: toJson(payload),
-          attempt_count: 1,
-          last_attempt_at: new Date(),
-        },
       });
+
+    if (claimed.count !== 1) {
+      const current =
+        await prisma.driver_insurance_enrollments.findUnique({
+          where: uniqueWhere,
+        });
+
+      if (current) {
+        return {
+          enrollment: current,
+          idempotent: true,
+        };
+      }
+
+      throw new DriverInsuranceError(
+        409,
+        'INSURANCE_CONCURRENT_UPDATE',
+        'O seguro está sendo processado por outra requisição.'
+      );
+    }
+
+    enrollment =
+      await prisma.driver_insurance_enrollments.findUnique({
+        where: uniqueWhere,
+      });
+  } else {
+    try {
+      enrollment =
+        await prisma.driver_insurance_enrollments.create({
+          data: {
+            driver_id: driver.id,
+            provider: PROVIDER,
+            status: 'PENDING',
+            vehicle_plate: plate,
+            valid_from: validFrom,
+            valid_until: validUntil,
+            request_payload: toJson(payload),
+            attempt_count: 1,
+            last_attempt_at: new Date(),
+          },
+        });
+    } catch (error) {
+      const code =
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error
+          ? String(
+              (error as { code?: unknown }).code ?? ''
+            )
+          : '';
+
+      if (code === 'P2002') {
+        const current =
+          await prisma.driver_insurance_enrollments.findUnique({
+            where: uniqueWhere,
+          });
+
+        if (current) {
+          return {
+            enrollment: current,
+            idempotent: true,
+          };
+        }
+      }
+
+      throw error;
+    }
+  }
+
+  if (!enrollment) {
+    throw new DriverInsuranceError(
+      409,
+      'INSURANCE_CONCURRENT_UPDATE',
+      'Não foi possível adquirir o processamento do seguro.'
+    );
+  }
 
   try {
     const response =
@@ -361,7 +434,7 @@ export async function cancelPrevilemosInsurance(
   insuranceId: string,
   dataCancelamento: string
 ) {
-  const enrollment =
+  let enrollment =
     await prisma.driver_insurance_enrollments.findFirst({
       where: {
         id: insuranceId,
@@ -394,6 +467,62 @@ export async function cancelPrevilemosInsurance(
   }
 
   const cancellationDate = civilDate(dataCancelamento);
+
+  const claimed =
+    await prisma.driver_insurance_enrollments.updateMany({
+      where: {
+        id: enrollment.id,
+        driver_id: driverId,
+        provider: PROVIDER,
+        status: 'ACTIVE',
+      },
+      data: {
+        status: 'CANCELLING',
+        last_error_code: null,
+        last_error_message: null,
+      },
+    });
+
+  if (claimed.count !== 1) {
+    const current =
+      await prisma.driver_insurance_enrollments.findFirst({
+        where: {
+          id: insuranceId,
+          driver_id: driverId,
+          provider: PROVIDER,
+        },
+      });
+
+    if (current?.status === 'CANCELLED') {
+      return {
+        enrollment: current,
+        idempotent: true,
+      };
+    }
+
+    throw new DriverInsuranceError(
+      409,
+      'INSURANCE_CANCELLATION_IN_PROGRESS',
+      'O cancelamento já está sendo processado ou requer revisão.'
+    );
+  }
+
+  enrollment =
+    await prisma.driver_insurance_enrollments.findFirst({
+      where: {
+        id: insuranceId,
+        driver_id: driverId,
+        provider: PROVIDER,
+      },
+    });
+
+  if (!enrollment) {
+    throw new DriverInsuranceError(
+      409,
+      'INSURANCE_CONCURRENT_UPDATE',
+      'Não foi possível recuperar o seguro após adquirir o cancelamento.'
+    );
+  }
 
   const payload =
     enrollment.request_payload as unknown as
@@ -454,8 +583,6 @@ export async function cancelPrevilemosInsurance(
           ),
           last_error_code: null,
           last_error_message: null,
-          attempt_count: { increment: 1 },
-          last_attempt_at: new Date(),
         },
       });
 

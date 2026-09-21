@@ -288,6 +288,21 @@ describe('previlemos-service', () => {
     ).toBe('Bearer new_token');
   });
 
+  it('rejeita data civil inexistente', async () => {
+    const {
+      buildPrevilemosInsurancePayload,
+    } = await import('../src/services/previlemos-service');
+
+    expect(() =>
+      buildPrevilemosInsurancePayload({
+        ...validInput,
+        DataInicial: '2026-02-31',
+      })
+    ).toThrow('Data inicial do seguro inválida.');
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('rejeita cancelamento fora da vigência', async () => {
     const {
       buildPrevilemosInsurancePayload,

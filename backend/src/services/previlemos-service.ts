@@ -162,9 +162,31 @@ function normalizeBaseUrl(url: string): string {
   return url.replace(/\/+$/, '');
 }
 
+function parseCivilDate(value: string): Date | null {
+  if (!value || typeof value !== 'string') return null;
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
 function isValidDate(value: string): boolean {
-  if (!value || typeof value !== 'string') return false;
-  return !Number.isNaN(new Date(value).getTime());
+  return parseCivilDate(value) !== null;
 }
 
 function validateInsuranceInput(input: PrevilemosInsuranceInput): void {
@@ -176,8 +198,8 @@ function validateInsuranceInput(input: PrevilemosInsuranceInput): void {
     throw new PrevilemosError(400, 'Data final do seguro inválida.');
   }
 
-  const initial = new Date(input.DataInicial).getTime();
-  const final = new Date(input.DataFinal).getTime();
+  const initial = parseCivilDate(input.DataInicial)!.getTime();
+  const final = parseCivilDate(input.DataFinal)!.getTime();
 
   if (initial > final) {
     throw new PrevilemosError(
@@ -194,7 +216,7 @@ function validateInsuranceInput(input: PrevilemosInsuranceInput): void {
       );
     }
 
-    const cancellation = new Date(input.DataCancelamento).getTime();
+    const cancellation = parseCivilDate(input.DataCancelamento)!.getTime();
 
     if (cancellation < initial || cancellation > final) {
       throw new PrevilemosError(
