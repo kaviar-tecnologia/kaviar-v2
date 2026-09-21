@@ -9,6 +9,9 @@ const PREVILEMOS_INSURED_AMOUNT = Number(
 const PREVILEMOS_VEHICLE_TYPE = Number(
   process.env.PREVILEMOS_VEHICLE_TYPE || '16'
 );
+const PREVILEMOS_HTTP_TIMEOUT_MS = Number(
+  process.env.PREVILEMOS_HTTP_TIMEOUT_MS || '10000'
+);
 
 const TOKEN_REFRESH_SAFETY_MS = 5 * 60 * 1000;
 const DEFAULT_TOKEN_TTL_SECONDS = 24 * 60 * 60;
@@ -110,6 +113,13 @@ export interface PrevilemosInsuranceResponse {
 }
 
 function assertConfigured(): void {
+  if (!isPrevilemosEnabled()) {
+    throw new PrevilemosError(
+      503,
+      'Integração de seguro desabilitada.'
+    );
+  }
+
   if (!PREVILEMOS_BASE_URL) {
     throw new PrevilemosError(
       500,
@@ -313,6 +323,7 @@ async function requestNewToken(): Promise<string> {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: body.toString(),
+      signal: AbortSignal.timeout(PREVILEMOS_HTTP_TIMEOUT_MS),
     }
   );
 
@@ -416,6 +427,7 @@ async function sendInsuranceRequest(
         Authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(PREVILEMOS_HTTP_TIMEOUT_MS),
     }
   );
 }

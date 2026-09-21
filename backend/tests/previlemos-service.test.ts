@@ -320,3 +320,32 @@ describe('previlemos-service', () => {
     expect(isPrevilemosEnabled()).toBe(true);
   });
 });
+
+describe('previlemos-service safety flag', () => {
+  it('não permite chamada externa quando PREVILEMOS_ENABLED=false', async () => {
+    vi.resetModules();
+    fetchMock.mockReset();
+
+    process.env.PREVILEMOS_ENABLED = 'false';
+    process.env.PREVILEMOS_BASE_URL =
+      'https://hml.previlemos.example';
+    process.env.PREVILEMOS_USERNAME =
+      'kaviar-hml@example.com';
+    process.env.PREVILEMOS_PASSWORD =
+      'secret-test-only';
+
+    const {
+      createPrevilemosInsurance,
+    } = await import('../src/services/previlemos-service');
+
+    await expect(
+      createPrevilemosInsurance(validInput)
+    ).rejects.toMatchObject({
+      statusCode: 503,
+      safeMessage:
+        'Integração de seguro desabilitada.',
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
