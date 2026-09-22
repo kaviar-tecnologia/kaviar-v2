@@ -135,6 +135,7 @@ export async function activatePrevilemosInsurance(
       document_cpf: true,
       vehicle_plate: true,
       vehicle_model: true,
+      vehicle_type: true,
     },
   });
 
@@ -151,6 +152,14 @@ export async function activatePrevilemosInsurance(
       409,
       'DRIVER_NOT_APPROVED',
       'O seguro só pode ser ativado para motorista aprovado.'
+    );
+  }
+
+  if (driver.vehicle_type !== 'CAR') {
+    throw new DriverInsuranceError(
+      409,
+      'UNSUPPORTED_VEHICLE_TYPE',
+      'A integração Previlemos está habilitada somente para carros nesta fase.'
     );
   }
 
@@ -234,15 +243,58 @@ export async function activatePrevilemosInsurance(
     });
 
   /*
-   * Qualquer estado diferente de FAILED bloqueia nova chamada externa.
-   * FAILED pode ser retomado, mas somente um processo consegue fazer
-   * a transição atômica FAILED -> PENDING.
+   * Repetir exatamente a mesma chave de emissão continua idempotente.
+   * FAILED pode ser retomado; outros estados retornam o registro atual
+   * sem nova chamada externa.
    */
   if (existing && existing.status !== 'FAILED') {
     return {
       enrollment: existing,
       idempotent: true,
     };
+  }
+
+  /*
+   * Defesa adicional contra dupla cobertura acidental:
+   * uma nova vigência não pode se sobrepor a outro registro ainda
+   * ativo ou cujo resultado/cancelamento esteja pendente de confirmação.
+   *
+   * Um FAILED com a mesma chave fica fora desta consulta para permitir retry.
+   * Períodos futuros sem sobreposição continuam permitidos.
+   */
+  const overlapping =
+    await prisma.driver_insurance_enrollments.findFirst({
+      where: {
+        driver_id: driver.id,
+        provider: PROVIDER,
+        vehicle_plate: plate,
+        ...(existing ? { id: { not: existing.id } } : {}),
+        status: {
+          in: [
+            'PENDING',
+            'ACTIVE',
+            'REVIEW',
+            'CANCELLING',
+            'CANCELLATION_REVIEW',
+          ],
+        },
+        valid_from: { lte: validUntil },
+        valid_until: { gte: validFrom },
+      },
+      select: {
+        id: true,
+        status: true,
+        valid_from: true,
+        valid_until: true,
+      },
+    });
+
+  if (overlapping) {
+    throw new DriverInsuranceError(
+      409,
+      'INSURANCE_PERIOD_CONFLICT',
+      'Já existe seguro ou operação Previlemos com vigência sobreposta para este veículo.'
+    );
   }
 
   let enrollment = existing;
