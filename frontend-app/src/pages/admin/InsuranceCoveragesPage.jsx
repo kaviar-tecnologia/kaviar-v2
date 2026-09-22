@@ -112,11 +112,33 @@ const emptyForm = {
   notes: '',
 };
 
+function civilDateParts(value) {
+  if (!value) return null;
+
+  const raw = String(value);
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const utc = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    utc.getUTCFullYear() !== year ||
+    utc.getUTCMonth() !== month - 1 ||
+    utc.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return { year, month, day, key: year * 10000 + month * 100 + day };
+}
+
 function formatDate(value) {
-  if (!value) return '-';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '-';
-  return d.toLocaleDateString('pt-BR');
+  const parts = civilDateParts(value);
+  if (!parts) return '-';
+  return `${String(parts.day).padStart(2, '0')}/${String(parts.month).padStart(2, '0')}/${parts.year}`;
 }
 
 function modalityLabel(value) {
@@ -162,11 +184,13 @@ function certificateUrl(item) {
 }
 
 function daysTo(dateValue) {
-  if (!dateValue) return null;
+  const end = civilDateParts(dateValue);
+  if (!end) return null;
+
   const today = new Date();
-  const end = new Date(dateValue);
-  const ms = end.getTime() - new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  return Math.floor(ms / 86400000);
+  const todayUtc = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const endUtc = Date.UTC(end.year, end.month - 1, end.day);
+  return Math.round((endUtc - todayUtc) / 86400000);
 }
 
 function toPayload(form) {
@@ -229,7 +253,10 @@ export default function InsuranceCoveragesPage() {
 
   const blockingPrevilemosEnrollment = useMemo(() => {
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const todayKey =
+      today.getFullYear() * 10000 +
+      (today.getMonth() + 1) * 100 +
+      today.getDate();
 
     return previlemosEnrollments.find((item) => {
       if (['PENDING', 'REVIEW', 'CANCELLING', 'CANCELLATION_REVIEW'].includes(item.status)) {
@@ -238,9 +265,8 @@ export default function InsuranceCoveragesPage() {
 
       if (item.status !== 'ACTIVE') return false;
 
-      if (!item.validUntil) return true;
-      const validUntil = new Date(item.validUntil);
-      return Number.isNaN(validUntil.getTime()) || validUntil >= today;
+      const validUntil = civilDateParts(item.validUntil);
+      return !validUntil || validUntil.key >= todayKey;
     }) || null;
   }, [previlemosEnrollments]);
 
