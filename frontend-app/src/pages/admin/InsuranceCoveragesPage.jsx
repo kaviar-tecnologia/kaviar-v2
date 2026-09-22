@@ -275,10 +275,10 @@ export default function InsuranceCoveragesPage() {
     if (!isSuperAdmin) return;
     setPrevilemosLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/drivers?status=approved&vehicle_type=CAR&limit=100`, { headers });
+      const res = await fetch(`${API_BASE_URL}/api/admin/drivers?status=approved&limit=100`, { headers });
       const json = await res.json();
       if (!json.success) throw new Error(json.error || 'Falha ao carregar motoristas aprovados.');
-      setPrevilemosDrivers(json.data || []);
+      setPrevilemosDrivers((json.data || []).filter((driver) => driver.vehicleType !== 'MOTORCYCLE'));
     } catch (err) {
       setFeedback({ type: 'error', message: err?.message || 'Erro ao carregar motoristas para o seguro.' });
     } finally {
@@ -615,7 +615,7 @@ export default function InsuranceCoveragesPage() {
                       setPrevilemosHistoryLoadedFor('');
                       fetchPrevilemosInsurance(driverId);
                     }}
-                    helperText="A lista traz somente motoristas aprovados com veículo do tipo carro; a emissão ainda valida CPF, placa e modelo no backend."
+                    helperText="A lista exclui motos e mantém compatibilidade com cadastros antigos de carro sem tipo explícito; o backend ainda valida os dados antes da emissão."
                   >
                     {previlemosDrivers.map((driver) => (
                       <MenuItem key={driver.id} value={driver.id}>
