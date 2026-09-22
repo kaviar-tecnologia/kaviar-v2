@@ -6,6 +6,7 @@ import {
   Card,
   CardContent,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -24,62 +25,20 @@ import {
 import { Add, Refresh } from '@mui/icons-material';
 import { API_BASE_URL } from '../../config/api';
 
-const IZA_STATUS_ITEMS = [
-  'Propostas comerciais recebidas.',
-  'Análise interna aprovada para seguir com a IZA.',
-  'Contratação ainda pendente.',
-  'Apólice ainda não emitida.',
-  'Cobertura ainda não ativa.',
-  'Uso no sistema apenas como referência interna.',
+const PREVILEMOS_FACTS = [
+  'Seguro APP contratado para início com carros.',
+  'API homologada com inclusão e cancelamento validados.',
+  'Backend da integração já implantado com proteção contra duplicidade e estados ambíguos.',
+  'Cobertura mensal por placa, 24h por dia e 7 dias por semana.',
+  'Capitais atuais: R$ 30 mil morte, R$ 30 mil invalidez e R$ 3 mil DMHO por ocupante.',
 ];
 
-const IZA_PLANS = [
-  {
-    title: 'Mensal Motoristas e Passageiros — Plano 2',
-    use: 'Carro Passageiro e Moto Passageiro, se aprovado em contrato, apólice e permitido pelo município.',
-    model: 'Mensal, sem API obrigatória no início.',
-    referenceCost: 'R$ 39,18 por vida/mês.',
-    minimumLives: '20 vidas.',
-    estimatedMinimumCost: 'R$ 783,60/mês + IOF.',
-    coverages: [
-      'Motorista: morte acidental R$ 20.000, invalidez R$ 20.000, DMHO até R$ 5.000, DIT até R$ 80 por até 30 dias e auxílio funeral R$ 5.000.',
-      'Passageiro: morte acidental R$ 20.000, invalidez até R$ 20.000 e auxílio funeral R$ 5.000.',
-    ],
-    pending: [
-      'contrato assinado;',
-      'apólice emitida;',
-      'vigência definida;',
-      'confirmação formal para 2 rodas e 4 rodas;',
-      'confirmação formal para Moto Passageiro / mototáxi;',
-      'confirmação de uso do log/percurso da corrida KAVIAR em caso de sinistro;',
-      'confirmação de que atende ao seguro APP/acidentes pessoais exigido para transporte por aplicativo;',
-      'regras de cancelamento/multa da vigência de 12 meses.',
-    ],
-  },
-  {
-    title: 'Mensal Entregas — Plano 3',
-    use: 'Moto Entrega / Moto Express.',
-    model: 'Mensal, sem API obrigatória no início.',
-    referenceCost: 'R$ 23,93 por vida/mês.',
-    minimumLives: '20 vidas.',
-    estimatedMinimumCost: 'R$ 478,60/mês + IOF.',
-    coverages: [
-      'morte acidental R$ 20.000;',
-      'invalidez R$ 20.000;',
-      'DMHO até R$ 3.000;',
-      'DIT até R$ 80 por até 20 dias;',
-      'auxílio funeral R$ 5.000.',
-    ],
-    pending: [
-      'contrato assinado;',
-      'apólice emitida;',
-      'vigência definida;',
-      'confirmação de CNH/documentos exigidos;',
-      'confirmação de cobertura 24h para prestador/motoboy;',
-      'regras de inclusão/exclusão no Portal IZA;',
-      'regras de cancelamento/multa da vigência de 12 meses.',
-    ],
-  },
+const RCF_FACTS = [
+  'Cotação solicitada à Previlemos em 22/09/2026.',
+  'Disponível para cotação em carros; motos não foram oferecidas neste momento.',
+  'A cobertura é feita por seguradora distinta do APP.',
+  'A mesma relação de veículos do APP pode ser reaproveitada no processo do RC.',
+  'Ainda sem preço, apólice, endpoint/API ou ativação no sistema.',
 ];
 
 const MODALITIES = [
@@ -102,6 +61,39 @@ const STATUSES = [
   { value: 'EXPIRED', label: 'Expirada', color: '#B91C1C' },
   { value: 'SUSPENDED', label: 'Suspensa', color: '#B45309' },
 ];
+
+const DRIVER_INSURANCE_STATUSES = {
+  PENDING: { label: 'Processando', color: '#B45309' },
+  ACTIVE: { label: 'Ativo', color: '#15803D' },
+  FAILED: { label: 'Falhou', color: '#B91C1C' },
+  REVIEW: { label: 'Revisão necessária', color: '#7C3AED' },
+  CANCELLING: { label: 'Cancelando', color: '#B45309' },
+  CANCELLED: { label: 'Cancelado', color: '#6B7280' },
+  CANCELLATION_REVIEW: { label: 'Revisar cancelamento', color: '#7C3AED' },
+};
+
+const emptyPrevilemosForm = {
+  dataInicial: '',
+  dataFinal: '',
+  numPassageiro: '5',
+  dataNascimento: '',
+  logradouro: '',
+  numero: '',
+  complemento: '',
+  bairro: '',
+  cidade: '',
+  uf: '',
+  cep: '',
+  marca: '',
+  modelo: '',
+  anoFabricacao: '',
+  anoModelo: '',
+  chassi: '',
+  renavam: '',
+  proprietario: '',
+  cpfCnpjProprietario: '',
+  confirmation: '',
+};
 
 const emptyForm = {
   territory_id: 'GLOBAL',
@@ -147,6 +139,28 @@ function statusChip(value) {
   );
 }
 
+function driverInsuranceStatusChip(value) {
+  const cfg = DRIVER_INSURANCE_STATUSES[value] || { label: value || '-', color: '#6B7280' };
+  return (
+    <Chip
+      size="small"
+      label={cfg.label}
+      sx={{
+        bgcolor: `${cfg.color}15`,
+        color: cfg.color,
+        border: `1px solid ${cfg.color}35`,
+        fontWeight: 700,
+      }}
+    />
+  );
+}
+
+function certificateUrl(item) {
+  const response = item?.providerResponse;
+  const activation = response?.activation || response;
+  return activation?.Links?.Certificado || activation?.Links?.Impressao || null;
+}
+
 function daysTo(dateValue) {
   if (!dateValue) return null;
   const today = new Date();
@@ -177,6 +191,14 @@ function toPayload(form) {
 export default function InsuranceCoveragesPage() {
   const token = localStorage.getItem('kaviar_admin_token');
   const headers = useMemo(() => ({ Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }), [token]);
+  const admin = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem('kaviar_admin_data') || 'null');
+    } catch {
+      return null;
+    }
+  }, []);
+  const isSuperAdmin = admin?.role === 'SUPER_ADMIN';
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -188,6 +210,21 @@ export default function InsuranceCoveragesPage() {
   const [openEdit, setOpenEdit] = useState(false);
   const [createForm, setCreateForm] = useState(emptyForm);
   const [editForm, setEditForm] = useState({ id: '', status: 'DRAFT', valid_until: '', document_url: '', notes: '' });
+
+  const [previlemosDrivers, setPrevilemosDrivers] = useState([]);
+  const [selectedDriverId, setSelectedDriverId] = useState('');
+  const [previlemosEnrollments, setPrevilemosEnrollments] = useState([]);
+  const [previlemosLoading, setPrevilemosLoading] = useState(false);
+  const [previlemosSubmitting, setPrevilemosSubmitting] = useState(false);
+  const [openPrevilemosActivate, setOpenPrevilemosActivate] = useState(false);
+  const [openPrevilemosCancel, setOpenPrevilemosCancel] = useState(false);
+  const [previlemosForm, setPrevilemosForm] = useState(emptyPrevilemosForm);
+  const [cancelForm, setCancelForm] = useState({ insuranceId: '', dataCancelamento: '', confirmation: '' });
+
+  const selectedDriver = useMemo(
+    () => previlemosDrivers.find((driver) => driver.id === selectedDriverId) || null,
+    [previlemosDrivers, selectedDriverId],
+  );
 
   const territoryOptions = useMemo(() => {
     const fromReadiness = readiness?.territories || [];
@@ -216,9 +253,142 @@ export default function InsuranceCoveragesPage() {
     }
   };
 
+  const fetchPrevilemosDrivers = async () => {
+    if (!isSuperAdmin) return;
+    setPrevilemosLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/drivers?status=approved&limit=100`, { headers });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Falha ao carregar motoristas aprovados.');
+      setPrevilemosDrivers(json.data || []);
+    } catch (err) {
+      setFeedback({ type: 'error', message: err?.message || 'Erro ao carregar motoristas para o seguro.' });
+    } finally {
+      setPrevilemosLoading(false);
+    }
+  };
+
+  const fetchPrevilemosInsurance = async (driverId) => {
+    if (!driverId || !isSuperAdmin) {
+      setPrevilemosEnrollments([]);
+      return;
+    }
+
+    setPrevilemosLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/drivers/${driverId}/insurance/previlemos`, { headers });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.message || json.error || 'Falha ao carregar seguros Previlemos.');
+      setPrevilemosEnrollments(json.data || []);
+    } catch (err) {
+      setPrevilemosEnrollments([]);
+      setFeedback({ type: 'error', message: err?.message || 'Erro ao consultar seguros Previlemos.' });
+    } finally {
+      setPrevilemosLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchAll();
+    if (isSuperAdmin) fetchPrevilemosDrivers();
   }, []);
+
+  const openActivatePrevilemos = () => {
+    if (!selectedDriver) return;
+    setPrevilemosForm({
+      ...emptyPrevilemosForm,
+      modelo: selectedDriver.vehicleModel || '',
+      proprietario: selectedDriver.name || '',
+    });
+    setOpenPrevilemosActivate(true);
+  };
+
+  const handleActivatePrevilemos = async () => {
+    if (!selectedDriver || previlemosForm.confirmation !== 'ATIVAR') return;
+
+    setPrevilemosSubmitting(true);
+    try {
+      const payload = {
+        dataInicial: previlemosForm.dataInicial,
+        dataFinal: previlemosForm.dataFinal,
+        numPassageiro: Number(previlemosForm.numPassageiro),
+        dataNascimento: previlemosForm.dataNascimento,
+        endereco: {
+          Logradouro: previlemosForm.logradouro.trim(),
+          Numero: previlemosForm.numero.trim(),
+          ...(previlemosForm.complemento.trim() ? { Complemento: previlemosForm.complemento.trim() } : {}),
+          Bairro: previlemosForm.bairro.trim(),
+          Cidade: previlemosForm.cidade.trim(),
+          Uf: previlemosForm.uf.trim().toUpperCase(),
+          Cep: previlemosForm.cep.trim(),
+        },
+        veiculo: {
+          Marca: previlemosForm.marca.trim(),
+          ...(previlemosForm.modelo.trim() ? { Modelo: previlemosForm.modelo.trim() } : {}),
+          AnoFabricacao: Number(previlemosForm.anoFabricacao),
+          AnoModelo: Number(previlemosForm.anoModelo),
+          ...(previlemosForm.chassi.trim() ? { Chassi: previlemosForm.chassi.trim() } : {}),
+          ...(previlemosForm.renavam.trim() ? { Renavam: previlemosForm.renavam.trim() } : {}),
+          ...(previlemosForm.proprietario.trim() ? { Proprietario: previlemosForm.proprietario.trim() } : {}),
+          ...(previlemosForm.cpfCnpjProprietario.trim() ? { CpfCnpjProprietario: previlemosForm.cpfCnpjProprietario.trim() } : {}),
+        },
+      };
+
+      const res = await fetch(
+        `${API_BASE_URL}/api/admin/drivers/${selectedDriver.id}/insurance/previlemos/activate`,
+        { method: 'POST', headers, body: JSON.stringify(payload) },
+      );
+      const json = await res.json();
+      if (!json.success) throw new Error(json.message || json.error || 'Falha ao ativar seguro.');
+
+      setOpenPrevilemosActivate(false);
+      setFeedback({
+        type: 'success',
+        message: json.idempotent
+          ? 'Seguro já existente localizado sem nova emissão.'
+          : `Seguro Previlemos ativado. NumSeguro: ${json.data?.providerReference || '-'}.`,
+      });
+      await fetchPrevilemosInsurance(selectedDriver.id);
+    } catch (err) {
+      setFeedback({ type: 'error', message: err?.message || 'Erro ao ativar seguro Previlemos.' });
+    } finally {
+      setPrevilemosSubmitting(false);
+    }
+  };
+
+  const openCancelPrevilemos = (item) => {
+    setCancelForm({ insuranceId: item.id, dataCancelamento: '', confirmation: '' });
+    setOpenPrevilemosCancel(true);
+  };
+
+  const handleCancelPrevilemos = async () => {
+    if (!selectedDriver || cancelForm.confirmation !== 'CANCELAR') return;
+
+    setPrevilemosSubmitting(true);
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/admin/drivers/${selectedDriver.id}/insurance/previlemos/${cancelForm.insuranceId}/cancel`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ dataCancelamento: cancelForm.dataCancelamento }),
+        },
+      );
+      const json = await res.json();
+      if (!json.success) throw new Error(json.message || json.error || 'Falha ao cancelar seguro.');
+
+      setOpenPrevilemosCancel(false);
+      setFeedback({
+        type: 'success',
+        message: json.idempotent ? 'Seguro já estava cancelado.' : 'Cancelamento enviado e registrado com sucesso.',
+      });
+      await fetchPrevilemosInsurance(selectedDriver.id);
+    } catch (err) {
+      setFeedback({ type: 'error', message: err?.message || 'Erro ao cancelar seguro Previlemos.' });
+    } finally {
+      setPrevilemosSubmitting(false);
+    }
+  };
 
   const handleCreate = async () => {
     setSaving(true);
@@ -283,10 +453,10 @@ export default function InsuranceCoveragesPage() {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, gap: 1, flexWrap: 'wrap' }}>
         <Box>
           <Typography variant="h5" sx={{ color: '#B8942E', fontWeight: 800 }}>
-            Seguro APP e Coberturas Operacionais
+            Central de Seguros — APP e Responsabilidade Civil
           </Typography>
           <Typography sx={{ color: '#6B7280', fontSize: 13 }}>
-            Base interna de readiness para APP/RC-F por modalidade e território. Não aplica bloqueio operacional nesta fase.
+            Gestão do APP Previlemos, preparação do RCF-V e readiness de coberturas por modalidade e território.
           </Typography>
         </Box>
         <Stack direction="row" spacing={1}>
@@ -305,128 +475,207 @@ export default function InsuranceCoveragesPage() {
         </Alert>
       )}
 
-      <Card
-        sx={{
-          mb: 2,
-          border: '1px solid #E8E5DE',
-          borderTop: '3px solid #B8942E',
-          background: 'linear-gradient(135deg, #FFFDF7 0%, #F7F2E7 100%)',
-          boxShadow: '0 8px 24px rgba(184,148,46,0.08)',
-        }}
-      >
-        <CardContent>
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} sx={{ mb: 1.5, flexWrap: 'wrap' }}>
-            {[
-              { label: 'Fornecedor preferencial', color: '#8A6A11', bg: '#F6E7B8', border: '#E2C15B' },
-              { label: 'Em negociação', color: '#8C5A12', bg: '#F7E2C2', border: '#E5B97A' },
-              { label: 'DRAFT', color: '#5B6472', bg: '#ECEFF3', border: '#C9D1DB' },
-              { label: 'Aguardando contrato', color: '#7C4A03', bg: '#F3E5D1', border: '#D9B68C' },
-            ].map((chip) => (
-              <Chip
-                key={chip.label}
-                size="small"
-                label={chip.label}
-                sx={{
-                  bgcolor: chip.bg,
-                  color: chip.color,
-                  border: `1px solid ${chip.border}`,
-                  fontWeight: 700,
-                }}
-              />
-            ))}
-          </Stack>
-
-          <Typography variant="h6" sx={{ color: '#5E4610', fontWeight: 800, mb: 0.5 }}>
-            IZA — Seguradora preferencial em negociação
-          </Typography>
-          <Typography sx={{ color: '#6B7280', fontSize: 14, mb: 2 }}>
-            Fornecedor escolhido para avançar na negociação de Seguro APP e Acidentes Pessoais da KAVIAR. Ainda sem contrato assinado, apólice emitida ou cobertura ativa.
-          </Typography>
-
-          <Grid container spacing={2} sx={{ mb: 2 }}>
-            <Grid item xs={12} md={4}>
-              <Card sx={{ height: '100%', border: '1px solid #E8E5DE', bgcolor: 'rgba(255,255,255,0.65)' }}>
-                <CardContent>
-                  <Typography sx={{ color: '#8A6A11', fontWeight: 800, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.04em', mb: 1 }}>
-                    Status atual
-                  </Typography>
-                  <Stack spacing={0.8}>
-                    {IZA_STATUS_ITEMS.map((item) => (
-                      <Typography key={item} sx={{ color: '#4B5563', fontSize: 13, lineHeight: 1.45 }}>
-                        • {item}
-                      </Typography>
-                    ))}
-                  </Stack>
-                </CardContent>
-              </Card>
-            </Grid>
-
-            {IZA_PLANS.map((plan) => (
-              <Grid item xs={12} md={4} key={plan.title}>
-                <Card sx={{ height: '100%', border: '1px solid #E8E5DE', bgcolor: 'rgba(255,255,255,0.72)' }}>
-                  <CardContent>
-                    <Typography sx={{ color: '#1F2937', fontWeight: 800, fontSize: 15, mb: 1.2 }}>
-                      {plan.title}
-                    </Typography>
-
-                    <Stack spacing={1}>
-                      <Box>
-                        <Typography sx={{ color: '#8A6A11', fontSize: 12, fontWeight: 700, textTransform: 'uppercase' }}>Uso previsto</Typography>
-                        <Typography sx={{ color: '#4B5563', fontSize: 13 }}>{plan.use}</Typography>
-                      </Box>
-                      <Box>
-                        <Typography sx={{ color: '#8A6A11', fontSize: 12, fontWeight: 700, textTransform: 'uppercase' }}>Modelo</Typography>
-                        <Typography sx={{ color: '#4B5563', fontSize: 13 }}>{plan.model}</Typography>
-                      </Box>
-                      <Box>
-                        <Typography sx={{ color: '#8A6A11', fontSize: 12, fontWeight: 700, textTransform: 'uppercase' }}>Custo de referência</Typography>
-                        <Typography sx={{ color: '#4B5563', fontSize: 13 }}>{plan.referenceCost}</Typography>
-                      </Box>
-                      <Box>
-                        <Typography sx={{ color: '#8A6A11', fontSize: 12, fontWeight: 700, textTransform: 'uppercase' }}>Mínimo informado</Typography>
-                        <Typography sx={{ color: '#4B5563', fontSize: 13 }}>{plan.minimumLives}</Typography>
-                      </Box>
-                      <Box>
-                        <Typography sx={{ color: '#8A6A11', fontSize: 12, fontWeight: 700, textTransform: 'uppercase' }}>Custo mínimo estimado</Typography>
-                        <Typography sx={{ color: '#4B5563', fontSize: 13 }}>{plan.estimatedMinimumCost}</Typography>
-                      </Box>
-                      <Box>
-                        <Typography sx={{ color: '#8A6A11', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', mb: 0.4 }}>Coberturas informadas</Typography>
-                        <Stack spacing={0.6}>
-                          {plan.coverages.map((item) => (
-                            <Typography key={item} sx={{ color: '#4B5563', fontSize: 13, lineHeight: 1.45 }}>
-                              • {item}
-                            </Typography>
-                          ))}
-                        </Stack>
-                      </Box>
-                      <Box>
-                        <Typography sx={{ color: '#8A6A11', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', mb: 0.4 }}>Pendências antes de ativar</Typography>
-                        <Stack spacing={0.6}>
-                          {plan.pending.map((item) => (
-                            <Typography key={item} sx={{ color: '#4B5563', fontSize: 13, lineHeight: 1.45 }}>
-                              • {item}
-                            </Typography>
-                          ))}
-                        </Stack>
-                      </Box>
-                    </Stack>
-                  </CardContent>
-                </Card>
-              </Grid>
-            ))}
-          </Grid>
-
-          <Alert
-            severity="warning"
+      <Grid container spacing={2} sx={{ mb: 2 }}>
+        <Grid item xs={12} md={7}>
+          <Card
             sx={{
-              border: '1px solid #E6C27A',
-              bgcolor: '#FFF7E8',
-              '& .MuiAlert-icon': { color: '#9A6700' },
+              height: '100%',
+              border: '1px solid #E8E5DE',
+              borderTop: '3px solid #15803D',
+              background: 'linear-gradient(135deg, #F7FFF9 0%, #F1F8F3 100%)',
             }}
           >
-            Importante: a IZA foi escolhida para negociação futura, mas a KAVIAR ainda não possui cobertura ativa. Não comunicar viagens seguradas e não liberar operação real com base nesta cotação. Só marcar como ACTIVE após contrato, apólice, vigência, documentos e validação operacional.
-          </Alert>
+            <CardContent>
+              <Stack direction="row" spacing={1} sx={{ mb: 1.2, flexWrap: 'wrap', gap: 0.5 }}>
+                <Chip size="small" label="APP" sx={{ bgcolor: '#15803D15', color: '#15803D', fontWeight: 800 }} />
+                <Chip size="small" label="Previlemos" sx={{ bgcolor: '#2563EB15', color: '#2563EB', fontWeight: 800 }} />
+                <Chip size="small" label="API integrada" sx={{ bgcolor: '#15803D15', color: '#15803D', fontWeight: 700 }} />
+                <Chip size="small" label="Homologação concluída" sx={{ bgcolor: '#15803D15', color: '#15803D', fontWeight: 700 }} />
+              </Stack>
+
+              <Typography variant="h6" sx={{ color: '#1F2937', fontWeight: 800, mb: 0.5 }}>
+                Seguro APP — Previlemos
+              </Typography>
+              <Typography sx={{ color: '#6B7280', fontSize: 13, mb: 1.5 }}>
+                Integração principal de Seguro APP da KAVIAR. A emissão e o cancelamento reais são operações controladas e restritas ao SUPER_ADMIN.
+              </Typography>
+
+              <Stack spacing={0.65}>
+                {PREVILEMOS_FACTS.map((item) => (
+                  <Typography key={item} sx={{ color: '#4B5563', fontSize: 13, lineHeight: 1.45 }}>
+                    • {item}
+                  </Typography>
+                ))}
+              </Stack>
+
+              <Alert severity="warning" sx={{ mt: 1.5 }}>
+                A tela nunca deve ser usada como teste contra produção. Quando o backend estiver habilitado em PRD, o botão de ativação gera uma operação real no provedor.
+              </Alert>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12} md={5}>
+          <Card
+            sx={{
+              height: '100%',
+              border: '1px solid #E8E5DE',
+              borderTop: '3px solid #B8942E',
+              background: 'linear-gradient(135deg, #FFFDF7 0%, #F7F2E7 100%)',
+            }}
+          >
+            <CardContent>
+              <Stack direction="row" spacing={1} sx={{ mb: 1.2, flexWrap: 'wrap', gap: 0.5 }}>
+                <Chip size="small" label="RCF-V" sx={{ bgcolor: '#B8942E15', color: '#8A6A11', fontWeight: 800 }} />
+                <Chip size="small" label="Cotação em andamento" sx={{ bgcolor: '#B4530915', color: '#B45309', fontWeight: 700 }} />
+                <Chip size="small" label="Sem integração ativa" sx={{ bgcolor: '#6B728015', color: '#6B7280', fontWeight: 700 }} />
+              </Stack>
+
+              <Typography variant="h6" sx={{ color: '#1F2937', fontWeight: 800, mb: 0.5 }}>
+                Responsabilidade Civil — RCF-V
+              </Typography>
+              <Typography sx={{ color: '#6B7280', fontSize: 13, mb: 1.5 }}>
+                Estrutura reservada para futura incorporação do RC à mesma central, sem misturar a cobertura com o APP.
+              </Typography>
+
+              <Stack spacing={0.65}>
+                {RCF_FACTS.map((item) => (
+                  <Typography key={item} sx={{ color: '#4B5563', fontSize: 13, lineHeight: 1.45 }}>
+                    • {item}
+                  </Typography>
+                ))}
+              </Stack>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      <Card sx={{ mb: 2, border: '1px solid #E8E5DE', borderTop: '3px solid #2563EB' }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1, flexWrap: 'wrap', mb: 1.5 }}>
+            <Box>
+              <Typography sx={{ fontWeight: 800, color: '#1F2937' }}>Operação APP Previlemos</Typography>
+              <Typography sx={{ color: '#6B7280', fontSize: 13 }}>
+                Consulta por motorista, NumSeguro, vigência, certificado, ativação e cancelamento.
+              </Typography>
+            </Box>
+            {isSuperAdmin && (
+              <Button variant="outlined" size="small" startIcon={<Refresh />} onClick={fetchPrevilemosDrivers} disabled={previlemosLoading}>
+                Atualizar motoristas
+              </Button>
+            )}
+          </Box>
+
+          {!isSuperAdmin ? (
+            <Alert severity="info">
+              Consulta, contratação e cancelamento da Previlemos são restritos ao perfil SUPER_ADMIN. O restante da central continua disponível para acompanhamento de readiness.
+            </Alert>
+          ) : (
+            <>
+              <Grid container spacing={1.5} alignItems="center">
+                <Grid item xs={12} md={7}>
+                  <TextField
+                    select
+                    fullWidth
+                    size="small"
+                    label="Motorista aprovado"
+                    value={selectedDriverId}
+                    onChange={(e) => {
+                      const driverId = e.target.value;
+                      setSelectedDriverId(driverId);
+                      fetchPrevilemosInsurance(driverId);
+                    }}
+                    helperText="A lista traz motoristas aprovados; a emissão ainda valida CPF, placa e modelo no backend."
+                  >
+                    {previlemosDrivers.map((driver) => (
+                      <MenuItem key={driver.id} value={driver.id}>
+                        {driver.name} — {driver.vehiclePlate || 'sem placa'} {driver.vehicleModel ? `· ${driver.vehicleModel}` : ''}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                </Grid>
+                <Grid item xs={12} md={5}>
+                  <Stack direction="row" spacing={1} justifyContent={{ xs: 'flex-start', md: 'flex-end' }} sx={{ flexWrap: 'wrap', gap: 0.5 }}>
+                    {selectedDriver && (
+                      <>
+                        <Chip size="small" label={selectedDriver.vehiclePlate || 'Placa ausente'} />
+                        <Chip size="small" label={`${previlemosEnrollments.filter((item) => item.status === 'ACTIVE').length} ativo(s)`} />
+                      </>
+                    )}
+                    <Button
+                      variant="contained"
+                      onClick={openActivatePrevilemos}
+                      disabled={!selectedDriver || previlemosSubmitting}
+                      sx={{ bgcolor: '#15803D', '&:hover': { bgcolor: '#166534' } }}
+                    >
+                      Ativar APP Previlemos
+                    </Button>
+                  </Stack>
+                </Grid>
+              </Grid>
+
+              <Box sx={{ mt: 2, overflowX: 'auto' }}>
+                {previlemosLoading && selectedDriverId ? (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}><CircularProgress size={28} /></Box>
+                ) : (
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Status</TableCell>
+                        <TableCell>Placa</TableCell>
+                        <TableCell>NumSeguro</TableCell>
+                        <TableCell>Vigência</TableCell>
+                        <TableCell>Certificado</TableCell>
+                        <TableCell>Última ocorrência</TableCell>
+                        <TableCell align="right">Ações</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {!selectedDriverId && (
+                        <TableRow><TableCell colSpan={7}>Selecione um motorista para consultar o histórico de seguros.</TableCell></TableRow>
+                      )}
+                      {selectedDriverId && previlemosEnrollments.length === 0 && (
+                        <TableRow><TableCell colSpan={7}>Nenhum seguro Previlemos registrado para este motorista.</TableCell></TableRow>
+                      )}
+                      {previlemosEnrollments.map((item) => {
+                        const certUrl = certificateUrl(item);
+                        return (
+                          <TableRow key={item.id} hover>
+                            <TableCell>{driverInsuranceStatusChip(item.status)}</TableCell>
+                            <TableCell>{item.vehiclePlate || '-'}</TableCell>
+                            <TableCell>{item.providerReference || '-'}</TableCell>
+                            <TableCell>{formatDate(item.validFrom)} - {formatDate(item.validUntil)}</TableCell>
+                            <TableCell>
+                              {certUrl ? (
+                                <Button size="small" component="a" href={certUrl} target="_blank" rel="noopener noreferrer">Abrir</Button>
+                              ) : '-'}
+                            </TableCell>
+                            <TableCell>
+                              {item.lastErrorMessage ? (
+                                <Typography sx={{ color: '#B91C1C', fontSize: 12 }}>{item.lastErrorMessage}</Typography>
+                              ) : (
+                                <Typography sx={{ color: '#6B7280', fontSize: 12 }}>{formatDate(item.updatedAt)}</Typography>
+                              )}
+                            </TableCell>
+                            <TableCell align="right">
+                              <Button
+                                size="small"
+                                color="error"
+                                disabled={item.status !== 'ACTIVE' || previlemosSubmitting}
+                                onClick={() => openCancelPrevilemos(item)}
+                              >
+                                Cancelar
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+              </Box>
+            </>
+          )}
         </CardContent>
       </Card>
 
@@ -555,6 +804,149 @@ export default function InsuranceCoveragesPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <Dialog open={openPrevilemosActivate} onClose={() => !previlemosSubmitting && setOpenPrevilemosActivate(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Ativar Seguro APP Previlemos</DialogTitle>
+        <DialogContent sx={{ mt: 1 }}>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Esta ação chama o endpoint de ativação. Se a integração estiver habilitada em PRD, será uma emissão real. Confira todos os dados antes de confirmar.
+          </Alert>
+
+          <Typography sx={{ fontWeight: 700, mb: 1 }}>
+            {selectedDriver?.name || '-'} — {selectedDriver?.vehiclePlate || 'sem placa'}
+          </Typography>
+
+          <Grid container spacing={1.5}>
+            <Grid item xs={12} md={4}>
+              <TextField type="date" label="Início da vigência" InputLabelProps={{ shrink: true }} fullWidth value={previlemosForm.dataInicial} onChange={(e) => setPrevilemosForm((p) => ({ ...p, dataInicial: e.target.value }))} />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <TextField type="date" label="Fim da vigência" InputLabelProps={{ shrink: true }} fullWidth value={previlemosForm.dataFinal} onChange={(e) => setPrevilemosForm((p) => ({ ...p, dataFinal: e.target.value }))} />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <TextField type="number" label="Ocupantes cobertos" fullWidth inputProps={{ min: 1 }} value={previlemosForm.numPassageiro} onChange={(e) => setPrevilemosForm((p) => ({ ...p, numPassageiro: e.target.value }))} />
+            </Grid>
+
+            <Grid item xs={12} md={4}>
+              <TextField type="date" label="Nascimento do motorista" InputLabelProps={{ shrink: true }} fullWidth value={previlemosForm.dataNascimento} onChange={(e) => setPrevilemosForm((p) => ({ ...p, dataNascimento: e.target.value }))} />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField label="Logradouro" fullWidth value={previlemosForm.logradouro} onChange={(e) => setPrevilemosForm((p) => ({ ...p, logradouro: e.target.value }))} />
+            </Grid>
+            <Grid item xs={12} md={2}>
+              <TextField label="Número" fullWidth value={previlemosForm.numero} onChange={(e) => setPrevilemosForm((p) => ({ ...p, numero: e.target.value }))} />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <TextField label="Complemento" fullWidth value={previlemosForm.complemento} onChange={(e) => setPrevilemosForm((p) => ({ ...p, complemento: e.target.value }))} />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <TextField label="Bairro" fullWidth value={previlemosForm.bairro} onChange={(e) => setPrevilemosForm((p) => ({ ...p, bairro: e.target.value }))} />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <TextField label="Cidade" fullWidth value={previlemosForm.cidade} onChange={(e) => setPrevilemosForm((p) => ({ ...p, cidade: e.target.value }))} />
+            </Grid>
+            <Grid item xs={12} md={2}>
+              <TextField label="UF" fullWidth inputProps={{ maxLength: 2 }} value={previlemosForm.uf} onChange={(e) => setPrevilemosForm((p) => ({ ...p, uf: e.target.value.toUpperCase() }))} />
+            </Grid>
+            <Grid item xs={12} md={3}>
+              <TextField label="CEP" fullWidth value={previlemosForm.cep} onChange={(e) => setPrevilemosForm((p) => ({ ...p, cep: e.target.value }))} />
+            </Grid>
+
+            <Grid item xs={12} md={3}>
+              <TextField label="Marca" fullWidth value={previlemosForm.marca} onChange={(e) => setPrevilemosForm((p) => ({ ...p, marca: e.target.value }))} />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <TextField label="Modelo" fullWidth value={previlemosForm.modelo} onChange={(e) => setPrevilemosForm((p) => ({ ...p, modelo: e.target.value }))} />
+            </Grid>
+            <Grid item xs={12} md={3}>
+              <TextField type="number" label="Ano fabricação" fullWidth value={previlemosForm.anoFabricacao} onChange={(e) => setPrevilemosForm((p) => ({ ...p, anoFabricacao: e.target.value }))} />
+            </Grid>
+            <Grid item xs={12} md={3}>
+              <TextField type="number" label="Ano modelo" fullWidth value={previlemosForm.anoModelo} onChange={(e) => setPrevilemosForm((p) => ({ ...p, anoModelo: e.target.value }))} />
+            </Grid>
+            <Grid item xs={12} md={3}>
+              <TextField label="Renavam" fullWidth value={previlemosForm.renavam} onChange={(e) => setPrevilemosForm((p) => ({ ...p, renavam: e.target.value }))} />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField label="Chassi" fullWidth value={previlemosForm.chassi} onChange={(e) => setPrevilemosForm((p) => ({ ...p, chassi: e.target.value }))} />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField label="Proprietário" fullWidth value={previlemosForm.proprietario} onChange={(e) => setPrevilemosForm((p) => ({ ...p, proprietario: e.target.value }))} />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField label="CPF/CNPJ do proprietário" fullWidth value={previlemosForm.cpfCnpjProprietario} onChange={(e) => setPrevilemosForm((p) => ({ ...p, cpfCnpjProprietario: e.target.value }))} />
+            </Grid>
+
+            <Grid item xs={12}>
+              <TextField
+                label='Confirmação — digite ATIVAR'
+                fullWidth
+                value={previlemosForm.confirmation}
+                onChange={(e) => setPrevilemosForm((p) => ({ ...p, confirmation: e.target.value.toUpperCase() }))}
+                helperText="Confirmação obrigatória para evitar emissão acidental."
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenPrevilemosActivate(false)} disabled={previlemosSubmitting}>Cancelar</Button>
+          <Button
+            variant="contained"
+            color="success"
+            onClick={handleActivatePrevilemos}
+            disabled={
+              previlemosSubmitting ||
+              previlemosForm.confirmation !== 'ATIVAR' ||
+              !previlemosForm.dataInicial ||
+              !previlemosForm.dataFinal ||
+              !previlemosForm.dataNascimento ||
+              !previlemosForm.logradouro ||
+              !previlemosForm.numero ||
+              !previlemosForm.bairro ||
+              !previlemosForm.cidade ||
+              previlemosForm.uf.length !== 2 ||
+              !previlemosForm.cep ||
+              !previlemosForm.marca ||
+              !previlemosForm.anoFabricacao ||
+              !previlemosForm.anoModelo
+            }
+          >
+            {previlemosSubmitting ? 'Ativando...' : 'Confirmar ativação'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={openPrevilemosCancel} onClose={() => !previlemosSubmitting && setOpenPrevilemosCancel(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Cancelar Seguro APP Previlemos</DialogTitle>
+        <DialogContent sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+          <Alert severity="warning">
+            O cancelamento também é uma operação real no provedor. Em caso de timeout ou resposta ambígua, o backend mantém o registro para revisão e evita reenvio cego.
+          </Alert>
+          <TextField
+            type="date"
+            label="Data do cancelamento"
+            InputLabelProps={{ shrink: true }}
+            value={cancelForm.dataCancelamento}
+            onChange={(e) => setCancelForm((p) => ({ ...p, dataCancelamento: e.target.value }))}
+          />
+          <TextField
+            label='Confirmação — digite CANCELAR'
+            value={cancelForm.confirmation}
+            onChange={(e) => setCancelForm((p) => ({ ...p, confirmation: e.target.value.toUpperCase() }))}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenPrevilemosCancel(false)} disabled={previlemosSubmitting}>Voltar</Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleCancelPrevilemos}
+            disabled={previlemosSubmitting || !cancelForm.dataCancelamento || cancelForm.confirmation !== 'CANCELAR'}
+          >
+            {previlemosSubmitting ? 'Cancelando...' : 'Confirmar cancelamento'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={openCreate} onClose={() => setOpenCreate(false)} maxWidth="md" fullWidth>
         <DialogTitle>Nova Cobertura Operacional</DialogTitle>
