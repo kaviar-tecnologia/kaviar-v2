@@ -98,7 +98,7 @@ const providerResponse = {
 
 describe('driver-insurance.service', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it('ativa seguro e persiste NumSeguro', async () => {
