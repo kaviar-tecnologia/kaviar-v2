@@ -177,6 +177,7 @@ router.get('/drivers', allowReadAccess, applyTerritoryScope, requireTerritorySco
         vehicleColor: d.vehicle_color,
         vehicleModel: d.vehicle_model,
         vehiclePlate: d.vehicle_plate,
+        vehicleType: d.vehicle_type,
         neighborhoods: d.neighborhoods,
       };
 

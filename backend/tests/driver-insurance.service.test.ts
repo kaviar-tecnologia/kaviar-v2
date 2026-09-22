@@ -58,6 +58,7 @@ const driver = {
   document_cpf: '12345678901',
   vehicle_plate: 'ABC1D23',
   vehicle_model: 'ARGO',
+  vehicle_type: 'CAR',
 };
 
 const activationInput = {
@@ -97,7 +98,7 @@ const providerResponse = {
 
 describe('driver-insurance.service', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it('ativa seguro e persiste NumSeguro', async () => {
@@ -187,6 +188,124 @@ describe('driver-insurance.service', () => {
     expect(
       mocks.createPrevilemosInsurance
     ).not.toHaveBeenCalled();
+  });
+
+  it('não permite ativar Previlemos para moto nesta fase', async () => {
+    mocks.driverFindUnique.mockResolvedValue({
+      ...driver,
+      vehicle_type: 'MOTORCYCLE',
+    });
+
+    await expect(
+      activatePrevilemosInsurance(
+        driver.id,
+        activationInput
+      )
+    ).rejects.toMatchObject({
+      code: 'UNSUPPORTED_VEHICLE_TYPE',
+      statusCode: 409,
+    });
+
+    expect(mocks.insuranceFindUnique).not.toHaveBeenCalled();
+    expect(
+      mocks.createPrevilemosInsurance
+    ).not.toHaveBeenCalled();
+  });
+
+  it('aceita carro legado com vehicle_type nulo', async () => {
+    mocks.driverFindUnique.mockResolvedValue({
+      ...driver,
+      vehicle_type: null,
+    });
+    mocks.insuranceFindUnique.mockResolvedValue(null);
+    mocks.insuranceFindFirst.mockResolvedValue(null);
+    mocks.insuranceCreate.mockResolvedValue({
+      id: 'insurance-legacy-car',
+      driver_id: driver.id,
+      provider: 'PREVILEMOS',
+      status: 'PENDING',
+      vehicle_plate: 'ABC1D23',
+      provider_response: null,
+    });
+    mocks.createPrevilemosInsurance.mockResolvedValue(providerResponse);
+    mocks.insuranceUpdate.mockResolvedValue({
+      id: 'insurance-legacy-car',
+      status: 'ACTIVE',
+      provider_reference: '3482777',
+    });
+
+    const result = await activatePrevilemosInsurance(
+      driver.id,
+      activationInput
+    );
+
+    expect(result.idempotent).toBe(false);
+    expect(mocks.createPrevilemosInsurance).toHaveBeenCalledTimes(1);
+  });
+
+  it('bloqueia nova vigência que se sobrepõe a seguro ativo', async () => {
+    mocks.driverFindUnique.mockResolvedValue(driver);
+    mocks.insuranceFindUnique.mockResolvedValue(null);
+    mocks.insuranceFindFirst.mockResolvedValue({
+      id: 'insurance-existing',
+      status: 'ACTIVE',
+      valid_from: new Date('2026-09-01T00:00:00.000Z'),
+      valid_until: new Date('2026-10-01T00:00:00.000Z'),
+    });
+
+    await expect(
+      activatePrevilemosInsurance(
+        driver.id,
+        activationInput
+      )
+    ).rejects.toMatchObject({
+      code: 'INSURANCE_PERIOD_CONFLICT',
+      statusCode: 409,
+    });
+
+    expect(mocks.insuranceCreate).not.toHaveBeenCalled();
+    expect(
+      mocks.createPrevilemosInsurance
+    ).not.toHaveBeenCalled();
+  });
+
+  it('permite nova vigência futura sem sobreposição', async () => {
+    mocks.driverFindUnique.mockResolvedValue(driver);
+    mocks.insuranceFindUnique.mockResolvedValue(null);
+    mocks.insuranceFindFirst.mockResolvedValue(null);
+
+    mocks.insuranceCreate.mockResolvedValue({
+      id: 'insurance-future',
+      driver_id: driver.id,
+      provider: 'PREVILEMOS',
+      status: 'PENDING',
+      vehicle_plate: 'ABC1D23',
+      provider_response: null,
+    });
+
+    mocks.createPrevilemosInsurance.mockResolvedValue(
+      providerResponse
+    );
+
+    mocks.insuranceUpdate.mockResolvedValue({
+      id: 'insurance-future',
+      status: 'ACTIVE',
+      provider_reference: '3482777',
+    });
+
+    const result = await activatePrevilemosInsurance(
+      driver.id,
+      {
+        ...activationInput,
+        dataInicial: '2026-10-02',
+        dataFinal: '2026-11-02',
+      }
+    );
+
+    expect(result.idempotent).toBe(false);
+    expect(
+      mocks.createPrevilemosInsurance
+    ).toHaveBeenCalledTimes(1);
   });
 
   it('marca REVIEW quando há falha ambígua 5xx', async () => {

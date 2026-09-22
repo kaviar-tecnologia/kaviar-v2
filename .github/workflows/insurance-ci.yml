@@ -1,0 +1,56 @@
+name: Insurance CI
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/services/previlemos-service.ts'
+      - 'backend/src/services/driver-insurance.service.ts'
+      - 'backend/src/routes/admin-driver-insurance.ts'
+      - 'backend/src/routes/admin-drivers.ts'
+      - 'backend/tests/previlemos-service.test.ts'
+      - 'backend/tests/driver-insurance.service.test.ts'
+      - 'frontend-app/src/pages/admin/InsuranceCoveragesPage.jsx'
+      - 'frontend-app/src/components/admin/AdminApp.jsx'
+      - '.github/workflows/insurance-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  insurance-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://kaviar_test:kaviar_test@127.0.0.1:5432/kaviar_test
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend-app/package-lock.json
+
+      - name: Install backend dependencies
+        run: cd backend && npm ci
+
+      - name: Run insurance unit tests
+        run: cd backend && npx vitest run tests/previlemos-service.test.ts tests/driver-insurance.service.test.ts
+
+      - name: Build backend
+        run: cd backend && npm run build
+
+      - name: Install frontend dependencies
+        run: cd frontend-app && npm ci
+
+      - name: Build frontend
+        run: cd frontend-app && npm run build
