@@ -212,6 +212,37 @@ describe('driver-insurance.service', () => {
     ).not.toHaveBeenCalled();
   });
 
+  it('aceita carro legado com vehicle_type nulo', async () => {
+    mocks.driverFindUnique.mockResolvedValue({
+      ...driver,
+      vehicle_type: null,
+    });
+    mocks.insuranceFindUnique.mockResolvedValue(null);
+    mocks.insuranceFindFirst.mockResolvedValue(null);
+    mocks.insuranceCreate.mockResolvedValue({
+      id: 'insurance-legacy-car',
+      driver_id: driver.id,
+      provider: 'PREVILEMOS',
+      status: 'PENDING',
+      vehicle_plate: 'ABC1D23',
+      provider_response: null,
+    });
+    mocks.createPrevilemosInsurance.mockResolvedValue(providerResponse);
+    mocks.insuranceUpdate.mockResolvedValue({
+      id: 'insurance-legacy-car',
+      status: 'ACTIVE',
+      provider_reference: '3482777',
+    });
+
+    const result = await activatePrevilemosInsurance(
+      driver.id,
+      activationInput
+    );
+
+    expect(result.idempotent).toBe(false);
+    expect(mocks.createPrevilemosInsurance).toHaveBeenCalledTimes(1);
+  });
+
   it('bloqueia nova vigência que se sobrepõe a seguro ativo', async () => {
     mocks.driverFindUnique.mockResolvedValue(driver);
     mocks.insuranceFindUnique.mockResolvedValue(null);
