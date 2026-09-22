@@ -55,6 +55,7 @@ const driver = {
   email: 'motorista@example.com',
   phone: '21999999999',
   status: 'approved',
+  deleted_at: null,
   document_cpf: '12345678901',
   vehicle_plate: 'ABC1D23',
   vehicle_model: 'ARGO',
@@ -167,6 +168,28 @@ describe('driver-insurance.service', () => {
     ).not.toHaveBeenCalled();
 
     expect(mocks.insuranceCreate).not.toHaveBeenCalled();
+  });
+
+  it('não permite ativar seguro para motorista soft-deleted', async () => {
+    mocks.driverFindUnique.mockResolvedValue({
+      ...driver,
+      deleted_at: new Date('2026-09-22T00:00:00.000Z'),
+    });
+
+    await expect(
+      activatePrevilemosInsurance(
+        driver.id,
+        activationInput
+      )
+    ).rejects.toMatchObject({
+      code: 'DRIVER_DELETED',
+      statusCode: 409,
+    });
+
+    expect(
+      mocks.createPrevilemosInsurance
+    ).not.toHaveBeenCalled();
+    expect(mocks.insuranceFindUnique).not.toHaveBeenCalled();
   });
 
   it('não permite ativar seguro para motorista não aprovado', async () => {

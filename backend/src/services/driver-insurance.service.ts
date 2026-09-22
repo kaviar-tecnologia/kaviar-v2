@@ -132,6 +132,7 @@ export async function activatePrevilemosInsurance(
       email: true,
       phone: true,
       status: true,
+      deleted_at: true,
       document_cpf: true,
       vehicle_plate: true,
       vehicle_model: true,
@@ -144,6 +145,14 @@ export async function activatePrevilemosInsurance(
       404,
       'DRIVER_NOT_FOUND',
       'Motorista não encontrado.'
+    );
+  }
+
+  if (driver.deleted_at) {
+    throw new DriverInsuranceError(
+      409,
+      'DRIVER_DELETED',
+      'Motorista excluído não pode ser enviado à seguradora.'
     );
   }
 
