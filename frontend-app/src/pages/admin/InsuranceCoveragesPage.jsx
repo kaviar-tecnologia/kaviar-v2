@@ -214,6 +214,7 @@ export default function InsuranceCoveragesPage() {
   const [previlemosDrivers, setPrevilemosDrivers] = useState([]);
   const [selectedDriverId, setSelectedDriverId] = useState('');
   const [previlemosEnrollments, setPrevilemosEnrollments] = useState([]);
+  const [previlemosHistoryLoadedFor, setPrevilemosHistoryLoadedFor] = useState('');
   const [previlemosLoading, setPrevilemosLoading] = useState(false);
   const [previlemosSubmitting, setPrevilemosSubmitting] = useState(false);
   const [openPrevilemosActivate, setOpenPrevilemosActivate] = useState(false);
@@ -286,6 +287,8 @@ export default function InsuranceCoveragesPage() {
   };
 
   const fetchPrevilemosInsurance = async (driverId) => {
+    setPrevilemosHistoryLoadedFor('');
+
     if (!driverId || !isSuperAdmin) {
       setPrevilemosEnrollments([]);
       return;
@@ -297,9 +300,13 @@ export default function InsuranceCoveragesPage() {
       const json = await res.json();
       if (!json.success) throw new Error(json.message || json.error || 'Falha ao carregar seguros Previlemos.');
       setPrevilemosEnrollments(json.data || []);
+      setPrevilemosHistoryLoadedFor(driverId);
     } catch (err) {
       setPrevilemosEnrollments([]);
-      setFeedback({ type: 'error', message: err?.message || 'Erro ao consultar seguros Previlemos.' });
+      setFeedback({
+        type: 'error',
+        message: `${err?.message || 'Erro ao consultar seguros Previlemos.'} A ativação permanecerá bloqueada até a consulta ser concluída com sucesso.`,
+      });
     } finally {
       setPrevilemosLoading(false);
     }
@@ -311,7 +318,11 @@ export default function InsuranceCoveragesPage() {
   }, []);
 
   const openActivatePrevilemos = () => {
-    if (!selectedDriver || blockingPrevilemosEnrollment) return;
+    if (
+      !selectedDriver ||
+      previlemosHistoryLoadedFor !== selectedDriver.id ||
+      blockingPrevilemosEnrollment
+    ) return;
     setPrevilemosForm({
       ...emptyPrevilemosForm,
       modelo: selectedDriver.vehicleModel || '',
@@ -600,6 +611,8 @@ export default function InsuranceCoveragesPage() {
                     onChange={(e) => {
                       const driverId = e.target.value;
                       setSelectedDriverId(driverId);
+                      setPrevilemosEnrollments([]);
+                      setPrevilemosHistoryLoadedFor('');
                       fetchPrevilemosInsurance(driverId);
                     }}
                     helperText="A lista traz somente motoristas aprovados com veículo do tipo carro; a emissão ainda valida CPF, placa e modelo no backend."
@@ -622,7 +635,12 @@ export default function InsuranceCoveragesPage() {
                     <Button
                       variant="contained"
                       onClick={openActivatePrevilemos}
-                      disabled={!selectedDriver || previlemosSubmitting || Boolean(blockingPrevilemosEnrollment)}
+                      disabled={
+                        !selectedDriver ||
+                        previlemosSubmitting ||
+                        previlemosHistoryLoadedFor !== selectedDriver?.id ||
+                        Boolean(blockingPrevilemosEnrollment)
+                      }
                       sx={{ bgcolor: '#15803D', '&:hover': { bgcolor: '#166534' } }}
                     >
                       Ativar APP Previlemos
@@ -630,6 +648,12 @@ export default function InsuranceCoveragesPage() {
                   </Stack>
                 </Grid>
               </Grid>
+
+              {selectedDriver && !previlemosLoading && previlemosHistoryLoadedFor !== selectedDriver.id && (
+                <Alert severity="error" sx={{ mt: 1.5 }}>
+                  Não foi possível confirmar o histórico de seguro deste motorista. Nova ativação permanece bloqueada por segurança.
+                </Alert>
+              )}
 
               {blockingPrevilemosEnrollment && (
                 <Alert severity="warning" sx={{ mt: 1.5 }}>
