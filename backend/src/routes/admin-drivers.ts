@@ -102,7 +102,10 @@ router.get('/drivers', allowReadAccess, applyTerritoryScope, requireTerritorySco
       return res.status(400).json({ success: false, error: 'vehicle_type inválido. Use CAR ou MOTORCYCLE.' });
     }
 
-    const where: any = status ? { status } : {};
+    const where: any = {
+      deleted_at: null,
+      ...(status ? { status } : {}),
+    };
     if (vehicle_type) where.vehicle_type = vehicle_type;
 
     // Escopo territorial: filtra por neighborhood_id ou territory (via neighborhoods.territory_id)
