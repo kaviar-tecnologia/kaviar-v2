@@ -226,6 +226,23 @@ export default function InsuranceCoveragesPage() {
     [previlemosDrivers, selectedDriverId],
   );
 
+  const blockingPrevilemosEnrollment = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return previlemosEnrollments.find((item) => {
+      if (['PENDING', 'REVIEW', 'CANCELLING', 'CANCELLATION_REVIEW'].includes(item.status)) {
+        return true;
+      }
+
+      if (item.status !== 'ACTIVE') return false;
+
+      if (!item.validUntil) return true;
+      const validUntil = new Date(item.validUntil);
+      return Number.isNaN(validUntil.getTime()) || validUntil >= today;
+    }) || null;
+  }, [previlemosEnrollments]);
+
   const territoryOptions = useMemo(() => {
     const fromReadiness = readiness?.territories || [];
     return [{ id: 'GLOBAL', name: 'GLOBAL (todas as operações)' }, ...fromReadiness.map((t) => ({ id: t.id, name: t.name }))];
@@ -257,7 +274,7 @@ export default function InsuranceCoveragesPage() {
     if (!isSuperAdmin) return;
     setPrevilemosLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/drivers?status=approved&limit=100`, { headers });
+      const res = await fetch(`${API_BASE_URL}/api/admin/drivers?status=approved&vehicle_type=CAR&limit=100`, { headers });
       const json = await res.json();
       if (!json.success) throw new Error(json.error || 'Falha ao carregar motoristas aprovados.');
       setPrevilemosDrivers(json.data || []);
@@ -294,7 +311,7 @@ export default function InsuranceCoveragesPage() {
   }, []);
 
   const openActivatePrevilemos = () => {
-    if (!selectedDriver) return;
+    if (!selectedDriver || blockingPrevilemosEnrollment) return;
     setPrevilemosForm({
       ...emptyPrevilemosForm,
       modelo: selectedDriver.vehicleModel || '',
@@ -585,7 +602,7 @@ export default function InsuranceCoveragesPage() {
                       setSelectedDriverId(driverId);
                       fetchPrevilemosInsurance(driverId);
                     }}
-                    helperText="A lista traz motoristas aprovados; a emissão ainda valida CPF, placa e modelo no backend."
+                    helperText="A lista traz somente motoristas aprovados com veículo do tipo carro; a emissão ainda valida CPF, placa e modelo no backend."
                   >
                     {previlemosDrivers.map((driver) => (
                       <MenuItem key={driver.id} value={driver.id}>
@@ -605,7 +622,7 @@ export default function InsuranceCoveragesPage() {
                     <Button
                       variant="contained"
                       onClick={openActivatePrevilemos}
-                      disabled={!selectedDriver || previlemosSubmitting}
+                      disabled={!selectedDriver || previlemosSubmitting || Boolean(blockingPrevilemosEnrollment)}
                       sx={{ bgcolor: '#15803D', '&:hover': { bgcolor: '#166534' } }}
                     >
                       Ativar APP Previlemos
@@ -613,6 +630,12 @@ export default function InsuranceCoveragesPage() {
                   </Stack>
                 </Grid>
               </Grid>
+
+              {blockingPrevilemosEnrollment && (
+                <Alert severity="warning" sx={{ mt: 1.5 }}>
+                  Nova ativação bloqueada enquanto existir seguro ativo ou operação Previlemos pendente de conclusão/revisão para este motorista.
+                </Alert>
+              )}
 
               <Box sx={{ mt: 2, overflowX: 'auto' }}>
                 {previlemosLoading && selectedDriverId ? (
