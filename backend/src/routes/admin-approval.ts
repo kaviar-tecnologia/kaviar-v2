@@ -146,7 +146,12 @@ router.delete('/drivers/:id', requireSuperAdmin, auditWrite('delete_driver', 'dr
     const adminId = (req as any).userId;
     await prisma.drivers.update({
       where: { id: req.params.id },
-      data: { deleted_at: new Date(), deleted_by: adminId, updated_at: new Date() }
+      data: {
+        status: 'archived',
+        deleted_at: new Date(),
+        deleted_by: adminId,
+        updated_at: new Date()
+      }
     });
     res.json({ success: true, message: 'Driver deleted' });
   } catch (error) {
