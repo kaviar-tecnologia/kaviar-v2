@@ -1,6 +1,9 @@
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('ADMIN_JWT_SECRET ou JWT_SECRET deve estar configurado no ambiente');
+}
 
 // Substitui pelo ID do admin que você quer usar
 const adminId = 'ADMIN_ID_AQUI';

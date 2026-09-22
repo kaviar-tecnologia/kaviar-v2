@@ -208,11 +208,11 @@ cat > ecs-task-definition.json <<EOF
       "environment": [
         {"name": "NODE_ENV", "value": "production"},
         {"name": "PORT", "value": "3003"},
-        {"name": "DATABASE_URL", "value": "postgresql://kaviaradmin:SuaSenhaSegura123!@$RDS_ENDPOINT:5432/kaviar?sslmode=require"},
+        {"name": "DATABASE_URL", "value": "$DATABASE_URL"},
         {"name": "REDIS_URL", "value": "redis://$REDIS_ENDPOINT:6379"},
         {"name": "AWS_S3_BUCKET", "value": "$S3_BUCKET"},
         {"name": "AWS_REGION", "value": "us-east-2"},
-        {"name": "JWT_SECRET", "value": "67197934459161cd74ab8be94c70b88df17b38d7b99c564a3662752f15249db8"},
+        {"name": "JWT_SECRET", "value": "$JWT_SECRET"},
         {"name": "ENABLE_TWILIO_WHATSAPP", "value": "true"},
         {"name": "ENABLE_PREMIUM_TOURISM", "value": "true"}
       ],
@@ -407,7 +407,7 @@ echo ""
 echo "2️⃣ Login Admin:"
 TOKEN=$(curl -s -X POST "http://$ALB_DNS/api/admin/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@kaviar.com","password":"admin123"}' | jq -r '.token')
+  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" | jq -r '.token')
 
 echo "Token: ${TOKEN:0:50}..."
 echo ""

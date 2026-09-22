@@ -6,7 +6,7 @@ echo "=================================================="
 
 DB_HOST="kaviar-prod-db.cxuuaq46o1o5.us-east-2.rds.amazonaws.com"
 DB_USER="kaviaradmin"
-DB_PASS="<REDACTED>"
+DB_PASS="${DB_PASS:?set DB_PASS env}"
 DB_NAME="kaviar"
 DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:5432/${DB_NAME}?sslmode=require"
 
