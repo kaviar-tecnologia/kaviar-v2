@@ -155,7 +155,7 @@ export async function activatePrevilemosInsurance(
     );
   }
 
-  if (driver.vehicle_type !== 'CAR') {
+  if (driver.vehicle_type === 'MOTORCYCLE') {
     throw new DriverInsuranceError(
       409,
       'UNSUPPORTED_VEHICLE_TYPE',
