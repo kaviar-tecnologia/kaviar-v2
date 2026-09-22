@@ -793,6 +793,7 @@ const driverEditSchema = z.object({
   vehicle_plate: z.string().optional(),
   vehicle_model: z.string().optional(),
   vehicle_color: z.string().optional(),
+  vehicle_type: z.enum(['CAR', 'MOTORCYCLE']).optional(),
   neighborhood_id: z.string().nullable().optional(),
   community_id: z.string().nullable().optional(),
   pix_key: z.string().nullable().optional(),
