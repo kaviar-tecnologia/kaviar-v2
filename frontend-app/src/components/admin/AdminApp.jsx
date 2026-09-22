@@ -500,7 +500,7 @@ function AdminHome() {
               { Icon: Pets, title: 'KAVIAR Pet', desc: 'Central pet, homologações e operadores', to: '/admin/pet' },
               { Icon: Analytics, title: 'CRM KAVIAR', desc: 'Leads, prospecção e comércios locais', to: '/admin/crm' },
               { Icon: Description, title: 'Consulta Regulatória Municipal', desc: 'Documento institucional + envio WhatsApp via template Twilio', to: '/admin/regulatory-consultation' },
-              { Icon: Shield, title: 'Seguro APP e Coberturas', desc: 'Readiness interno por modalidade, território e vigência', to: '/admin/insurance-coverages' },
+              { Icon: Shield, title: 'Seguro APP e Coberturas', desc: 'Central Previlemos, RCF-V e readiness por território', to: '/admin/insurance-coverages' },
               ...(isSuperAdmin ? [{ Icon: Storefront, title: 'Comércios — Admin', desc: 'Financeiro, portal e ativações avançadas', to: '/admin/commerce' }] : []),
               ...(isSuperAdmin ? [{ Icon: Public, title: 'Landing de Motoristas', desc: 'Gerenciar cidades e landing de captação', to: '/admin/driver-city-landings' }] : []),
             ]},
