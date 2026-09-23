@@ -16,6 +16,11 @@ import {
 import { generateObligationToken, auditObligation } from '../services/accounting/accounting-obligation-tokens.service';
 import { getFileExtension, MAX_FILE_SIZE } from '../services/accounting/accounting-document-storage.service';
 import { emailService } from '../services/email/email.service';
+import {
+  hasInvoiceFile,
+  requiresInvoiceFileBeforeReconcile,
+  invoiceRemovalLocked,
+} from '../services/accounting/accounting-invoice-policy.service';
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -98,6 +103,7 @@ function serialize(o: any) {
     proof_filename: o.proof_filename,
     // Nota Fiscal
     has_invoice: !!(o.invoice_pdf_storage_key || o.invoice_xml_storage_key || o.invoice_number),
+    has_invoice_file: hasInvoiceFile(o),
     invoice_pdf_filename: o.invoice_pdf_filename || null,
     invoice_xml_filename: o.invoice_xml_filename || null,
     invoice_number: o.invoice_number || null,
@@ -238,6 +244,15 @@ router.post('/obligations/:id/transition', async (req: Request, res: Response) =
     // PROOF_UPLOADED após upload real do comprovante. Impede estado sem arquivo.
     if (data.status === 'PROOF_UPLOADED' && !ob.proof_storage_key) {
       return res.status(400).json({ success: false, error: 'Anexe o comprovante de pagamento antes de marcar como comprovante enviado' });
+    }
+
+    // Business rule: accounting fees require an actual invoice file before reconciliation.
+    // Metadata alone (number/key) is not sufficient: PDF or XML must be attached.
+    if (data.status === 'RECONCILED' && requiresInvoiceFileBeforeReconcile(ob)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Anexe a Nota Fiscal (PDF ou XML) antes de conciliar honorários contábeis',
+      });
     }
 
     const newOwner = machine.newOwner[data.status] || ob.action_owner;
@@ -973,6 +988,13 @@ router.delete('/obligations/:id/invoice', async (req: Request, res: Response) =>
       scope: 'FINANCEIRO',
       permission: 'can_upload',
     });
+
+    if (invoiceRemovalLocked(ob)) {
+      return res.status(400).json({
+        success: false,
+        error: 'A Nota Fiscal de honorários conciliados não pode ser removida',
+      });
+    }
 
     // Check there's something to remove
     const hasInvoice = ob.invoice_pdf_storage_key || ob.invoice_xml_storage_key || ob.invoice_number;
