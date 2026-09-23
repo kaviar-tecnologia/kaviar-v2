@@ -1,4 +1,4 @@
-export const DRIVER_APK_URL = 'https://downloads.kaviar.com.br/kaviar-motorista-v1.12.1-ota.apk';
+export const DRIVER_APK_URL = 'https://play.google.com/store/apps/details?id=com.kaviar.driver';
 export const PASSENGER_APK_URL = 'https://downloads.kaviar.com.br/kaviar-passageiro-v1.13.8-ota.apk';
 export const MANAGER_INVITE_URL = 'https://kaviar.com.br/#gestor';
 
@@ -8,7 +8,7 @@ Estamos convidando motoristas parceiros para conhecer o KAVIAR.
 
 O KAVIAR é uma nova plataforma de mobilidade feita para motoristas, passageiros e também para transporte pet.
 
-Baixe o app do motorista por aqui:
+Baixe o app do motorista na Google Play por aqui:
 ${DRIVER_APK_URL}
 
 Depois do cadastro, sua documentação será analisada para liberação na plataforma.
