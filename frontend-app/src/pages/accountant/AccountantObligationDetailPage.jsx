@@ -186,12 +186,24 @@ export default function AccountantObligationDetailPage() {
   };
 
   const handleReconcileClick = () => {
-    const warnTypes = ['HONORARIOS', 'BOLETO_FORNECEDOR'];
-    if (warnTypes.includes(ob?.obligation_type) && !ob?.has_invoice) {
-      setReconcileWarnOpen(true);
-    } else {
-      handleTransition('RECONCILED');
+    const hasInvoiceFile = !!(ob?.invoice_pdf_filename || ob?.invoice_xml_filename);
+
+    if (ob?.obligation_type === 'HONORARIOS' && !hasInvoiceFile) {
+      setSnackbar({
+        open: true,
+        message: 'Anexe a Nota Fiscal (PDF ou XML) antes de conciliar honorários contábeis.',
+        severity: 'warning',
+      });
+      return;
     }
+
+    // Supplier invoices keep the existing warning-only behavior.
+    if (ob?.obligation_type === 'BOLETO_FORNECEDOR' && !ob?.has_invoice) {
+      setReconcileWarnOpen(true);
+      return;
+    }
+
+    handleTransition('RECONCILED');
   };
 
   if (loading) return <AccountantPortalLayout><Skeleton variant="rectangular" height={300} sx={{ borderRadius: 2, bgcolor: 'rgba(255,255,255,0.05)' }} /></AccountantPortalLayout>;
@@ -201,6 +213,9 @@ export default function AccountantObligationDetailPage() {
   const canSend = ob.status === 'DRAFT' && ob.boleto_storage_key;
   const canVerify = ['PROOF_UPLOADED', 'UNDER_VERIFICATION'].includes(ob.status);
   const canReconcile = ob.status === 'VERIFIED';
+  const hasInvoiceFile = !!(ob.invoice_pdf_filename || ob.invoice_xml_filename);
+  const invoiceRequiredForReconcile = ob.obligation_type === 'HONORARIOS';
+  const reconcileBlockedByInvoice = canReconcile && invoiceRequiredForReconcile && !hasInvoiceFile;
 
   return (
     <AccountantPortalLayout>
@@ -334,6 +349,12 @@ export default function AccountantObligationDetailPage() {
           <Box sx={{ mb: 2 }}>
             <Typography sx={{ color: '#D4AF37', fontWeight: 600, fontSize: 13, mb: 1 }}>🧾 Nota Fiscal</Typography>
 
+            {invoiceRequiredForReconcile && !hasInvoiceFile && (
+              <Alert severity="warning" sx={{ mb: 1.5, bgcolor: 'rgba(245,158,11,0.10)', color: '#F59E0B' }}>
+                <strong>Nota Fiscal pendente.</strong> Para honorários contábeis, anexe a NF em PDF ou XML antes de concluir a conciliação.
+              </Alert>
+            )}
+
             {/* State: has invoice with files */}
             {ob.has_invoice && (ob.invoice_pdf_filename || ob.invoice_xml_filename) && (
               <Box sx={{ p: 1.5, bgcolor: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 1, mb: 1 }}>
@@ -386,7 +407,9 @@ export default function AccountantObligationDetailPage() {
                 {ob.invoice_uploaded_at && <Typography sx={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, mt: 0.5 }}>Anexado em: {new Date(ob.invoice_uploaded_at).toLocaleString('pt-BR')}</Typography>}
                 <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
                   <Button size="small" onClick={() => { setInvoiceMeta({ invoice_number: ob.invoice_number || '', invoice_series: ob.invoice_series || '', invoice_access_key: ob.invoice_access_key || '', invoice_verification_code: ob.invoice_verification_code || '', invoice_issued_at: ob.invoice_issued_at || '' }); setInvoiceMetaOpen(true); }} sx={{ color: 'rgba(255,255,255,0.5)', textTransform: 'none', fontSize: 10 }}>Editar metadados</Button>
-                  <Button size="small" onClick={() => setRemoveInvoiceOpen(true)} sx={{ color: '#EF4444', textTransform: 'none', fontSize: 10 }}>Remover NF</Button>
+                  {!(ob.obligation_type === 'HONORARIOS' && ob.status === 'RECONCILED') && (
+                    <Button size="small" onClick={() => setRemoveInvoiceOpen(true)} sx={{ color: '#EF4444', textTransform: 'none', fontSize: 10 }}>Remover NF</Button>
+                  )}
                 </Box>
               </Box>
             )}
@@ -411,7 +434,9 @@ export default function AccountantObligationDetailPage() {
                     <input type="file" hidden accept=".xml" onChange={handleUploadInvoiceXml} />
                   </Button>
                   <Button size="small" onClick={() => { setInvoiceMeta({ invoice_number: ob.invoice_number || '', invoice_series: ob.invoice_series || '', invoice_access_key: ob.invoice_access_key || '', invoice_verification_code: ob.invoice_verification_code || '', invoice_issued_at: ob.invoice_issued_at || '' }); setInvoiceMetaOpen(true); }} sx={{ color: 'rgba(255,255,255,0.5)', textTransform: 'none', fontSize: 10 }}>Editar metadados</Button>
-                  <Button size="small" onClick={() => setRemoveInvoiceOpen(true)} sx={{ color: '#EF4444', textTransform: 'none', fontSize: 10 }}>Remover NF</Button>
+                  {!(ob.obligation_type === 'HONORARIOS' && ob.status === 'RECONCILED') && (
+                    <Button size="small" onClick={() => setRemoveInvoiceOpen(true)} sx={{ color: '#EF4444', textTransform: 'none', fontSize: 10 }}>Remover NF</Button>
+                  )}
                 </Box>
               </Box>
             )}
@@ -442,7 +467,22 @@ export default function AccountantObligationDetailPage() {
             {canSend && <Button size="small" variant="contained" startIcon={<Send />} onClick={() => handleTransition('SENT_TO_COMPANY')} sx={{ bgcolor: '#3B82F6', textTransform: 'none', fontSize: 12 }}>Enviar para empresa</Button>}
             {canVerify && <Button size="small" variant="contained" startIcon={<CheckCircle />} onClick={() => handleTransition('VERIFIED')} sx={{ bgcolor: '#22C55E', textTransform: 'none', fontSize: 12 }}>Verificar comprovante</Button>}
             {canVerify && <Button size="small" variant="outlined" onClick={() => setRejectOpen(true)} sx={{ borderColor: '#EF4444', color: '#EF4444', textTransform: 'none', fontSize: 12 }}>Rejeitar</Button>}
-            {canReconcile && <Button size="small" variant="contained" startIcon={<CheckCircle />} onClick={handleReconcileClick} sx={{ bgcolor: '#22C55E', textTransform: 'none', fontSize: 12 }}>Conciliar</Button>}
+            {canReconcile && (
+              <Tooltip title={reconcileBlockedByInvoice ? 'Anexe a Nota Fiscal (PDF ou XML) antes de conciliar' : ''}>
+                <span>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    startIcon={<CheckCircle />}
+                    onClick={handleReconcileClick}
+                    disabled={reconcileBlockedByInvoice}
+                    sx={{ bgcolor: '#22C55E', textTransform: 'none', fontSize: 12 }}
+                  >
+                    {reconcileBlockedByInvoice ? 'Conciliar — NF pendente' : 'Conciliar'}
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
           </Box>
         </CardContent>
       </Card>
@@ -528,7 +568,7 @@ export default function AccountantObligationDetailPage() {
         <Box sx={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, bgcolor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1300 }}>
           <Card sx={{ bgcolor: '#1E2433', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 2, maxWidth: 400, width: '100%', p: 3 }}>
             <Typography sx={{ color: '#F59E0B', fontSize: 16, fontWeight: 600, mb: 1 }}>⚠️ Nota fiscal não anexada</Typography>
-            <Typography sx={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, mb: 2 }}>Essa obrigação ({ob?.obligation_type === 'HONORARIOS' ? 'Honorários' : 'Boleto Fornecedor'}) não possui nota fiscal vinculada. Deseja conciliar mesmo assim?</Typography>
+            <Typography sx={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, mb: 2 }}>Este boleto de fornecedor não possui nota fiscal vinculada. Deseja conciliar mesmo assim?</Typography>
             <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
               <Button onClick={() => setReconcileWarnOpen(false)} sx={{ color: 'rgba(255,255,255,0.5)', textTransform: 'none' }}>Cancelar</Button>
               <Button variant="contained" onClick={() => { setReconcileWarnOpen(false); handleTransition('RECONCILED'); }} sx={{ bgcolor: '#F59E0B', color: '#1A1F2E', textTransform: 'none', '&:hover': { bgcolor: '#D97706' } }}>Conciliar sem NF</Button>
