@@ -386,7 +386,7 @@ function Home() {
           </Box>
         </Box>
 
-        {/* Seção Download APKs */}
+        {/* Seção Downloads */}
         <Box sx={{ mt: 10, pt: 6, borderTop: '1px solid', borderColor: 'divider' }} id="download">
           <Typography variant="h4" sx={{ fontWeight: 800, color: 'primary.main', mb: 1, fontSize: { xs: '1.8rem', md: '2.2rem' } }}>
             Baixe o app KAVIAR
@@ -405,7 +405,7 @@ function Home() {
               <Button
                 variant="contained"
                 fullWidth
-                href="https://downloads.kaviar.com.br/kaviar-motorista-v1.12.1-ota.apk"
+                href="https://play.google.com/store/apps/details?id=com.kaviar.driver"
                 target="_blank"
                 rel="noopener noreferrer"
                 sx={{
@@ -415,7 +415,7 @@ function Home() {
                   transition: 'all 0.2s ease'
                 }}
               >
-                Baixar App do Motorista
+                Baixar Motorista na Google Play
               </Button>
             </Box>
 
