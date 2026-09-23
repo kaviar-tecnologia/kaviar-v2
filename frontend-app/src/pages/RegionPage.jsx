@@ -57,8 +57,8 @@ const CARDS = [
     icon: '🚗',
     title: 'Trabalhe como motorista',
     desc: 'Dirija na sua região com mais proximidade e autonomia.',
-    btn: 'Baixar app Motorista',
-    href: 'https://downloads.kaviar.com.br/kaviar-motorista-v1.12.1-ota.apk',
+    btn: 'Baixar Motorista na Google Play',
+    href: 'https://play.google.com/store/apps/details?id=com.kaviar.driver',
     variant: 'subtle',
   },
   {
