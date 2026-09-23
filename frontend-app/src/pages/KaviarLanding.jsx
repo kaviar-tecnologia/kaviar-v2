@@ -29,7 +29,7 @@ const cityImage = '/turismo-replit/generated_images/professional_chauffeur_servi
 const petImage = '/assets/kaviar-pet-real.png';
 
 const passengerStore = 'https://play.google.com/store/apps/details?id=com.kaviar.passenger';
-const driverApk = 'https://downloads.kaviar.com.br/kaviar-motorista-v1.12.1-ota.apk';
+const driverStore = 'https://play.google.com/store/apps/details?id=com.kaviar.driver';
 
 const navItems = [
   { label: 'Soluções', href: '#solucoes' },
@@ -284,7 +284,7 @@ export default function KaviarLanding() {
               <Button href={passengerStore} target="_blank" rel="noopener noreferrer" sx={buttonGold}>
                 Baixar Passageiro na Google Play
               </Button>
-              <Button href={driverApk} target="_blank" rel="noopener noreferrer" sx={buttonBlue}>
+              <Button href={driverStore} target="_blank" rel="noopener noreferrer" sx={buttonBlue}>
                 Quero dirigir com a KAVIAR
               </Button>
               <Button href="#gestores" sx={buttonOutline}>
@@ -508,7 +508,7 @@ export default function KaviarLanding() {
                     <Button href={passengerStore} target="_blank" rel="noopener noreferrer" sx={buttonBlue}>
                       Pedir uma moto
                     </Button>
-                    <Button href={driverApk} target="_blank" rel="noopener noreferrer" sx={buttonGold}>
+                    <Button href={driverStore} target="_blank" rel="noopener noreferrer" sx={buttonGold}>
                       Sou motorista e quero rodar de moto
                     </Button>
                   </Stack>
@@ -613,7 +613,7 @@ export default function KaviarLanding() {
                 <Box>
                   <Typography sx={{ color: '#0B1423', fontWeight: 700, fontSize: { xs: '1.4rem', md: '1.88rem' }, mb: 0.8 }}>Seja um motorista parceiro</Typography>
                   <Typography sx={{ color: textSecondary, lineHeight: 1.68, mb: 1.05 }}>
-                    Mais ganhos, mais liberdade e o suporte de uma plataforma que valoriza você.
+                    O app KAVIAR Motorista já está disponível na Google Play. Baixe, faça seu cadastro e acompanhe as oportunidades da sua região.
                   </Typography>
                   <Stack component="ul" spacing={0.62} sx={{ listStyle: 'none', pl: 0, m: 0, mb: 1.2 }}>
                     {driverBenefits.map((benefit) => (
@@ -623,8 +623,8 @@ export default function KaviarLanding() {
                       </Box>
                     ))}
                   </Stack>
-                  <Button href={driverApk} target="_blank" rel="noopener noreferrer" sx={buttonGold}>
-                    Baixar app do motorista
+                  <Button href={driverStore} target="_blank" rel="noopener noreferrer" sx={buttonGold}>
+                    Baixar Motorista na Google Play
                   </Button>
                 </Box>
 
@@ -817,14 +817,14 @@ export default function KaviarLanding() {
                 <Box>
                   <Typography sx={{ color: '#0B1423', fontWeight: 700, fontSize: { xs: '1.42rem', md: '1.92rem' }, mb: 0.65 }}>Baixe agora o app KAVIAR</Typography>
                   <Typography sx={{ color: textSecondary, lineHeight: 1.68, mb: 1.1 }}>
-                    Passageiros acessam o KAVIAR pela Google Play. O app do motorista será direcionado à loja oficial assim que a versão em análise estiver publicada.
+                    Passageiros e motoristas já podem acessar o KAVIAR pela Google Play.
                   </Typography>
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.0}>
                     <Button href={passengerStore} target="_blank" rel="noopener noreferrer" sx={buttonGold}>
                       Baixar Passageiro na Google Play
                     </Button>
-                    <Button href={driverApk} target="_blank" rel="noopener noreferrer" sx={buttonBlue}>
-                      Baixar app do motorista
+                    <Button href={driverStore} target="_blank" rel="noopener noreferrer" sx={buttonBlue}>
+                      Baixar Motorista na Google Play
                     </Button>
                   </Stack>
                 </Box>
@@ -883,8 +883,8 @@ export default function KaviarLanding() {
                 <Box component="a" href={passengerStore} target="_blank" rel="noopener noreferrer" sx={{ color: textSecondary, textDecoration: 'none', fontSize: 13, '&:hover': { color: '#0B1423' } }}>
                   KAVIAR Passageiro — Google Play
                 </Box>
-                <Box component="a" href={driverApk} target="_blank" rel="noopener noreferrer" sx={{ color: textSecondary, textDecoration: 'none', fontSize: 13, '&:hover': { color: '#0B1423' } }}>
-                  App do motorista
+                <Box component="a" href={driverStore} target="_blank" rel="noopener noreferrer" sx={{ color: textSecondary, textDecoration: 'none', fontSize: 13, '&:hover': { color: '#0B1423' } }}>
+                  KAVIAR Motorista — Google Play
                 </Box>
               </Stack>
             </Box>
