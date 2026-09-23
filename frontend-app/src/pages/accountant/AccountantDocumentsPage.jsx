@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Typography, TextField, InputAdornment, Select, MenuItem, FormControl,
-  InputLabel, Card, CardContent, Chip, Skeleton, Grid, Button, IconButton, Tooltip,
+  InputLabel, Card, CardContent, Chip, Skeleton, Grid, Button, IconButton, Tooltip, Alert,
 } from '@mui/material';
 import {
   Search, Description, FilterList, Add, Business, CloudUpload,
@@ -121,6 +121,31 @@ export default function AccountantDocumentsPage() {
             Novo Documento
           </Button>
         </Box>
+
+        <Alert
+          severity="info"
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              onClick={() => navigate('/contador/obrigacoes')}
+              sx={{ color: '#D4AF37', textTransform: 'none', fontWeight: 600, whiteSpace: 'nowrap' }}
+            >
+              Ir para Contas a Pagar
+            </Button>
+          }
+          sx={{
+            mb: 3,
+            bgcolor: 'rgba(59,130,246,0.10)',
+            color: 'rgba(255,255,255,0.85)',
+            border: '1px solid rgba(59,130,246,0.30)',
+            alignItems: 'center',
+            '& .MuiAlert-icon': { color: '#60A5FA' },
+          }}
+        >
+          <strong>Boletos, guias e cobranças para pagamento:</strong> cadastre em <strong>Contas a Pagar</strong>.
+          {' '}Use Documentos para arquivos contábeis e empresariais que não representam uma cobrança a pagar.
+        </Alert>
 
         {/* Filters */}
         <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
