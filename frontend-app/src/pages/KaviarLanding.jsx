@@ -285,9 +285,9 @@ export default function KaviarLanding() {
                 Baixar Passageiro na Google Play
               </Button>
               <Button href={driverStore} target="_blank" rel="noopener noreferrer" sx={buttonBlue}>
-                Quero dirigir com a KAVIAR
+                Baixar Motorista na Google Play
               </Button>
-              <Button href="#gestores" sx={buttonOutline}>
+              <Button href="#gestores" sx={buttonManager}>
                 Quero ser gestor KAVIAR
               </Button>
             </Stack>
@@ -1028,6 +1028,23 @@ const buttonBlue = {
   boxShadow: '0 14px 34px rgba(37,99,235,0.25)',
   '&:hover': {
     background: 'linear-gradient(180deg, #3776F0 0%, #17439A 100%)',
+    transform: 'translateY(-1px)',
+  },
+};
+
+const buttonManager = {
+  background: 'linear-gradient(180deg, #17233A 0%, #0B1423 100%)',
+  color: '#F5D980',
+  borderRadius: 999,
+  px: 2.05,
+  py: 0.98,
+  textTransform: 'none',
+  fontWeight: 700,
+  border: '1px solid rgba(185,138,24,0.58)',
+  boxShadow: '0 14px 32px rgba(11,20,35,0.22)',
+  '&:hover': {
+    background: 'linear-gradient(180deg, #22304B 0%, #101C2E 100%)',
+    borderColor: 'rgba(212,175,55,0.82)',
     transform: 'translateY(-1px)',
   },
 };
