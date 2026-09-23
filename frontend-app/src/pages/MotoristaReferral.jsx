@@ -43,16 +43,18 @@ export default function MotoristaReferral() {
 
         <Typography variant="h5" sx={{ color: '#fff', fontWeight: 700, mb: 2 }}>Seja motorista KAVIAR</Typography>
         <Typography sx={{ color: '#aaa', mb: 3, lineHeight: 1.6 }}>
-          Baixe o app, faça seu cadastro{ref ? ` e use o código ${ref}` : ''} para começar a dirigir na sua região.
+          Baixe o app na Google Play, faça seu cadastro{ref ? ` e use o código ${ref}` : ''} para começar a dirigir na sua região.
         </Typography>
 
         <Button
           variant="contained"
           size="large"
-          href="https://downloads.kaviar.com.br/kaviar-motorista-v1.12.1-ota.apk"
+          href="https://play.google.com/store/apps/details?id=com.kaviar.driver"
+          target="_blank"
+          rel="noopener noreferrer"
           sx={{ bgcolor: '#FFD700', color: '#000', fontWeight: 800, px: 5, py: 1.5, borderRadius: 3, fontSize: 16 }}
         >
-          Baixar App Motorista
+          Baixar Motorista na Google Play
         </Button>
 
         {ref && (
