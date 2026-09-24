@@ -1754,7 +1754,7 @@ model inbound_email_messages {
   status               String   @default("NEW") @db.VarChar(20)
   status_before_trash  String?  @db.VarChar(20)
   trashed_at           DateTime?
-  trashed_by_admin_id  String?  @db.Uuid
+  trashed_by_admin_id  String?
   has_attachments      Boolean  @default(false)
   attachment_count     Int      @default(0)
   attachments_metadata Json?    @db.JsonB
