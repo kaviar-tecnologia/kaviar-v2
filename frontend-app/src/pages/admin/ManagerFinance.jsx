@@ -99,7 +99,7 @@ export default function ManagerFinance() {
               { label: 'Operações reconhecidas', value: summary.rides_completed },
               { label: 'Taxa plataforma arrecadada', value: fmt(summary.platform_fee) },
               { label: 'Participação reconhecida', value: fmt(summary.regional_estimated) },
-              { label: 'Ativação Financeira', value: summary.financial_activation_active ? 'Ativa' : 'Não ativa' },
+              { label: 'Ativação Financeira', value: summary.financial_activation_active ? 'Ativa' : 'Bloqueada' },
             ].map(k => (
               <Grid item xs={6} sm={3} key={k.label}>
                 <Card sx={{ bgcolor: '#fff', borderTop: `3px solid ${GOLD}`, border: '1px solid #E8E5DE', borderRadius: 2 }}>
@@ -112,6 +112,12 @@ export default function ManagerFinance() {
             ))}
           </Grid>
         ) : <Alert severity="info" sx={{ mb: 3 }}>Ainda não há dados financeiros calculados para este território.</Alert>}
+
+        {summary && !summary.empty && summary.financial_activation_active === false && (
+          <Alert severity="warning" sx={{ mb: 3 }}>
+            Ativação Financeira bloqueada{summary.financial_activation_reason ? `: ${summary.financial_activation_reason}` : ''}. Enquanto o bloqueio existir, novas operações reconhecem 0% para o Gestor e 100% da Taxa da Plataforma para a KAVIAR.
+          </Alert>
+        )}
 
         {/* Net estimated */}
         {summary && !summary.empty && summary.has_rule && (
@@ -152,9 +158,10 @@ export default function ManagerFinance() {
               <Grid container spacing={1}>
                 <Grid item xs={4} sx={{ textAlign: 'center' }}><Typography sx={{ fontSize: 20, fontWeight: 800 }}>{Number(rules.regional_share_percent)}%</Typography><Typography sx={{ fontSize: 9, color: '#6B7280', textTransform: 'uppercase' }}>Gestor</Typography></Grid>
                 <Grid item xs={4} sx={{ textAlign: 'center' }}><Typography sx={{ fontSize: 20, fontWeight: 800 }}>{Number(rules.matrix_share_percent)}%</Typography><Typography sx={{ fontSize: 9, color: '#6B7280', textTransform: 'uppercase' }}>KAVIAR</Typography></Grid>
-                <Grid item xs={4} sx={{ textAlign: 'center' }}><Typography sx={{ fontSize: 20, fontWeight: 800 }}>{rules.financial_activation_active ? 'ATIVA' : 'NÃO ATIVA'}</Typography><Typography sx={{ fontSize: 9, color: '#6B7280', textTransform: 'uppercase' }}>Ativação Financeira</Typography></Grid>
+                <Grid item xs={4} sx={{ textAlign: 'center' }}><Typography sx={{ fontSize: 20, fontWeight: 800 }}>{rules.financial_activation_active ? 'ATIVA' : 'BLOQUEADA'}</Typography><Typography sx={{ fontSize: 9, color: '#6B7280', textTransform: 'uppercase' }}>Ativação Financeira</Typography></Grid>
               </Grid>
               {rules.description && <Typography sx={{ fontSize: 11, color: '#6B7280', mt: 1 }}>{rules.description}</Typography>}
+              {rules.financial_activation_active === false && rules.financial_activation_reason && <Typography sx={{ fontSize: 11, color: '#B45309', mt: 0.5 }}>Motivo: {rules.financial_activation_reason}</Typography>}
             </CardContent>
           </Card>
         )}
