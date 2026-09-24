@@ -8,6 +8,7 @@ on:
       - 'backend/src/services/contracts/**'
       - 'backend/tests/contract-template.test.ts'
       - 'backend/tests/territorial-manager-contract-v1_2.test.ts'
+      - 'frontend-app/src/pages/admin/TerritorialPayoutsPage.jsx'
       - 'docs/contratos/**'
       - 'docs/comercial/termo-autorizacao-operacional-territorial-fundador.md'
       - 'docs/contrato-gestor-territorial-v1.md'
@@ -31,10 +32,15 @@ jobs:
         with:
           node-version: '24'
           cache: 'npm'
-          cache-dependency-path: backend/package-lock.json
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend-app/package-lock.json
 
       - name: Install backend dependencies
         run: cd backend && npm ci
+
+      - name: Install frontend dependencies
+        run: cd frontend-app && npm ci
 
       - name: Generate Prisma Client
         run: cd backend && npx prisma generate
@@ -48,3 +54,6 @@ jobs:
 
       - name: Build backend
         run: cd backend && npm run build
+
+      - name: Build frontend
+        run: cd frontend-app && npm run build
