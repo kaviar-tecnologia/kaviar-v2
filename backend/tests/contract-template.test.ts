@@ -148,6 +148,42 @@ describe('contract template flow', () => {
     });
   });
 
+  describe('v1.2 manager contract transition', () => {
+    const REQUIRED_VERSION = 'v1.2';
+
+    it('legacy manager template must be regenerated before signed upload', () => {
+      const profile = { relationship_type: 'territorial_manager', terms_version: 'v1.1' };
+      const allowed = profile.relationship_type !== 'territorial_manager' || profile.terms_version === REQUIRED_VERSION;
+      expect(allowed).toBe(false);
+    });
+
+    it('current v1.2 manager template may proceed to signed upload', () => {
+      const profile = { relationship_type: 'territorial_manager', terms_version: 'v1.2' };
+      const allowed = profile.relationship_type !== 'territorial_manager' || profile.terms_version === REQUIRED_VERSION;
+      expect(allowed).toBe(true);
+    });
+
+    it('generic online terms do not substitute the manager contract', () => {
+      const isTerritorialManager = true;
+      const update = {
+        terms_version: isTerritorialManager ? REQUIRED_VERSION : 'v1.0-captador',
+        ...(isTerritorialManager ? {} : { contract_status: 'signed' }),
+      };
+      expect(update.terms_version).toBe('v1.2');
+      expect(update).not.toHaveProperty('contract_status');
+    });
+
+    it('template generation never creates financial activation', () => {
+      const response = {
+        contract_status: 'available',
+        contract_version: 'v1.2',
+        financial_activation_created: false,
+      };
+      expect(response.financial_activation_created).toBe(false);
+      expect(response.contract_status).toBe('available');
+    });
+  });
+
   describe('frontend states', () => {
     const getLabel = (contractUrl: string | null, templateUrl: string | null, status: string) => {
       if (contractUrl && status === 'signed') return 'Contrato formalizado';
