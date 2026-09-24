@@ -242,13 +242,20 @@ async function main() {
     throw new Error('SEED_BLOCKED_IN_PRODUCTION');
   }
 
-  const seedAdminPassword = process.env.SEED_ADMIN_PASSWORD;
-  const seedDriverPassword = process.env.SEED_DRIVER_PASSWORD;
-  const seedPassengerPassword = process.env.SEED_PASSENGER_PASSWORD;
+  const isTestSeed = process.env.NODE_ENV === 'test';
+  const seedAdminPassword =
+    process.env.SEED_ADMIN_PASSWORD ||
+    (isTestSeed ? process.env.E2E_ADMIN_PASSWORD || 'admin123' : undefined);
+  const seedDriverPassword =
+    process.env.SEED_DRIVER_PASSWORD ||
+    (isTestSeed ? 'driver123' : undefined);
+  const seedPassengerPassword =
+    process.env.SEED_PASSENGER_PASSWORD ||
+    (isTestSeed ? 'pass123' : undefined);
 
   if (!seedAdminPassword || !seedDriverPassword || !seedPassengerPassword) {
     throw new Error(
-      'SEED_PASSWORDS_REQUIRED: set SEED_ADMIN_PASSWORD, SEED_DRIVER_PASSWORD and SEED_PASSENGER_PASSWORD'
+      'SEED_PASSWORDS_REQUIRED: outside test, set SEED_ADMIN_PASSWORD, SEED_DRIVER_PASSWORD and SEED_PASSENGER_PASSWORD'
     );
   }
 
