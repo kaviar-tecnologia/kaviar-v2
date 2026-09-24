@@ -185,6 +185,33 @@ describe('Atomic Settlement', () => {
     expect(ledger.find((r: any) => r.entry_type === 'fee_share').amount_cents).toBe('200');
   });
 
+  it('inactive manager admin is treated as Área de Sombra', async () => {
+    const driverId = await setupDriver(10000n);
+    const { territoryId, managerId } = await setupTerritory();
+    await pool.query('UPDATE admins SET is_active = false WHERE id = $1', [managerId]);
+
+    const svc = createSettlement(driverId);
+    const rideId = `ride-inactive-manager-${RUN}`;
+
+    await svc.handleReserve(rideId, driverId, 1800n);
+    await svc.settleRide({ rideId, driverId, finalPriceCents: 10000n, reservedCents: 1800n, territoryId });
+
+    const { rows: [split] } = await pool.query(
+      `SELECT manager_id, manager_assignment_id, matrix_share_percent, matrix_share_cents,
+              manager_share_percent, manager_share_cents, manager_commission_rate_bps
+       FROM ride_fee_splits WHERE ride_id = $1`,
+      [rideId]
+    );
+
+    expect(split.manager_id).toBeNull();
+    expect(split.manager_assignment_id).toBeNull();
+    expect(split.matrix_share_percent).toBe('100.00');
+    expect(split.matrix_share_cents).toBe('1800');
+    expect(split.manager_share_percent).toBe('0.00');
+    expect(split.manager_share_cents).toBe('0');
+    expect(split.manager_commission_rate_bps).toBe(0);
+  });
+
   it('Área de Sombra keeps 100% of platform fee with KAVIAR', async () => {
     // Create territory WITHOUT assignment
     const territoryId = `territory-nomanager-${RUN}`;
