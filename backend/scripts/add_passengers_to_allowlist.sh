@@ -2,11 +2,15 @@
 
 API_URL="https://api.kaviar.com.br"
 
+ADMIN_EMAIL="${ADMIN_EMAIL:-suporte@kaviar.com.br}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:?Set ADMIN_PASSWORD env var}"
+LOGIN_PAYLOAD=$(jq -n --arg email "$ADMIN_EMAIL" --arg password "$ADMIN_PASSWORD" '{email:$email,password:$password}')
+
 # Login como super admin
 echo "🔐 Fazendo login como super admin..."
 ADMIN_TOKEN=$(curl -s -X POST "$API_URL/api/admin/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{"email":"suporte@usbtecnok.com.br","password":"<FROM_ENV_ADMIN_PASSWORD>"}' | jq -r '.token')
+  -d "$LOGIN_PAYLOAD" | jq -r '.token')
 
 if [ -z "$ADMIN_TOKEN" ] || [ "$ADMIN_TOKEN" = "null" ]; then
   echo "❌ Falha no login do admin"

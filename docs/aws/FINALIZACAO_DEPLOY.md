@@ -33,7 +33,7 @@ git push origin main
 # Everything up-to-date
 ```
 
-Repositório: `https://github.com/usbtecnok/kaviar-v2.git`
+Repositório: `https://github.com/kaviar-tecnologia/kaviar-v2.git`
 
 ---
 
@@ -126,7 +126,7 @@ https://kaviar-frontend.onrender.com/admin/drivers/approval
 
 ## 🚀 Status do Deploy
 
-**Repositório:** `https://github.com/usbtecnok/kaviar-v2.git`  
+**Repositório:** `https://github.com/kaviar-tecnologia/kaviar-v2.git`  
 **Branch:** `main`  
 **Último commit:** `f61b73b`
 

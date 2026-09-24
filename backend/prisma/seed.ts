@@ -238,8 +238,29 @@ async function seedFinancialFoundation(adminId: string, rioDeJaneiroTerritoryId:
 async function main() {
   console.log('🔧 Inicializando dados padrão...');
 
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('SEED_BLOCKED_IN_PRODUCTION');
+  }
+
+  const isTestSeed = process.env.NODE_ENV === 'test';
+  const seedAdminPassword =
+    process.env.SEED_ADMIN_PASSWORD ||
+    (isTestSeed ? 'admin123' : undefined);
+  const seedDriverPassword =
+    process.env.SEED_DRIVER_PASSWORD ||
+    (isTestSeed ? 'driver123' : undefined);
+  const seedPassengerPassword =
+    process.env.SEED_PASSENGER_PASSWORD ||
+    (isTestSeed ? 'pass123' : undefined);
+
+  if (!seedAdminPassword || !seedDriverPassword || !seedPassengerPassword) {
+    throw new Error(
+      'SEED_PASSWORDS_REQUIRED: outside test, set SEED_ADMIN_PASSWORD, SEED_DRIVER_PASSWORD and SEED_PASSENGER_PASSWORD'
+    );
+  }
+
   // Admin padrão
-  const hashedPassword = await bcrypt.hash('admin123', 12);
+  const hashedPassword = await bcrypt.hash(seedAdminPassword, 12);
   const admin = await prisma.admins.upsert({
     where: { email: 'admin@kaviar.com' },
     update: { password: hashedPassword },
@@ -252,7 +273,7 @@ async function main() {
       must_change_password: false,
     },
   });
-  console.log('✅ Admin: admin@kaviar.com / admin123');
+  console.log('✅ Admin de seed criado/atualizado: admin@kaviar.com');
 
   // Bairro de teste
   const neighborhood = await prisma.neighborhoods.upsert({
@@ -283,7 +304,7 @@ async function main() {
   console.log('✅ Comunidade: Comunidade Centro RJ');
 
   // Motorista de teste
-  const driverPassword = await bcrypt.hash('driver123', 10);
+  const driverPassword = await bcrypt.hash(seedDriverPassword, 10);
   await prisma.drivers.upsert({
     where: { email: 'motorista@kaviar.com' },
     update: { password_hash: driverPassword },
@@ -302,7 +323,7 @@ async function main() {
       updated_at: new Date(),
     },
   });
-  console.log('✅ Motorista: motorista@kaviar.com / driver123 (approved)');
+  console.log('✅ Motorista de seed criado/atualizado: motorista@kaviar.com (approved)');
 
   // Motorista pendente (para testar fluxo de documentos)
   await prisma.drivers.upsert({
@@ -321,10 +342,10 @@ async function main() {
       updated_at: new Date(),
     },
   });
-  console.log('✅ Motorista pendente: novo.motorista@kaviar.com / driver123 (pending)');
+  console.log('✅ Motorista pendente de seed criado/atualizado: novo.motorista@kaviar.com (pending)');
 
   // Passageiro de teste (para fluxo de corrida v2)
-  const passengerPassword = await bcrypt.hash('pass123', 10);
+  const passengerPassword = await bcrypt.hash(seedPassengerPassword, 10);
   await prisma.passengers.upsert({
     where: { email: 'passageiro@kaviar.com' },
     update: { password_hash: passengerPassword },
@@ -352,7 +373,7 @@ async function main() {
       ip_address: '127.0.0.1',
     },
   });
-  console.log('✅ Passageiro: passageiro@kaviar.com / pass123 (ACTIVE + LGPD)');
+  console.log('✅ Passageiro de seed criado/atualizado: passageiro@kaviar.com (ACTIVE + LGPD)');
 
   // Território operacional RJ
   const rjState = await prisma.operational_territories.upsert({

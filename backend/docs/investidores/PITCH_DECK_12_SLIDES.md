@@ -137,7 +137,7 @@ R$ 5-8M/ano
 ⏳ Piloto Rocinha (Mês 1-3)
 ```
 
-**Rodapé:** Endpoint: api.kaviar.com.br/health | GitHub: usbtecnok/kaviar-v2
+**Rodapé:** Endpoint: api.kaviar.com.br/health | GitHub: kaviar-tecnologia/kaviar-v2
 
 ---
 

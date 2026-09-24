@@ -60,7 +60,7 @@ aws logs tail /ecs/kaviar-backend --since 30m --filter-pattern "500"
 
 ```bash
 # Verificar se GitHub Actions está rodando
-# https://github.com/usbtecnok/kaviar-v2/actions
+# https://github.com/kaviar-tecnologia/kaviar-v2/actions
 
 # Se não houver workflow automático, usar Opção 2
 ```

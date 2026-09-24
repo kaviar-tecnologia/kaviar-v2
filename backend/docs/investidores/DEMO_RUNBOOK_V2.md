@@ -158,7 +158,7 @@ Ao fazer login com `?demo=1`, aparece automaticamente:
 
 ### 1. Clonar Repositório
 ```bash
-git clone https://github.com/usbtecnok/kaviar-v2.git
+git clone https://github.com/kaviar-tecnologia/kaviar-v2.git
 cd kaviar-v2
 ```
 

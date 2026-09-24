@@ -22,7 +22,7 @@ describe(
             GITHUB_APP_PRIVATE_KEY_PATH:
               '/tmp/private-key.pem',
             GITHUB_REPOSITORY:
-              'usbtecnok/kaviar-v2',
+              'kaviar-tecnologia/kaviar-v2',
           });
 
         expect(config).toEqual({
@@ -31,7 +31,7 @@ describe(
           privateKeyPath:
             '/tmp/private-key.pem',
           repository:
-            'usbtecnok/kaviar-v2',
+            'kaviar-tecnologia/kaviar-v2',
         });
       },
     );

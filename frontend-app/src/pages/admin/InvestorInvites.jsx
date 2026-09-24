@@ -6,7 +6,7 @@ export default function InvestorInvites() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [role, setRole] = useState('INVESTOR_VIEW');
+  const role = 'INVESTOR_VIEW';
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
@@ -41,9 +41,9 @@ export default function InvestorInvites() {
 
   return (
     <div style={{ maxWidth: '600px', margin: '40px auto', padding: '20px' }}>
-      <h1 style={{ color: '#d32f2f', marginBottom: '10px' }}>👥 Convites Investidor/Anjo</h1>
+      <h1 style={{ color: '#d32f2f', marginBottom: '10px' }}>👥 Convites de Investidor</h1>
       <p style={{ color: '#666', marginBottom: '30px', fontSize: '14px' }}>
-        Envie convites para investidores ou anjos acessarem o sistema com permissões read-only.
+        Envie convites para investidores acessarem o sistema com permissões read-only.
       </p>
 
       {success && (
@@ -147,7 +147,7 @@ export default function InvestorInvites() {
         ) : (
           <div style={{ marginBottom: '20px' }}>
             <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 600, color: '#333' }}>
-              Email do Investidor/Anjo
+              Email do Investidor
             </label>
             <input
               type="email"
@@ -172,22 +172,19 @@ export default function InvestorInvites() {
           <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: 600, color: '#333' }}>
             Tipo de Acesso
           </label>
-          <select
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            disabled={loading}
+          <div
             style={{
               width: '100%',
               padding: '12px',
               border: '1px solid #ddd',
               borderRadius: '4px',
               fontSize: '14px',
-              opacity: loading ? 0.6 : 1
+              backgroundColor: '#f7f7f7',
+              color: '#333'
             }}
           >
-            <option value="INVESTOR_VIEW">Investidor (Read-Only)</option>
-            <option value="ANGEL_VIEWER">Angel Viewer (Read-Only)</option>
-          </select>
+            Investidor (Read-Only)
+          </div>
         </div>
 
         <button

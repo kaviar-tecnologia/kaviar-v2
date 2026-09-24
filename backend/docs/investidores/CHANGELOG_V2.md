@@ -90,7 +90,7 @@ Evidências:
 - Custos AWS: $120,50/mês (breakdown linha por linha)
 - 162 bairros mapeados (PostGIS, 200h trabalho)
 - 28.000 linhas código, 500+ commits
-- GitHub: usbtecnok/kaviar-v2
+- GitHub: kaviar-tecnologia/kaviar-v2
 ```
 
 **Por quê:** Investidor quer ver, não só ouvir.

@@ -73,14 +73,14 @@ const inviteSchemaEmail = z.object({
   channel: z.literal('email').optional(),
   email: z.string().email('Email inválido'),
   name: z.string().min(1).optional(),
-  role: z.enum(['INVESTOR_VIEW', 'ANGEL_VIEWER'])
+  role: z.literal('INVESTOR_VIEW')
 });
 
 const inviteSchemaWhatsApp = z.object({
   channel: z.literal('whatsapp'),
   phone: z.string().regex(/^\+\d{10,15}$/, 'Telefone deve estar no formato E.164 (+5521...)'),
   name: z.string().min(1).optional(),
-  role: z.enum(['INVESTOR_VIEW', 'ANGEL_VIEWER'])
+  role: z.literal('INVESTOR_VIEW')
 });
 
 const inviteSchema = z.union([inviteSchemaEmail, inviteSchemaWhatsApp]);
@@ -115,10 +115,10 @@ router.post('/invite', authenticateAdmin, requireSuperAdmin, inviteRateLimit, as
     if (channel === 'whatsapp') {
       phone = (data as any).phone as string;
       email = `whatsapp${phone.replace(/\+/g, '').replace(/\D/g, '')}@kaviar.local`;
-      displayName = inputName || (role === 'INVESTOR_VIEW' ? 'Investidor' : 'Angel Viewer');
+      displayName = inputName || 'Investidor';
     } else {
       email = (data as any).email as string;
-      displayName = inputName || (role === 'INVESTOR_VIEW' ? 'Investidor' : 'Angel Viewer');
+      displayName = inputName || 'Investidor';
     }
 
     if (email.includes('<') || email.includes('>')) {
@@ -250,7 +250,7 @@ router.get('/followup-eligible', authenticateAdmin, requireSuperAdmin, async (_r
       SELECT a.id, a.name, COALESCE(a.phone, '+' || regexp_replace(split_part(a.email, '@', 1), '[^0-9]', '', 'g')) AS phone,
              a.role, a.password_changed_at, a.marketing_followup_sent_at
       FROM admins a
-      WHERE a.role IN ('ANGEL_VIEWER', 'INVESTOR_VIEW')
+      WHERE a.role = 'INVESTOR_VIEW'
         AND a.is_active = true
         AND a.password_changed_at IS NOT NULL
         AND (a.phone IS NOT NULL OR a.email LIKE 'whatsapp%@kaviar.local')
@@ -286,7 +286,7 @@ router.post('/:id/followup', authenticateAdmin, requireSuperAdmin, async (req: R
     });
 
     if (!admin) return res.status(404).json({ success: false, error: 'Admin não encontrado.' });
-    if (!['ANGEL_VIEWER', 'INVESTOR_VIEW'].includes(admin.role)) return res.status(400).json({ success: false, error: 'Apenas Angel Viewer / Investor View.' });
+    if (admin.role !== 'INVESTOR_VIEW') return res.status(400).json({ success: false, error: 'Apenas Investor View.' });
 
     // Resolve phone: field or extract from whatsapp email
     const phone = admin.phone || (admin.email?.startsWith('whatsapp') ? '+' + admin.email.replace(/[^0-9]/g, '') : null);

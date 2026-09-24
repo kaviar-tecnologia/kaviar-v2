@@ -201,6 +201,6 @@ Após backend em produção e validado:
 
 ## 🔗 Links
 
-- **PR**: https://github.com/usbtecnok/kaviar-v2/pull/new/feat/investor-whatsapp-backend
+- **PR**: https://github.com/kaviar-tecnologia/kaviar-v2/pull/new/feat/investor-whatsapp-backend
 - **Branch**: `feat/investor-whatsapp-backend`
 - **Base**: `main` (04e780d)

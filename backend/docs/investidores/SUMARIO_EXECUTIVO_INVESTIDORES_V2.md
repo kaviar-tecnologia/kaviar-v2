@@ -216,7 +216,7 @@ Total:                        $120,50/mês
 - Fonte: OpenStreetMap + Data.Rio + validação manual
 
 ### Código
-- **GitHub:** usbtecnok/kaviar-v2 (privado)
+- **GitHub:** kaviar-tecnologia/kaviar-v2 (privado)
 - **28.000 linhas** de código (TypeScript + React)
 - **500+ commits** (6 meses)
 - **Build:** ✅ Sem erros

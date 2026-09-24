@@ -102,7 +102,7 @@ describe('development publisher', () => {
           },
           {
             repositoryUrl:
-              'https://github.com/usbtecnok/kaviar-v2.git',
+              'https://github.com/kaviar-tecnologia/kaviar-v2.git',
             installationToken: 'token',
           },
         ),
@@ -125,7 +125,7 @@ describe('development publisher', () => {
           },
           {
             repositoryUrl:
-              'https://github.com/usbtecnok/kaviar-v2.git',
+              'https://github.com/kaviar-tecnologia/kaviar-v2.git',
             installationToken: 'token',
           },
         ),
@@ -150,7 +150,7 @@ describe('development publisher', () => {
           baseInput,
           {
             repositoryUrl:
-              'https://github.com/usbtecnok/kaviar-v2.git',
+              'https://github.com/kaviar-tecnologia/kaviar-v2.git',
             installationToken: 'token',
           },
         ),
@@ -185,7 +185,7 @@ describe('development publisher', () => {
           baseInput,
           {
             repositoryUrl:
-              'https://github.com/usbtecnok/kaviar-v2.git',
+              'https://github.com/kaviar-tecnologia/kaviar-v2.git',
             installationToken: 'token',
           },
         ),
@@ -220,7 +220,7 @@ describe('development publisher', () => {
           baseInput,
           {
             repositoryUrl:
-              'https://github.com/usbtecnok/kaviar-v2.git',
+              'https://github.com/kaviar-tecnologia/kaviar-v2.git',
             installationToken: 'token',
           },
         );
