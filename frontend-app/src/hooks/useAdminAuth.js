@@ -9,15 +9,10 @@ export const useAdminAuth = () => {
     return admin?.role === 'SUPER_ADMIN';
   };
 
-  const isAngelViewer = () => {
-    const admin = getAdminData();
-    return admin?.role === 'ANGEL_VIEWER';
-  };
-
   const mustChangePassword = () => {
     const admin = getAdminData();
     return admin?.mustChangePassword === true;
   };
 
-  return { getAdminData, isSuperAdmin, isAngelViewer, mustChangePassword };
+  return { getAdminData, isSuperAdmin, mustChangePassword };
 };

@@ -356,7 +356,7 @@ export default function TerritorialPayoutsPage() {
     const d = await res.json();
     if (d.success) {
       setOpForm(f => ({ ...f, admin_id: d.data.id }));
-      setTerritoryAdmins(prev => [...prev, { id: d.data.id, name: d.data.name, email: d.data.email, role: d.data.role || 'ANGEL_VIEWER', is_active: true }]);
+      setTerritoryAdmins(prev => [...prev, { id: d.data.id, name: d.data.name, email: d.data.email, role: d.data.role || 'TERRITORIAL_OPERATOR', is_active: true }]);
       setCreateAccess(false);
       setFeedback({ open: true, severity: 'success', message: 'Acesso criado e selecionado para este operador.' });
     } else setOpError(d.error || 'Erro ao criar acesso');
