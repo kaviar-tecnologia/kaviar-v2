@@ -461,7 +461,7 @@ Monitoramento:
 ### Código Proprietário
 
 **Repositório:**
-- GitHub: `usbtecnok/kaviar-v2`
+- GitHub: `kaviar-tecnologia/kaviar-v2`
 - Privado: ✅
 - Licença: Proprietária
 - Commits: 500+
