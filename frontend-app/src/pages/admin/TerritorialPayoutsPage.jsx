@@ -10,7 +10,20 @@ function ContractDataDiagnostic({ operatorId, token, headers }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [form, setForm] = useState({ document_cpf: '', document_rg: '', address: '', phone: '', pix_key: '', pix_key_type: 'cpf' });
+  const [form, setForm] = useState({
+    email: '',
+    document_cpf: '',
+    document_rg: '',
+    company_name: '',
+    trade_name: '',
+    document_cnpj: '',
+    legal_representative_name: '',
+    legal_representative_cpf: '',
+    address: '',
+    phone: '',
+    pix_key: '',
+    pix_key_type: 'cpf',
+  });
   const [saving, setSaving] = useState(false);
   const [genConfirm, setGenConfirm] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -30,15 +43,26 @@ function ContractDataDiagnostic({ operatorId, token, headers }) {
 
   const handleSave = async () => {
     const cpf = form.document_cpf.trim();
-    if (cpf && !/^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/.test(cpf)) { alert('CPF inválido. Use 000.000.000-00 ou 11 dígitos.'); return; }
+    const representativeCpf = form.legal_representative_cpf.trim();
+    const cnpj = form.document_cnpj.trim();
+    const cpfRegex = /^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/;
+    if (cpf && !cpfRegex.test(cpf)) { alert('CPF inválido. Use 000.000.000-00 ou 11 dígitos.'); return; }
+    if (representativeCpf && !cpfRegex.test(representativeCpf)) { alert('CPF do representante inválido.'); return; }
+    if (cnpj && cnpj.replace(/\D/g, '').length !== 14) { alert('CNPJ inválido. Informe 14 dígitos.'); return; }
     const phone = form.phone.trim();
     if (phone && !/^(\+55)?\d{10,11}$/.test(phone.replace(/[\s()-]/g, ''))) { alert('Telefone inválido. Use +5521999990000 ou formato brasileiro.'); return; }
     if (form.address.trim() && form.address.trim().length < 10) { alert('Endereço deve ter no mínimo 10 caracteres.'); return; }
     setSaving(true);
     try {
       const body = {};
+      if (form.email.trim()) body.email = form.email.trim();
       if (cpf) body.document_cpf = cpf;
       if (form.document_rg.trim()) body.document_rg = form.document_rg.trim();
+      if (form.company_name.trim()) body.company_name = form.company_name.trim();
+      if (form.trade_name.trim()) body.trade_name = form.trade_name.trim();
+      if (cnpj) body.document_cnpj = cnpj;
+      if (form.legal_representative_name.trim()) body.legal_representative_name = form.legal_representative_name.trim();
+      if (representativeCpf) body.legal_representative_cpf = representativeCpf;
       if (form.address.trim().length >= 10) body.address = form.address.trim();
       if (phone) body.phone = phone;
       if (form.pix_key.trim()) { body.pix_key = form.pix_key.trim(); body.pix_key_type = form.pix_key_type; }
@@ -64,14 +88,29 @@ function ContractDataDiagnostic({ operatorId, token, headers }) {
   if (!data) return null;
 
   const { canGenerateContract, missingFields, availableFields, warnings } = data;
+  const isIndividual = availableFields.recipientType === 'individual';
   const fields = [
-    { key: 'nome', label: 'Nome' },
+    { key: 'displayName', label: isIndividual ? 'Nome' : 'Perfil' },
     { key: 'email', label: 'E-mail' },
     { key: 'telefone', label: 'Telefone' },
-    { key: 'cpf', label: 'CPF' },
+    ...(isIndividual
+      ? [
+          { key: 'cpf', label: 'CPF' },
+          { key: 'rg', label: 'RG/CIN' },
+        ]
+      : [
+          { key: 'companyName', label: 'Razão social' },
+          { key: 'tradeName', label: 'Nome fantasia' },
+          { key: 'cnpj', label: 'CNPJ' },
+          { key: 'legalRepresentativeName', label: 'Representante' },
+          { key: 'legalRepresentativeCpf', label: 'CPF representante' },
+        ]),
     { key: 'endereco', label: 'Endereço' },
     { key: 'territorio', label: 'Território' },
     { key: 'cidadeUf', label: 'Cidade/UF' },
+    { key: 'managerAssignmentId', label: 'Assignment' },
+    { key: 'managerAssignmentStatus', label: 'Status assignment' },
+    { key: 'territoryVersion', label: 'Versão territorial' },
   ];
 
   return (
@@ -90,6 +129,9 @@ function ContractDataDiagnostic({ operatorId, token, headers }) {
           <Typography sx={{ fontSize: 11, color: '#F59E0B' }}>Pix: não cadastrado (necessário para repasses)</Typography>
         </Box>
       )}
+      {warnings?.contractApplicabilityNote && <Alert severity="info" sx={{ mt: 1, '& .MuiAlert-message': { fontSize: 10 } }}>{warnings.contractApplicabilityNote}</Alert>}
+      {warnings?.assignmentNote && <Alert severity="warning" sx={{ mt: 1, '& .MuiAlert-message': { fontSize: 10 } }}>{warnings.assignmentNote}</Alert>}
+      {warnings?.financialActivation && <Alert severity="info" sx={{ mt: 1, '& .MuiAlert-message': { fontSize: 10 } }}>{warnings.financialActivation}</Alert>}
       <Box sx={{ mt: 1, display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
         {canGenerateContract ? (
           <>
@@ -103,7 +145,20 @@ function ContractDataDiagnostic({ operatorId, token, headers }) {
             <Alert severity="warning" sx={{ py: 0, flex: 1, '& .MuiAlert-message': { fontSize: 10 } }}>
               Campos faltantes: {missingFields.join(', ')}
             </Alert>
-            <Button size="small" variant="outlined" onClick={() => { setForm({ document_cpf: availableFields.cpf || '', document_rg: '', address: availableFields.endereco || '', phone: availableFields.telefone || '', pix_key: availableFields.pixKey || '', pix_key_type: 'cpf' }); setEditOpen(true); }} sx={{ borderColor: '#3B82F6', color: '#3B82F6', fontSize: 10, whiteSpace: 'nowrap' }}>
+            <Button size="small" variant="outlined" onClick={() => { setForm({
+              email: availableFields.email || '',
+              document_cpf: availableFields.cpf || '',
+              document_rg: availableFields.rg || '',
+              company_name: availableFields.companyName || '',
+              trade_name: availableFields.tradeName || '',
+              document_cnpj: availableFields.cnpj || '',
+              legal_representative_name: availableFields.legalRepresentativeName || '',
+              legal_representative_cpf: availableFields.legalRepresentativeCpf || '',
+              address: availableFields.endereco || '',
+              phone: availableFields.telefone || '',
+              pix_key: availableFields.pixKey || '',
+              pix_key_type: 'cpf',
+            }); setEditOpen(true); }} sx={{ borderColor: '#3B82F6', color: '#3B82F6', fontSize: 10, whiteSpace: 'nowrap' }}>
               Completar dados
             </Button>
           </>
@@ -122,7 +177,9 @@ function ContractDataDiagnostic({ operatorId, token, headers }) {
         <DialogContent>
           <Typography variant="body2" sx={{ color: '#9CA3AF', mb: 2 }}>O sistema irá gerar o PDF do contrato personalizado com os dados abaixo e disponibilizá-lo para assinatura.</Typography>
           <Box sx={{ p: 1.5, bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 1, border: '1px solid rgba(16,185,129,0.3)', mb: 2 }}>
-            <Typography variant="body2"><strong>Nome:</strong> {availableFields?.nome}</Typography>
+            <Typography variant="body2"><strong>{isIndividual ? 'Nome' : 'Razão social'}:</strong> {isIndividual ? availableFields?.displayName : availableFields?.companyName}</Typography>
+            <Typography variant="body2"><strong>Versão:</strong> {data.contractVersion}</Typography>
+            <Typography variant="body2"><strong>Assignment:</strong> {availableFields?.managerAssignmentId} ({availableFields?.managerAssignmentStatus})</Typography>
             <Typography variant="body2"><strong>Território:</strong> {availableFields?.territorio}</Typography>
             <Typography variant="body2"><strong>Cidade/UF:</strong> {availableFields?.cidadeUf}</Typography>
           </Box>
@@ -138,8 +195,21 @@ function ContractDataDiagnostic({ operatorId, token, headers }) {
       <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { bgcolor: '#1A1A24', color: '#E5E7EB' } }}>
         <DialogTitle sx={{ color: '#3B82F6', fontWeight: 700 }}>Completar dados contratuais</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-          <TextField label="CPF" value={form.document_cpf} onChange={e => setForm({ ...form, document_cpf: e.target.value })} size="small" placeholder="000.000.000-00" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB' } }} InputLabelProps={{ sx: { color: '#9CA3AF' } }} />
-          <TextField label="RG/CIN (opcional)" value={form.document_rg} onChange={e => setForm({ ...form, document_rg: e.target.value })} size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB' } }} InputLabelProps={{ sx: { color: '#9CA3AF' } }} />
+          <TextField label="E-mail" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB' } }} InputLabelProps={{ sx: { color: '#9CA3AF' } }} />
+          {isIndividual ? (
+            <>
+              <TextField label="CPF" value={form.document_cpf} onChange={e => setForm({ ...form, document_cpf: e.target.value })} size="small" placeholder="000.000.000-00" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB' } }} InputLabelProps={{ sx: { color: '#9CA3AF' } }} />
+              <TextField label="RG/CIN (opcional)" value={form.document_rg} onChange={e => setForm({ ...form, document_rg: e.target.value })} size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB' } }} InputLabelProps={{ sx: { color: '#9CA3AF' } }} />
+            </>
+          ) : (
+            <>
+              <TextField label="Razão social / nome da associação" value={form.company_name} onChange={e => setForm({ ...form, company_name: e.target.value })} size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB' } }} InputLabelProps={{ sx: { color: '#9CA3AF' } }} />
+              <TextField label="Nome fantasia (opcional)" value={form.trade_name} onChange={e => setForm({ ...form, trade_name: e.target.value })} size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB' } }} InputLabelProps={{ sx: { color: '#9CA3AF' } }} />
+              <TextField label="CNPJ" value={form.document_cnpj} onChange={e => setForm({ ...form, document_cnpj: e.target.value })} size="small" placeholder="00.000.000/0000-00" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB' } }} InputLabelProps={{ sx: { color: '#9CA3AF' } }} />
+              <TextField label="Representante legal" value={form.legal_representative_name} onChange={e => setForm({ ...form, legal_representative_name: e.target.value })} size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB' } }} InputLabelProps={{ sx: { color: '#9CA3AF' } }} />
+              <TextField label="CPF do representante" value={form.legal_representative_cpf} onChange={e => setForm({ ...form, legal_representative_cpf: e.target.value })} size="small" placeholder="000.000.000-00" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB' } }} InputLabelProps={{ sx: { color: '#9CA3AF' } }} />
+            </>
+          )}
           <TextField label="Endereço completo" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} size="small" placeholder="Rua, nº, bairro, cidade/UF, CEP" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB' } }} InputLabelProps={{ sx: { color: '#9CA3AF' } }} helperText="Mínimo 10 caracteres" />
           <TextField label="Telefone" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} size="small" placeholder="+5521999990000" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB' } }} InputLabelProps={{ sx: { color: '#9CA3AF' } }} />
           <Box sx={{ display: 'flex', gap: 1 }}>
