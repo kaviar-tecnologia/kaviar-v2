@@ -4,6 +4,10 @@
 
 set -e
 
+ADMIN_EMAIL="${ADMIN_EMAIL:-suporte@kaviar.com.br}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:?Set ADMIN_PASSWORD env var}"
+LOGIN_PAYLOAD=$(jq -n --arg email "$ADMIN_EMAIL" --arg password "$ADMIN_PASSWORD" '{email:$email,password:$password}')
+
 CHECKPOINT=$1
 if [ -z "$CHECKPOINT" ]; then
   echo "Usage: $0 [T+6h|T+12h|T+24h|T+48h]"
@@ -22,7 +26,7 @@ echo ""
 # Get admin token
 TOKEN=$(curl -s -X POST "https://api.kaviar.com.br/api/admin/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{"email":"suporte@usbtecnok.com.br","password":"<FROM_ENV_ADMIN_PASSWORD>"}' | jq -r '.token')
+  -d "$LOGIN_PAYLOAD" | jq -r '.token')
 
 # 1. Feature Flag State
 echo "1. FEATURE FLAG STATE"
