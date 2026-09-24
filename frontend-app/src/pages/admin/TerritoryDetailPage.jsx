@@ -406,7 +406,9 @@ function FinanceTab({ territoryId, token }) {
         <Typography variant="h6" sx={{ color: '#C8A84E', fontWeight: 700 }}>💰 KAVIAR Finance — Territorial</Typography>
       </Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3, px: 2, py: 1, bgcolor: 'rgba(184,148,46,0.08)', borderRadius: 1, border: '1px solid rgba(184,148,46,0.2)' }}>
-        <Typography variant="caption" sx={{ color: '#B8942E' }}>ℹ️ Simulação financeira legada. Não representa a participação contratual v1.2 nem altera o Wallet V2. O financeiro real do Gestor é reconhecido por assignment elegível no settlement.</Typography>
+        <Typography variant="caption" sx={{ color: '#B8942E' }}>
+          ℹ️ Simulação financeira legada. Não representa nem rege o Contrato v1.2. O reconhecimento financeiro atual do Gestor ocorre pelo Wallet V2, assignment financeiro elegível, Área de Sombra e settlement.
+        </Typography>
       </Box>
 
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 2, mb: 3 }}>
@@ -422,7 +424,7 @@ function FinanceTab({ territoryId, token }) {
       <Box sx={{ mb: 3, p: 2, bgcolor: 'rgba(255,255,255,0.02)', borderRadius: 2, border: '1px solid rgba(184,148,46,0.15)' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
           <Typography variant="subtitle1" sx={{ color: '#C8A84E', fontWeight: 700 }}>📐 Regras Financeiras Legadas — Simulação</Typography>
-          <Button size="small" disabled sx={{ color: '#9CA3AF' }}>Nova regra desativada — v1.2 usa Wallet V2</Button>
+          <Chip label="Somente leitura — Wallet V2" size="small" sx={{ color: '#92400E', bgcolor: '#FEF3C7', fontWeight: 600 }} />
         </Box>
         {rules.filter(r => r.is_active).map(r => (
           <Box key={r.id} sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
@@ -444,9 +446,9 @@ function FinanceTab({ territoryId, token }) {
               { label: 'Corridas', value: fmt(simulation.simulation.rides_completed), color: '#C8A84E' },
               { label: 'Taxa Plataforma', value: fmtBRL(simulation.simulation.platform_fee_total), color: '#C8A84E' },
               { label: 'Parte Matriz', value: fmtBRL(simulation.simulation.matrix_share_simulated), color: '#C8A84E' },
-              { label: 'Parte Regional', value: fmtBRL(simulation.simulation.regional_share_simulated), color: '#34D399' },
+              { label: 'Parte Regional (legado)', value: fmtBRL(simulation.simulation.regional_share_simulated), color: '#34D399' },
               { label: 'Comissões Parceiros', value: fmtBRL(simulation.simulation.partner_commissions), color: '#FBBF24' },
-              { label: 'Líquido Regional', value: fmtBRL(simulation.simulation.net_regional_simulated), color: '#34D399' },
+              { label: 'Líquido Regional (legado)', value: fmtBRL(simulation.simulation.net_regional_simulated), color: '#34D399' },
             ].map(c => (
               <Box key={c.label} sx={{ p: 1.5, bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 1, border: '1px solid rgba(255,255,255,0.05)' }}>
                 <Typography variant="caption" sx={{ color: '#6B7280', fontSize: '0.65rem', textTransform: 'uppercase' }}>{c.label}</Typography>
@@ -459,7 +461,9 @@ function FinanceTab({ territoryId, token }) {
 
       <Box sx={{ p: 2, bgcolor: 'rgba(255,255,255,0.02)', borderRadius: 2, border: '1px dashed rgba(184,148,46,0.2)' }}>
         <Typography variant="subtitle2" sx={{ color: '#6B7280', mb: 0.5 }}>📋 Em preparação</Typography>
-        <Typography variant="body2" sx={{ color: '#4B5563' }}>Histórico/simulação legada. A participação real do Gestor v1.2 é reconhecida pelo Wallet V2 e depende de Ativação Financeira/assignment elegível.</Typography>
+        <Typography variant="body2" sx={{ color: '#4B5563' }}>
+          Histórico e simulação legada. O reconhecimento financeiro do Gestor Territorial ocorre pelo Wallet V2, depende de Ativação Financeira, assignment elegível, Área de Sombra e settlement. As regras percentuais desta tela permanecem apenas para fins históricos e de simulação.
+        </Typography>
       </Box>
 
       {/* Modal criar regra */}
