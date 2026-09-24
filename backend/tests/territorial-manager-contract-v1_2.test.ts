@@ -18,8 +18,10 @@ const baseInput: TerritorialManagerContractInput = {
     id: 'territory-123',
     name: 'Zona Teste',
     cityUf: 'Rio de Janeiro/RJ',
-    version: '2026-09-24T14:00:00.000Z',
+    version: 'sha256:test-version',
     neighborhoods: ['Bairro A', 'Bairro B'],
+    assignmentId: 'assignment-123',
+    assignmentStatus: 'pending_approval',
   },
   generatedAt: '2026-09-24T14:00:00.000Z',
 };
@@ -64,8 +66,10 @@ describe('territorial manager contract v1.2', () => {
   it('identifies territory id, version and neighborhoods in the territorial annex', () => {
     const text = allText();
     expect(text).toContain('Territory ID: territory-123');
-    expect(text).toContain('Versão territorial: 2026-09-24T14:00:00.000Z');
+    expect(text).toContain('Versão territorial: sha256:test-version');
     expect(text).toContain('Bairro A, Bairro B');
+    expect(text).toContain('Manager Assignment ID: assignment-123');
+    expect(text).toContain('Manager Assignment Status na geração: pending_approval');
   });
 
   it('builds deterministic territory snapshot versions', () => {
