@@ -58,7 +58,7 @@ describe('admin institutional inbox trash lifecycle', () => {
     const res = await request(app).get('/api/admin/inbound-emails');
     expect(res.status).toBe(200);
     expect(prismaMock.inbound_email_messages.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ status: { in: ['NEW', 'READ', 'ARCHIVED'] } }),
+      where: expect.objectContaining({ status: { in: ['NEW', 'READ'] } }),
     }));
   });
 
