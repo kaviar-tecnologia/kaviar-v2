@@ -148,6 +148,31 @@ router.patch('/operators/:id', async (req: Request, res: Response) => {
 
     const { document_status, contract_status, is_active, rejected_reason, ...fields } = req.body;
     const updates: any = {};
+    const isTerritorialManager = existing.relationship_type === 'territorial_manager';
+
+    if (isTerritorialManager) {
+      if (contract_status === 'not_required') {
+        return res.status(409).json({
+          success: false,
+          error: 'Gestor Territorial exige Contrato de Parceria Operacional Territorial v1.2; contrato não pode ser dispensado.',
+          required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
+        });
+      }
+      if (contract_status === 'signed') {
+        return res.status(409).json({
+          success: false,
+          error: 'Contrato de Gestor Territorial não pode ser marcado como assinado por atualização manual. Use o fluxo formal v1.2 de submissão e revisão.',
+          required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
+        });
+      }
+      if (Object.prototype.hasOwnProperty.call(fields, 'terms_version')) {
+        return res.status(409).json({
+          success: false,
+          error: 'A versão contratual do Gestor Territorial é controlada pelo fluxo canônico v1.2 e não pode ser alterada manualmente.',
+          required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
+        });
+      }
+    }
 
     // Field updates
     for (const [k, v] of Object.entries(fields)) {
@@ -172,7 +197,18 @@ router.patch('/operators/:id', async (req: Request, res: Response) => {
     if (is_active === true) {
       if ((updates.document_status || existing.document_status) !== 'verified') return res.status(400).json({ success: false, error: 'Operador precisa estar verificado para ser ativado' });
       const cs = updates.contract_status || existing.contract_status;
-      if (cs !== 'signed' && cs !== 'not_required') return res.status(400).json({ success: false, error: 'Contrato precisa estar assinado ou dispensado' });
+      if (isTerritorialManager) {
+        const version = existing.terms_version || null;
+        if (cs !== 'signed' || version !== TERRITORIAL_MANAGER_CONTRACT_VERSION || !existing.contract_url) {
+          return res.status(409).json({
+            success: false,
+            error: 'Gestor Territorial só pode ser ativado após contrato formal v1.2 aprovado e PDF vinculado.',
+            required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
+          });
+        }
+      } else if (cs !== 'signed' && cs !== 'not_required') {
+        return res.status(400).json({ success: false, error: 'Contrato precisa estar assinado ou dispensado' });
+      }
       if (!existing.pix_key && !updates.pix_key) return res.status(400).json({ success: false, error: 'Pix obrigatório para ativar operador' });
       // Terms validation
       if (!existing.responsibility_terms_accepted_at && !updates.responsibility_terms_accepted_at) return res.status(400).json({ success: false, error: 'Termo de responsabilidade obrigatório para ativar operador' });
@@ -409,6 +445,13 @@ router.post('/operators/:id/contract', uploadContract.single('file'), async (req
   try {
     const operator = await prisma.operator_profiles.findUnique({ where: { id: req.params.id } });
     if (!operator) return res.status(404).json({ success: false, error: 'Operador não encontrado' });
+    if (operator.relationship_type === 'territorial_manager') {
+      return res.status(409).json({
+        success: false,
+        error: 'Gestor Territorial deve usar o fluxo formal v1.2 de submissão e revisão; upload direto de contrato não é permitido.',
+        required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
+      });
+    }
 
     const file = req.file as any;
     if (!file) return res.status(400).json({ success: false, error: 'Arquivo PDF obrigatório' });
@@ -452,6 +495,13 @@ router.post('/operators/:id/contract-template', uploadContract.single('file'), a
   try {
     const operator = await prisma.operator_profiles.findUnique({ where: { id: req.params.id } });
     if (!operator) return res.status(404).json({ success: false, error: 'Operador não encontrado' });
+    if (operator.relationship_type === 'territorial_manager') {
+      return res.status(409).json({
+        success: false,
+        error: 'Para Gestor Territorial, gere sempre a minuta canônica v1.2 pelo gerador automático; upload manual de modelo não é permitido.',
+        required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
+      });
+    }
 
     const file = req.file as any;
     if (!file) return res.status(400).json({ success: false, error: 'Arquivo PDF obrigatório' });
