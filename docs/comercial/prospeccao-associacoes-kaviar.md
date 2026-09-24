@@ -14,7 +14,7 @@ A parceria com associações é **sem cobrança inicial**. Não há taxa de ativ
 
 A associação pode apoiar a divulgação, confiança local e organização da demanda. Eventuais benefícios, bonificações ou parcerias comerciais futuras dependem de contrato específico, apuração e validação da central KAVIAR/KAVIAR.
 
-> Este modelo é diferente do Gestor Fundador de Bairro (que possui taxa de ativação e termo operacional próprio).
+> Este modelo é diferente do Gestor Territorial. Na política atual, não há taxa obrigatória de ativação para o Gestor; eventual piloto/pré-ativação e a formalização contratual seguem documentos próprios.
 
 ---
 
