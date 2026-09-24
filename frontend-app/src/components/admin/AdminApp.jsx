@@ -19,6 +19,7 @@ import ExecutiveOperations from "../../pages/admin/ExecutiveOperations";
 import EmergencyEvents from "../../pages/admin/EmergencyEvents";
 import MatchMonitor from "../../pages/admin/MatchMonitor";
 import CommunitiesManagement from "../../pages/admin/CommunitiesManagement";
+import CommunityLeadersPanel from "../../pages/admin/CommunityLeadersPanel";
 import NeighborhoodsManagement from "../../pages/admin/NeighborhoodsManagement";
 import NeighborhoodsByCity from "../../pages/admin/NeighborhoodsByCity";
 import DriversManagement from "../../pages/admin/DriversManagement";
@@ -798,6 +799,14 @@ export default function AdminApp() {
               <Container maxWidth="lg" sx={{ mt: 2 }}>
                 <AdminHeader />
                 <CommunitiesManagement />
+              </Container>
+            </ProtectedAdminRoute>
+          } />
+          <Route path="/community-leaders" element={
+            <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'OPERATOR', 'TERRITORIAL_MANAGER', 'TERRITORIAL_OPERATOR']}>
+              <Container maxWidth="lg" sx={{ mt: 2 }}>
+                <AdminHeader />
+                <CommunityLeadersPanel />
               </Container>
             </ProtectedAdminRoute>
           } />
