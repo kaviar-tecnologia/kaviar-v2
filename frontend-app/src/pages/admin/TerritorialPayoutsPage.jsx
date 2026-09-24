@@ -566,14 +566,14 @@ export default function TerritorialPayoutsPage() {
   return (
     <Box>
       <Typography variant="h5" sx={{ color: '#C8A84E', fontWeight: 800, mb: 1 }}>💰 Repasses Territoriais</Typography>
-      <Alert severity="warning" sx={{ mb: 2, bgcolor: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.3)' }}>Repasse manual. O sistema não faz Pix automático, split, saque ou pagamento automático.</Alert>
-      <Alert severity="info" sx={{ mb: 3, bgcolor: 'rgba(37,99,235,0.05)', border: '1px solid rgba(37,99,235,0.2)' }}>Este registro não substitui orientação contábil, contrato ou obrigação fiscal. Consulte o contador antes de repasses recorrentes.</Alert>
+      <Alert severity="warning" sx={{ mb: 2, bgcolor: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.3)' }}>Gestor Territorial v1.2 usa exclusivamente Wallet V2. Registros antigos em territory_payouts são históricos e ficam somente leitura para gestores.</Alert>
+      <Alert severity="info" sx={{ mb: 3, bgcolor: 'rgba(37,99,235,0.05)', border: '1px solid rgba(37,99,235,0.2)' }}>“Perfil Operacional” e “Ativação Financeira” são estados diferentes. Um perfil legado ativo não cria participação econômica sem assignment financeiro elegível.</Alert>
 
       {feedback.open && <Alert severity={feedback.severity} onClose={() => setFeedback({ ...feedback, open: false })} sx={{ mb: 2 }}>{feedback.message}</Alert>}
 
       <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 3, '& .MuiTab-root': { fontWeight: 600, color: '#9CA3AF' }, '& .Mui-selected': { color: '#C8A84E !important' }, '& .MuiTabs-indicator': { bgcolor: '#B8942E' } }}>
         <Tab label={`Gestores/Operadores (${operators.length})`} />
-        <Tab label={`Repasses (${payouts.length})`} />
+        <Tab label={`Repasses legados (${payouts.length})`} />
         <Tab label="Contratos pendentes" />
       </Tabs>
 
@@ -584,27 +584,36 @@ export default function TerritorialPayoutsPage() {
           </Box>
           <TableContainer component={Paper} sx={{ border: '1px solid #E8E5DE' }}>
             <Table size="small">
-              <TableHead><TableRow sx={{ bgcolor: '#FAFAF8' }}><TableCell sx={{ fontWeight: 700 }}>Nome</TableCell><TableCell>Tipo</TableCell><TableCell>Território</TableCell><TableCell>Pix</TableCell><TableCell>Doc</TableCell><TableCell>Contrato</TableCell><TableCell>Ativo</TableCell><TableCell>Ações</TableCell></TableRow></TableHead>
+              <TableHead><TableRow sx={{ bgcolor: '#FAFAF8' }}><TableCell sx={{ fontWeight: 700 }}>Nome</TableCell><TableCell>Vínculo</TableCell><TableCell>Território</TableCell><TableCell>Pix</TableCell><TableCell>Docs</TableCell><TableCell>Contrato</TableCell><TableCell>Perfil Operacional</TableCell><TableCell>Ativação Financeira</TableCell><TableCell>Ações</TableCell></TableRow></TableHead>
               <TableBody>
-                {operators.map(o => (
+                {operators.map(o => {
+                  const isManager = o.relationship_type === 'territorial_manager';
+                  const contractLabel = isManager ? (o.contract_v1_2?.label || 'v1.2 pendente') : o.contract_status;
+                  const contractColor = isManager
+                    ? (o.contract_v1_2?.key === 'formalized' ? 'success' : o.contract_v1_2?.key === 'legacy_inconsistent' ? 'warning' : o.contract_v1_2?.key === 'available' || o.contract_v1_2?.key === 'in_review' ? 'info' : 'default')
+                    : 'default';
+                  const operationalLabel = o.legacy_operational_state === 'active_legacy' ? 'Ativo legado' : (o.is_active ? 'Ativo' : 'Inativo');
+                  const operationalColor = o.legacy_operational_state === 'active_legacy' ? 'warning' : (o.is_active ? 'success' : 'default');
+                  return (
                   <TableRow key={o.id}>
                     <TableCell sx={{ fontWeight: 600 }}>{o.display_name}</TableCell>
-                    <TableCell><Chip label={RECIPIENT_LABELS[o.recipient_type]} size="small" /></TableCell>
+                    <TableCell><Chip label={isManager ? 'Gestor Territorial' : 'Operador Territorial'} size="small" color={isManager ? 'primary' : 'default'} /></TableCell>
                     <TableCell>{o.territory?.name}</TableCell>
                     <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{o.pix_key || '—'}</TableCell>
-                    <TableCell><Chip label={o.document_status} size="small" sx={{ color: STATUS_COLORS[o.document_status], bgcolor: `${STATUS_COLORS[o.document_status]}15` }} /></TableCell>
-                    <TableCell><Chip label={o.contract_status} size="small" /></TableCell>
-                    <TableCell><Chip label={o.is_active ? 'Ativo' : 'Inativo'} size="small" color={o.is_active ? 'success' : 'default'} /></TableCell>
+                    <TableCell><Chip label={o.document_status === 'verified' ? 'Verificados' : o.document_status === 'pending' ? 'Pendentes' : 'Rejeitados'} size="small" color={o.document_status === 'verified' ? 'success' : o.document_status === 'rejected' ? 'error' : 'warning'} /></TableCell>
+                    <TableCell><Chip label={contractLabel} size="small" color={contractColor} /></TableCell>
+                    <TableCell><Chip label={operationalLabel} size="small" color={operationalColor} /></TableCell>
+                    <TableCell>{isManager ? <Chip label={o.financial_activation?.label || 'Não ativa'} size="small" color={o.financial_activation?.active ? 'success' : o.financial_activation?.key === 'suspended' ? 'warning' : 'default'} /> : '—'}</TableCell>
                     <TableCell sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                       <Button size="small" onClick={() => openDetailModal(o)} sx={{ color: '#6B7280' }}>Detalhes</Button>
                       {o.document_status === 'pending' && <Button size="small" onClick={() => openVerifyModal(o)} sx={{ color: '#059669' }}>Verificar</Button>}
-                      {o.document_status === 'verified' && !o.is_active && <Button size="small" onClick={() => handleActivate(o.id)} sx={{ color: '#2563EB' }}>Ativar</Button>}
-                      {o.is_active && !o.responsibility_terms_accepted_at && <Button size="small" onClick={() => openVerifyModal(o)} sx={{ color: '#D97706' }}>Regularizar Termos</Button>}
-                      {o.is_active && <Button size="small" onClick={() => handleDeactivate(o.id)} sx={{ color: '#DC2626' }}>Desativar</Button>}
+                      {o.document_status === 'verified' && !o.is_active && (!isManager || o.contract_v1_2?.formalized) && <Button size="small" onClick={() => handleActivate(o.id)} sx={{ color: '#2563EB' }}>Ativar perfil</Button>}
+                      {!isManager && o.is_active && !o.responsibility_terms_accepted_at && <Button size="small" onClick={() => openVerifyModal(o)} sx={{ color: '#D97706' }}>Regularizar Termos</Button>}
+                      {o.is_active && <Button size="small" onClick={() => handleDeactivate(o.id)} sx={{ color: '#DC2626' }}>Desativar perfil</Button>}
                     </TableCell>
                   </TableRow>
-                ))}
-                {!operators.length && <TableRow><TableCell colSpan={8} sx={{ textAlign: 'center', color: '#6B7280', py: 4 }}>Nenhum gestor/operador cadastrado</TableCell></TableRow>}
+                )})}
+                {!operators.length && <TableRow><TableCell colSpan={9} sx={{ textAlign: 'center', color: '#6B7280', py: 4 }}>Nenhum gestor/operador cadastrado</TableCell></TableRow>}
               </TableBody>
             </Table>
           </TableContainer>
@@ -613,8 +622,9 @@ export default function TerritorialPayoutsPage() {
 
       {tab === 1 && (
         <Box>
+          <Alert severity="info" sx={{ mb: 2 }}>Esta aba preserva o histórico do motor legado. Para Gestor Territorial, as linhas são somente leitura; novos ciclos e pagamentos usam Wallet V2.</Alert>
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-            <Button variant="contained" onClick={() => setCalcOpen(true)} sx={{ bgcolor: '#B8942E', '&:hover': { bgcolor: '#9A7B24' } }}>Calcular Repasse</Button>
+            <Button variant="contained" disabled={legacyEligibleTerritories.length === 0} onClick={() => setCalcOpen(true)} sx={{ bgcolor: '#B8942E', '&:hover': { bgcolor: '#9A7B24' } }}>{legacyEligibleTerritories.length ? 'Calcular repasse legado de operador' : 'Sem operador legado elegível'}</Button>
           </Box>
           <TableContainer component={Paper} sx={{ border: '1px solid #E8E5DE' }}>
             <Table size="small">
@@ -629,10 +639,16 @@ export default function TerritorialPayoutsPage() {
                     <TableCell>{p.approved_amount ? `R$ ${Number(p.approved_amount).toFixed(2)}` : '—'}</TableCell>
                     <TableCell><Chip label={p.status} size="small" sx={{ color: STATUS_COLORS[p.status], bgcolor: `${STATUS_COLORS[p.status]}15`, fontWeight: 600 }} /></TableCell>
                     <TableCell>{p.fiscal_document_required ? <Chip label="Exige doc" size="small" color="warning" /> : '—'}</TableCell>
-                    <TableCell sx={{ display: 'flex', gap: 0.5 }}>
-                      {(p.status === 'calculated' || p.status === 'requested') && <Button size="small" onClick={() => handleApprove(p.id)} sx={{ color: '#2563EB' }}>Aprovar</Button>}
-                      {p.status === 'approved' && <Button size="small" onClick={() => { setPayTarget(p); setPayOpen(true); }} sx={{ color: '#059669' }}>Pagar</Button>}
-                      {(p.status === 'calculated' || p.status === 'approved') && <Button size="small" color="error" onClick={() => handleCancel(p.id)}>Cancelar</Button>}
+                    <TableCell sx={{ display: 'flex', gap: 0.5, alignItems: 'center', flexWrap: 'wrap' }}>
+                      {p.legacy_read_only ? (
+                        <Chip label="Histórico legado — somente leitura" size="small" color="warning" />
+                      ) : (
+                        <>
+                          {(p.status === 'calculated' || p.status === 'requested') && <Button size="small" onClick={() => handleApprove(p.id)} sx={{ color: '#2563EB' }}>Aprovar</Button>}
+                          {p.status === 'approved' && <Button size="small" onClick={() => { setPayTarget(p); setPayOpen(true); }} sx={{ color: '#059669' }}>Pagar</Button>}
+                          {(p.status === 'calculated' || p.status === 'approved') && <Button size="small" color="error" onClick={() => handleCancel(p.id)}>Cancelar</Button>}
+                        </>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -655,13 +671,20 @@ export default function TerritorialPayoutsPage() {
         <DialogTitle sx={{ color: '#C8A84E', fontWeight: 700 }}>Cadastrar Gestor/Operador Territorial</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1, pb: 4, overflowY: 'auto' }}>
           {opError && <Alert severity="error">{opError}</Alert>}
-          <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Tipo</Typography>
+          <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Vínculo territorial</Typography>
+            <TextField select value={opForm.relationship_type} disabled={Boolean(createdProfileId)} onChange={e => { setOpForm({ ...opForm, relationship_type: e.target.value, admin_id: '' }); setCreatedProfileId(null); }} fullWidth size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }}>
+              <MenuItem value="territorial_manager">Gestor Territorial — contrato v1.2 / Wallet V2</MenuItem>
+              <MenuItem value="territorial_operator">Operador Territorial — fluxo operacional legado</MenuItem>
+            </TextField>
+            {opForm.relationship_type === 'territorial_manager' && <Alert severity="info" sx={{ mt: 1, '& .MuiAlert-message': { fontSize: 11 } }}>Novo Gestor nasce com perfil inativo, contrato v1.2 pendente e sem Ativação Financeira automática.</Alert>}
+          </Box>
+          <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Tipo de recebedor</Typography>
             <TextField select value={opForm.recipient_type} onChange={e => setOpForm({ ...opForm, recipient_type: e.target.value })} fullWidth size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }}>
               <MenuItem value="individual">Pessoa Física</MenuItem><MenuItem value="company">Pessoa Jurídica</MenuItem><MenuItem value="association">Associação</MenuItem>
             </TextField></Box>
           <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Território</Typography>
             <TextField select value={opForm.territory_id} onChange={e => setOpForm({ ...opForm, territory_id: e.target.value })} fullWidth size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }}>
-              {territories.map(t => <MenuItem key={t.id} value={t.id}>{t.name} ({t.level})</MenuItem>)}
+              {legacyEligibleTerritories.map(t => <MenuItem key={t.id} value={t.id}>{t.name} ({t.level})</MenuItem>)}
             </TextField></Box>
           <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Nome de exibição</Typography>
             <TextField value={opForm.display_name} onChange={e => setOpForm({ ...opForm, display_name: e.target.value })} fullWidth size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }} /></Box>
@@ -689,16 +712,18 @@ export default function TerritorialPayoutsPage() {
             {!createAccess && (
               <>
                 {loadingAdmins ? <CircularProgress size={20} sx={{ color: '#B8942E' }} /> : (
-                  <TextField select value={opForm.admin_id} onChange={e => setOpForm({ ...opForm, admin_id: e.target.value })} fullWidth size="small" disabled={!opForm.territory_id || territoryAdmins.length === 0} InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }}>
-                    {territoryAdmins.map(a => <MenuItem key={a.id} value={a.id}>{a.name} — {a.email} ({a.role})</MenuItem>)}
+                  <TextField select value={opForm.admin_id} onChange={e => setOpForm({ ...opForm, admin_id: e.target.value })} fullWidth size="small" disabled={!opForm.territory_id || territoryAdmins.length === 0 || Boolean(createdProfileId)} InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }}>
+                    {territoryAdmins
+                      .filter(a => opForm.relationship_type === 'territorial_manager' ? a.role === 'TERRITORIAL_MANAGER' : a.role !== 'TERRITORIAL_MANAGER')
+                      .map(a => <MenuItem key={a.id} value={a.id}>{a.name} — {a.email} ({a.role})</MenuItem>)}
                   </TextField>
                 )}
-                <Button size="small" onClick={() => { setCreateAccess(true); setAccessForm({ name: '', email: '', password: '' }); }} disabled={!opForm.territory_id} sx={{ mt: 1, color: '#C8A84E', textTransform: 'none' }}>+ Criar acesso do operador</Button>
+                <Button size="small" onClick={() => { setCreateAccess(true); setAccessForm({ name: '', email: '', password: '' }); }} disabled={!opForm.territory_id} sx={{ mt: 1, color: '#C8A84E', textTransform: 'none' }}>+ Criar acesso de {opForm.relationship_type === 'territorial_manager' ? 'gestor' : 'operador'}</Button>
               </>
             )}
             {createAccess && (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, p: 1.5, border: '1px solid rgba(184,148,46,0.3)', borderRadius: 1, mt: 0.5 }}>
-                <Typography variant="caption" sx={{ color: '#C8A84E', fontWeight: 600 }}>Criar acesso do operador</Typography>
+                <Typography variant="caption" sx={{ color: '#C8A84E', fontWeight: 600 }}>Criar acesso de {opForm.relationship_type === 'territorial_manager' ? 'Gestor Territorial' : 'Operador Territorial'}</Typography>
                 <TextField size="small" placeholder="Nome" value={accessForm.name} onChange={e => setAccessForm({ ...accessForm, name: e.target.value })} InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }} />
                 <TextField size="small" placeholder="E-mail" value={accessForm.email} onChange={e => setAccessForm({ ...accessForm, email: e.target.value })} InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }} />
                 <TextField size="small" placeholder="Senha provisória (min 6)" type="password" value={accessForm.password} onChange={e => setAccessForm({ ...accessForm, password: e.target.value })} InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }} />
@@ -717,9 +742,10 @@ export default function TerritorialPayoutsPage() {
 
       {/* Modal Calcular Repasse */}
       <Dialog open={calcOpen} onClose={() => setCalcOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { bgcolor: '#1A1A24', color: '#E5E7EB' } }}>
-        <DialogTitle sx={{ color: '#C8A84E', fontWeight: 700 }}>Calcular Repasse</DialogTitle>
+        <DialogTitle sx={{ color: '#C8A84E', fontWeight: 700 }}>Calcular Repasse Legado de Operador</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
           {calcError && <Alert severity="error">{calcError}</Alert>}
+          <Alert severity="warning" sx={{ '& .MuiAlert-message': { fontSize: 11 } }}>Este cálculo existe apenas para Operador Territorial e competências legadas. Gestor Territorial usa Wallet V2.</Alert>
           <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Território</Typography>
             <TextField select value={calcForm.territory_id} onChange={e => setCalcForm({ ...calcForm, territory_id: e.target.value })} fullWidth size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }}>
               {territories.map(t => <MenuItem key={t.id} value={t.id}>{t.name} ({t.level})</MenuItem>)}
