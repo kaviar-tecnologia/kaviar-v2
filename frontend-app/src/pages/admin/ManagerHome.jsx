@@ -303,9 +303,14 @@ export default function ManagerHome() {
             { Icon: Description, title: 'Tabela de Preços', desc: 'Pisos mínimos e propostas', to: '/admin/manager-territory-floors' },
             { Icon: Star, title: 'Reputação', desc: 'Avaliações dos motoristas', to: '/admin/manager-reputation' },
             { Icon: Pets, title: 'KAVIAR Pet', desc: 'Pedidos Pet assistidos', to: '/admin/private-rides' },
+<<<<<<< HEAD
             { Icon: PersonAdd, title: 'Meu Cadastro', desc: 'Informe CPF e endereço para a minuta v1.2', to: '/admin/meu-cadastro' },
             { Icon: Description, title: 'Meu Contrato', desc: 'Contrato v1.2 e ativação', to: '/admin/meu-contrato' },
             { Icon: Description, title: 'Materiais do Gestor', desc: 'Proposta, piloto pré-ativação e FAQ', to: '/admin/comercial-gestor' },
+=======
+            { Icon: Description, title: 'Meu Contrato', desc: 'Contrato v1.2 e Ativação Financeira', to: '/admin/meu-contrato' },
+            { Icon: Description, title: 'Materiais do Gestor', desc: 'Proposta v1.2, piloto pré-contratual e FAQ', to: '/admin/comercial-gestor' },
+>>>>>>> e9d58a11 (fix(frontend): refresh manager dashboard contract cards)
             { Icon: AddBusiness, title: 'CRM KAVIAR', desc: 'Leads, prospecção e comércios locais', to: '/admin/crm' },
             { Icon: Description, title: 'Consulta Regulatória Municipal', desc: 'Documento institucional e envio via WhatsApp oficial', to: '/admin/regulatory-consultation' },
             { Icon: Storefront, title: 'Comércios do Território', desc: 'Cadastre, organize e acompanhe os negócios locais', to: '/admin/commerce' },
