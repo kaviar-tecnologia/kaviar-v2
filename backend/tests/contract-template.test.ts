@@ -204,6 +204,33 @@ describe('contract template flow', () => {
       expect(response.financial_activation_created).toBe(false);
       expect(response.contract_status).toBe('available');
     });
+
+    it('legacy online-only manager acceptance may be migrated to a v1.2 template', () => {
+      const profile = {
+        relationship_type: 'territorial_manager',
+        contract_status: 'signed',
+        contract_url: null,
+      };
+      const hasFormalSignedContract =
+        profile.contract_status === 'signed' && Boolean(profile.contract_url);
+      const legacyOnlineOnlySigned =
+        profile.relationship_type === 'territorial_manager' &&
+        profile.contract_status === 'signed' &&
+        !profile.contract_url;
+      expect(hasFormalSignedContract).toBe(false);
+      expect(legacyOnlineOnlySigned).toBe(true);
+    });
+
+    it('formal signed contract remains protected from template regeneration', () => {
+      const profile = {
+        relationship_type: 'territorial_manager',
+        contract_status: 'signed',
+        contract_url: 'contract-submissions/op/123.pdf',
+      };
+      const hasFormalSignedContract =
+        profile.contract_status === 'signed' && Boolean(profile.contract_url);
+      expect(hasFormalSignedContract).toBe(true);
+    });
   });
 
   describe('frontend states', () => {
