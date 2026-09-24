@@ -70,6 +70,7 @@ import TerritoryDetailPage from "../../pages/admin/TerritoryDetailPage";
 import RegionalAdminsPage from "../../pages/admin/RegionalAdminsPage";
 import TerritorialPayoutsPage from "../../pages/admin/TerritorialPayoutsPage";
 import LegalCompliancePage from "../../pages/admin/LegalCompliancePage";
+import ComplianceManagement from "../../pages/admin/ComplianceManagement";
 import ComercialGestorPage from "../../pages/admin/ComercialGestorPage";
 import CrmPage from "../../pages/admin/CrmPage";
 import RegulatoryConsultationPage from "../../pages/admin/RegulatoryConsultationPage";
@@ -504,6 +505,7 @@ function AdminHome() {
                 { Icon: Lock, title: 'Auditoria', desc: 'Logs e ações administrativas', to: '/admin/audit' },
                 { Icon: Security, title: 'Feature Flags', desc: 'Controle de funcionalidades e allowlists', to: '/admin/feature-flags' },
                 { Icon: Shield, title: 'Conformidade', desc: 'Documentos jurídicos e operacionais', to: '/admin/legal-compliance' },
+                { Icon: CheckCircle, title: 'Compliance Operacional', desc: 'Documentos de compliance e revalidação de motoristas', to: '/admin/compliance-operacional' },
                 { Icon: Science, title: 'KAVIAR Lab', desc: 'Inteligência territorial · Score de Maturidade', to: '/admin/lab' },
                 { Icon: Person, title: 'Preferência por Motorista Mulher', desc: 'Participantes, consentimentos e auditoria', to: '/admin/women-preference' },
                 { Icon: CardGiftcard, title: 'Convites Investidor/Anjo', desc: 'Enviar convites read-only', to: '/admin/investor-invites' },
@@ -1110,6 +1112,7 @@ export default function AdminApp() {
           <Route path="/regional-admins" element={<ProtectedAdminRoute requireSuperAdmin><RegionalAdminsPage /></ProtectedAdminRoute>} />
           <Route path="/territorial-payouts" element={<ProtectedAdminRoute requireSuperAdmin><TerritorialPayoutsPage /></ProtectedAdminRoute>} />
           <Route path="/legal-compliance" element={<ProtectedAdminRoute requireSuperAdmin><LegalCompliancePage /></ProtectedAdminRoute>} />
+          <Route path="/compliance-operacional" element={<ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'TERRITORIAL_MANAGER', 'TERRITORIAL_OPERATOR']}><ComplianceManagement /></ProtectedAdminRoute>} />
           <Route path="/meu-contrato" element={<ProtectedAdminRoute allowedRoles={['TERRITORIAL_OPERATOR', 'TERRITORIAL_MANAGER', 'SUPER_ADMIN']}><MyContractPage /></ProtectedAdminRoute>} />
           <Route path="/manager-finance" element={<ProtectedAdminRoute allowedRoles={['TERRITORIAL_MANAGER', 'SUPER_ADMIN']}><ManagerFinance /></ProtectedAdminRoute>} />
           <Route path="/manager-team" element={<ProtectedAdminRoute allowedRoles={['TERRITORIAL_MANAGER', 'SUPER_ADMIN']}><ManagerTeamPage /></ProtectedAdminRoute>} />
