@@ -100,13 +100,15 @@ export class WalletSettlementService {
 
       if (params.territoryId) {
         const { rows: assignments } = await client.query(
-          `SELECT id, admin_id
-           FROM territory_manager_assignments
-           WHERE territory_id = $1
-             AND status = 'active'
-             AND started_at <= $2
-             AND (ended_at IS NULL OR ended_at > $2)
-           FOR SHARE`,
+          `SELECT tma.id, tma.admin_id
+           FROM territory_manager_assignments tma
+           JOIN admins a ON a.id = tma.admin_id
+           WHERE tma.territory_id = $1
+             AND tma.status = 'active'
+             AND a.is_active = true
+             AND tma.started_at <= $2
+             AND (tma.ended_at IS NULL OR tma.ended_at > $2)
+           FOR SHARE OF tma`,
           [params.territoryId, recognizedAt]
         );
 
