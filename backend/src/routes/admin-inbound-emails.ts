@@ -27,12 +27,24 @@ const INBOUND_STATUSES = {
   NEW: 'NEW',
   READ: 'READ',
   ARCHIVED: 'ARCHIVED',
+  TRASHED: 'TRASHED',
+  DELETING: 'DELETING',
 } as const;
+
+const RESTORABLE_STATUSES = new Set<string>([
+  INBOUND_STATUSES.NEW,
+  INBOUND_STATUSES.READ,
+  INBOUND_STATUSES.ARCHIVED,
+]);
 
 type InboundStatus = typeof INBOUND_STATUSES[keyof typeof INBOUND_STATUSES];
 
 const patchStatusSchema = z.object({
   status: z.enum(['NEW', 'READ', 'ARCHIVED']),
+});
+
+const emptyTrashSchema = z.object({
+  confirmation: z.literal('EMPTY_TRASH'),
 });
 
 const replyInboundEmailSchema = z.object({
@@ -44,7 +56,12 @@ const replyInboundEmailSchema = z.object({
 function normalizeStatus(raw: unknown): InboundStatus | null {
   if (typeof raw !== 'string') return null;
   const status = raw.trim().toUpperCase();
-  if (status === INBOUND_STATUSES.NEW || status === INBOUND_STATUSES.READ || status === INBOUND_STATUSES.ARCHIVED) {
+  if (
+    status === INBOUND_STATUSES.NEW ||
+    status === INBOUND_STATUSES.READ ||
+    status === INBOUND_STATUSES.ARCHIVED ||
+    status === INBOUND_STATUSES.TRASHED
+  ) {
     return status;
   }
   return null;
@@ -54,6 +71,25 @@ function normalizeOptionalText(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+function buildBodyPreview(item: any): string {
+  const source = typeof item?.normalized_body === 'string'
+    ? item.normalized_body
+    : (typeof item?.text_body === 'string' ? item.text_body : '');
+  return source.replace(/\\s+/g, ' ').trim().slice(0, 180);
+}
+
+function auditSnapshot(item: any) {
+  return {
+    id: item?.id || null,
+    received_at: item?.received_at || null,
+    from_email: item?.from_email || null,
+    to_email: item?.to_email || null,
+    subject: item?.subject || null,
+    message_id: item?.message_id || null,
+    status: item?.status || null,
+  };
 }
 
 function isInboundTableMissing(error: unknown): boolean {
@@ -95,6 +131,10 @@ function serializeInboundEmail(item: any) {
     references_header: item.references_header,
     provider: item.provider,
     status: item.status,
+    status_before_trash: item.status_before_trash || null,
+    trashed_at: item.trashed_at || null,
+    trashed_by_admin_id: item.trashed_by_admin_id || null,
+    preview: buildBodyPreview(item),
     has_attachments: item.has_attachments,
     attachment_count: item.attachment_count,
     attachments: Array.isArray(item.attachments)
@@ -123,6 +163,10 @@ function serializeInboundListItem(item: any) {
     to_email: item.to_email,
     subject: item.subject,
     status: item.status,
+    status_before_trash: item.status_before_trash || null,
+    trashed_at: item.trashed_at || null,
+    trashed_by_admin_id: item.trashed_by_admin_id || null,
+    preview: buildBodyPreview(item),
     provider: item.provider,
     has_attachments: item.has_attachments,
     attachment_count: item.attachment_count,
@@ -152,10 +196,12 @@ router.get('/', async (req: Request, res: Response) => {
 
     const status = normalizeStatus(req.query.status);
     if (req.query.status && !status) {
-      return res.status(400).json({ success: false, error: 'Filtro status invalido. Use NEW, READ ou ARCHIVED.' });
+      return res.status(400).json({ success: false, error: 'Filtro status invalido. Use NEW, READ, ARCHIVED ou TRASHED.' });
     }
     if (status) {
       where.status = status;
+    } else {
+      where.status = { in: [INBOUND_STATUSES.NEW, INBOUND_STATUSES.READ, INBOUND_STATUSES.ARCHIVED] };
     }
 
     if (req.query.to) {
@@ -206,6 +252,9 @@ router.get('/', async (req: Request, res: Response) => {
           to_email: true,
           subject: true,
           status: true,
+          status_before_trash: true,
+          trashed_at: true,
+          trashed_by_admin_id: true,
           provider: true,
           has_attachments: true,
           attachment_count: true,
@@ -307,28 +356,171 @@ router.patch('/:id', async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id || '');
     const parsed = patchStatusSchema.parse(req.body || {});
+    const current = await prisma.inbound_email_messages.findUnique({ where: { id } });
 
-    const updated = await prisma.inbound_email_messages.update({
-      where: { id },
-      data: { status: parsed.status },
-    });
+    if (!current) return res.status(404).json({ success: false, error: 'Email inbound nao encontrado.' });
+    if (current.status === INBOUND_STATUSES.TRASHED || current.status === INBOUND_STATUSES.DELETING) {
+      return res.status(409).json({ success: false, error: 'Use Restaurar para retirar um email da lixeira.' });
+    }
 
+    const updated = await prisma.inbound_email_messages.update({ where: { id }, data: { status: parsed.status } });
+    if (current.status !== parsed.status) {
+      const ctx = auditCtx(req as any);
+      await writeAuditSafely({
+        adminId: ctx.adminId, adminEmail: ctx.adminEmail, action: 'INBOUND_EMAIL_STATUS_CHANGED',
+        entityType: 'inbound_email_message', entityId: id,
+        oldValue: auditSnapshot(current), newValue: auditSnapshot(updated), ipAddress: ctx.ip, userAgent: ctx.ua,
+      });
+    }
     return res.json({ success: true, data: serializeInboundEmail(updated) });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ success: false, error: error.errors[0]?.message || 'Payload invalido.' });
-    }
-
-    if ((error as any)?.code === 'P2025') {
-      return res.status(404).json({ success: false, error: 'Email inbound nao encontrado.' });
-    }
-
-    if (isInboundTableMissing(error)) {
-      return res.status(503).json({ success: false, error: 'Inbox indisponivel ate aplicar migration.' });
-    }
-
+    if (error instanceof z.ZodError) return res.status(400).json({ success: false, error: error.errors[0]?.message || 'Payload invalido.' });
+    if ((error as any)?.code === 'P2025') return res.status(404).json({ success: false, error: 'Email inbound nao encontrado.' });
+    if (isInboundTableMissing(error)) return res.status(503).json({ success: false, error: 'Inbox indisponivel ate aplicar migration.' });
     console.error('[ADMIN_INBOUND_EMAILS_PATCH_ERROR]', error);
     return res.status(500).json({ success: false, error: 'Erro ao atualizar status do email inbound.' });
+  }
+});
+
+router.post('/:id/trash', async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id || '');
+    const current = await prisma.inbound_email_messages.findUnique({ where: { id } });
+    if (!current) return res.status(404).json({ success: false, error: 'Email inbound nao encontrado.' });
+    if (current.status === INBOUND_STATUSES.DELETING) return res.status(409).json({ success: false, error: 'Email esta em processo de exclusao definitiva.' });
+    if (current.status === INBOUND_STATUSES.TRASHED) return res.json({ success: true, data: serializeInboundEmail(current) });
+
+    const ctx = auditCtx(req as any);
+    const previousStatus = RESTORABLE_STATUSES.has(current.status) ? current.status : INBOUND_STATUSES.READ;
+    const updated = await prisma.inbound_email_messages.update({
+      where: { id },
+      data: { status: INBOUND_STATUSES.TRASHED, status_before_trash: previousStatus, trashed_at: new Date(), trashed_by_admin_id: ctx.adminId },
+    });
+    await writeAuditSafely({
+      adminId: ctx.adminId, adminEmail: ctx.adminEmail, action: 'INBOUND_EMAIL_TRASHED',
+      entityType: 'inbound_email_message', entityId: id,
+      oldValue: auditSnapshot(current), newValue: auditSnapshot(updated), ipAddress: ctx.ip, userAgent: ctx.ua,
+    });
+    return res.json({ success: true, data: serializeInboundEmail(updated) });
+  } catch (error) {
+    console.error('[ADMIN_INBOUND_EMAILS_TRASH_ERROR]', error);
+    return res.status(500).json({ success: false, error: 'Erro ao mover email para a lixeira.' });
+  }
+});
+
+router.post('/:id/restore', async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id || '');
+    const current = await prisma.inbound_email_messages.findUnique({ where: { id } });
+    if (!current) return res.status(404).json({ success: false, error: 'Email inbound nao encontrado.' });
+    if (current.status !== INBOUND_STATUSES.TRASHED) return res.status(409).json({ success: false, error: 'Somente emails na lixeira podem ser restaurados.' });
+
+    const restoredStatus = RESTORABLE_STATUSES.has(String(current.status_before_trash || '')) ? current.status_before_trash : INBOUND_STATUSES.READ;
+    const updated = await prisma.inbound_email_messages.update({
+      where: { id },
+      data: { status: restoredStatus, status_before_trash: null, trashed_at: null, trashed_by_admin_id: null },
+    });
+    const ctx = auditCtx(req as any);
+    await writeAuditSafely({
+      adminId: ctx.adminId, adminEmail: ctx.adminEmail, action: 'INBOUND_EMAIL_RESTORED',
+      entityType: 'inbound_email_message', entityId: id,
+      oldValue: auditSnapshot(current), newValue: auditSnapshot(updated), ipAddress: ctx.ip, userAgent: ctx.ua,
+    });
+    return res.json({ success: true, data: serializeInboundEmail(updated) });
+  } catch (error) {
+    console.error('[ADMIN_INBOUND_EMAILS_RESTORE_ERROR]', error);
+    return res.status(500).json({ success: false, error: 'Erro ao restaurar email da lixeira.' });
+  }
+});
+
+async function permanentlyDeleteTrashedEmail(id: string, req: Request) {
+  const current = await prisma.inbound_email_messages.findUnique({ where: { id } });
+  if (!current) return { kind: 'not_found' as const };
+  if (current.status !== INBOUND_STATUSES.TRASHED) return { kind: 'not_trashed' as const };
+
+  const claim = await prisma.inbound_email_messages.updateMany({
+    where: { id, status: INBOUND_STATUSES.TRASHED },
+    data: { status: INBOUND_STATUSES.DELETING },
+  });
+  if (claim.count !== 1) return { kind: 'conflict' as const };
+
+  try {
+    const storageResult = await inboundEmailAttachmentsService.deleteForMessage(id);
+    await prisma.inbound_email_messages.delete({ where: { id } });
+    const ctx = auditCtx(req as any);
+    await writeAuditSafely({
+      adminId: ctx.adminId, adminEmail: ctx.adminEmail, action: 'INBOUND_EMAIL_PERMANENTLY_DELETED',
+      entityType: 'inbound_email_message', entityId: id,
+      oldValue: auditSnapshot(current), newValue: { deleted: true, deleted_attachment_objects: storageResult.deletedObjects },
+      ipAddress: ctx.ip, userAgent: ctx.ua,
+    });
+    return { kind: 'deleted' as const, deletedObjects: storageResult.deletedObjects };
+  } catch (error) {
+    try {
+      await prisma.inbound_email_messages.updateMany({
+        where: { id, status: INBOUND_STATUSES.DELETING },
+        data: { status: INBOUND_STATUSES.TRASHED },
+      });
+    } catch (rollbackError) {
+      console.error('[ADMIN_INBOUND_EMAIL_DELETE_ROLLBACK_ERROR]', rollbackError);
+    }
+    throw error;
+  }
+}
+
+router.delete('/trash', async (req: Request, res: Response) => {
+  try {
+    emptyTrashSchema.parse(req.body || {});
+    const trashed = await prisma.inbound_email_messages.findMany({
+      where: { status: INBOUND_STATUSES.TRASHED },
+      select: { id: true },
+      orderBy: { trashed_at: 'asc' },
+    });
+    let deleted = 0;
+    let deletedAttachmentObjects = 0;
+    const failedIds: string[] = [];
+
+    for (const item of trashed) {
+      try {
+        const result = await permanentlyDeleteTrashedEmail(item.id, req);
+        if (result.kind === 'deleted') {
+          deleted += 1;
+          deletedAttachmentObjects += result.deletedObjects;
+        } else if (result.kind !== 'not_found') {
+          failedIds.push(item.id);
+        }
+      } catch (error) {
+        console.error('[ADMIN_INBOUND_EMAIL_EMPTY_TRASH_ITEM_ERROR]', { id: item.id, error });
+        failedIds.push(item.id);
+      }
+    }
+
+    if (failedIds.length > 0) {
+      return res.status(500).json({
+        success: false,
+        error: 'A lixeira foi esvaziada parcialmente. Tente novamente para os itens restantes.',
+        data: { deleted, deleted_attachment_objects: deletedAttachmentObjects, failed_count: failedIds.length },
+      });
+    }
+    return res.json({ success: true, data: { deleted, deleted_attachment_objects: deletedAttachmentObjects } });
+  } catch (error) {
+    if (error instanceof z.ZodError) return res.status(400).json({ success: false, error: 'Confirmacao obrigatoria para esvaziar a lixeira.' });
+    console.error('[ADMIN_INBOUND_EMAIL_EMPTY_TRASH_ERROR]', error);
+    return res.status(500).json({ success: false, error: 'Erro ao esvaziar a lixeira.' });
+  }
+});
+
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id || '');
+    const result = await permanentlyDeleteTrashedEmail(id, req);
+    if (result.kind === 'not_found') return res.status(404).json({ success: false, error: 'Email inbound nao encontrado.' });
+    if (result.kind === 'not_trashed') return res.status(409).json({ success: false, error: 'Mova o email para a lixeira antes de excluir definitivamente.' });
+    if (result.kind === 'conflict') return res.status(409).json({ success: false, error: 'O estado do email mudou. Atualize a lixeira e tente novamente.' });
+    return res.json({ success: true, data: { deleted: true, deleted_attachment_objects: result.deletedObjects } });
+  } catch (error) {
+    console.error('[ADMIN_INBOUND_EMAIL_DELETE_ERROR]', error);
+    return res.status(500).json({ success: false, error: 'Erro ao excluir definitivamente o email.' });
   }
 });
 
@@ -348,6 +540,10 @@ router.post('/:id/reply', handleOfficialAttachmentsUpload, async (req: Request, 
 
     if (!inboundEmail) {
       return res.status(404).json({ success: false, error: 'Email inbound nao encontrado.' });
+    }
+
+    if (inboundEmail.status === INBOUND_STATUSES.TRASHED || inboundEmail.status === INBOUND_STATUSES.DELETING) {
+      return res.status(409).json({ success: false, error: 'Restaure o email antes de responder.' });
     }
 
     replyPreview = buildInboundReplyPreview(inboundEmail);
