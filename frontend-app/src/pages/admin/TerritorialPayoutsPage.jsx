@@ -338,12 +338,13 @@ export default function TerritorialPayoutsPage() {
 
   // Operator form
   const [opOpen, setOpOpen] = useState(false);
-  const [opForm, setOpForm] = useState({ admin_id: '', territory_id: '', recipient_type: 'individual', display_name: '', full_name: '', document_cpf: '', company_name: '', document_cnpj: '', legal_representative_name: '', legal_representative_cpf: '', pix_key: '', pix_key_type: 'cpf', email: '', phone: '' });
+  const [opForm, setOpForm] = useState({ admin_id: '', territory_id: '', relationship_type: 'territorial_operator', recipient_type: 'individual', display_name: '', full_name: '', document_cpf: '', company_name: '', document_cnpj: '', legal_representative_name: '', legal_representative_cpf: '', pix_key: '', pix_key_type: 'cpf', email: '', phone: '' });
   const [opSaving, setOpSaving] = useState(false);
   const [opError, setOpError] = useState('');
   const [createAccess, setCreateAccess] = useState(false);
   const [accessForm, setAccessForm] = useState({ name: '', email: '', password: '' });
   const [accessSaving, setAccessSaving] = useState(false);
+  const [createdProfileId, setCreatedProfileId] = useState(null);
 
   // Payout calculate
   const [calcOpen, setCalcOpen] = useState(false);
@@ -418,22 +419,34 @@ export default function TerritorialPayoutsPage() {
   // Operator actions
   const handleCreateOperator = async () => {
     setOpSaving(true); setOpError('');
-    const res = await fetch(`${API_BASE_URL}/api/admin/territorial-payouts/operators`, { method: 'POST', headers, body: JSON.stringify(opForm) });
+    const { admin_id, territory_id, relationship_type, ...profileFields } = opForm;
+    const endpoint = createdProfileId
+      ? `${API_BASE_URL}/api/admin/territorial-payouts/operators/${createdProfileId}`
+      : `${API_BASE_URL}/api/admin/territorial-payouts/operators`;
+    const body = createdProfileId ? profileFields : { ...opForm, relationship_type };
+    const res = await fetch(endpoint, { method: createdProfileId ? 'PATCH' : 'POST', headers, body: JSON.stringify(body) });
     const d = await res.json();
-    if (d.success) { setOpOpen(false); fetchAll(); } else setOpError(d.error);
+    if (d.success) {
+      setOpOpen(false);
+      setCreatedProfileId(null);
+      setOpForm({ admin_id: '', territory_id: '', relationship_type: 'territorial_operator', recipient_type: 'individual', display_name: '', full_name: '', document_cpf: '', company_name: '', document_cnpj: '', legal_representative_name: '', legal_representative_cpf: '', pix_key: '', pix_key_type: 'cpf', email: '', phone: '' });
+      fetchAll();
+    } else setOpError(d.error);
     setOpSaving(false);
   };
 
   const handleCreateAccess = async () => {
     if (!accessForm.name || !accessForm.email || !accessForm.password || !opForm.territory_id) return;
     setAccessSaving(true); setOpError('');
-    const res = await fetch(`${API_BASE_URL}/api/admin/territories/regional-admins`, { method: 'POST', headers, body: JSON.stringify({ name: accessForm.name, email: accessForm.email, password: accessForm.password, territory_id: opForm.territory_id }) });
+    const roleType = opForm.relationship_type === 'territorial_manager' ? 'manager' : 'operator';
+    const res = await fetch(`${API_BASE_URL}/api/admin/territories/regional-admins`, { method: 'POST', headers, body: JSON.stringify({ name: accessForm.name, email: accessForm.email, password: accessForm.password, territory_id: opForm.territory_id, role_type: roleType }) });
     const d = await res.json();
     if (d.success) {
-      setOpForm(f => ({ ...f, admin_id: d.data.id }));
-      setTerritoryAdmins(prev => [...prev, { id: d.data.id, name: d.data.name, email: d.data.email, role: d.data.role || 'TERRITORIAL_OPERATOR', is_active: true }]);
+      setOpForm(f => ({ ...f, admin_id: d.data.id, relationship_type: d.data.relationship_type || f.relationship_type }));
+      setCreatedProfileId(d.data.operator_profile_id || null);
+      setTerritoryAdmins(prev => [...prev, { id: d.data.id, name: d.data.name, email: d.data.email, role: d.data.role || (roleType === 'manager' ? 'TERRITORIAL_MANAGER' : 'TERRITORIAL_OPERATOR'), is_active: true }]);
       setCreateAccess(false);
-      setFeedback({ open: true, severity: 'success', message: 'Acesso criado e selecionado para este operador.' });
+      setFeedback({ open: true, severity: 'success', message: roleType === 'manager' ? 'Acesso de Gestor criado. Complete os dados; contrato v1.2 permanece pendente e sem Ativação Financeira.' : 'Acesso de Operador criado. Complete os dados do perfil.' });
     } else setOpError(d.error || 'Erro ao criar acesso');
     setAccessSaving(false);
   };
@@ -539,6 +552,14 @@ export default function TerritorialPayoutsPage() {
     await fetch(`${API_BASE_URL}/api/admin/territorial-payouts/payouts/${id}/cancel`, { method: 'PATCH', headers, body: JSON.stringify({ cancel_reason: reason }) });
     fetchAll();
   };
+
+  const legacyEligibleOperators = operators.filter(o =>
+    o.relationship_type !== 'territorial_manager' &&
+    o.is_active &&
+    o.document_status === 'verified'
+  );
+  const legacyEligibleTerritoryIds = new Set(legacyEligibleOperators.map(o => o.territory_id));
+  const legacyEligibleTerritories = territories.filter(t => legacyEligibleTerritoryIds.has(t.id));
 
   if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}><CircularProgress sx={{ color: '#B8942E' }} /></Box>;
 
