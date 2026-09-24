@@ -1,5 +1,6 @@
 import { pool } from '../db';
 import { PLATFORM_FEE_PERCENT } from './finance/territory/monetary';
+import { evaluateTerritorialManagerFinancialProfile } from './contracts/territorial-manager-financial-eligibility';
 
 /**
  * Shadow calculation for the new 18% fee model.
@@ -81,11 +82,20 @@ export async function shadowCalculate(input: ShadowInput): Promise<void> {
     const ctx = await pool.query(
       `SELECT n.territory_id,
               tma.id AS assignment_id, tma.status AS assignment_status,
+              tma.operator_profile_id,
+              a.is_active AS admin_is_active, a.role AS admin_role,
+              op.id AS profile_id,
+              op.relationship_type, op.is_active, op.document_status,
+              op.contract_status, op.terms_version, op.contract_url, op.pix_key,
+              op.responsibility_terms_accepted_at, op.confidentiality_terms_accepted_at,
               tfr.matrix_share_percent, tfr.regional_share_percent
        FROM rides_v2 r
        LEFT JOIN neighborhoods n ON n.id = r.origin_neighborhood_id
        LEFT JOIN territory_manager_assignments tma
          ON tma.territory_id = n.territory_id AND tma.status IN ('active', 'suspended')
+       LEFT JOIN admins a ON a.id = tma.admin_id
+       LEFT JOIN operator_profiles op
+         ON op.admin_id = tma.admin_id AND op.territory_id = n.territory_id
        LEFT JOIN territory_finance_rules tfr
          ON tfr.territory_id = n.territory_id AND tfr.is_active = true
        WHERE r.id = $1
@@ -100,13 +110,25 @@ export async function shadowCalculate(input: ShadowInput): Promise<void> {
     const assignmentStatus: string | null = row.assignment_status || null;
 
     let matrixPct: number, managerPct: number, allocationReason: string;
+    const profileEligibility = evaluateTerritorialManagerFinancialProfile(row);
+    const adminEligible = row.admin_is_active === true && row.admin_role === 'TERRITORIAL_MANAGER';
+    const profileBindingMatches = !row.operator_profile_id || row.operator_profile_id === row.profile_id;
+    const financiallyEligible =
+      assignmentStatus === 'active' &&
+      adminEligible &&
+      profileBindingMatches &&
+      profileEligibility.eligible;
 
     if (!territoryId || !assignmentId) {
       matrixPct = 100; managerPct = 0; allocationReason = 'no_manager';
     } else if (assignmentStatus === 'suspended') {
-      matrixPct = Number(row.matrix_share_percent || 60);
-      managerPct = Number(row.regional_share_percent || 40);
-      allocationReason = 'manager_suspended';
+      matrixPct = 100; managerPct = 0; allocationReason = 'manager_suspended';
+    } else if (!financiallyEligible) {
+      matrixPct = 100;
+      managerPct = 0;
+      allocationReason = profileEligibility.reason
+        ? `manager_ineligible_${profileEligibility.reason.toLowerCase()}`
+        : 'manager_ineligible';
     } else {
       matrixPct = Number(row.matrix_share_percent || 60);
       managerPct = Number(row.regional_share_percent || 40);
