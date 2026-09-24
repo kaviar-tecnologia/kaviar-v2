@@ -7,6 +7,11 @@ import { COMPANY } from '../config/company';
 import { isLegacyPayAllowed, isMonthLegacy, isValidReferenceMonth } from '../services/finance/territory/engine-selection';
 import crypto from 'crypto';
 import { buildTerritorialManagerContractV12, buildTerritorySnapshotVersion, TERRITORIAL_MANAGER_CONTRACT_VERSION, type TerritorialManagerContractInput } from '../services/contracts/territorial-manager-contract-v1_2';
+import {
+  deriveTerritorialManagerContractUiState,
+  deriveTerritorialManagerFinancialActivation,
+  isLegacyPayoutMutationAllowedForRelationship,
+} from '../services/contracts/territorial-manager-profile-state';
 
 const router = Router();
 router.use(authenticateAdmin, requireSuperAdmin);
@@ -56,7 +61,43 @@ router.get('/operators', async (_req: Request, res: Response) => {
       include: { admin: { select: { name: true, email: true } }, territory: { select: { id: true, name: true, level: true } } },
       orderBy: { created_at: 'desc' },
     });
-    const masked = operators.map(o => ({ ...o, pix_key: maskPix(o.pix_key), document_cpf: maskCpf(o.document_cpf), legal_representative_cpf: maskCpf(o.legal_representative_cpf) }));
+
+    const managers = operators.filter(o => o.relationship_type === 'territorial_manager');
+    const now = new Date();
+    const assignments = managers.length > 0
+      ? await prisma.territory_manager_assignments.findMany({
+          where: {
+            admin_id: { in: managers.map(o => o.admin_id) },
+            territory_id: { in: managers.map(o => o.territory_id) },
+            OR: [{ ended_at: null }, { ended_at: { gt: now } }],
+          },
+          select: { id: true, admin_id: true, territory_id: true, status: true, started_at: true, ended_at: true },
+          orderBy: { started_at: 'desc' },
+        })
+      : [];
+
+    const masked = operators.map(o => {
+      const contractV12 = deriveTerritorialManagerContractUiState(o);
+      const managerAssignments = o.relationship_type === 'territorial_manager'
+        ? assignments.filter(a => a.admin_id === o.admin_id && a.territory_id === o.territory_id)
+        : [];
+      const financialActivation = o.relationship_type === 'territorial_manager'
+        ? deriveTerritorialManagerFinancialActivation(managerAssignments, now)
+        : null;
+
+      return {
+        ...o,
+        pix_key: maskPix(o.pix_key),
+        document_cpf: maskCpf(o.document_cpf),
+        legal_representative_cpf: maskCpf(o.legal_representative_cpf),
+        contract_v1_2: contractV12,
+        financial_activation: financialActivation,
+        legacy_operational_state:
+          o.relationship_type === 'territorial_manager' && o.is_active && !contractV12?.formalized
+            ? 'active_legacy'
+            : null,
+      };
+    });
     res.json({ success: true, data: masked });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Erro ao listar operadores' });
@@ -70,7 +111,35 @@ router.get('/operators/:id', async (req: Request, res: Response) => {
       include: { admin: { select: { name: true, email: true } }, territory: { select: { id: true, name: true } }, payouts: { orderBy: { created_at: 'desc' }, take: 10 } },
     });
     if (!op) return res.status(404).json({ success: false, error: 'Operador não encontrado' });
-    res.json({ success: true, data: op });
+
+    const contractV12 = deriveTerritorialManagerContractUiState(op);
+    const managerAssignments = op.relationship_type === 'territorial_manager'
+      ? await prisma.territory_manager_assignments.findMany({
+          where: {
+            admin_id: op.admin_id,
+            territory_id: op.territory_id,
+            OR: [{ ended_at: null }, { ended_at: { gt: new Date() } }],
+          },
+          select: { id: true, status: true, started_at: true, ended_at: true },
+          orderBy: { started_at: 'desc' },
+        })
+      : [];
+    const financialActivation = op.relationship_type === 'territorial_manager'
+      ? deriveTerritorialManagerFinancialActivation(managerAssignments)
+      : null;
+
+    res.json({
+      success: true,
+      data: {
+        ...op,
+        contract_v1_2: contractV12,
+        financial_activation: financialActivation,
+        legacy_operational_state:
+          op.relationship_type === 'territorial_manager' && op.is_active && !contractV12?.formalized
+            ? 'active_legacy'
+            : null,
+      },
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Erro ao buscar operador' });
   }
@@ -83,7 +152,7 @@ const createOperatorSchema = z.object({
   admin_id: z.string().min(1),
   territory_id: z.string().min(1),
   recipient_type: z.enum(['individual', 'company', 'association']),
-  relationship_type: z.enum(['territorial_operator', 'association_partner', 'consultant']).default('territorial_operator'),
+  relationship_type: z.enum(['territorial_operator', 'territorial_manager', 'association_partner', 'consultant']).default('territorial_operator'),
   display_name: z.string().min(2),
   email: optionalEmail,
   phone: emptyToNull,
@@ -108,6 +177,12 @@ router.post('/operators', async (req: Request, res: Response) => {
 
     const admin = await prisma.admins.findUnique({ where: { id: data.admin_id } });
     if (!admin) return res.status(400).json({ success: false, error: 'Admin não encontrado' });
+    if (data.relationship_type === 'territorial_manager' && admin.role !== 'TERRITORIAL_MANAGER') {
+      return res.status(409).json({ success: false, error: 'Perfil de Gestor Territorial exige conta com role TERRITORIAL_MANAGER.' });
+    }
+    if (admin.role === 'TERRITORIAL_MANAGER' && data.relationship_type !== 'territorial_manager') {
+      return res.status(409).json({ success: false, error: 'Conta TERRITORIAL_MANAGER deve usar relationship_type=territorial_manager.' });
+    }
 
     const territory = await prisma.operational_territories.findUnique({ where: { id: data.territory_id } });
     if (!territory) return res.status(400).json({ success: false, error: 'Território não encontrado' });
@@ -179,6 +254,20 @@ router.patch('/operators/:id', async (req: Request, res: Response) => {
           required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
         });
       }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(fields, 'recipient_type')) {
+      if (existing.is_active || existing.document_status !== 'pending' || existing.contract_status !== 'pending') {
+        return res.status(409).json({
+          success: false,
+          error: 'recipient_type só pode ser alterado enquanto o perfil está inativo, documentalmente pendente e sem contrato formalizado.',
+        });
+      }
+      if (!['individual', 'company', 'association'].includes(fields.recipient_type as string)) {
+        return res.status(400).json({ success: false, error: 'recipient_type inválido' });
+      }
+      updates.recipient_type = fields.recipient_type;
+      delete fields.recipient_type;
     }
 
     // Field updates
@@ -256,10 +345,14 @@ router.get('/payouts', async (req: Request, res: Response) => {
 
     const payouts = await prisma.territory_payouts.findMany({
       where,
-      include: { territory: { select: { name: true } }, operator: { select: { display_name: true, pix_key: true, pix_key_type: true, recipient_type: true } } },
+      include: { territory: { select: { name: true } }, operator: { select: { display_name: true, pix_key: true, pix_key_type: true, recipient_type: true, relationship_type: true } } },
       orderBy: { created_at: 'desc' },
     });
-    const masked = payouts.map(p => ({ ...p, operator: { ...p.operator, pix_key: maskPix(p.operator.pix_key) } }));
+    const masked = payouts.map(p => ({
+      ...p,
+      legacy_read_only: !isLegacyPayoutMutationAllowedForRelationship(p.operator.relationship_type),
+      operator: { ...p.operator, pix_key: maskPix(p.operator.pix_key) },
+    }));
     res.json({ success: true, data: masked });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Erro ao listar repasses' });
@@ -281,6 +374,13 @@ router.post('/payouts/calculate', async (req: Request, res: Response) => {
 
     const operator = await prisma.operator_profiles.findFirst({ where: { territory_id, is_active: true, document_status: 'verified' } });
     if (!operator) return res.status(400).json({ success: false, error: 'Nenhum operador verificado e ativo' });
+    if (!isLegacyPayoutMutationAllowedForRelationship(operator.relationship_type)) {
+      return res.status(409).json({
+        success: false,
+        error: 'MANAGER_PAYOUT_WALLET_V2_REQUIRED',
+        message: 'Gestor Territorial usa exclusivamente Wallet V2 / territory_payout_cycles. O motor legado é somente histórico.',
+      });
+    }
     if (!operator.pix_key) return res.status(400).json({ success: false, error: 'Operador sem Pix cadastrado' });
 
     const existingPayout = await prisma.territory_payouts.findUnique({ where: { territory_id_reference_month: { territory_id, reference_month } } });
@@ -337,8 +437,15 @@ router.post('/payouts/calculate', async (req: Request, res: Response) => {
 
 router.patch('/payouts/:id/approve', async (req: Request, res: Response) => {
   try {
-    const payout = await prisma.territory_payouts.findUnique({ where: { id: req.params.id } });
+    const payout = await prisma.territory_payouts.findUnique({ where: { id: req.params.id }, include: { operator: { select: { relationship_type: true } } } });
     if (!payout) return res.status(404).json({ success: false, error: 'Repasse não encontrado' });
+    if (!isLegacyPayoutMutationAllowedForRelationship(payout.operator.relationship_type)) {
+      return res.status(409).json({
+        success: false,
+        error: 'MANAGER_PAYOUT_WALLET_V2_REQUIRED',
+        message: 'Repasse legado de Gestor Territorial é somente histórico e não pode ser aprovado.',
+      });
+    }
     if (payout.status !== 'calculated') return res.status(400).json({ success: false, error: `Status "${payout.status}" não permite aprovação` });
 
     const { approved_amount, notes } = req.body;
@@ -362,6 +469,13 @@ router.patch('/payouts/:id/pay', async (req: Request, res: Response) => {
   try {
     const payout = await prisma.territory_payouts.findUnique({ where: { id: req.params.id }, include: { operator: true } });
     if (!payout) return res.status(404).json({ success: false, error: 'Repasse não encontrado' });
+    if (!isLegacyPayoutMutationAllowedForRelationship(payout.operator.relationship_type)) {
+      return res.status(409).json({
+        success: false,
+        error: 'MANAGER_PAYOUT_WALLET_V2_REQUIRED',
+        message: 'Repasse legado de Gestor Territorial é somente histórico e não pode ser marcado como pago.',
+      });
+    }
     if (!isLegacyPayAllowed(payout.reference_month)) return res.status(409).json({ success: false, error: 'MANAGER_PAYOUT_LEGACY_PAYMENT_DISABLED' });
     if (payout.status !== 'approved') return res.status(400).json({ success: false, error: `Status "${payout.status}" não permite registro de pagamento` });
 
@@ -384,8 +498,15 @@ router.patch('/payouts/:id/pay', async (req: Request, res: Response) => {
 
 router.patch('/payouts/:id/cancel', async (req: Request, res: Response) => {
   try {
-    const payout = await prisma.territory_payouts.findUnique({ where: { id: req.params.id } });
+    const payout = await prisma.territory_payouts.findUnique({ where: { id: req.params.id }, include: { operator: { select: { relationship_type: true } } } });
     if (!payout) return res.status(404).json({ success: false, error: 'Repasse não encontrado' });
+    if (!isLegacyPayoutMutationAllowedForRelationship(payout.operator.relationship_type)) {
+      return res.status(409).json({
+        success: false,
+        error: 'MANAGER_PAYOUT_WALLET_V2_REQUIRED',
+        message: 'Repasse legado de Gestor Territorial é somente histórico e não pode ser alterado.',
+      });
+    }
     if (payout.status === 'paid') return res.status(400).json({ success: false, error: 'Repasse pago não pode ser cancelado' });
     if (payout.status === 'canceled') return res.status(400).json({ success: false, error: 'Já cancelado' });
 
@@ -405,7 +526,28 @@ router.patch('/payouts/:id/cancel', async (req: Request, res: Response) => {
 
 // POST /payouts/:id/receipt — upload receipt file
 import { uploadToS3 } from '../config/s3-upload';
-router.post('/payouts/:id/receipt', uploadToS3.single('file'), async (req: Request, res: Response) => {
+
+async function rejectManagerLegacyPayoutReceipt(req: Request, res: Response, next: any) {
+  try {
+    const payout = await prisma.territory_payouts.findUnique({
+      where: { id: req.params.id },
+      include: { operator: { select: { relationship_type: true } } },
+    });
+    if (!payout) return res.status(404).json({ success: false, error: 'Repasse não encontrado' });
+    if (!isLegacyPayoutMutationAllowedForRelationship(payout.operator.relationship_type)) {
+      return res.status(409).json({
+        success: false,
+        error: 'MANAGER_PAYOUT_WALLET_V2_REQUIRED',
+        message: 'Repasse legado de Gestor Territorial é somente histórico; comprovantes devem seguir o ciclo financeiro Wallet V2.',
+      });
+    }
+    next();
+  } catch {
+    return res.status(500).json({ success: false, error: 'Erro ao validar repasse legado' });
+  }
+}
+
+router.post('/payouts/:id/receipt', rejectManagerLegacyPayoutReceipt, uploadToS3.single('file'), async (req: Request, res: Response) => {
   try {
     const payout = await prisma.territory_payouts.findUnique({ where: { id: req.params.id } });
     if (!payout) return res.status(404).json({ success: false, error: 'Repasse não encontrado' });

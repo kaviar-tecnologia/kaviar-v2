@@ -338,12 +338,13 @@ export default function TerritorialPayoutsPage() {
 
   // Operator form
   const [opOpen, setOpOpen] = useState(false);
-  const [opForm, setOpForm] = useState({ admin_id: '', territory_id: '', recipient_type: 'individual', display_name: '', full_name: '', document_cpf: '', company_name: '', document_cnpj: '', legal_representative_name: '', legal_representative_cpf: '', pix_key: '', pix_key_type: 'cpf', email: '', phone: '' });
+  const [opForm, setOpForm] = useState({ admin_id: '', territory_id: '', relationship_type: 'territorial_operator', recipient_type: 'individual', display_name: '', full_name: '', document_cpf: '', company_name: '', document_cnpj: '', legal_representative_name: '', legal_representative_cpf: '', pix_key: '', pix_key_type: 'cpf', email: '', phone: '' });
   const [opSaving, setOpSaving] = useState(false);
   const [opError, setOpError] = useState('');
   const [createAccess, setCreateAccess] = useState(false);
   const [accessForm, setAccessForm] = useState({ name: '', email: '', password: '' });
   const [accessSaving, setAccessSaving] = useState(false);
+  const [createdProfileId, setCreatedProfileId] = useState(null);
 
   // Payout calculate
   const [calcOpen, setCalcOpen] = useState(false);
@@ -418,22 +419,34 @@ export default function TerritorialPayoutsPage() {
   // Operator actions
   const handleCreateOperator = async () => {
     setOpSaving(true); setOpError('');
-    const res = await fetch(`${API_BASE_URL}/api/admin/territorial-payouts/operators`, { method: 'POST', headers, body: JSON.stringify(opForm) });
+    const { admin_id, territory_id, relationship_type, ...profileFields } = opForm;
+    const endpoint = createdProfileId
+      ? `${API_BASE_URL}/api/admin/territorial-payouts/operators/${createdProfileId}`
+      : `${API_BASE_URL}/api/admin/territorial-payouts/operators`;
+    const body = createdProfileId ? profileFields : { ...opForm, relationship_type };
+    const res = await fetch(endpoint, { method: createdProfileId ? 'PATCH' : 'POST', headers, body: JSON.stringify(body) });
     const d = await res.json();
-    if (d.success) { setOpOpen(false); fetchAll(); } else setOpError(d.error);
+    if (d.success) {
+      setOpOpen(false);
+      setCreatedProfileId(null);
+      setOpForm({ admin_id: '', territory_id: '', relationship_type: 'territorial_operator', recipient_type: 'individual', display_name: '', full_name: '', document_cpf: '', company_name: '', document_cnpj: '', legal_representative_name: '', legal_representative_cpf: '', pix_key: '', pix_key_type: 'cpf', email: '', phone: '' });
+      fetchAll();
+    } else setOpError(d.error);
     setOpSaving(false);
   };
 
   const handleCreateAccess = async () => {
     if (!accessForm.name || !accessForm.email || !accessForm.password || !opForm.territory_id) return;
     setAccessSaving(true); setOpError('');
-    const res = await fetch(`${API_BASE_URL}/api/admin/territories/regional-admins`, { method: 'POST', headers, body: JSON.stringify({ name: accessForm.name, email: accessForm.email, password: accessForm.password, territory_id: opForm.territory_id }) });
+    const roleType = opForm.relationship_type === 'territorial_manager' ? 'manager' : 'operator';
+    const res = await fetch(`${API_BASE_URL}/api/admin/territories/regional-admins`, { method: 'POST', headers, body: JSON.stringify({ name: accessForm.name, email: accessForm.email, password: accessForm.password, territory_id: opForm.territory_id, role_type: roleType }) });
     const d = await res.json();
     if (d.success) {
-      setOpForm(f => ({ ...f, admin_id: d.data.id }));
-      setTerritoryAdmins(prev => [...prev, { id: d.data.id, name: d.data.name, email: d.data.email, role: d.data.role || 'TERRITORIAL_OPERATOR', is_active: true }]);
+      setOpForm(f => ({ ...f, admin_id: d.data.id, relationship_type: d.data.relationship_type || f.relationship_type }));
+      setCreatedProfileId(d.data.operator_profile_id || null);
+      setTerritoryAdmins(prev => [...prev, { id: d.data.id, name: d.data.name, email: d.data.email, role: d.data.role || (roleType === 'manager' ? 'TERRITORIAL_MANAGER' : 'TERRITORIAL_OPERATOR'), is_active: true }]);
       setCreateAccess(false);
-      setFeedback({ open: true, severity: 'success', message: 'Acesso criado e selecionado para este operador.' });
+      setFeedback({ open: true, severity: 'success', message: roleType === 'manager' ? 'Acesso de Gestor criado. Complete os dados; contrato v1.2 permanece pendente e sem Ativação Financeira.' : 'Acesso de Operador criado. Complete os dados do perfil.' });
     } else setOpError(d.error || 'Erro ao criar acesso');
     setAccessSaving(false);
   };
@@ -540,19 +553,34 @@ export default function TerritorialPayoutsPage() {
     fetchAll();
   };
 
+  const legacyEligibleOperators = operators.filter(o =>
+    o.relationship_type !== 'territorial_manager' &&
+    o.is_active &&
+    o.document_status === 'verified'
+  );
+  const legacyEligibleTerritoryIds = new Set(legacyEligibleOperators.map(o => o.territory_id));
+  const legacyEligibleTerritories = territories.filter(t => legacyEligibleTerritoryIds.has(t.id));
+  const occupiedAdminIds = new Set(operators.map(o => o.admin_id));
+  const eligibleTerritoryAdmins = territoryAdmins.filter(a => {
+    if (occupiedAdminIds.has(a.id) && !createdProfileId) return false;
+    return opForm.relationship_type === 'territorial_manager'
+      ? a.role === 'TERRITORIAL_MANAGER'
+      : a.role !== 'TERRITORIAL_MANAGER';
+  });
+
   if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}><CircularProgress sx={{ color: '#B8942E' }} /></Box>;
 
   return (
     <Box>
       <Typography variant="h5" sx={{ color: '#C8A84E', fontWeight: 800, mb: 1 }}>💰 Repasses Territoriais</Typography>
-      <Alert severity="warning" sx={{ mb: 2, bgcolor: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.3)' }}>Repasse manual. O sistema não faz Pix automático, split, saque ou pagamento automático.</Alert>
-      <Alert severity="info" sx={{ mb: 3, bgcolor: 'rgba(37,99,235,0.05)', border: '1px solid rgba(37,99,235,0.2)' }}>Este registro não substitui orientação contábil, contrato ou obrigação fiscal. Consulte o contador antes de repasses recorrentes.</Alert>
+      <Alert severity="warning" sx={{ mb: 2, bgcolor: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.3)' }}>Gestor Territorial v1.2 usa exclusivamente Wallet V2. Registros antigos em territory_payouts são históricos e ficam somente leitura para gestores.</Alert>
+      <Alert severity="info" sx={{ mb: 3, bgcolor: 'rgba(37,99,235,0.05)', border: '1px solid rgba(37,99,235,0.2)' }}>“Perfil Operacional” e “Ativação Financeira” são estados diferentes. Um perfil legado ativo não cria participação econômica sem assignment financeiro elegível.</Alert>
 
       {feedback.open && <Alert severity={feedback.severity} onClose={() => setFeedback({ ...feedback, open: false })} sx={{ mb: 2 }}>{feedback.message}</Alert>}
 
       <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 3, '& .MuiTab-root': { fontWeight: 600, color: '#9CA3AF' }, '& .Mui-selected': { color: '#C8A84E !important' }, '& .MuiTabs-indicator': { bgcolor: '#B8942E' } }}>
         <Tab label={`Gestores/Operadores (${operators.length})`} />
-        <Tab label={`Repasses (${payouts.length})`} />
+        <Tab label={`Repasses legados (${payouts.length})`} />
         <Tab label="Contratos pendentes" />
       </Tabs>
 
@@ -563,27 +591,36 @@ export default function TerritorialPayoutsPage() {
           </Box>
           <TableContainer component={Paper} sx={{ border: '1px solid #E8E5DE' }}>
             <Table size="small">
-              <TableHead><TableRow sx={{ bgcolor: '#FAFAF8' }}><TableCell sx={{ fontWeight: 700 }}>Nome</TableCell><TableCell>Tipo</TableCell><TableCell>Território</TableCell><TableCell>Pix</TableCell><TableCell>Doc</TableCell><TableCell>Contrato</TableCell><TableCell>Ativo</TableCell><TableCell>Ações</TableCell></TableRow></TableHead>
+              <TableHead><TableRow sx={{ bgcolor: '#FAFAF8' }}><TableCell sx={{ fontWeight: 700 }}>Nome</TableCell><TableCell>Vínculo</TableCell><TableCell>Território</TableCell><TableCell>Pix</TableCell><TableCell>Docs</TableCell><TableCell>Contrato</TableCell><TableCell>Perfil Operacional</TableCell><TableCell>Ativação Financeira</TableCell><TableCell>Ações</TableCell></TableRow></TableHead>
               <TableBody>
-                {operators.map(o => (
+                {operators.map(o => {
+                  const isManager = o.relationship_type === 'territorial_manager';
+                  const contractLabel = isManager ? (o.contract_v1_2?.label || 'v1.2 pendente') : o.contract_status;
+                  const contractColor = isManager
+                    ? (o.contract_v1_2?.key === 'formalized' ? 'success' : o.contract_v1_2?.key === 'legacy_inconsistent' ? 'warning' : o.contract_v1_2?.key === 'available' || o.contract_v1_2?.key === 'in_review' ? 'info' : 'default')
+                    : 'default';
+                  const operationalLabel = o.legacy_operational_state === 'active_legacy' ? 'Ativo legado' : (o.is_active ? 'Ativo' : 'Inativo');
+                  const operationalColor = o.legacy_operational_state === 'active_legacy' ? 'warning' : (o.is_active ? 'success' : 'default');
+                  return (
                   <TableRow key={o.id}>
                     <TableCell sx={{ fontWeight: 600 }}>{o.display_name}</TableCell>
-                    <TableCell><Chip label={RECIPIENT_LABELS[o.recipient_type]} size="small" /></TableCell>
+                    <TableCell><Chip label={isManager ? 'Gestor Territorial' : 'Operador Territorial'} size="small" color={isManager ? 'primary' : 'default'} /></TableCell>
                     <TableCell>{o.territory?.name}</TableCell>
                     <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{o.pix_key || '—'}</TableCell>
-                    <TableCell><Chip label={o.document_status} size="small" sx={{ color: STATUS_COLORS[o.document_status], bgcolor: `${STATUS_COLORS[o.document_status]}15` }} /></TableCell>
-                    <TableCell><Chip label={o.contract_status} size="small" /></TableCell>
-                    <TableCell><Chip label={o.is_active ? 'Ativo' : 'Inativo'} size="small" color={o.is_active ? 'success' : 'default'} /></TableCell>
+                    <TableCell><Chip label={o.document_status === 'verified' ? 'Verificados' : o.document_status === 'pending' ? 'Pendentes' : 'Rejeitados'} size="small" color={o.document_status === 'verified' ? 'success' : o.document_status === 'rejected' ? 'error' : 'warning'} /></TableCell>
+                    <TableCell><Chip label={contractLabel} size="small" color={contractColor} /></TableCell>
+                    <TableCell><Chip label={operationalLabel} size="small" color={operationalColor} /></TableCell>
+                    <TableCell>{isManager ? <Chip label={o.financial_activation?.label || 'Não ativa'} size="small" color={o.financial_activation?.active ? 'success' : o.financial_activation?.key === 'suspended' ? 'warning' : 'default'} /> : '—'}</TableCell>
                     <TableCell sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                       <Button size="small" onClick={() => openDetailModal(o)} sx={{ color: '#6B7280' }}>Detalhes</Button>
                       {o.document_status === 'pending' && <Button size="small" onClick={() => openVerifyModal(o)} sx={{ color: '#059669' }}>Verificar</Button>}
-                      {o.document_status === 'verified' && !o.is_active && <Button size="small" onClick={() => handleActivate(o.id)} sx={{ color: '#2563EB' }}>Ativar</Button>}
-                      {o.is_active && !o.responsibility_terms_accepted_at && <Button size="small" onClick={() => openVerifyModal(o)} sx={{ color: '#D97706' }}>Regularizar Termos</Button>}
-                      {o.is_active && <Button size="small" onClick={() => handleDeactivate(o.id)} sx={{ color: '#DC2626' }}>Desativar</Button>}
+                      {o.document_status === 'verified' && !o.is_active && (!isManager || o.contract_v1_2?.formalized) && <Button size="small" onClick={() => handleActivate(o.id)} sx={{ color: '#2563EB' }}>Ativar perfil</Button>}
+                      {!isManager && o.is_active && !o.responsibility_terms_accepted_at && <Button size="small" onClick={() => openVerifyModal(o)} sx={{ color: '#D97706' }}>Regularizar Termos</Button>}
+                      {o.is_active && <Button size="small" onClick={() => handleDeactivate(o.id)} sx={{ color: '#DC2626' }}>Desativar perfil</Button>}
                     </TableCell>
                   </TableRow>
-                ))}
-                {!operators.length && <TableRow><TableCell colSpan={8} sx={{ textAlign: 'center', color: '#6B7280', py: 4 }}>Nenhum gestor/operador cadastrado</TableCell></TableRow>}
+                )})}
+                {!operators.length && <TableRow><TableCell colSpan={9} sx={{ textAlign: 'center', color: '#6B7280', py: 4 }}>Nenhum gestor/operador cadastrado</TableCell></TableRow>}
               </TableBody>
             </Table>
           </TableContainer>
@@ -592,8 +629,9 @@ export default function TerritorialPayoutsPage() {
 
       {tab === 1 && (
         <Box>
+          <Alert severity="info" sx={{ mb: 2 }}>Esta aba preserva o histórico do motor legado. Para Gestor Territorial, as linhas são somente leitura; novos ciclos e pagamentos usam Wallet V2.</Alert>
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-            <Button variant="contained" onClick={() => setCalcOpen(true)} sx={{ bgcolor: '#B8942E', '&:hover': { bgcolor: '#9A7B24' } }}>Calcular Repasse</Button>
+            <Button variant="contained" disabled={legacyEligibleTerritories.length === 0} onClick={() => setCalcOpen(true)} sx={{ bgcolor: '#B8942E', '&:hover': { bgcolor: '#9A7B24' } }}>{legacyEligibleTerritories.length ? 'Calcular repasse legado de operador' : 'Sem operador legado elegível'}</Button>
           </Box>
           <TableContainer component={Paper} sx={{ border: '1px solid #E8E5DE' }}>
             <Table size="small">
@@ -608,10 +646,16 @@ export default function TerritorialPayoutsPage() {
                     <TableCell>{p.approved_amount ? `R$ ${Number(p.approved_amount).toFixed(2)}` : '—'}</TableCell>
                     <TableCell><Chip label={p.status} size="small" sx={{ color: STATUS_COLORS[p.status], bgcolor: `${STATUS_COLORS[p.status]}15`, fontWeight: 600 }} /></TableCell>
                     <TableCell>{p.fiscal_document_required ? <Chip label="Exige doc" size="small" color="warning" /> : '—'}</TableCell>
-                    <TableCell sx={{ display: 'flex', gap: 0.5 }}>
-                      {(p.status === 'calculated' || p.status === 'requested') && <Button size="small" onClick={() => handleApprove(p.id)} sx={{ color: '#2563EB' }}>Aprovar</Button>}
-                      {p.status === 'approved' && <Button size="small" onClick={() => { setPayTarget(p); setPayOpen(true); }} sx={{ color: '#059669' }}>Pagar</Button>}
-                      {(p.status === 'calculated' || p.status === 'approved') && <Button size="small" color="error" onClick={() => handleCancel(p.id)}>Cancelar</Button>}
+                    <TableCell sx={{ display: 'flex', gap: 0.5, alignItems: 'center', flexWrap: 'wrap' }}>
+                      {p.legacy_read_only ? (
+                        <Chip label="Histórico legado — somente leitura" size="small" color="warning" />
+                      ) : (
+                        <>
+                          {(p.status === 'calculated' || p.status === 'requested') && <Button size="small" onClick={() => handleApprove(p.id)} sx={{ color: '#2563EB' }}>Aprovar</Button>}
+                          {p.status === 'approved' && <Button size="small" onClick={() => { setPayTarget(p); setPayOpen(true); }} sx={{ color: '#059669' }}>Pagar</Button>}
+                          {(p.status === 'calculated' || p.status === 'approved') && <Button size="small" color="error" onClick={() => handleCancel(p.id)}>Cancelar</Button>}
+                        </>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -634,7 +678,14 @@ export default function TerritorialPayoutsPage() {
         <DialogTitle sx={{ color: '#C8A84E', fontWeight: 700 }}>Cadastrar Gestor/Operador Territorial</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1, pb: 4, overflowY: 'auto' }}>
           {opError && <Alert severity="error">{opError}</Alert>}
-          <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Tipo</Typography>
+          <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Vínculo territorial</Typography>
+            <TextField select value={opForm.relationship_type} disabled={Boolean(createdProfileId)} onChange={e => { setOpForm({ ...opForm, relationship_type: e.target.value, admin_id: '' }); setCreatedProfileId(null); }} fullWidth size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }}>
+              <MenuItem value="territorial_manager">Gestor Territorial — contrato v1.2 / Wallet V2</MenuItem>
+              <MenuItem value="territorial_operator">Operador Territorial — fluxo operacional legado</MenuItem>
+            </TextField>
+            {opForm.relationship_type === 'territorial_manager' && <Alert severity="info" sx={{ mt: 1, '& .MuiAlert-message': { fontSize: 11 } }}>Novo Gestor nasce com perfil inativo, contrato v1.2 pendente e sem Ativação Financeira automática.</Alert>}
+          </Box>
+          <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Tipo de recebedor</Typography>
             <TextField select value={opForm.recipient_type} onChange={e => setOpForm({ ...opForm, recipient_type: e.target.value })} fullWidth size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }}>
               <MenuItem value="individual">Pessoa Física</MenuItem><MenuItem value="company">Pessoa Jurídica</MenuItem><MenuItem value="association">Associação</MenuItem>
             </TextField></Box>
@@ -660,24 +711,24 @@ export default function TerritorialPayoutsPage() {
               <MenuItem value="cpf">CPF</MenuItem><MenuItem value="cnpj">CNPJ</MenuItem><MenuItem value="email">Email</MenuItem><MenuItem value="phone">Telefone</MenuItem><MenuItem value="random">Aleatória</MenuItem>
             </TextField></Box>
           </Box>
-          <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Usuário de acesso autorizado (gestor operacional)</Typography>
-            <Typography variant="caption" sx={{ color: '#6B7280', display: 'block', mb: 1, fontSize: '0.7rem' }}>Este usuário acessa o painel em modo leitura. O gestor/operador territorial é o perfil responsável por recebimentos, contrato e repasses do KAVIAR.</Typography>
-            {opForm.territory_id && !loadingAdmins && territoryAdmins.length === 0 && !createAccess && (
-              <Alert severity="warning" sx={{ mb: 1 }}>Nenhum acesso vinculado a este território. Crie um abaixo.</Alert>
+          <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Conta de acesso territorial</Typography>
+            <Typography variant="caption" sx={{ color: '#6B7280', display: 'block', mb: 1, fontSize: '0.7rem' }}>{opForm.relationship_type === 'territorial_manager' ? 'A conta deve ter role TERRITORIAL_MANAGER. O contrato v1.2 e a Ativação Financeira continuam etapas separadas.' : 'A conta deve ter role de Operador Territorial. Este fluxo não cria Gestor Territorial.'}</Typography>
+            {opForm.territory_id && !loadingAdmins && eligibleTerritoryAdmins.length === 0 && !createAccess && !createdProfileId && (
+              <Alert severity="warning" sx={{ mb: 1 }}>Nenhuma conta compatível e sem perfil territorial está disponível neste território. Crie uma abaixo.</Alert>
             )}
             {!createAccess && (
               <>
                 {loadingAdmins ? <CircularProgress size={20} sx={{ color: '#B8942E' }} /> : (
-                  <TextField select value={opForm.admin_id} onChange={e => setOpForm({ ...opForm, admin_id: e.target.value })} fullWidth size="small" disabled={!opForm.territory_id || territoryAdmins.length === 0} InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }}>
-                    {territoryAdmins.map(a => <MenuItem key={a.id} value={a.id}>{a.name} — {a.email} ({a.role})</MenuItem>)}
+                  <TextField select value={opForm.admin_id} onChange={e => setOpForm({ ...opForm, admin_id: e.target.value })} fullWidth size="small" disabled={!opForm.territory_id || eligibleTerritoryAdmins.length === 0 || Boolean(createdProfileId)} InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }}>
+                    {eligibleTerritoryAdmins.map(a => <MenuItem key={a.id} value={a.id}>{a.name} — {a.email} ({a.role})</MenuItem>)}
                   </TextField>
                 )}
-                <Button size="small" onClick={() => { setCreateAccess(true); setAccessForm({ name: '', email: '', password: '' }); }} disabled={!opForm.territory_id} sx={{ mt: 1, color: '#C8A84E', textTransform: 'none' }}>+ Criar acesso do operador</Button>
+                <Button size="small" onClick={() => { setCreateAccess(true); setAccessForm({ name: '', email: '', password: '' }); }} disabled={!opForm.territory_id} sx={{ mt: 1, color: '#C8A84E', textTransform: 'none' }}>+ Criar acesso de {opForm.relationship_type === 'territorial_manager' ? 'gestor' : 'operador'}</Button>
               </>
             )}
             {createAccess && (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, p: 1.5, border: '1px solid rgba(184,148,46,0.3)', borderRadius: 1, mt: 0.5 }}>
-                <Typography variant="caption" sx={{ color: '#C8A84E', fontWeight: 600 }}>Criar acesso do operador</Typography>
+                <Typography variant="caption" sx={{ color: '#C8A84E', fontWeight: 600 }}>Criar acesso de {opForm.relationship_type === 'territorial_manager' ? 'Gestor Territorial' : 'Operador Territorial'}</Typography>
                 <TextField size="small" placeholder="Nome" value={accessForm.name} onChange={e => setAccessForm({ ...accessForm, name: e.target.value })} InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }} />
                 <TextField size="small" placeholder="E-mail" value={accessForm.email} onChange={e => setAccessForm({ ...accessForm, email: e.target.value })} InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }} />
                 <TextField size="small" placeholder="Senha provisória (min 6)" type="password" value={accessForm.password} onChange={e => setAccessForm({ ...accessForm, password: e.target.value })} InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }} />
@@ -696,12 +747,13 @@ export default function TerritorialPayoutsPage() {
 
       {/* Modal Calcular Repasse */}
       <Dialog open={calcOpen} onClose={() => setCalcOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { bgcolor: '#1A1A24', color: '#E5E7EB' } }}>
-        <DialogTitle sx={{ color: '#C8A84E', fontWeight: 700 }}>Calcular Repasse</DialogTitle>
+        <DialogTitle sx={{ color: '#C8A84E', fontWeight: 700 }}>Calcular Repasse Legado de Operador</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
           {calcError && <Alert severity="error">{calcError}</Alert>}
+          <Alert severity="warning" sx={{ '& .MuiAlert-message': { fontSize: 11 } }}>Este cálculo existe apenas para Operador Territorial e competências legadas. Gestor Territorial usa Wallet V2.</Alert>
           <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Território</Typography>
             <TextField select value={calcForm.territory_id} onChange={e => setCalcForm({ ...calcForm, territory_id: e.target.value })} fullWidth size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }}>
-              {territories.map(t => <MenuItem key={t.id} value={t.id}>{t.name} ({t.level})</MenuItem>)}
+              {legacyEligibleTerritories.map(t => <MenuItem key={t.id} value={t.id}>{t.name} ({t.level})</MenuItem>)}
             </TextField></Box>
           <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Mês (YYYY-MM)</Typography>
             <TextField value={calcForm.reference_month} onChange={e => setCalcForm({ ...calcForm, reference_month: e.target.value })} fullWidth size="small" placeholder="2026-05" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }} /></Box>
@@ -757,7 +809,16 @@ export default function TerritorialPayoutsPage() {
             <Typography variant="body2" sx={{ color: '#9CA3AF' }}>{RECIPIENT_LABELS[verifyTarget.recipient_type]} — {verifyTarget.territory?.name}</Typography>
           </Box>}
           <Typography variant="body2" sx={{ color: '#9CA3AF', mb: 2 }}>Confirme cada item antes de verificar:</Typography>
-          {[
+          {(verifyTarget?.relationship_type === 'territorial_manager' ? [
+            'Conferi a identidade do Gestor Territorial.',
+            'Conferi CPF/CNPJ e responsável legal, quando aplicável.',
+            'Conferi a titularidade dos dados financeiros cadastrados.',
+            'Conferi que o Gestor está vinculado ao território correto.',
+            'A verificação documental não formaliza o contrato v1.2.',
+            'A verificação documental não ativa participação financeira.',
+            'O Gestor utilizará o fluxo canônico de contrato v1.2.',
+            'A Ativação Financeira dependerá de assignment elegível separado.',
+          ] : [
             'Conferi a identidade do operador.',
             'Conferi CPF/CNPJ e responsável legal, quando aplicável.',
             'Conferi que o Pix pertence ao operador cadastrado.',
@@ -766,7 +827,7 @@ export default function TerritorialPayoutsPage() {
             'O operador aceitou as regras de confidencialidade e uso correto de dados do KAVIAR.',
             'O operador entende que repasse depende de aprovação manual da matriz/SUPER_ADMIN.',
             'Para PJ/Associação, contrato/termo está assinado ou registrado.',
-          ].map((label, i) => (
+          ]).map((label, i) => (
             <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1, cursor: 'pointer' }} onClick={() => { const c = [...verifyChecks]; c[i] = !c[i]; setVerifyChecks(c); }}>
               <input type="checkbox" checked={verifyChecks[i]} readOnly style={{ marginTop: 3, accentColor: '#B8942E' }} />
               <Typography variant="body2" sx={{ color: verifyChecks[i] ? '#E5E7EB' : '#6B7280' }}>{label}</Typography>
@@ -790,7 +851,7 @@ export default function TerritorialPayoutsPage() {
               <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Tipo</Typography><Typography>{RECIPIENT_LABELS[detailTarget.recipient_type]}</Typography></Box>
               <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Território</Typography><Typography>{detailTarget.territory?.name}</Typography></Box>
               <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Acesso autorizado</Typography><Typography>{detailTarget.admin?.name} — {detailTarget.admin?.email}</Typography></Box>
-              <Typography variant="caption" sx={{ color: '#6B7280', display: 'block', mt: 0.5, fontSize: '0.7rem' }}>O operador financeiro/contratual é o responsável por recebimentos, contrato e repasses. O acesso autorizado apenas permite entrada no painel conforme permissão concedida.</Typography>
+              <Typography variant="caption" sx={{ color: '#6B7280', display: 'block', mt: 0.5, fontSize: '0.7rem' }}>{detailTarget.relationship_type === 'territorial_manager' ? 'Para Gestor Territorial, contrato v1.2, perfil operacional e Ativação Financeira são estados separados. O acesso ao painel, sozinho, não cria participação econômica.' : 'Para Operador Territorial, esta conta dá acesso ao painel conforme as permissões concedidas e permanece fora do fluxo financeiro v1.2 do Gestor.'}</Typography>
               {detailTarget.full_name && <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Nome completo</Typography><Typography>{detailTarget.full_name}</Typography></Box>}
               {detailTarget.document_cpf && <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>CPF</Typography><Typography sx={{ fontFamily: 'monospace' }}>{detailTarget.document_cpf}</Typography></Box>}
               {detailTarget.company_name && <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>{detailTarget.recipient_type === 'company' ? 'Razão Social' : 'Associação'}</Typography><Typography>{detailTarget.company_name}</Typography></Box>}
@@ -799,18 +860,20 @@ export default function TerritorialPayoutsPage() {
               {detailTarget.legal_representative_cpf && <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>CPF responsável</Typography><Typography sx={{ fontFamily: 'monospace' }}>{detailTarget.legal_representative_cpf}</Typography></Box>}
               <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Pix</Typography><Typography sx={{ fontFamily: 'monospace' }}>{detailTarget.pix_key || '—'} ({detailTarget.pix_key_type || '—'})</Typography></Box>
               {detailTarget.bank_name && <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Banco</Typography><Typography>{detailTarget.bank_name}</Typography></Box>}
-              <Box sx={{ display: 'flex', gap: 3 }}>
-                <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Doc</Typography><Chip label={detailTarget.document_status} size="small" sx={{ color: STATUS_COLORS[detailTarget.document_status], bgcolor: `${STATUS_COLORS[detailTarget.document_status]}15` }} /></Box>
-                <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Contrato</Typography><Chip label={detailTarget.contract_status} size="small" /></Box>
-                <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Status</Typography><Chip label={detailTarget.is_active ? 'Ativo' : 'Inativo'} size="small" color={detailTarget.is_active ? 'success' : 'default'} /></Box>
+              <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Docs</Typography><Chip label={detailTarget.document_status === 'verified' ? 'Verificados' : detailTarget.document_status === 'pending' ? 'Pendentes' : 'Rejeitados'} size="small" color={detailTarget.document_status === 'verified' ? 'success' : detailTarget.document_status === 'rejected' ? 'error' : 'warning'} /></Box>
+                <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Contrato</Typography><Chip label={detailTarget.relationship_type === 'territorial_manager' ? (detailTarget.contract_v1_2?.label || 'v1.2 pendente') : detailTarget.contract_status} size="small" color={detailTarget.relationship_type === 'territorial_manager' && detailTarget.contract_v1_2?.key === 'legacy_inconsistent' ? 'warning' : detailTarget.relationship_type === 'territorial_manager' && detailTarget.contract_v1_2?.key === 'formalized' ? 'success' : 'default'} /></Box>
+                <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Perfil Operacional</Typography><Chip label={detailTarget.legacy_operational_state === 'active_legacy' ? 'Ativo legado' : (detailTarget.is_active ? 'Ativo' : 'Inativo')} size="small" color={detailTarget.legacy_operational_state === 'active_legacy' ? 'warning' : detailTarget.is_active ? 'success' : 'default'} /></Box>
+                {detailTarget.relationship_type === 'territorial_manager' && <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Ativação Financeira</Typography><Chip label={detailTarget.financial_activation?.label || 'Não ativa'} size="small" color={detailTarget.financial_activation?.active ? 'success' : detailTarget.financial_activation?.key === 'suspended' ? 'warning' : 'default'} /></Box>}
               </Box>
+              {detailTarget.legacy_operational_state === 'active_legacy' && <Alert severity="warning">Estado legado preservado para histórico: perfil operacional marcado como ativo sem contrato v1.2 formalizado. Isso não cria Ativação Financeira nem participação econômica.</Alert>}
               {detailTarget.verified_at && <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Verificado em</Typography><Typography variant="body2">{formatDate(detailTarget.verified_at, { showTime: true })}</Typography></Box>}
               <Typography variant="subtitle2" sx={{ color: '#C8A84E', mt: 2, mb: 1 }}>Termos e Contrato</Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, p: 1.5, bgcolor: 'rgba(255,255,255,0.02)', borderRadius: 1, border: '1px solid rgba(184,148,46,0.15)' }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography variant="body2" sx={{ color: '#9CA3AF' }}>Termo de Responsabilidade</Typography><Typography variant="body2" sx={{ color: detailTarget.responsibility_terms_accepted_at ? '#059669' : '#DC2626' }}>{detailTarget.responsibility_terms_accepted_at ? formatDate(detailTarget.responsibility_terms_accepted_at, { showTime: true }) : 'Pendente'}</Typography></Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography variant="body2" sx={{ color: '#9CA3AF' }}>Confidencialidade/LGPD</Typography><Typography variant="body2" sx={{ color: detailTarget.confidentiality_terms_accepted_at ? '#059669' : '#DC2626' }}>{detailTarget.confidentiality_terms_accepted_at ? formatDate(detailTarget.confidentiality_terms_accepted_at, { showTime: true }) : 'Pendente'}</Typography></Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography variant="body2" sx={{ color: '#9CA3AF' }}>Versão dos termos</Typography><Typography variant="body2">{detailTarget.terms_version || '—'}</Typography></Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography variant="body2" sx={{ color: '#9CA3AF' }}>Contrato</Typography><Typography variant="body2" sx={{ color: detailTarget.contract_status === 'signed' ? '#059669' : '#6B7280' }}>{detailTarget.contract_status}{detailTarget.contract_signed_at ? ` (${formatDate(detailTarget.contract_signed_at)})` : ''}</Typography></Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography variant="body2" sx={{ color: '#9CA3AF' }}>Contrato</Typography><Typography variant="body2" sx={{ color: detailTarget.relationship_type === 'territorial_manager' && detailTarget.contract_v1_2?.formalized ? '#059669' : '#6B7280' }}>{detailTarget.relationship_type === 'territorial_manager' ? (detailTarget.contract_v1_2?.label || 'v1.2 pendente') : detailTarget.contract_status}{detailTarget.contract_signed_at && detailTarget.relationship_type !== 'territorial_manager' ? ` (${formatDate(detailTarget.contract_signed_at)})` : ''}</Typography></Box>
                 {detailTarget.contract_url && <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><Typography variant="body2" sx={{ color: '#9CA3AF' }}>URL contrato</Typography><Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}><Button size="small" onClick={() => window.open(detailTarget.contract_url, '_blank')} sx={{ color: '#2563EB', textTransform: 'none', fontSize: '0.8rem' }}>Abrir</Button><Button size="small" onClick={() => { navigator.clipboard.writeText(detailTarget.contract_url); setFeedback({ open: true, severity: 'success', message: 'Link copiado.' }); }} sx={{ color: '#6B7280', textTransform: 'none', fontSize: '0.8rem' }}>Copiar</Button></Box></Box>}
               </Box>
               <Alert severity="info" sx={{ mt: 2, bgcolor: 'rgba(37,99,235,0.05)', border: '1px solid rgba(37,99,235,0.2)' }}>Este aceite interno não substitui contrato jurídico formal nem orientação contábil.</Alert>

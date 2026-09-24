@@ -552,7 +552,7 @@ router.post('/regional-admins', async (req: Request, res: Response) => {
       const access = await tx.admin_territory_access.create({
         data: { admin_id: admin.id, territory_id: data.territory_id, access_level: data.access_level },
       });
-      await tx.operator_profiles.create({
+      const operatorProfile = await tx.operator_profiles.create({
         data: {
           admin_id: admin.id,
           territory_id: data.territory_id,
@@ -564,13 +564,24 @@ router.post('/regional-admins', async (req: Request, res: Response) => {
           is_active: false,
         },
       });
-      return { admin, access };
+      return { admin, access, operatorProfile };
     });
 
     const ctx = auditCtx(req);
     audit({ adminId: ctx.adminId, adminEmail: ctx.adminEmail, action: 'create_regional_admin', entityType: 'admin', entityId: result.admin.id, newValue: { name: data.name, email: data.email, territory: territory.name }, ipAddress: ctx.ip });
 
-    res.status(201).json({ success: true, data: { id: result.admin.id, name: result.admin.name, email: result.admin.email, role: result.admin.role, territory: territory.name } });
+    res.status(201).json({
+      success: true,
+      data: {
+        id: result.admin.id,
+        name: result.admin.name,
+        email: result.admin.email,
+        role: result.admin.role,
+        territory: territory.name,
+        operator_profile_id: result.operatorProfile.id,
+        relationship_type: result.operatorProfile.relationship_type,
+      },
+    });
   } catch (error) {
     if (error instanceof z.ZodError) return res.status(400).json({ success: false, error: error.errors[0].message });
     res.status(500).json({ success: false, error: 'Erro ao criar admin regional' });
