@@ -116,6 +116,14 @@ router.post('/submit-contract', (req: Request, res: Response) => {
         profile.relationship_type === 'territorial_manager'
           ? TERRITORIAL_MANAGER_CONTRACT_VERSION
           : (profile.terms_version || 'v1.0');
+      const signerName =
+        profile.recipient_type === 'individual'
+          ? (profile.full_name || profile.display_name)
+          : (profile.legal_representative_name || profile.display_name);
+      const signerDocument =
+        profile.recipient_type === 'individual'
+          ? profile.document_cpf
+          : (profile.legal_representative_cpf || profile.document_cnpj);
 
       // Supersede previous rejected submissions
       await prisma.contract_submissions.updateMany({
@@ -130,9 +138,9 @@ router.post('/submit-contract', (req: Request, res: Response) => {
           submitted_by_admin_id: admin.id,
           s3_key: s3Key,
           status: 'submitted',
-          signer_name: profile.display_name,
+          signer_name: signerName,
           signer_email: profile.email || admin.email,
-          signer_document: profile.document_cpf || profile.document_cnpj || null,
+          signer_document: signerDocument || null,
           signer_ip: req.ip || req.socket?.remoteAddress || null,
           signer_user_agent: (req.headers['user-agent'] || '').substring(0, 200) || null,
           document_hash: documentHash,
@@ -154,7 +162,7 @@ router.post('/submit-contract', (req: Request, res: Response) => {
         action: 'submit_contract',
         entityType: 'contract_submission',
         entityId: submission.id,
-        newValue: { document_hash: documentHash, signer_name: profile.display_name, signer_document: profile.document_cpf || profile.document_cnpj || null, s3_key: s3Key, contract_version: submissionContractVersion },
+        newValue: { document_hash: documentHash, signer_name: signerName, signer_document: signerDocument || null, s3_key: s3Key, contract_version: submissionContractVersion },
         ipAddress: req.ip || req.socket?.remoteAddress || undefined,
       });
 
