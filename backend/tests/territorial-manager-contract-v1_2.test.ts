@@ -77,8 +77,8 @@ describe('territorial manager contract v1.2', () => {
       id: 'territory-123',
       updated_at: new Date('2026-09-24T14:00:00.000Z'),
       neighborhoods: [
-        { id: 'b', name: 'Bairro B', updated_at: new Date('2026-09-24T13:00:00.000Z') },
-        { id: 'a', name: 'Bairro A', updated_at: new Date('2026-09-24T12:00:00.000Z') },
+        { id: 'b', name: 'Bairro B', is_active: true, updated_at: new Date('2026-09-24T13:00:00.000Z') },
+        { id: 'a', name: 'Bairro A', is_active: true, updated_at: new Date('2026-09-24T12:00:00.000Z') },
       ],
     };
     const reordered = { ...source, neighborhoods: [...source.neighborhoods].reverse() };
@@ -89,19 +89,34 @@ describe('territorial manager contract v1.2', () => {
     expect(first.length).toBe(71);
   });
 
+  it('changes territory snapshot version when active status changes', () => {
+    const active = {
+      id: 'territory-123',
+      updated_at: new Date('2026-09-24T14:00:00.000Z'),
+      neighborhoods: [
+        { id: 'a', name: 'Bairro A', is_active: true, updated_at: new Date('2026-09-24T12:00:00.000Z') },
+      ],
+    };
+    const inactive = {
+      ...active,
+      neighborhoods: active.neighborhoods.map(n => ({ ...n, is_active: false })),
+    };
+    expect(buildTerritorySnapshotVersion(active)).not.toBe(buildTerritorySnapshotVersion(inactive));
+  });
+
   it('changes territory snapshot version when composition changes', () => {
     const base = {
       id: 'territory-123',
       updated_at: new Date('2026-09-24T14:00:00.000Z'),
       neighborhoods: [
-        { id: 'a', name: 'Bairro A', updated_at: new Date('2026-09-24T12:00:00.000Z') },
+        { id: 'a', name: 'Bairro A', is_active: true, updated_at: new Date('2026-09-24T12:00:00.000Z') },
       ],
     };
     const changed = {
       ...base,
       neighborhoods: [
         ...base.neighborhoods,
-        { id: 'b', name: 'Bairro B', updated_at: new Date('2026-09-24T13:00:00.000Z') },
+        { id: 'b', name: 'Bairro B', is_active: true, updated_at: new Date('2026-09-24T13:00:00.000Z') },
       ],
     };
     expect(buildTerritorySnapshotVersion(base)).not.toBe(buildTerritorySnapshotVersion(changed));
