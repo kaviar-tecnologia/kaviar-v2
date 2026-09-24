@@ -27,6 +27,10 @@ import {
   AttachFileOutlined,
   DeleteForeverOutlined,
   DeleteOutline,
+  DriveFileMoveOutlined,
+  EditOutlined,
+  FolderOutlined,
+  CreateNewFolderOutlined,
   InboxOutlined,
   MailOutline,
   MarkEmailReadOutlined,
@@ -302,6 +306,20 @@ export default function InstitutionalInboxPage() {
   const [permanentDeleteTarget, setPermanentDeleteTarget] = useState(null);
   const [permanentDeleteLoading, setPermanentDeleteLoading] = useState(false);
 
+  const [folders, setFolders] = useState([]);
+  const [foldersLoading, setFoldersLoading] = useState(false);
+  const [selectedFolderId, setSelectedFolderId] = useState(null);
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false);
+  const [folderDialogMode, setFolderDialogMode] = useState('create');
+  const [folderEditing, setFolderEditing] = useState(null);
+  const [folderNameDraft, setFolderNameDraft] = useState('');
+  const [folderSaving, setFolderSaving] = useState(false);
+  const [folderDeleteTarget, setFolderDeleteTarget] = useState(null);
+  const [folderDeleteLoading, setFolderDeleteLoading] = useState(false);
+  const [moveFolderTarget, setMoveFolderTarget] = useState(null);
+  const [moveFolderValue, setMoveFolderValue] = useState('');
+  const [moveFolderSaving, setMoveFolderSaving] = useState(false);
+
   const [sentFilters, setSentFilters] = useState(DEFAULT_SENT_FILTERS);
   const [sentItems, setSentItems] = useState([]);
   const [sentLoading, setSentLoading] = useState(false);
@@ -318,6 +336,7 @@ export default function InstitutionalInboxPage() {
     };
 
     if (filters.status !== 'ALL') params.status = filters.status;
+    if (selectedFolderId) params.folder_id = selectedFolderId;
     if (filters.to.trim()) params.to = filters.to.trim();
     if (filters.from.trim()) params.from = filters.from.trim();
     if (filters.q.trim()) params.q = filters.q.trim();
@@ -325,7 +344,7 @@ export default function InstitutionalInboxPage() {
     if (filters.dateTo) params.date_to = filters.dateTo;
 
     return params;
-  }, [filters, page]);
+  }, [filters, page, selectedFolderId]);
 
   const resetReplyState = () => {
     setReplyMessage('');
@@ -388,6 +407,18 @@ export default function InstitutionalInboxPage() {
     }
   };
 
+  const loadFolders = async () => {
+    setFoldersLoading(true);
+    try {
+      const response = await api.get('/api/admin/inbound-emails/folders');
+      setFolders(Array.isArray(response.data?.data) ? response.data.data : []);
+    } catch (error) {
+      setErrorMessage(buildFriendlyError(error, 'Nao foi possivel carregar as pastas personalizadas.'));
+    } finally {
+      setFoldersLoading(false);
+    }
+  };
+
   const loadSentList = async (targetPage = 1, append = false, filtersOverride = sentFilters) => {
     setSentLoading(true);
     setSentError('');
@@ -417,7 +448,13 @@ export default function InstitutionalInboxPage() {
     if (activeTab === 'RECEBIDOS') {
       loadList(1, false);
     }
-  }, [filters, activeTab]);
+  }, [filters, activeTab, selectedFolderId]);
+
+  useEffect(() => {
+    if (activeTab === 'RECEBIDOS') {
+      loadFolders();
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (activeTab === 'ENVIADOS') {
@@ -495,7 +532,16 @@ export default function InstitutionalInboxPage() {
           if (filters.status !== 'ALL' && filters.status !== updated.status) {
             return prev.filter((item) => item.id !== updated.id);
           }
-          return prev.map((item) => (item.id === updated.id ? { ...item, status: updated.status, updated_at: updated.updated_at } : item));
+          if (!selectedFolderId && filters.status === 'ALL' && updated.status === 'ARCHIVED') {
+            return prev.filter((item) => item.id !== updated.id);
+          }
+          return prev.map((item) => (item.id === updated.id ? {
+            ...item,
+            status: updated.status,
+            updated_at: updated.updated_at,
+            custom_folder_id: updated.custom_folder_id,
+            custom_folder: updated.custom_folder,
+          } : item));
         });
       }
     } catch (error) {
@@ -517,8 +563,100 @@ export default function InstitutionalInboxPage() {
   };
 
   const selectMailbox = (status) => {
+    setSelectedFolderId(null);
     setPage(1);
     setFilters((prev) => ({ ...prev, status }));
+  };
+
+  const selectCustomFolder = (folderId) => {
+    setSelectedFolderId(folderId);
+    setPage(1);
+    setFilters((prev) => ({ ...prev, status: 'ALL' }));
+  };
+
+  const openCreateFolder = () => {
+    setFolderDialogMode('create');
+    setFolderEditing(null);
+    setFolderNameDraft('');
+    setFolderDialogOpen(true);
+  };
+
+  const openRenameFolder = (folder) => {
+    setFolderDialogMode('rename');
+    setFolderEditing(folder);
+    setFolderNameDraft(folder?.name || '');
+    setFolderDialogOpen(true);
+  };
+
+  const saveFolder = async () => {
+    const name = folderNameDraft.trim();
+    if (!name) return;
+    setFolderSaving(true);
+    setErrorMessage('');
+    try {
+      if (folderDialogMode === 'rename' && folderEditing?.id) {
+        await api.patch(`/api/admin/inbound-emails/folders/${folderEditing.id}`, { name });
+      } else {
+        await api.post('/api/admin/inbound-emails/folders', { name });
+      }
+      setFolderDialogOpen(false);
+      setFolderEditing(null);
+      setFolderNameDraft('');
+      await loadFolders();
+      await loadList(1, false);
+    } catch (error) {
+      setErrorMessage(buildFriendlyError(error, 'Nao foi possivel salvar a pasta.'));
+    } finally {
+      setFolderSaving(false);
+    }
+  };
+
+  const deleteFolder = async () => {
+    if (!folderDeleteTarget?.id) return;
+    setFolderDeleteLoading(true);
+    setErrorMessage('');
+    try {
+      await api.delete(`/api/admin/inbound-emails/folders/${folderDeleteTarget.id}`);
+      const deletedId = folderDeleteTarget.id;
+      setFolderDeleteTarget(null);
+      if (selectedFolderId === deletedId) {
+        setSelectedFolderId(null);
+        setFilters((prev) => ({ ...prev, status: 'ALL' }));
+      } else {
+        await loadList(1, false);
+      }
+      await loadFolders();
+    } catch (error) {
+      setErrorMessage(buildFriendlyError(error, 'Nao foi possivel excluir a pasta.'));
+    } finally {
+      setFolderDeleteLoading(false);
+    }
+  };
+
+  const openMoveFolder = (item) => {
+    setMoveFolderTarget(item);
+    setMoveFolderValue(item?.custom_folder_id || '');
+  };
+
+  const moveEmailToFolder = async () => {
+    if (!moveFolderTarget?.id) return;
+    setMoveFolderSaving(true);
+    setErrorMessage('');
+    try {
+      const response = await api.patch(`/api/admin/inbound-emails/${moveFolderTarget.id}/folder`, {
+        folder_id: moveFolderValue || null,
+      });
+      const updated = response.data?.data;
+      if (updated && selectedEmail?.id === updated.id) setSelectedEmail(updated);
+      setMoveFolderTarget(null);
+      setMoveFolderValue('');
+      await loadFolders();
+      await loadList(1, false);
+    } catch (error) {
+      setErrorMessage(buildFriendlyError(error, 'Nao foi possivel mover o email para a pasta.'));
+    } finally {
+      setMoveFolderSaving(false);
+    }
   };
 
   const moveToTrash = async (id) => {
@@ -736,7 +874,7 @@ export default function InstitutionalInboxPage() {
               <CardContent sx={{ py: '12px !important' }}>
                 <Stack direction="row" spacing={0.8} sx={{ flexWrap: 'wrap', gap: 0.5 }}>
                   {MAILBOX_VIEWS.map(({ value, label, Icon }) => {
-                    const selected = filters.status === value;
+                    const selected = !selectedFolderId && filters.status === value;
                     return (
                       <Button
                         key={value}
@@ -757,6 +895,55 @@ export default function InstitutionalInboxPage() {
                     );
                   })}
                 </Stack>
+
+                <Box sx={{ mt: 1.2, pt: 1.2, borderTop: '1px solid #E5E7EB' }}>
+                  <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center" sx={{ mb: 0.8, flexWrap: 'wrap' }}>
+                    <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      Minhas pastas
+                    </Typography>
+                    <Button size="small" startIcon={<CreateNewFolderOutlined />} onClick={openCreateFolder}>
+                      Nova pasta
+                    </Button>
+                  </Stack>
+
+                  {foldersLoading ? <CircularProgress size={18} /> : null}
+                  {!foldersLoading && folders.length === 0 ? (
+                    <Typography sx={{ fontSize: 13, color: '#94A3B8' }}>Nenhuma pasta personalizada criada.</Typography>
+                  ) : null}
+
+                  <Stack direction="row" spacing={0.7} sx={{ flexWrap: 'wrap', gap: 0.5 }}>
+                    {folders.map((folder) => {
+                      const selected = selectedFolderId === folder.id;
+                      return (
+                        <Button
+                          key={folder.id}
+                          size="small"
+                          variant={selected ? 'contained' : 'outlined'}
+                          startIcon={<FolderOutlined fontSize="small" />}
+                          onClick={() => selectCustomFolder(folder.id)}
+                          sx={{ borderRadius: 999, textTransform: 'none', fontWeight: 700 }}
+                        >
+                          {folder.name} ({Number(folder.message_count || 0)})
+                        </Button>
+                      );
+                    })}
+                  </Stack>
+
+                  {selectedFolderId ? (() => {
+                    const selectedFolder = folders.find((folder) => folder.id === selectedFolderId);
+                    if (!selectedFolder) return null;
+                    return (
+                      <Stack direction="row" spacing={0.8} sx={{ mt: 1 }}>
+                        <Button size="small" startIcon={<EditOutlined />} onClick={() => openRenameFolder(selectedFolder)}>
+                          Renomear
+                        </Button>
+                        <Button size="small" color="error" startIcon={<DeleteOutline />} onClick={() => setFolderDeleteTarget(selectedFolder)}>
+                          Excluir pasta
+                        </Button>
+                      </Stack>
+                    );
+                  })() : null}
+                </Box>
               </CardContent>
             </Card>
 
@@ -911,6 +1098,9 @@ export default function InstitutionalInboxPage() {
 
                         <Stack direction="row" spacing={0.7} alignItems="center" sx={{ flexWrap: 'wrap', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
                           <RiskBadge risk={item.security_risk} />
+                          {item.custom_folder ? (
+                            <Chip size="small" icon={<FolderOutlined fontSize="small" />} label={item.custom_folder.name} variant="outlined" />
+                          ) : null}
                           {isUnread || isTrash || item.status === 'ARCHIVED' ? <StatusChip status={item.status} /> : null}
                           {Number(item.attachment_count || 0) > 0 ? (
                             <Chip
@@ -944,15 +1134,25 @@ export default function InstitutionalInboxPage() {
                               </Button>
                             </>
                           ) : (
-                            <Button
-                              size="small"
-                              color="inherit"
-                              startIcon={<DeleteOutline />}
-                              onClick={() => moveToTrash(item.id)}
-                              disabled={trashBusyId === item.id}
-                            >
-                              Lixeira
-                            </Button>
+                            <>
+                              <Button
+                                size="small"
+                                color="inherit"
+                                startIcon={<DriveFileMoveOutlined />}
+                                onClick={() => openMoveFolder(item)}
+                              >
+                                Mover
+                              </Button>
+                              <Button
+                                size="small"
+                                color="inherit"
+                                startIcon={<DeleteOutline />}
+                                onClick={() => moveToTrash(item.id)}
+                                disabled={trashBusyId === item.id}
+                              >
+                                Lixeira
+                              </Button>
+                            </>
                           )}
                         </Stack>
                       </Stack>
@@ -1127,6 +1327,7 @@ export default function InstitutionalInboxPage() {
               <Typography><strong>Assunto:</strong> {formatSubject(selectedEmail.subject)}</Typography>
               <Typography><strong>Recebido em:</strong> {formatDateTime(selectedEmail.received_at)}</Typography>
               <Typography><strong>Status:</strong> {STATUS_LABELS[selectedEmail.status] || selectedEmail.status}</Typography>
+              <Typography><strong>Pasta:</strong> {selectedEmail.custom_folder?.name || 'Recebidos (sem pasta personalizada)'}</Typography>
               <Typography><strong>Message ID:</strong> {selectedEmail.message_id || '-'}</Typography>
               <Typography><strong>In-Reply-To:</strong> {selectedEmail.in_reply_to || '-'}</Typography>
               <Typography><strong>References:</strong> {selectedEmail.references_header || '-'}</Typography>
@@ -1299,6 +1500,13 @@ export default function InstitutionalInboxPage() {
               <Button onClick={() => applyStatus('READ')} disabled={statusSaving || !selectedEmail}>Marcar como lido</Button>
               <Button onClick={() => applyStatus('ARCHIVED')} disabled={statusSaving || !selectedEmail}>Arquivar</Button>
               <Button
+                startIcon={<DriveFileMoveOutlined />}
+                onClick={() => openMoveFolder(selectedEmail)}
+                disabled={!selectedEmail}
+              >
+                Mover para pasta
+              </Button>
+              <Button
                 color="error"
                 startIcon={<DeleteOutline />}
                 onClick={() => moveToTrash(selectedEmail.id)}
@@ -1309,6 +1517,72 @@ export default function InstitutionalInboxPage() {
             </Stack>
           )}
           <Button onClick={closeDetails}>Fechar</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={folderDialogOpen} onClose={() => { if (!folderSaving) setFolderDialogOpen(false); }} fullWidth maxWidth="xs">
+        <DialogTitle>{folderDialogMode === 'rename' ? 'Renomear pasta' : 'Nova pasta'}</DialogTitle>
+        <DialogContent dividers>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            label="Nome da pasta"
+            value={folderNameDraft}
+            onChange={(event) => setFolderNameDraft(event.target.value)}
+            inputProps={{ maxLength: 80 }}
+            disabled={folderSaving}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setFolderDialogOpen(false)} disabled={folderSaving}>Cancelar</Button>
+          <Button variant="contained" onClick={saveFolder} disabled={folderSaving || !folderNameDraft.trim()}>
+            {folderSaving ? 'Salvando...' : 'Salvar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(folderDeleteTarget)} onClose={() => { if (!folderDeleteLoading) setFolderDeleteTarget(null); }} fullWidth maxWidth="xs">
+        <DialogTitle>Excluir pasta?</DialogTitle>
+        <DialogContent dividers>
+          <Alert severity="info">
+            A pasta será excluída, mas os e-mails não serão apagados. Eles voltarão às caixas do sistema.
+          </Alert>
+          {folderDeleteTarget ? <Typography sx={{ mt: 2, fontWeight: 800 }}>{folderDeleteTarget.name}</Typography> : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setFolderDeleteTarget(null)} disabled={folderDeleteLoading}>Cancelar</Button>
+          <Button color="error" variant="contained" onClick={deleteFolder} disabled={folderDeleteLoading}>
+            {folderDeleteLoading ? 'Excluindo...' : 'Excluir pasta'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(moveFolderTarget)} onClose={() => { if (!moveFolderSaving) setMoveFolderTarget(null); }} fullWidth maxWidth="xs">
+        <DialogTitle>Mover para pasta</DialogTitle>
+        <DialogContent dividers>
+          {moveFolderTarget ? (
+            <Typography sx={{ mb: 2, fontWeight: 700 }}>{formatSubject(moveFolderTarget.subject)}</Typography>
+          ) : null}
+          <FormControl fullWidth size="small">
+            <InputLabel id="move-folder-label">Pasta</InputLabel>
+            <Select
+              labelId="move-folder-label"
+              label="Pasta"
+              value={moveFolderValue}
+              onChange={(event) => setMoveFolderValue(event.target.value)}
+              disabled={moveFolderSaving}
+            >
+              <MenuItem value="">Recebidos (sem pasta personalizada)</MenuItem>
+              {folders.map((folder) => <MenuItem key={folder.id} value={folder.id}>{folder.name}</MenuItem>)}
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setMoveFolderTarget(null)} disabled={moveFolderSaving}>Cancelar</Button>
+          <Button variant="contained" onClick={moveEmailToFolder} disabled={moveFolderSaving}>
+            {moveFolderSaving ? 'Movendo...' : 'Mover'}
+          </Button>
         </DialogActions>
       </Dialog>
 

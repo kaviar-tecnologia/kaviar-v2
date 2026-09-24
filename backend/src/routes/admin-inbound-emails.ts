@@ -47,6 +47,21 @@ const emptyTrashSchema = z.object({
   confirmation: z.literal('EMPTY_TRASH'),
 });
 
+const RESERVED_FOLDER_NAMES = new Set([
+  'recebidos', 'nao lidos', 'não lidos', 'lidos', 'arquivados', 'lixeira', 'enviados',
+]);
+
+const folderNameSchema = z.string()
+  .trim()
+  .min(1, 'Nome da pasta obrigatorio')
+  .max(80, 'Nome da pasta deve ter no maximo 80 caracteres')
+  .refine((value) => !/[\r\n\t]/.test(value), 'Nome da pasta invalido')
+  .refine((value) => !RESERVED_FOLDER_NAMES.has(value.toLocaleLowerCase('pt-BR')), 'Esse nome e reservado para uma pasta do sistema');
+
+const createFolderSchema = z.object({ name: folderNameSchema });
+const renameFolderSchema = z.object({ name: folderNameSchema });
+const moveToFolderSchema = z.object({ folder_id: z.string().uuid('Pasta invalida').nullable() });
+
 const replyInboundEmailSchema = z.object({
   message: z.string().trim().min(3, 'Mensagem obrigatoria').max(12000, 'Mensagem muito longa'),
   cc: z.array(z.string().email('Email de CC invalido')).max(10, 'Maximo de 10 destinatarios em CC').optional(),
@@ -89,6 +104,7 @@ function auditSnapshot(item: any) {
     subject: item?.subject || null,
     message_id: item?.message_id || null,
     status: item?.status || null,
+    custom_folder_id: item?.custom_folder_id || null,
   };
 }
 
@@ -134,6 +150,8 @@ function serializeInboundEmail(item: any) {
     status_before_trash: item.status_before_trash || null,
     trashed_at: item.trashed_at || null,
     trashed_by_admin_id: item.trashed_by_admin_id || null,
+    custom_folder_id: item.custom_folder_id || null,
+    custom_folder: item.custom_folder ? { id: item.custom_folder.id, name: item.custom_folder.name } : null,
     preview: buildBodyPreview(item),
     has_attachments: item.has_attachments,
     attachment_count: item.attachment_count,
@@ -166,6 +184,8 @@ function serializeInboundListItem(item: any) {
     status_before_trash: item.status_before_trash || null,
     trashed_at: item.trashed_at || null,
     trashed_by_admin_id: item.trashed_by_admin_id || null,
+    custom_folder_id: item.custom_folder_id || null,
+    custom_folder: item.custom_folder ? { id: item.custom_folder.id, name: item.custom_folder.name } : null,
     preview: buildBodyPreview(item),
     provider: item.provider,
     has_attachments: item.has_attachments,
@@ -194,14 +214,26 @@ router.get('/', async (req: Request, res: Response) => {
     const limit = Math.min(Math.max(requestedLimit, 1), MAX_LIMIT);
     const where: any = {};
 
+    const folderId = normalizeOptionalText(req.query.folder_id);
+    if (folderId && !z.string().uuid().safeParse(folderId).success) {
+      return res.status(400).json({ success: false, error: 'folder_id invalido.' });
+    }
+
     const status = normalizeStatus(req.query.status);
     if (req.query.status && !status) {
       return res.status(400).json({ success: false, error: 'Filtro status invalido. Use NEW, READ, ARCHIVED ou TRASHED.' });
     }
     if (status) {
       where.status = status;
+    } else if (folderId) {
+      where.status = { notIn: [INBOUND_STATUSES.TRASHED, INBOUND_STATUSES.DELETING] };
     } else {
       where.status = { in: [INBOUND_STATUSES.NEW, INBOUND_STATUSES.READ] };
+      where.custom_folder_id = null;
+    }
+
+    if (folderId) {
+      where.custom_folder_id = folderId;
     }
 
     if (req.query.to) {
@@ -255,6 +287,8 @@ router.get('/', async (req: Request, res: Response) => {
           status_before_trash: true,
           trashed_at: true,
           trashed_by_admin_id: true,
+          custom_folder_id: true,
+          custom_folder: { select: { id: true, name: true } },
           provider: true,
           has_attachments: true,
           attachment_count: true,
@@ -301,12 +335,141 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/folders', async (_req: Request, res: Response) => {
+  try {
+    const folders = await prisma.inbound_email_folders.findMany({
+      orderBy: [{ name: 'asc' }, { created_at: 'asc' }],
+      select: { id: true, name: true, created_by_admin_id: true, created_at: true, updated_at: true },
+    });
+
+    const data = await Promise.all(folders.map(async (folder: any) => ({
+      ...folder,
+      message_count: await prisma.inbound_email_messages.count({
+        where: {
+          custom_folder_id: folder.id,
+          status: { notIn: [INBOUND_STATUSES.TRASHED, INBOUND_STATUSES.DELETING] },
+        },
+      }),
+    })));
+
+    return res.json({ success: true, data });
+  } catch (error) {
+    console.error('[ADMIN_INBOUND_EMAIL_FOLDERS_LIST_ERROR]', error);
+    return res.status(500).json({ success: false, error: 'Erro ao listar pastas personalizadas.' });
+  }
+});
+
+router.post('/folders', async (req: Request, res: Response) => {
+  try {
+    const parsed = createFolderSchema.parse(req.body || {});
+    const existing = await prisma.inbound_email_folders.findFirst({
+      where: { name: { equals: parsed.name, mode: 'insensitive' } },
+      select: { id: true },
+    });
+    if (existing) {
+      return res.status(409).json({ success: false, error: 'Ja existe uma pasta com esse nome.' });
+    }
+
+    const ctx = auditCtx(req as any);
+    const created = await prisma.inbound_email_folders.create({
+      data: { name: parsed.name, created_by_admin_id: ctx.adminId },
+      select: { id: true, name: true, created_by_admin_id: true, created_at: true, updated_at: true },
+    });
+
+    await writeAuditSafely({
+      adminId: ctx.adminId, adminEmail: ctx.adminEmail, action: 'INBOUND_EMAIL_FOLDER_CREATED',
+      entityType: 'inbound_email_folder', entityId: created.id,
+      oldValue: null, newValue: created, ipAddress: ctx.ip, userAgent: ctx.ua,
+    });
+
+    return res.status(201).json({ success: true, data: { ...created, message_count: 0 } });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: error.errors[0]?.message || 'Pasta invalida.' });
+    }
+    if ((error as any)?.code === 'P2002') {
+      return res.status(409).json({ success: false, error: 'Ja existe uma pasta com esse nome.' });
+    }
+    console.error('[ADMIN_INBOUND_EMAIL_FOLDER_CREATE_ERROR]', error);
+    return res.status(500).json({ success: false, error: 'Erro ao criar pasta personalizada.' });
+  }
+});
+
+router.patch('/folders/:folderId', async (req: Request, res: Response) => {
+  try {
+    const folderId = String(req.params.folderId || '');
+    const parsed = renameFolderSchema.parse(req.body || {});
+    const current = await prisma.inbound_email_folders.findUnique({ where: { id: folderId } });
+    if (!current) return res.status(404).json({ success: false, error: 'Pasta nao encontrada.' });
+
+    const duplicate = await prisma.inbound_email_folders.findFirst({
+      where: {
+        id: { not: folderId },
+        name: { equals: parsed.name, mode: 'insensitive' },
+      },
+      select: { id: true },
+    });
+    if (duplicate) return res.status(409).json({ success: false, error: 'Ja existe uma pasta com esse nome.' });
+
+    const updated = await prisma.inbound_email_folders.update({
+      where: { id: folderId },
+      data: { name: parsed.name },
+      select: { id: true, name: true, created_by_admin_id: true, created_at: true, updated_at: true },
+    });
+
+    const ctx = auditCtx(req as any);
+    await writeAuditSafely({
+      adminId: ctx.adminId, adminEmail: ctx.adminEmail, action: 'INBOUND_EMAIL_FOLDER_RENAMED',
+      entityType: 'inbound_email_folder', entityId: folderId,
+      oldValue: { id: current.id, name: current.name }, newValue: { id: updated.id, name: updated.name },
+      ipAddress: ctx.ip, userAgent: ctx.ua,
+    });
+
+    return res.json({ success: true, data: updated });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: error.errors[0]?.message || 'Pasta invalida.' });
+    }
+    if ((error as any)?.code === 'P2002') {
+      return res.status(409).json({ success: false, error: 'Ja existe uma pasta com esse nome.' });
+    }
+    console.error('[ADMIN_INBOUND_EMAIL_FOLDER_RENAME_ERROR]', error);
+    return res.status(500).json({ success: false, error: 'Erro ao renomear pasta.' });
+  }
+});
+
+router.delete('/folders/:folderId', async (req: Request, res: Response) => {
+  try {
+    const folderId = String(req.params.folderId || '');
+    const current = await prisma.inbound_email_folders.findUnique({ where: { id: folderId } });
+    if (!current) return res.status(404).json({ success: false, error: 'Pasta nao encontrada.' });
+
+    const messageCount = await prisma.inbound_email_messages.count({ where: { custom_folder_id: folderId } });
+    await prisma.inbound_email_folders.delete({ where: { id: folderId } });
+
+    const ctx = auditCtx(req as any);
+    await writeAuditSafely({
+      adminId: ctx.adminId, adminEmail: ctx.adminEmail, action: 'INBOUND_EMAIL_FOLDER_DELETED',
+      entityType: 'inbound_email_folder', entityId: folderId,
+      oldValue: { id: current.id, name: current.name, message_count: messageCount },
+      newValue: { deleted: true, messages_returned_to_system_mailboxes: messageCount },
+      ipAddress: ctx.ip, userAgent: ctx.ua,
+    });
+
+    return res.json({ success: true, data: { deleted: true, released_messages: messageCount } });
+  } catch (error) {
+    console.error('[ADMIN_INBOUND_EMAIL_FOLDER_DELETE_ERROR]', error);
+    return res.status(500).json({ success: false, error: 'Erro ao excluir pasta.' });
+  }
+});
+
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id || '');
     const item = await prisma.inbound_email_messages.findUnique({
       where: { id },
       include: {
+        custom_folder: { select: { id: true, name: true } },
         attachments: {
           where: { status: 'AVAILABLE' },
           orderBy: { created_at: 'asc' },
@@ -352,6 +515,50 @@ router.get('/:id/attachments/:attachmentId/download', async (req: Request, res: 
   }
 });
 
+router.patch('/:id/folder', async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id || '');
+    const parsed = moveToFolderSchema.parse(req.body || {});
+    const current = await prisma.inbound_email_messages.findUnique({ where: { id } });
+    if (!current) return res.status(404).json({ success: false, error: 'Email inbound nao encontrado.' });
+    if (current.status === INBOUND_STATUSES.TRASHED || current.status === INBOUND_STATUSES.DELETING) {
+      return res.status(409).json({ success: false, error: 'Restaure o email antes de mover entre pastas.' });
+    }
+
+    let folder: any = null;
+    if (parsed.folder_id) {
+      folder = await prisma.inbound_email_folders.findUnique({
+        where: { id: parsed.folder_id },
+        select: { id: true, name: true },
+      });
+      if (!folder) return res.status(404).json({ success: false, error: 'Pasta nao encontrada.' });
+    }
+
+    const updated = await prisma.inbound_email_messages.update({
+      where: { id },
+      data: { custom_folder_id: parsed.folder_id },
+      include: { custom_folder: { select: { id: true, name: true } } },
+    });
+
+    const ctx = auditCtx(req as any);
+    await writeAuditSafely({
+      adminId: ctx.adminId, adminEmail: ctx.adminEmail, action: 'INBOUND_EMAIL_FOLDER_CHANGED',
+      entityType: 'inbound_email_message', entityId: id,
+      oldValue: { ...auditSnapshot(current), custom_folder_id: current.custom_folder_id || null },
+      newValue: { ...auditSnapshot(updated), custom_folder_id: updated.custom_folder_id || null, custom_folder_name: folder?.name || null },
+      ipAddress: ctx.ip, userAgent: ctx.ua,
+    });
+
+    return res.json({ success: true, data: serializeInboundEmail(updated) });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: error.errors[0]?.message || 'Pasta invalida.' });
+    }
+    console.error('[ADMIN_INBOUND_EMAIL_MOVE_FOLDER_ERROR]', error);
+    return res.status(500).json({ success: false, error: 'Erro ao mover email para pasta.' });
+  }
+});
+
 router.patch('/:id', async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id || '');
@@ -363,7 +570,11 @@ router.patch('/:id', async (req: Request, res: Response) => {
       return res.status(409).json({ success: false, error: 'Use Restaurar para retirar um email da lixeira.' });
     }
 
-    const updated = await prisma.inbound_email_messages.update({ where: { id }, data: { status: parsed.status } });
+    const updated = await prisma.inbound_email_messages.update({
+      where: { id },
+      data: { status: parsed.status },
+      include: { custom_folder: { select: { id: true, name: true } } },
+    });
     if (current.status !== parsed.status) {
       const ctx = auditCtx(req as any);
       await writeAuditSafely({

@@ -33,4 +33,13 @@ describe('InstitutionalInboxPage mailbox UX', () => {
   it('does not render a no-attachment chip for every message', () => {
     expect(source).toContain('Number(item.attachment_count || 0) > 0');
   });
+
+  it('supports custom folders without conflating them with archive or trash', () => {
+    expect(source).toContain('Minhas pastas');
+    expect(source).toContain('Nova pasta');
+    expect(source).toContain('/api/admin/inbound-emails/folders');
+    expect(source).toContain('/folder');
+    expect(source).toContain('Mover para pasta');
+    expect(source).toContain('Excluir pasta');
+  });
 });
