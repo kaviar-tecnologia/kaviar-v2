@@ -22,6 +22,24 @@ function maskCpf(cpf: string | null): string | null {
   return '***' + cpf.slice(-4);
 }
 
+function buildTerritorySnapshotVersion(territory: {
+  id: string;
+  updated_at: Date;
+  neighborhoods: Array<{ id: string; name: string; updated_at: Date }>;
+}): string {
+  const neighborhoods = [...territory.neighborhoods]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map(n => ({ id: n.id, name: n.name, updated_at: n.updated_at.toISOString() }));
+
+  const canonical = JSON.stringify({
+    territory_id: territory.id,
+    territory_updated_at: territory.updated_at.toISOString(),
+    neighborhoods,
+  });
+
+  return `sha256:${crypto.createHash('sha256').update(canonical).digest('hex')}`;
+}
+
 // ─── Operator Profiles ───────────────────────────────────────────────────────
 
 router.get('/operators', async (_req: Request, res: Response) => {
@@ -578,7 +596,7 @@ router.patch('/submissions/:id/review', async (req: Request, res: Response) => {
       });
       await prisma.operator_profiles.update({
         where: { id: submission.operator_profile_id },
-        data: { contract_status: 'signed', contract_url: submission.s3_key, terms_version: submission.contract_version || TERRITORIAL_MANAGER_CONTRACT_VERSION, contract_reviewed_by: adminId, contract_reviewed_at: now, contract_signed_at: now, updated_at: now },
+        data: { contract_status: 'signed', contract_url: submission.s3_key, terms_version: submission.contract_version || undefined, contract_reviewed_by: adminId, contract_reviewed_at: now, contract_signed_at: now, updated_at: now },
       });
     } else {
       await prisma.contract_submissions.update({
@@ -617,7 +635,7 @@ router.get('/operators/:id/contract-data', async (req: Request, res: Response) =
             updated_at: true,
             neighborhoods: {
               where: { is_active: true },
-              select: { name: true },
+              select: { id: true, name: true, updated_at: true },
               orderBy: { name: 'asc' },
             },
           },
@@ -651,6 +669,9 @@ router.get('/operators/:id/contract-data', async (req: Request, res: Response) =
     }
 
     const canGenerateContract = missingFields.length === 0;
+    const territoryVersion = operator.territory
+      ? buildTerritorySnapshotVersion(operator.territory)
+      : null;
 
     res.json({
       success: true,
@@ -673,7 +694,7 @@ router.get('/operators/:id/contract-data', async (req: Request, res: Response) =
           legalRepresentativeCpf: operator.legal_representative_cpf || null,
           territorio,
           territoryId: operator.territory?.id || null,
-          territoryVersion: operator.territory?.updated_at?.toISOString() || null,
+          territoryVersion,
           neighborhoods: operator.territory?.neighborhoods?.map(n => n.name) || [],
           cidadeUf,
           pixKey,
@@ -711,7 +732,7 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
             updated_at: true,
             neighborhoods: {
               where: { is_active: true },
-              select: { name: true },
+              select: { id: true, name: true, updated_at: true },
               orderBy: { name: 'asc' },
             },
           },
@@ -754,6 +775,7 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
       });
     }
 
+    const territoryVersion = buildTerritorySnapshotVersion(operator.territory);
     const generatedAt = new Date();
     const input: TerritorialManagerContractInput = {
       recipientType: operator.recipient_type as TerritorialManagerContractInput['recipientType'],
@@ -772,7 +794,7 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
         id: operator.territory.id,
         name: territorio!,
         cityUf: cidadeUf!,
-        version: operator.territory.updated_at.toISOString(),
+        version: territoryVersion,
         neighborhoods: operator.territory.neighborhoods.map(n => n.name),
       },
       generatedAt: generatedAt.toISOString(),
