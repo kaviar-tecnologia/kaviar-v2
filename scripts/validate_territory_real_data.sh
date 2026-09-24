@@ -13,12 +13,13 @@ echo "" | tee -a "$LOG_FILE"
 
 # Login admin
 echo "1️⃣ Autenticando admin..." | tee -a "$LOG_FILE"
-ADMIN_EMAIL="${ADMIN_EMAIL:-suporte@usbtecnok.com.br}"
+ADMIN_EMAIL="${ADMIN_EMAIL:-suporte@kaviar.com.br}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:?Set ADMIN_PASSWORD env var}"
+LOGIN_PAYLOAD=$(jq -n --arg email "$ADMIN_EMAIL" --arg password "$ADMIN_PASSWORD" '{email:$email,password:$password}')
 
 LOGIN=$(curl -s -X POST "$API_URL/api/admin/auth/login" \
   -H "Content-Type: application/json" \
-  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}")
+  -d "$LOGIN_PAYLOAD")
 
 TOKEN=$(echo "$LOGIN" | jq -r '.token // empty')
 if [ -z "$TOKEN" ]; then
