@@ -67,9 +67,9 @@ Não. A central KAVIAR apura o resultado mensalmente, revisa, aprova e efetua o 
 
 ## Isso é franquia?
 
-**Não.** Não é franquia nos termos da Lei 13.966/2019. Não há Circular de Oferta de Franquia, não há transferência obrigatória de know-how, não há royalties mensais e não há exclusividade permanente.
+O modelo atual é **estruturado como parceria operacional autônoma, e não como oferta de franquia**. Não há compra de território, exclusividade permanente ou taxa obrigatória de entrada nesta versão.
 
-É uma autorização operacional temporária de parceria autônoma.
+A classificação jurídica depende da forma como a relação é efetivamente executada; mudanças materiais no modelo devem ser submetidas a nova revisão jurídica.
 
 ---
 
