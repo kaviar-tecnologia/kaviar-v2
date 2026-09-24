@@ -61,7 +61,7 @@ Os valores dependem de apuração mensal, contrato vigente e Ativação Financei
 
 ## O repasse é automático?
 
-Não. A central KAVIAR apura o resultado mensalmente, revisa, aprova e efetua o repasse conforme cronograma e contrato. Os valores que aparecem no painel são estimados até a apuração formal.
+Não. O painel do Gestor pode exibir valores de participação já reconhecidos pelo Wallet V2, mas isso não significa pagamento automático. A obrigação, a revisão e o pagamento seguem os ciclos financeiros da central KAVIAR e o Contrato v1.2.
 
 ---
 
