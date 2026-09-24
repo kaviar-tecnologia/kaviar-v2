@@ -55,7 +55,7 @@ const folderNameSchema = z.string()
   .trim()
   .min(1, 'Nome da pasta obrigatorio')
   .max(80, 'Nome da pasta deve ter no maximo 80 caracteres')
-  .refine((value) => !/[\\r\\n\\t]/.test(value), 'Nome da pasta invalido')
+  .refine((value) => !/[\r\n\t]/.test(value), 'Nome da pasta invalido')
   .refine((value) => !RESERVED_FOLDER_NAMES.has(value.toLocaleLowerCase('pt-BR')), 'Esse nome e reservado para uma pasta do sistema');
 
 const createFolderSchema = z.object({ name: folderNameSchema });
