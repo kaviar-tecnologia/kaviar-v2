@@ -110,6 +110,12 @@ export class FeeSplitService {
     }
     if (params.platformFeeRateBps < 0 || params.platformFeeRateBps > 10000) throw new Error('INVARIANT: platformFeeRateBps out of range');
     if (params.managerCommissionRateBps < 0 || params.managerCommissionRateBps > 10000) throw new Error('INVARIANT: managerCommissionRateBps out of range');
+    if (!params.managerId && params.managerCommissionRateBps !== 0) {
+      throw new Error('INVARIANT: territory without manager must use 0 manager commission');
+    }
+    if (!params.managerId && split.manager_share_cents !== 0n) {
+      throw new Error('INVARIANT: territory without manager cannot create manager share');
+    }
 
     if (params.collectionStatus === 'collected' && (params.feePendingCents !== 0n || params.feeCollectedCents !== split.fee_amount_cents)) {
       throw new Error('INVARIANT: collected requires pending=0 and collected=total');
