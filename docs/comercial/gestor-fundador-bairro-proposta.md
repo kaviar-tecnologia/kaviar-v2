@@ -57,7 +57,7 @@ Você recebe uma **autorização operacional temporária** para atuar como parce
 
 ## O que NÃO é
 
-- ❌ Não é franquia
+- ❌ Não é apresentado como oferta de franquia
 - ❌ Não é compra de sistema
 - ❌ Não é venda de bairro
 - ❌ Não é sociedade
