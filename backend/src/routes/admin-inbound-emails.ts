@@ -47,11 +47,16 @@ const emptyTrashSchema = z.object({
   confirmation: z.literal('EMPTY_TRASH'),
 });
 
+const RESERVED_FOLDER_NAMES = new Set([
+  'recebidos', 'nao lidos', 'não lidos', 'lidos', 'arquivados', 'lixeira', 'enviados',
+]);
+
 const folderNameSchema = z.string()
   .trim()
   .min(1, 'Nome da pasta obrigatorio')
   .max(80, 'Nome da pasta deve ter no maximo 80 caracteres')
-  .refine((value) => !/[\\r\\n\\t]/.test(value), 'Nome da pasta invalido');
+  .refine((value) => !/[\\r\\n\\t]/.test(value), 'Nome da pasta invalido')
+  .refine((value) => !RESERVED_FOLDER_NAMES.has(value.toLocaleLowerCase('pt-BR')), 'Esse nome e reservado para uma pasta do sistema');
 
 const createFolderSchema = z.object({ name: folderNameSchema });
 const renameFolderSchema = z.object({ name: folderNameSchema });
@@ -565,7 +570,11 @@ router.patch('/:id', async (req: Request, res: Response) => {
       return res.status(409).json({ success: false, error: 'Use Restaurar para retirar um email da lixeira.' });
     }
 
-    const updated = await prisma.inbound_email_messages.update({ where: { id }, data: { status: parsed.status } });
+    const updated = await prisma.inbound_email_messages.update({
+      where: { id },
+      data: { status: parsed.status },
+      include: { custom_folder: { select: { id: true, name: true } } },
+    });
     if (current.status !== parsed.status) {
       const ctx = auditCtx(req as any);
       await writeAuditSafely({
