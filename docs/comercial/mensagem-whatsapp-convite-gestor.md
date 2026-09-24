@@ -11,7 +11,7 @@ O KAVIAR está selecionando Gestores Territoriais Fundadores para apoiar a opera
 
 Funciona assim:
 • Sem taxa obrigatória de ativação nesta versão
-• Ciclo: 90 dias
+• Programa piloto/pré-ativação: até 90 dias, sem participação territorial até formalização e ativação
 • Território: 1 bairro/comunidade
 • Você capta motoristas e parceiros pelo painel
 • Participação: 40% da Taxa da Plataforma Elegível nas operações elegíveis do território formalmente atribuído, durante Ativação Financeira válida
@@ -34,7 +34,7 @@ Abriu vaga de Gestor Territorial Fundador para bairros do RJ.
 
 Resumo rápido:
 ✅ Sem taxa obrigatória de ativação nesta versão
-✅ 90 dias de ciclo inicial
+✅ Programa piloto/pré-ativação de até 90 dias
 ✅ Você atua como apoio territorial no seu bairro pelo painel
 ✅ Indica motoristas, parceiros, Pet
 ✅ 40% da Taxa da Plataforma Elegível corresponde à participação do gestor nas operações elegíveis do território formalmente atribuído, conforme contrato
