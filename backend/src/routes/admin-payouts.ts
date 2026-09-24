@@ -884,6 +884,12 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
     doc.moveDown(1.8);
     doc.text('___________________________________________', { align: 'center' });
     doc.text(`${input.displayName} — Gestor(a) Territorial / Representante`, { align: 'center' });
+    doc.moveDown(1.8);
+    doc.font('Helvetica-Bold').fontSize(8.5).text('TESTEMUNHAS — quando utilizadas para reforço probatório', { align: 'center' });
+    doc.moveDown(1.2);
+    doc.font('Helvetica').fontSize(8.5).text('1. __________________________________  Nome: ______________________________  CPF: __________________', { align: 'center' });
+    doc.moveDown(1.0);
+    doc.text('2. __________________________________  Nome: ______________________________  CPF: __________________', { align: 'center' });
 
     const pages = doc.bufferedPageRange();
     for (let i = 0; i < pages.count; i++) {
