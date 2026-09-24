@@ -560,6 +560,13 @@ export default function TerritorialPayoutsPage() {
   );
   const legacyEligibleTerritoryIds = new Set(legacyEligibleOperators.map(o => o.territory_id));
   const legacyEligibleTerritories = territories.filter(t => legacyEligibleTerritoryIds.has(t.id));
+  const occupiedAdminIds = new Set(operators.map(o => o.admin_id));
+  const eligibleTerritoryAdmins = territoryAdmins.filter(a => {
+    if (occupiedAdminIds.has(a.id) && !createdProfileId) return false;
+    return opForm.relationship_type === 'territorial_manager'
+      ? a.role === 'TERRITORIAL_MANAGER'
+      : a.role !== 'TERRITORIAL_MANAGER';
+  });
 
   if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}><CircularProgress sx={{ color: '#B8942E' }} /></Box>;
 
@@ -706,16 +713,14 @@ export default function TerritorialPayoutsPage() {
           </Box>
           <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Conta de acesso territorial</Typography>
             <Typography variant="caption" sx={{ color: '#6B7280', display: 'block', mb: 1, fontSize: '0.7rem' }}>{opForm.relationship_type === 'territorial_manager' ? 'A conta deve ter role TERRITORIAL_MANAGER. O contrato v1.2 e a Ativação Financeira continuam etapas separadas.' : 'A conta deve ter role de Operador Territorial. Este fluxo não cria Gestor Territorial.'}</Typography>
-            {opForm.territory_id && !loadingAdmins && territoryAdmins.length === 0 && !createAccess && (
-              <Alert severity="warning" sx={{ mb: 1 }}>Nenhum acesso vinculado a este território. Crie um abaixo.</Alert>
+            {opForm.territory_id && !loadingAdmins && eligibleTerritoryAdmins.length === 0 && !createAccess && !createdProfileId && (
+              <Alert severity="warning" sx={{ mb: 1 }}>Nenhuma conta compatível e sem perfil territorial está disponível neste território. Crie uma abaixo.</Alert>
             )}
             {!createAccess && (
               <>
                 {loadingAdmins ? <CircularProgress size={20} sx={{ color: '#B8942E' }} /> : (
-                  <TextField select value={opForm.admin_id} onChange={e => setOpForm({ ...opForm, admin_id: e.target.value })} fullWidth size="small" disabled={!opForm.territory_id || territoryAdmins.length === 0 || Boolean(createdProfileId)} InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }}>
-                    {territoryAdmins
-                      .filter(a => opForm.relationship_type === 'territorial_manager' ? a.role === 'TERRITORIAL_MANAGER' : a.role !== 'TERRITORIAL_MANAGER')
-                      .map(a => <MenuItem key={a.id} value={a.id}>{a.name} — {a.email} ({a.role})</MenuItem>)}
+                  <TextField select value={opForm.admin_id} onChange={e => setOpForm({ ...opForm, admin_id: e.target.value })} fullWidth size="small" disabled={!opForm.territory_id || eligibleTerritoryAdmins.length === 0 || Boolean(createdProfileId)} InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }}>
+                    {eligibleTerritoryAdmins.map(a => <MenuItem key={a.id} value={a.id}>{a.name} — {a.email} ({a.role})</MenuItem>)}
                   </TextField>
                 )}
                 <Button size="small" onClick={() => { setCreateAccess(true); setAccessForm({ name: '', email: '', password: '' }); }} disabled={!opForm.territory_id} sx={{ mt: 1, color: '#C8A84E', textTransform: 'none' }}>+ Criar acesso de {opForm.relationship_type === 'territorial_manager' ? 'gestor' : 'operador'}</Button>
@@ -846,7 +851,7 @@ export default function TerritorialPayoutsPage() {
               <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Tipo</Typography><Typography>{RECIPIENT_LABELS[detailTarget.recipient_type]}</Typography></Box>
               <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Território</Typography><Typography>{detailTarget.territory?.name}</Typography></Box>
               <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Acesso autorizado</Typography><Typography>{detailTarget.admin?.name} — {detailTarget.admin?.email}</Typography></Box>
-              <Typography variant="caption" sx={{ color: '#6B7280', display: 'block', mt: 0.5, fontSize: '0.7rem' }}>O operador financeiro/contratual é o responsável por recebimentos, contrato e repasses. O acesso autorizado apenas permite entrada no painel conforme permissão concedida.</Typography>
+              <Typography variant="caption" sx={{ color: '#6B7280', display: 'block', mt: 0.5, fontSize: '0.7rem' }}>{detailTarget.relationship_type === 'territorial_manager' ? 'Para Gestor Territorial, contrato v1.2, perfil operacional e Ativação Financeira são estados separados. O acesso ao painel, sozinho, não cria participação econômica.' : 'Para Operador Territorial, esta conta dá acesso ao painel conforme as permissões concedidas e permanece fora do fluxo financeiro v1.2 do Gestor.'}</Typography>
               {detailTarget.full_name && <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Nome completo</Typography><Typography>{detailTarget.full_name}</Typography></Box>}
               {detailTarget.document_cpf && <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>CPF</Typography><Typography sx={{ fontFamily: 'monospace' }}>{detailTarget.document_cpf}</Typography></Box>}
               {detailTarget.company_name && <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>{detailTarget.recipient_type === 'company' ? 'Razão Social' : 'Associação'}</Typography><Typography>{detailTarget.company_name}</Typography></Box>}
