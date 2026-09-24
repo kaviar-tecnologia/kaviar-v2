@@ -30,7 +30,7 @@ export default function ComercialGestorPage() {
 
   return (
     <Box>
-      <Typography variant="h5" sx={{ color: '#C8A84E', fontWeight: 800, mb: 1 }}>📄 Plano Gestor Fundador de Bairro</Typography>
+      <Typography variant="h5" sx={{ color: '#C8A84E', fontWeight: 800, mb: 1 }}>📄 Materiais do Gestor Territorial</Typography>
       <Alert severity="info" sx={{ mb: 3, bgcolor: 'rgba(37,99,235,0.05)', border: '1px solid rgba(37,99,235,0.2)' }}>
         Materiais comerciais e operacionais de apoio. O único instrumento definitivo do Gestor Territorial é o Contrato de Parceria Operacional Territorial v1.2; o termo de piloto é pré-contratual e não cria Ativação Financeira.
       </Alert>
