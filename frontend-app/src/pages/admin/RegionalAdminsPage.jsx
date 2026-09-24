@@ -83,6 +83,7 @@ export default function RegionalAdminsPage() {
           <TableBody>
             {admins.map((a) => {
               const op = a.operator_profile;
+<<<<<<< HEAD
               const isManager = op?.relationship_type === 'territorial_manager';
               const contractLabel = !op ? '—'
                 : isManager && op.has_contract && op.contract_status === 'signed' && op.terms_version === 'v1.2' ? 'v1.2 formalizado'
@@ -90,6 +91,16 @@ export default function RegionalAdminsPage() {
                 : isManager && op.contract_status === 'available' ? 'v1.2 disponível'
                 : isManager && (op.contract_status === 'not_required' || (!op.has_contract && op.contract_status === 'signed')) ? 'Inconsistência — v1.2 pendente'
                 : isManager ? 'v1.2 pendente'
+=======
+              const isManagerProfile = op?.relationship_type === 'territorial_manager';
+              const contractLabel = !op ? '—'
+                : isManagerProfile && op.has_contract && op.contract_status === 'signed' && op.terms_version === 'v1.2' ? 'v1.2 formalizado'
+                : isManagerProfile && op.contract_status === 'submitted' ? 'v1.2 em análise'
+                : isManagerProfile && op.contract_status === 'available' ? 'v1.2 disponível'
+                : isManagerProfile && op.contract_status === 'rejected' ? 'v1.2 rejeitado'
+                : isManagerProfile && (op.contract_status === 'not_required' || (op.contract_status === 'signed' && !op.has_contract)) ? 'Inconsistência contratual'
+                : isManagerProfile ? 'v1.2 pendente'
+>>>>>>> 315c55d5 (fix(frontend): show v1.2-specific manager contract states)
                 : op.has_contract && op.contract_status === 'signed' ? 'Formalizado'
                 : op.has_contract && op.contract_status === 'pending' ? 'Para análise'
                 : !op.has_contract && op.contract_status === 'signed' && op.has_online_acceptance ? 'Aceite online'
@@ -97,7 +108,12 @@ export default function RegionalAdminsPage() {
                 : 'Pendente';
               const contractColor = contractLabel === 'v1.2 formalizado' || contractLabel === 'Formalizado' ? 'success'
                 : contractLabel === 'v1.2 em análise' || contractLabel === 'v1.2 disponível' || contractLabel === 'Para análise' ? 'info'
+<<<<<<< HEAD
                 : contractLabel.indexOf('Inconsistência') === 0 || contractLabel === 'Aceite online' ? 'warning'
+=======
+                : contractLabel === 'Inconsistência contratual' || contractLabel === 'v1.2 rejeitado' ? 'error'
+                : contractLabel === 'Aceite online' ? 'warning'
+>>>>>>> 315c55d5 (fix(frontend): show v1.2-specific manager contract states)
                 : 'default';
               return (
               <TableRow key={a.id}>
