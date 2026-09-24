@@ -14,7 +14,7 @@ A parceria com associações é **sem cobrança inicial**. Não há taxa de ativ
 
 A associação pode apoiar a divulgação, confiança local e organização da demanda. Eventuais benefícios, bonificações ou parcerias comerciais futuras dependem de contrato específico, apuração e validação da central KAVIAR/KAVIAR.
 
-> Este modelo é diferente do Gestor Territorial. Na política atual, não há taxa obrigatória de ativação para o Gestor; eventual piloto/pré-ativação e a formalização contratual seguem documentos próprios.
+> Este modelo é diferente do Gestor Territorial, que possui fluxo contratual, territorial e de Ativação Financeira próprios. Na política atual, não há taxa obrigatória de adesão, habilitação ou ativação do Gestor Territorial; eventual piloto/pré-ativação e a formalização contratual seguem documentos próprios.
 
 ---
 
