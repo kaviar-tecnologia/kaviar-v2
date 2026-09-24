@@ -228,6 +228,20 @@ router.patch('/operators/:id', async (req: Request, res: Response) => {
       }
     }
 
+    if (Object.prototype.hasOwnProperty.call(fields, 'recipient_type')) {
+      if (existing.is_active || existing.document_status !== 'pending' || existing.contract_status !== 'pending') {
+        return res.status(409).json({
+          success: false,
+          error: 'recipient_type só pode ser alterado enquanto o perfil está inativo, documentalmente pendente e sem contrato formalizado.',
+        });
+      }
+      if (!['individual', 'company', 'association'].includes(fields.recipient_type as string)) {
+        return res.status(400).json({ success: false, error: 'recipient_type inválido' });
+      }
+      updates.recipient_type = fields.recipient_type;
+      delete fields.recipient_type;
+    }
+
     // Field updates
     for (const [k, v] of Object.entries(fields)) {
       if (['display_name', 'email', 'phone', 'address', 'pix_key', 'pix_key_type', 'bank_name', 'full_name', 'document_cpf', 'document_rg', 'company_name', 'trade_name', 'document_cnpj', 'legal_representative_name', 'legal_representative_cpf', 'notes', 'terms_accepted_at', 'responsibility_terms_accepted_at', 'confidentiality_terms_accepted_at', 'terms_version', 'terms_accepted_by', 'contract_url', 'contract_signed_at'].includes(k)) {
