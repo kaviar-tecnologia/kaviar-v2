@@ -642,8 +642,7 @@ router.get('/operators/:id/contract-data', async (req: Request, res: Response) =
             uf: true,
             updated_at: true,
             neighborhoods: {
-              where: { is_active: true },
-              select: { id: true, name: true, updated_at: true },
+              select: { id: true, name: true, is_active: true, updated_at: true },
               orderBy: { name: 'asc' },
             },
           },
@@ -759,8 +758,7 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
             uf: true,
             updated_at: true,
             neighborhoods: {
-              where: { is_active: true },
-              select: { id: true, name: true, updated_at: true },
+              select: { id: true, name: true, is_active: true, updated_at: true },
               orderBy: { name: 'asc' },
             },
           },
@@ -856,7 +854,7 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
         name: territorio!,
         cityUf: cidadeUf!,
         version: territoryVersion,
-        neighborhoods: operator.territory.neighborhoods.map(n => n.name),
+        neighborhoods: operator.territory.neighborhoods.map(n => `${n.name} (${n.is_active ? 'ativo' : 'inativo'})`),
         assignmentId: managerAssignment.id,
         assignmentStatus: managerAssignment.status,
       },
@@ -1011,6 +1009,7 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
           neighborhoods: operator.territory.neighborhoods.map(n => ({
             id: n.id,
             name: n.name,
+            is_active: n.is_active,
             updated_at: n.updated_at.toISOString(),
           })),
         },
