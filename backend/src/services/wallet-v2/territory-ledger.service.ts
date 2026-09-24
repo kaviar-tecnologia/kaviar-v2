@@ -38,7 +38,7 @@ export class TerritoryLedgerService {
 
     const shareDescription = managerId
       ? 'Parcela contratual gestor'
-      : 'Parcela territorial reservada';
+      : 'Área de Sombra KAVIAR — 100% da taxa para matriz';
 
     // INSERT with ON CONFLICT DO NOTHING
     const { rows: inserted } = await client.query(
