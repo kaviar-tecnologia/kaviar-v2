@@ -27,12 +27,28 @@ async function setupFull(balance = 10000n) {
   const did = `drv-cy-${RUN}-${randomUUID().slice(0,4)}`;
   const tid = `ter-cy-${RUN}-${randomUUID().slice(0,4)}`;
   const mid = `mgr-cy-${RUN}-${randomUUID().slice(0,4)}`;
+  const opid = `op-${mid}`;
   await pool.query(`INSERT INTO drivers (id,name,email,phone,document_cpf,status,created_at,updated_at) VALUES ($1,'T',$2,'1','0','active',NOW(),NOW()) ON CONFLICT DO NOTHING`, [did, `${did}@t`]);
   await pool.query(`INSERT INTO driver_wallets (driver_id,balance_cents,reserved_cents,updated_at) VALUES ($1,$2,0,NOW()) ON CONFLICT (driver_id) DO UPDATE SET balance_cents=$2,reserved_cents=0`, [did, balance.toString()]);
   await pool.query(`INSERT INTO operational_territories (id,name,level,status,regulatory_status,created_at,updated_at) VALUES ($1,'T','neighborhood','active','not_applicable',NOW(),NOW()) ON CONFLICT DO NOTHING`, [tid]);
-  await pool.query(`INSERT INTO admins (id,name,email,phone,password,role,created_at,updated_at) VALUES ($1,'M',$2,'1','h','regional_manager',NOW(),NOW()) ON CONFLICT DO NOTHING`, [mid, `${mid}@t`]);
-  await pool.query(`INSERT INTO territory_manager_assignments (territory_id,admin_id,status,started_at,created_by,updated_at) VALUES ($1,$2,'active',NOW()-INTERVAL '30 days',$2,NOW())`, [tid, mid]);
-  await pool.query(`INSERT INTO operator_profiles (id,admin_id,territory_id,is_active,recipient_type,display_name,relationship_type,created_at,updated_at) VALUES ($1,$2,$3,true,'individual','Test Operator','territorial_operator',NOW(),NOW()) ON CONFLICT DO NOTHING`, [`op-${mid}`, mid, tid]);
+  await pool.query(`INSERT INTO admins (id,name,email,phone,password,role,is_active,created_at,updated_at) VALUES ($1,'M',$2,'1','h','TERRITORIAL_MANAGER',true,NOW(),NOW()) ON CONFLICT DO NOTHING`, [mid, `${mid}@t`]);
+  await pool.query(
+    `INSERT INTO operator_profiles (
+       id,admin_id,territory_id,is_active,recipient_type,display_name,relationship_type,
+       document_status,contract_status,terms_version,contract_url,pix_key,pix_key_type,
+       responsibility_terms_accepted_at,confidentiality_terms_accepted_at,created_at,updated_at
+     ) VALUES (
+       $1,$2,$3,true,'individual','Test Manager','territorial_manager',
+       'verified','signed','v1.2','contract-submissions/test.pdf','11999999999','phone',
+       NOW(),NOW(),NOW(),NOW()
+     )`,
+    [opid, mid, tid]
+  );
+  await pool.query(
+    `INSERT INTO territory_manager_assignments (territory_id,admin_id,operator_profile_id,status,started_at,created_by,updated_at)
+     VALUES ($1,$2,$3,'active',NOW()-INTERVAL '30 days',$2,NOW())`,
+    [tid, mid, opid]
+  );
   return { driverId: did, territoryId: tid, managerId: mid };
 }
 
