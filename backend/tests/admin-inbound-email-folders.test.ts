@@ -68,7 +68,7 @@ describe('admin institutional inbox custom folders', () => {
   });
 
   it('filtra uma pasta personalizada sem incluir lixeira', async () => {
-    const folderId = '22222222-2222-2222-2222-222222222222';
+    const folderId = '22222222-2222-4222-8222-222222222222';
     const res = await request(app).get(`/api/admin/inbound-emails?folder_id=${folderId}`);
     expect(res.status).toBe(200);
     expect(prismaMock.inbound_email_messages.findMany).toHaveBeenCalledWith(expect.objectContaining({
@@ -82,7 +82,7 @@ describe('admin institutional inbox custom folders', () => {
   it('cria pasta com nome validado e auditoria', async () => {
     prismaMock.inbound_email_folders.findFirst.mockResolvedValueOnce(null);
     prismaMock.inbound_email_folders.create.mockResolvedValueOnce({
-      id: '22222222-2222-2222-2222-222222222222', name: 'AgeRio', created_by_admin_id: 'admin-1',
+      id: '22222222-2222-4222-8222-222222222222', name: 'AgeRio', created_by_admin_id: 'admin-1',
       created_at: new Date(), updated_at: new Date(),
     });
     const res = await request(app).post('/api/admin/inbound-emails/folders').send({ name: '  AgeRio  ' });
@@ -106,7 +106,7 @@ describe('admin institutional inbox custom folders', () => {
   });
 
   it('move email para uma pasta existente', async () => {
-    const folderId = '22222222-2222-2222-2222-222222222222';
+    const folderId = '22222222-2222-4222-8222-222222222222';
     prismaMock.inbound_email_messages.findUnique.mockResolvedValueOnce(email());
     prismaMock.inbound_email_folders.findUnique.mockResolvedValueOnce({ id: folderId, name: 'AgeRio' });
     prismaMock.inbound_email_messages.update.mockResolvedValueOnce(email({
@@ -126,7 +126,7 @@ describe('admin institutional inbox custom folders', () => {
   });
 
   it('excluir pasta nao exclui emails e libera o vinculo via FK SET NULL', async () => {
-    const folderId = '22222222-2222-2222-2222-222222222222';
+    const folderId = '22222222-2222-4222-8222-222222222222';
     prismaMock.inbound_email_folders.findUnique.mockResolvedValueOnce({ id: folderId, name: 'AgeRio' });
     prismaMock.inbound_email_messages.count.mockResolvedValueOnce(3);
     prismaMock.inbound_email_folders.delete.mockResolvedValueOnce({ id: folderId });
