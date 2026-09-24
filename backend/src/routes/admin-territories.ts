@@ -303,17 +303,6 @@ router.get('/:id/finance-rules', async (req: Request, res: Response) => {
   }
 });
 
-const financeRuleSchema = z.object({
-  matrix_share_percent: z.number().min(0).max(100),
-  regional_share_percent: z.number().min(0).max(100),
-  partner_commission_percent: z.number().min(0).max(100).default(5),
-  min_monthly_fee_cents: z.number().int().optional().nullable(),
-  revenue_threshold_cents: z.number().int().optional().nullable(),
-  description: z.string().optional().nullable(),
-  valid_from: z.string().optional().nullable(),
-  valid_until: z.string().optional().nullable(),
-});
-
 // POST /api/admin/territories/:id/finance-rules
 // Legacy simulation rules are read-only after Gestor Territorial v1.2.
 // Current economics are fixed by the contract/rate snapshot and recognized by Wallet V2.
