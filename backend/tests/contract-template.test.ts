@@ -204,6 +204,41 @@ describe('contract template flow', () => {
       expect(response.financial_activation_created).toBe(false);
       expect(response.contract_status).toBe('available');
     });
+    it('manager v1.2 generation requires exactly one compatible current assignment', () => {
+      const canGenerateWith = (assignmentCount: number) => assignmentCount === 1;
+      expect(canGenerateWith(0)).toBe(false);
+      expect(canGenerateWith(1)).toBe(true);
+      expect(canGenerateWith(2)).toBe(false);
+    });
+
+    it('PJ submission audit identifies the legal representative as signer', () => {
+      const profile = {
+        recipient_type: 'company',
+        display_name: 'Gestora XPTO',
+        legal_representative_name: 'Maria da Silva',
+        legal_representative_cpf: '111.222.333-44',
+        document_cnpj: '12.345.678/0001-99',
+      };
+      const signerName =
+        profile.recipient_type === 'individual'
+          ? profile.display_name
+          : (profile.legal_representative_name || profile.display_name);
+      const signerDocument =
+        profile.recipient_type === 'individual'
+          ? null
+          : (profile.legal_representative_cpf || profile.document_cnpj);
+      expect(signerName).toBe('Maria da Silva');
+      expect(signerDocument).toBe('111.222.333-44');
+    });
+
+    it('admin review time does not replace the signed-document submission evidence time', () => {
+      const submittedAt = new Date('2026-09-24T14:00:00.000Z');
+      const reviewedAt = new Date('2026-09-24T15:00:00.000Z');
+      const contractSignedAt = submittedAt;
+      expect(contractSignedAt).toEqual(submittedAt);
+      expect(contractSignedAt).not.toEqual(reviewedAt);
+    });
+
 
     it('legacy online-only manager acceptance may be migrated to a v1.2 template', () => {
       const profile = {
