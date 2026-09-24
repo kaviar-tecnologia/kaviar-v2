@@ -39,7 +39,30 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     if (!profile) return res.json({ success: true, data: null });
-    res.json({ success: true, data: profile });
+
+    let financialActivation = null;
+    if (profile.relationship_type === 'territorial_manager') {
+      const now = new Date();
+      const assignment = await prisma.territory_manager_assignments.findFirst({
+        where: {
+          admin_id: admin.id,
+          territory_id: profile.territory_id,
+          status: 'active',
+          started_at: { lte: now },
+          OR: [{ ended_at: null }, { ended_at: { gt: now } }],
+        },
+        select: { id: true, status: true, started_at: true, ended_at: true },
+        orderBy: { started_at: 'desc' },
+      });
+      financialActivation = {
+        active: Boolean(assignment),
+        assignment_id: assignment?.id || null,
+        started_at: assignment?.started_at || null,
+        ended_at: assignment?.ended_at || null,
+      };
+    }
+
+    res.json({ success: true, data: { ...profile, financial_activation: financialActivation } });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Erro ao buscar perfil' });
   }
