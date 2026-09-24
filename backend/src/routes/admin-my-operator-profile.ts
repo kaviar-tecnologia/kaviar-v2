@@ -87,6 +87,17 @@ router.post('/submit-contract', (req: Request, res: Response) => {
         return res.status(409).json({ success: false, error: `Envio não permitido no estado '${profile.contract_status}'. Permitido: available, rejected.` });
       }
 
+      if (
+        profile.relationship_type === 'territorial_manager' &&
+        profile.terms_version !== TERRITORIAL_MANAGER_CONTRACT_VERSION
+      ) {
+        return res.status(409).json({
+          success: false,
+          error: `Modelo contratual ${TERRITORIAL_MANAGER_CONTRACT_VERSION} precisa ser gerado antes do envio para assinatura.`,
+          required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
+        });
+      }
+
       const file = req.file;
       if (!file) return res.status(400).json({ success: false, error: 'Arquivo PDF obrigatório' });
 
