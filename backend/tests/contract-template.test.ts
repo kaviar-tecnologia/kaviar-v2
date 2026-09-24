@@ -174,14 +174,25 @@ describe('contract template flow', () => {
       expect(canApprove).toBe(false);
     });
 
-    it('generic online terms do not substitute the manager contract', () => {
+    it('generic online terms do not stamp v1.2 or substitute the manager contract', () => {
       const isTerritorialManager = true;
       const update = {
-        terms_version: isTerritorialManager ? REQUIRED_VERSION : 'v1.0-captador',
-        ...(isTerritorialManager ? {} : { contract_status: 'signed' }),
+        terms_accepted_at: new Date(),
+        ...(isTerritorialManager
+          ? {}
+          : { terms_version: 'v1.0-captador', contract_status: 'signed' }),
       };
-      expect(update.terms_version).toBe('v1.2');
+      expect(update).not.toHaveProperty('terms_version');
       expect(update).not.toHaveProperty('contract_status');
+    });
+
+    it('non-manager submissions keep their own terms version instead of being relabeled v1.2', () => {
+      const profile = { relationship_type: 'territorial_operator', terms_version: 'v1.0-captador' };
+      const submissionVersion =
+        profile.relationship_type === 'territorial_manager'
+          ? REQUIRED_VERSION
+          : (profile.terms_version || 'v1.0');
+      expect(submissionVersion).toBe('v1.0-captador');
     });
 
     it('template generation never creates financial activation', () => {
