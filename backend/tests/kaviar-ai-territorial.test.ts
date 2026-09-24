@@ -669,6 +669,14 @@ describe('criação de território — regras', () => {
     expect(createSection).not.toContain("status: 'active'");
   });
 
+  it('novo gestor territorial nasce em pré-produção financeira', () => {
+    const routeSrc = require('fs').readFileSync(
+      require('path').resolve(__dirname, '../src/routes/admin-ai.ts'), 'utf8'
+    );
+    const managerSection = routeSrc.split("'/territory/create-manager'")[1] || '';
+    expect(managerSection).toContain("status: 'pending_approval'");
+  });
+
   it('rota de criação bloqueia duplicidade (status 409)', () => {
     const routeSrc = require('fs').readFileSync(
       require('path').resolve(__dirname, '../src/routes/admin-ai.ts'), 'utf8'
