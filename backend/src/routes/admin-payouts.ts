@@ -231,25 +231,25 @@ router.patch('/operators/:id', async (req: Request, res: Response) => {
       if (contract_status === 'not_required') {
         return res.status(409).json({
           success: false,
-          error: 'Gestor Territorial exige contrato formal v1.2; contract_status=not_required não é permitido.',
+          error: 'Gestor Territorial exige Contrato de Parceria Operacional Territorial v1.2; contrato não pode ser dispensado.'
           required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
         });
       }
       if (contract_status === 'signed') {
         return res.status(409).json({
           success: false,
-          error: 'Gestor Territorial só pode ser marcado como contrato assinado pelo fluxo formal de submissão e aprovação v1.2.',
+          error: 'Contrato de Gestor Territorial não pode ser marcado como assinado por atualização manual. Use o fluxo formal v1.2 de submissão e revisão.',
           required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
         });
       }
-      if (fields.terms_version && fields.terms_version !== TERRITORIAL_MANAGER_CONTRACT_VERSION) {
+      if (Object.prototype.hasOwnProperty.call(fields, 'terms_version')) {
         return res.status(409).json({
           success: false,
-          error: `Gestor Territorial não pode receber versão de termos '${fields.terms_version}'. Use ${TERRITORIAL_MANAGER_CONTRACT_VERSION}.`,
+          error: 'A versão contratual do Gestor Territorial é controlada pelo fluxo canônico v1.2 e não pode ser alterada manualmente.',
           required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
         });
       }
-      if (fields.contract_url || fields.contract_signed_at) {
+      if (Object.prototype.hasOwnProperty.call(fields, 'contract_url') || Object.prototype.hasOwnProperty.call(fields, 'contract_signed_at')) {
         return res.status(409).json({
           success: false,
           error: 'Contrato do Gestor Territorial não pode ser registrado pelo PATCH genérico. Use o fluxo formal v1.2.',
@@ -257,6 +257,7 @@ router.patch('/operators/:id', async (req: Request, res: Response) => {
         });
       }
     }
+
 
     if (Object.prototype.hasOwnProperty.call(fields, 'recipient_type')) {
       if (existing.is_active || existing.document_status !== 'pending' || existing.contract_status !== 'pending') {
@@ -307,14 +308,11 @@ router.patch('/operators/:id', async (req: Request, res: Response) => {
       if ((updates.document_status || existing.document_status) !== 'verified') return res.status(400).json({ success: false, error: 'Operador precisa estar verificado para ser ativado' });
       const cs = updates.contract_status || existing.contract_status;
       if (isTerritorialManager) {
-        if (
-          cs !== 'signed' ||
-          existing.terms_version !== TERRITORIAL_MANAGER_CONTRACT_VERSION ||
-          !existing.contract_url
-        ) {
+        const version = existing.terms_version || null;
+        if (cs !== 'signed' || version !== TERRITORIAL_MANAGER_CONTRACT_VERSION || !existing.contract_url) {
           return res.status(409).json({
             success: false,
-            error: 'Gestor Territorial só pode ser ativado com contrato formal v1.2 aprovado e PDF registrado.',
+            error: 'Gestor Territorial só pode ser ativado após contrato formal v1.2 aprovado e PDF vinculado.'
             required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
           });
         }
@@ -654,7 +652,7 @@ router.post('/operators/:id/contract', rejectManagerManualContractFlow, uploadCo
     if (operator.relationship_type === 'territorial_manager') {
       return res.status(409).json({
         success: false,
-        error: 'Gestor Territorial deve usar o fluxo formal v1.2 de submissão e aprovação; upload manual externo não é permitido.',
+        error: 'Gestor Territorial deve usar o fluxo formal v1.2 de submissão e revisão; upload direto de contrato não é permitido.'
         required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
       });
     }
@@ -704,7 +702,7 @@ router.post('/operators/:id/contract-template', rejectManagerManualContractFlow,
     if (operator.relationship_type === 'territorial_manager') {
       return res.status(409).json({
         success: false,
-        error: 'Gestor Territorial deve receber exclusivamente a minuta canônica v1.2 gerada pelo sistema.',
+        error: 'Para Gestor Territorial, gere sempre a minuta canônica v1.2 pelo gerador automático; upload manual de modelo não é permitido.'
         required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
       });
     }
