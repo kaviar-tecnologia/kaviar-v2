@@ -245,7 +245,7 @@ async function main() {
   const isTestSeed = process.env.NODE_ENV === 'test';
   const seedAdminPassword =
     process.env.SEED_ADMIN_PASSWORD ||
-    (isTestSeed ? process.env.E2E_ADMIN_PASSWORD || 'admin123' : undefined);
+    (isTestSeed ? 'admin123' : undefined);
   const seedDriverPassword =
     process.env.SEED_DRIVER_PASSWORD ||
     (isTestSeed ? 'driver123' : undefined);
