@@ -22,18 +22,22 @@ function maskCpf(cpf: string | null): string | null {
   return '***' + cpf.slice(-4);
 }
 
-async function findManagerAssignmentsForContract(adminId: string, territoryId: string) {
+async function findManagerAssignmentsForContract(adminId: string, territoryId: string, operatorProfileId: string) {
   const now = new Date();
   return prisma.territory_manager_assignments.findMany({
     where: {
       admin_id: adminId,
       territory_id: territoryId,
       status: { in: ['pending_approval', 'active', 'suspended'] },
-      OR: [{ ended_at: null }, { ended_at: { gt: now } }],
+      AND: [
+        { OR: [{ ended_at: null }, { ended_at: { gt: now } }] },
+        { OR: [{ operator_profile_id: null }, { operator_profile_id: operatorProfileId }] },
+      ],
     },
     select: {
       id: true,
       territory_id: true,
+      operator_profile_id: true,
       status: true,
       started_at: true,
       ended_at: true,
@@ -650,7 +654,7 @@ router.get('/operators/:id/contract-data', async (req: Request, res: Response) =
 
     const isTerritorialManager = operator.relationship_type === 'territorial_manager';
     const managerAssignments = isTerritorialManager
-      ? await findManagerAssignmentsForContract(operator.admin_id, operator.territory_id)
+      ? await findManagerAssignmentsForContract(operator.admin_id, operator.territory_id, operator.id)
       : [];
     const managerAssignment = managerAssignments.length === 1 ? managerAssignments[0] : null;
 
@@ -774,6 +778,7 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
     const managerAssignments = await findManagerAssignmentsForContract(
       operator.admin_id,
       operator.territory_id,
+      operator.id,
     );
     if (managerAssignments.length !== 1) {
       return res.status(409).json({
