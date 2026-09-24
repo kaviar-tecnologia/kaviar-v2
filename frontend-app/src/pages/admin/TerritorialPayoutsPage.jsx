@@ -439,12 +439,23 @@ export default function TerritorialPayoutsPage() {
   };
 
   const handleVerify = async (id) => {
+    const isManager = verifyTarget?.relationship_type === 'territorial_manager';
     const now = new Date().toISOString();
     const adminId = JSON.parse(atob(token.split('.')[1])).id || '';
-    const res = await fetch(`${API_BASE_URL}/api/admin/territorial-payouts/operators/${id}`, { method: 'PATCH', headers, body: JSON.stringify({ document_status: 'verified', contract_status: 'not_required', terms_accepted_at: now, responsibility_terms_accepted_at: now, confidentiality_terms_accepted_at: now, terms_version: 'v1.0', terms_accepted_by: adminId }) });
+    const payload = isManager
+      ? { document_status: 'verified' }
+      : { document_status: 'verified', contract_status: 'not_required', terms_accepted_at: now, responsibility_terms_accepted_at: now, confidentiality_terms_accepted_at: now, terms_version: 'v1.0', terms_accepted_by: adminId };
+    const res = await fetch(`${API_BASE_URL}/api/admin/territorial-payouts/operators/${id}`, { method: 'PATCH', headers, body: JSON.stringify(payload) });
     const d = await res.json();
-    if (d.success) { setVerifyOpen(false); setFeedback({ open: true, severity: 'success', message: 'Operador verificado com sucesso.' }); fetchAll(); }
-    else setFeedback({ open: true, severity: 'error', message: d.error || 'Erro ao verificar operador.' });
+    if (d.success) {
+      setVerifyOpen(false);
+      setFeedback({
+        open: true,
+        severity: 'success',
+        message: isManager ? 'Documentos do Gestor verificados. O contrato v1.2 permanece no fluxo formal.' : 'Operador verificado com sucesso.',
+      });
+      fetchAll();
+    } else setFeedback({ open: true, severity: 'error', message: d.error || 'Erro ao verificar operador.' });
   };
 
   const handleActivate = async (id) => {
@@ -465,6 +476,14 @@ export default function TerritorialPayoutsPage() {
   const openVerifyModal = (op) => { setVerifyTarget(op); setVerifyChecks([false, false, false, false, false, false, false, false]); setVerifyOpen(true); };
 
   const handleRegularizeTerms = async (id) => {
+    if (verifyTarget?.relationship_type === 'territorial_manager') {
+      setFeedback({
+        open: true,
+        severity: 'warning',
+        message: 'Gestor Territorial usa o fluxo formal do Contrato v1.2. Termos v1.0 não podem ser regularizados manualmente.',
+      });
+      return;
+    }
     const now = new Date().toISOString();
     const adminId = JSON.parse(atob(token.split('.')[1])).id || '';
     const res = await fetch(`${API_BASE_URL}/api/admin/territorial-payouts/operators/${id}`, { method: 'PATCH', headers, body: JSON.stringify({ terms_accepted_at: now, responsibility_terms_accepted_at: now, confidentiality_terms_accepted_at: now, terms_version: 'v1.0', terms_accepted_by: adminId }) });
@@ -482,6 +501,14 @@ export default function TerritorialPayoutsPage() {
   };
 
   const handleSaveContract = async () => {
+    if (contractTarget?.relationship_type === 'territorial_manager') {
+      setFeedback({
+        open: true,
+        severity: 'warning',
+        message: 'Gestor Territorial deve usar o gerador e o fluxo formal de revisão do Contrato v1.2.',
+      });
+      return;
+    }
     setContractSaving(true);
     const payload = { contract_status: contractForm.contract_status };
     if (contractForm.contract_url) payload.contract_url = contractForm.contract_url;
@@ -819,6 +846,12 @@ export default function TerritorialPayoutsPage() {
       <Dialog open={contractOpen} onClose={() => setContractOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { bgcolor: '#1A1A24', color: '#E5E7EB' } }}>
         <DialogTitle sx={{ color: '#C8A84E', fontWeight: 700 }}>Gestão de Contrato</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+          {contractTarget?.relationship_type === 'territorial_manager' ? (
+            <Alert severity="info" sx={{ bgcolor: 'rgba(37,99,235,0.05)', border: '1px solid rgba(37,99,235,0.2)' }}>
+              Gestor Territorial usa exclusivamente o Contrato de Parceria Operacional Territorial v1.2. Gere a minuta canônica no diagnóstico do perfil, aguarde o envio assinado e aprove/rejeite pela fila de contratos. Upload direto, dispensa e marcação manual como assinado não são permitidos.
+            </Alert>
+          ) : (
+            <>
           {/* Seção 1: Disponibilizar modelo */}
           <Box sx={{ p: 1.5, border: '1px solid rgba(59,130,246,0.3)', borderRadius: 1 }}>
             <Typography variant="caption" sx={{ color: '#3B82F6', fontWeight: 700, display: 'block', mb: 1 }}>Disponibilizar modelo de contrato</Typography>
@@ -895,10 +928,12 @@ export default function TerritorialPayoutsPage() {
           <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Observações (opcional)</Typography>
             <TextField value={contractForm.notes} onChange={e => setContractForm({ ...contractForm, notes: e.target.value })} fullWidth size="small" multiline rows={2} InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }} /></Box>
           <Alert severity="info" sx={{ bgcolor: 'rgba(37,99,235,0.05)', border: '1px solid rgba(37,99,235,0.2)' }}>Registro interno. Não substitui contrato jurídico formal nem orientação contábil.</Alert>
+            </>
+          )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setContractOpen(false)} sx={{ color: '#9CA3AF' }}>Cancelar</Button>
-          <Button onClick={handleSaveContract} disabled={contractSaving} variant="contained" sx={{ bgcolor: '#B8942E', '&:hover': { bgcolor: '#9A7B24' } }}>{contractSaving ? 'Salvando...' : 'Salvar Contrato'}</Button>
+          <Button onClick={handleSaveContract} disabled={contractSaving || contractTarget?.relationship_type === 'territorial_manager'} variant="contained" sx={{ bgcolor: '#B8942E', '&:hover': { bgcolor: '#9A7B24' } }}>{contractTarget?.relationship_type === 'territorial_manager' ? 'Use o fluxo v1.2' : contractSaving ? 'Salvando...' : 'Salvar Contrato'}</Button>
         </DialogActions>
       </Dialog>
     </Box>
