@@ -15,7 +15,7 @@ Você pode participar de um **programa piloto pré-contratual de até 90 dias**,
 - Acompanhamento de corridas e métricas do território
 - Apoio à operação KAVIAR Pet (corridas com animais)
 - Exportação de relatórios
-- Visão financeira estimada do território
+- Visão financeira operacional; participação do Gestor somente quando reconhecida pelo Wallet V2 durante Ativação Financeira válida
 
 ---
 
