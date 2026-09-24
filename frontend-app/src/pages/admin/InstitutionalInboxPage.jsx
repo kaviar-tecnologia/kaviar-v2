@@ -532,7 +532,16 @@ export default function InstitutionalInboxPage() {
           if (filters.status !== 'ALL' && filters.status !== updated.status) {
             return prev.filter((item) => item.id !== updated.id);
           }
-          return prev.map((item) => (item.id === updated.id ? { ...item, status: updated.status, updated_at: updated.updated_at } : item));
+          if (!selectedFolderId && filters.status === 'ALL' && updated.status === 'ARCHIVED') {
+            return prev.filter((item) => item.id !== updated.id);
+          }
+          return prev.map((item) => (item.id === updated.id ? {
+            ...item,
+            status: updated.status,
+            updated_at: updated.updated_at,
+            custom_folder_id: updated.custom_folder_id,
+            custom_folder: updated.custom_folder,
+          } : item));
         });
       }
     } catch (error) {
@@ -594,6 +603,7 @@ export default function InstitutionalInboxPage() {
       setFolderEditing(null);
       setFolderNameDraft('');
       await loadFolders();
+      await loadList(1, false);
     } catch (error) {
       setErrorMessage(buildFriendlyError(error, 'Nao foi possivel salvar a pasta.'));
     } finally {
@@ -612,6 +622,8 @@ export default function InstitutionalInboxPage() {
       if (selectedFolderId === deletedId) {
         setSelectedFolderId(null);
         setFilters((prev) => ({ ...prev, status: 'ALL' }));
+      } else {
+        await loadList(1, false);
       }
       await loadFolders();
     } catch (error) {
