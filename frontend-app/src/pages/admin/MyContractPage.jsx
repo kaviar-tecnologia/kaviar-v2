@@ -119,7 +119,7 @@ export default function MyContractPage() {
                 <Grid item xs={12} sm={6}><Typography sx={{ fontSize: 12, color: '#6B7280' }}>Nome</Typography><Typography sx={{ fontSize: 14, fontWeight: 600 }}>{profile.display_name}</Typography></Grid>
                 <Grid item xs={12} sm={6}><Typography sx={{ fontSize: 12, color: '#6B7280' }}>Território</Typography><Typography sx={{ fontSize: 14, fontWeight: 600 }}>{profile.territory?.name || '—'}</Typography></Grid>
                 <Grid item xs={12} sm={6}><Typography sx={{ fontSize: 12, color: '#6B7280' }}>Função</Typography><Typography sx={{ fontSize: 14, fontWeight: 600 }}>Gestor Territorial</Typography></Grid>
-                <Grid item xs={12} sm={6}><Typography sx={{ fontSize: 12, color: '#6B7280' }}>Desde</Typography><Typography sx={{ fontSize: 14, fontWeight: 600 }}>{profile.created_at ? new Date(profile.created_at).toLocaleDateString('pt-BR') : '—'}</Typography></Grid>
+                <Grid item xs={12} sm={6}><Typography sx={{ fontSize: 12, color: '#6B7280' }}>Perfil criado em</Typography><Typography sx={{ fontSize: 14, fontWeight: 600 }}>{profile.created_at ? new Date(profile.created_at).toLocaleDateString('pt-BR') : '—'}</Typography></Grid>
                 <Grid item xs={12} sm={6}><Typography sx={{ fontSize: 12, color: '#6B7280' }}>Versão contratual</Typography><Typography sx={{ fontSize: 14, fontWeight: 600 }}>{profile.terms_version || 'Aguardando geração v1.2'}</Typography></Grid>
                 {admin?.email && <Grid item xs={12} sm={6}><Typography sx={{ fontSize: 12, color: '#6B7280' }}>Email</Typography><Typography sx={{ fontSize: 14, fontWeight: 600 }}>{admin.email}</Typography></Grid>}
                 <Grid item xs={12} sm={6}>
