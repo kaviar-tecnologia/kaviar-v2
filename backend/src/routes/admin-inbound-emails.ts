@@ -201,7 +201,7 @@ router.get('/', async (req: Request, res: Response) => {
     if (status) {
       where.status = status;
     } else {
-      where.status = { in: [INBOUND_STATUSES.NEW, INBOUND_STATUSES.READ, INBOUND_STATUSES.ARCHIVED] };
+      where.status = { in: [INBOUND_STATUSES.NEW, INBOUND_STATUSES.READ] };
     }
 
     if (req.query.to) {
@@ -415,7 +415,8 @@ router.post('/:id/restore', async (req: Request, res: Response) => {
     if (!current) return res.status(404).json({ success: false, error: 'Email inbound nao encontrado.' });
     if (current.status !== INBOUND_STATUSES.TRASHED) return res.status(409).json({ success: false, error: 'Somente emails na lixeira podem ser restaurados.' });
 
-    const restoredStatus = RESTORABLE_STATUSES.has(String(current.status_before_trash || '')) ? current.status_before_trash : INBOUND_STATUSES.READ;
+    const restoreCandidate = String(current.status_before_trash || '');
+    const restoredStatus = RESTORABLE_STATUSES.has(restoreCandidate) ? restoreCandidate : INBOUND_STATUSES.READ;
     const updated = await prisma.inbound_email_messages.update({
       where: { id },
       data: { status: restoredStatus, status_before_trash: null, trashed_at: null, trashed_by_admin_id: null },
