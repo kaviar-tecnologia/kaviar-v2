@@ -503,6 +503,7 @@ router.get('/regional-admins/list', async (_req: Request, res: Response) => {
         document_status: a.operator_profile.document_status,
         has_contract: !!a.operator_profile.contract_url,
         has_online_acceptance: !!a.operator_profile.terms_accepted_at,
+        terms_version: a.operator_profile.terms_version,
         relationship_type: a.operator_profile.relationship_type,
       } : null,
     }));
