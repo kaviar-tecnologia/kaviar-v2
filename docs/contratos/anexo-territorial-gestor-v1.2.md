@@ -9,13 +9,15 @@
 - Territory ID: [TERRITORY_ID]
 - Nome do território: [TERRITÓRIO]
 - Cidade/UF: [CIDADE/UF]
-- Versão territorial: [TIMESTAMP/IDENTIFICADOR DA VERSÃO]
+- Versão territorial: [HASH SHA-256 DA COMPOSIÇÃO TERRITORIAL]
 - Bairros/comunidades vinculados nesta versão: [LISTA]
-- Ativação Financeira: **não é criada por este anexo**; depende de registro específico e válido nos sistemas da KAVIAR.
+- Manager Assignment ID: [ASSIGNMENT_ID]
+- Manager Assignment Status na geração: [pending_approval / active / suspended]
+- Ativação Financeira: **não é criada por este anexo**. Na versão atual do motor financeiro, participação exige assignment elegível com status `active`, administrador ativo e vigência temporal válida no momento do reconhecimento da operação.
 
 ## 1. REGRA DE DELIMITAÇÃO
 
-O território remunerado corresponde exclusivamente ao `territory_id` e à composição territorial registrados na versão aplicável. A indicação de cidade, município, zona ou bairro ampliado não significa atribuição automática de toda a respectiva área ao Gestor.
+O território remunerado corresponde exclusivamente ao `territory_id`, à composição territorial registrados na versão aplicável e a assignment territorial financeiramente elegível. A indicação de cidade, município, zona ou bairro ampliado não significa atribuição automática de toda a respectiva área ao Gestor.
 
 ## 2. CRITÉRIO TÉCNICO DE ALOCAÇÃO DA CORRIDA
 
@@ -31,7 +33,7 @@ Operações reconhecidas em Área Reservada KAVIAR / Área de Sombra geram 0% ao
 
 ## 4. VERSIONAMENTO E EFEITOS PROSPECTIVOS
 
-A versão territorial indicada neste Anexo constitui referência probatória da delimitação existente na geração do documento.
+A versão territorial indicada neste Anexo é um hash determinístico da composição registrada (território + bairros ativos e respectivos identificadores/versões) e constitui referência probatória da delimitação existente na geração do documento.
 
 Alterações posteriores:
 
