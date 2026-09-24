@@ -11,12 +11,12 @@ import aditivoEquipe from '../../../../docs/comercial/aditivo-equipe-captadores-
 import termoMembro from '../../../../docs/comercial/termo-membro-equipe-gestor.md?raw';
 
 const DOCUMENTS = [
-  { name: 'Proposta Comercial — Gestor Fundador', version: 'v1.0', date: 'Jun/2026', status: 'Aprovado', note: 'Resumo do plano, valores, condições e diferenciais.', content: proposta, superAdminOnly: false },
-  { name: 'Termo de Autorização Operacional Territorial', version: 'v1.0', date: 'Jun/2026', status: 'Aprovado', note: 'Contrato preliminar: natureza, território, repasse, obrigações e limitações.', content: termo, superAdminOnly: false },
-  { name: 'FAQ — Gestor Fundador', version: 'v1.0', date: 'Jun/2026', status: 'Aprovado', note: 'Perguntas frequentes sobre o plano, custos, repasse e operação.', content: faq, superAdminOnly: false },
-  { name: 'Mensagens WhatsApp — Convite Gestor', version: 'v1.0', date: 'Jun/2026', status: 'Interno', note: 'Templates de prospecção para uso interno (SUPER_ADMIN).', content: mensagensWhatsapp, superAdminOnly: true },
-  { name: 'Prospecção — Associações Parceiras', version: 'v2.0', date: 'Jun/2026', status: 'Interno', note: 'Roteiro interno para abordagem de associações comunitárias sem cobrança inicial.', content: prospeccaoAssociacoes, superAdminOnly: true },
-  { name: 'Aditivo — Equipe e Captadores do Gestor', version: 'v1.0', date: 'Jun/2026', status: 'Aprovado', note: 'Regras para organização de equipe pelo Gestor Territorial.', content: aditivoEquipe, superAdminOnly: false },
+  { name: 'Proposta Comercial — Gestor Territorial', version: 'v1.2', date: 'Set/2026', status: 'Informativo', note: 'Resumo comercial alinhado ao Contrato v1.2 e à Ativação Financeira.', content: proposta, superAdminOnly: false },
+  { name: 'Termo de Pré-Ativação / Programa Piloto Territorial', version: 'v1.2-FUNDADOR', date: 'Set/2026', status: 'Pré-contratual', note: 'Piloto de até 90 dias. Não substitui o Contrato v1.2 e não cria participação econômica ou Ativação Financeira.', content: termo, superAdminOnly: false },
+  { name: 'FAQ — Gestor Territorial', version: 'v1.2', date: 'Set/2026', status: 'Informativo', note: 'Perguntas frequentes alinhadas ao contrato definitivo por prazo indeterminado.', content: faq, superAdminOnly: false },
+  { name: 'Mensagens WhatsApp — Convite Gestor', version: 'v1.2', date: 'Set/2026', status: 'Interno', note: 'Templates de prospecção com piloto pré-contratual e formalização v1.2.', content: mensagensWhatsapp, superAdminOnly: true },
+  { name: 'Prospecção — Associações Parceiras', version: 'v2.1', date: 'Set/2026', status: 'Interno', note: 'Roteiro interno sem alegação de taxa obrigatória do Gestor Territorial.', content: prospeccaoAssociacoes, superAdminOnly: true },
+  { name: 'Complemento — Equipe e Captadores do Gestor', version: 'v1.2', date: 'Set/2026', status: 'Complementar', note: 'Regras de equipe vinculadas ao Contrato de Parceria Operacional Territorial v1.2.', content: aditivoEquipe, superAdminOnly: false },
   { name: 'Termo — Membro da Equipe do Gestor', version: 'v1.0', date: 'Jun/2026', status: 'Aprovado', note: 'Termo de participação para captadores/consultores vinculados ao gestor.', content: termoMembro, superAdminOnly: false },
 ];
 
@@ -30,9 +30,9 @@ export default function ComercialGestorPage() {
 
   return (
     <Box>
-      <Typography variant="h5" sx={{ color: '#C8A84E', fontWeight: 800, mb: 1 }}>📄 Plano Gestor Fundador de Bairro</Typography>
+      <Typography variant="h5" sx={{ color: '#C8A84E', fontWeight: 800, mb: 1 }}>📄 Materiais do Gestor Territorial</Typography>
       <Alert severity="info" sx={{ mb: 3, bgcolor: 'rgba(37,99,235,0.05)', border: '1px solid rgba(37,99,235,0.2)' }}>
-        Documentos comerciais informativos. Não substituem contrato final, aceite digital ou obrigação automática.
+        Materiais comerciais e operacionais de apoio. O único instrumento definitivo do Gestor Territorial é o Contrato de Parceria Operacional Territorial v1.2; o termo de piloto é pré-contratual e não cria Ativação Financeira.
       </Alert>
       <TableContainer component={Paper} sx={{ border: '1px solid #E8E5DE' }}>
         <Table size="small">

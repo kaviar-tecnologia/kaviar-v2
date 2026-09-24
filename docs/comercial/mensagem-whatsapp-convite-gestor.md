@@ -11,12 +11,12 @@ O KAVIAR está selecionando Gestores Territoriais Fundadores para apoiar a opera
 
 Funciona assim:
 • Sem taxa obrigatória de ativação nesta versão
-• Ciclo: 90 dias
+• Programa piloto pré-contratual: até 90 dias, quando aplicável
 • Território: 1 bairro/comunidade
 • Você capta motoristas e parceiros pelo painel
 • Participação: 40% da Taxa da Plataforma Elegível nas operações elegíveis do território formalmente atribuído, durante Ativação Financeira válida
 
-É uma autorização operacional de parceria autônoma; não há compra de bairro, sistema ou exclusividade permanente.
+É uma parceria operacional autônoma. O piloto, quando houver, não cria Ativação Financeira; a participação econômica depende do Contrato v1.2 e de assignment financeiro elegível.
 
 Quer saber mais? Posso te explicar como funciona.
 
@@ -34,7 +34,7 @@ Abriu vaga de Gestor Territorial Fundador para bairros do RJ.
 
 Resumo rápido:
 ✅ Sem taxa obrigatória de ativação nesta versão
-✅ 90 dias de ciclo inicial
+✅ Piloto pré-contratual de até 90 dias, quando aplicável
 ✅ Você atua como apoio territorial no seu bairro pelo painel
 ✅ Indica motoristas, parceiros, Pet
 ✅ 40% da Taxa da Plataforma Elegível corresponde à participação do gestor nas operações elegíveis do território formalmente atribuído, conforme contrato
@@ -56,7 +56,7 @@ Estamos buscando parceiros de confiança para atuar como Gestores Territoriais e
 
 O gestor ajuda a trazer motoristas e parceiros locais para a plataforma, acompanha a operação pelo painel e pode participar economicamente das operações elegíveis do território formalmente atribuído, conforme contrato e apuração.
 
-O modelo é uma parceria operacional territorial, sem taxa obrigatória de ativação nesta versão, com ciclo inicial de 90 dias.
+O modelo é uma parceria operacional territorial, sem taxa obrigatória de ativação nesta versão, com eventual piloto pré-contratual de até 90 dias; a relação definitiva depende do Contrato v1.2.
 
 Posso explicar melhor se tiver interesse. Seria uma boa conversa para a comunidade.
 

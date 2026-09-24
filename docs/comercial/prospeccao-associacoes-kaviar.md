@@ -1,7 +1,7 @@
 # Prospecção — Associação Parceira KAVIAR
 
-**Versão:** v2.0
-**Data:** Junho/2026
+**Versão:** v2.1
+**Data:** Setembro/2026
 **Status:** Documento comercial interno
 **Empresa:** KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA (CNPJ: 67.783.601/0001-99)
 **Plataforma:** KAVIAR — Mobilidade urbana comunitária
@@ -14,7 +14,7 @@ A parceria com associações é **sem cobrança inicial**. Não há taxa de ativ
 
 A associação pode apoiar a divulgação, confiança local e organização da demanda. Eventuais benefícios, bonificações ou parcerias comerciais futuras dependem de contrato específico, apuração e validação da central KAVIAR/KAVIAR.
 
-> Este modelo é diferente do Gestor Fundador de Bairro (que possui taxa de ativação e termo operacional próprio).
+> Este modelo é diferente do Gestor Territorial, que possui fluxo contratual, territorial e de Ativação Financeira próprios. Na política atual, também não há taxa obrigatória de adesão, habilitação ou ativação do Gestor Territorial.
 
 ---
 
@@ -187,4 +187,4 @@ Este material é de uso interno da equipe comercial KAVIAR/KAVIAR. Não constitu
 
 ---
 
-*KAVIAR / KAVIAR — Prospecção Associação Parceira — v2.0 — Junho/2026*
+*KAVIAR — Prospecção Associação Parceira — v2.1 — Setembro/2026*

@@ -83,14 +83,22 @@ export default function RegionalAdminsPage() {
           <TableBody>
             {admins.map((a) => {
               const op = a.operator_profile;
+              const isManagerProfile = op?.relationship_type === 'territorial_manager';
               const contractLabel = !op ? '—'
+                : isManagerProfile && op.has_contract && op.contract_status === 'signed' && op.terms_version === 'v1.2' ? 'v1.2 formalizado'
+                : isManagerProfile && op.contract_status === 'submitted' ? 'v1.2 em análise'
+                : isManagerProfile && op.contract_status === 'available' ? 'v1.2 disponível'
+                : isManagerProfile && op.contract_status === 'rejected' ? 'v1.2 rejeitado'
+                : isManagerProfile && (op.contract_status === 'not_required' || (op.contract_status === 'signed' && !op.has_contract)) ? 'Inconsistência contratual'
+                : isManagerProfile ? 'v1.2 pendente'
                 : op.has_contract && op.contract_status === 'signed' ? 'Formalizado'
                 : op.has_contract && op.contract_status === 'pending' ? 'Para análise'
                 : !op.has_contract && op.contract_status === 'signed' && op.has_online_acceptance ? 'Aceite online'
                 : op.contract_status === 'not_required' ? 'Não requerido'
                 : 'Pendente';
-              const contractColor = contractLabel === 'Formalizado' ? 'success'
-                : contractLabel === 'Para análise' ? 'info'
+              const contractColor = contractLabel === 'v1.2 formalizado' || contractLabel === 'Formalizado' ? 'success'
+                : contractLabel === 'v1.2 em análise' || contractLabel === 'v1.2 disponível' || contractLabel === 'Para análise' ? 'info'
+                : contractLabel === 'Inconsistência contratual' || contractLabel === 'v1.2 rejeitado' ? 'error'
                 : contractLabel === 'Aceite online' ? 'warning'
                 : 'default';
               return (
