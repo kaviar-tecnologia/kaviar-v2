@@ -47,8 +47,9 @@ O PDF gerado contém, no mesmo instrumento:
 
 3. **Anexo Territorial II — Delimitação e Versão**
    - `territory_id`;
-   - versão territorial;
+   - versão territorial por hash SHA-256 da composição;
    - bairros/comunidades vinculados;
+   - Manager Assignment ID e status na geração;
    - critério técnico baseado no bairro de origem (`origin_neighborhood_id`);
    - versionamento prospectivo;
    - Área Reservada / Área de Sombra;
@@ -73,7 +74,7 @@ O gerador v1.2 diferencia:
 
 ## Ativação Financeira
 
-A data de geração ou assinatura do PDF **não é data de início financeiro**.
+A data de geração ou assinatura do PDF **não é data de início financeiro**. O PDF documenta também o assignment territorial existente, mas somente assignment financeiramente elegível com status `active`, administrador ativo e vigência válida produz participação segundo o motor atual.
 
 A v1.2 declara expressamente que a Ativação Financeira depende de registro específico e válido nos sistemas da KAVIAR.
 
