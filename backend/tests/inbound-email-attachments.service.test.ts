@@ -12,6 +12,7 @@ const { prismaMock } = vi.hoisted(() => ({
       create: vi.fn(),
       findUnique: vi.fn(),
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       update: vi.fn(),
     },
   },
@@ -30,6 +31,7 @@ describe('InboundEmailAttachmentsService', () => {
     createPresignedPut: vi.fn(),
     createPresignedGet: vi.fn(),
     headObject: vi.fn(),
+    deleteObject: vi.fn(),
   };
 
   let service: InboundEmailAttachmentsService;
@@ -43,6 +45,7 @@ describe('InboundEmailAttachmentsService', () => {
     prismaMock.inbound_email_attachments.count.mockResolvedValue(1);
     prismaMock.inbound_email_attachments.create.mockResolvedValue({ id: 'attachment-1' });
     prismaMock.inbound_email_attachments.findFirst.mockResolvedValue(null);
+    prismaMock.inbound_email_attachments.findMany.mockResolvedValue([]);
     prismaMock.inbound_email_attachments.findUnique.mockResolvedValue({
       id: 'attachment-1',
       inbound_email_id: 'email-1',
@@ -385,6 +388,17 @@ describe('InboundEmailAttachmentsService', () => {
         statusCode: 409,
         message: expect.stringContaining('content-type divergente'),
       });
+  });
+
+  it('remove do storage todos os anexos antes da exclusao definitiva da mensagem', async () => {
+    prismaMock.inbound_email_attachments.findMany.mockResolvedValueOnce([
+      { id: 'attachment-a', storage_key: 'inbound-email-attachments/a.pdf' },
+      { id: 'attachment-b', storage_key: 'inbound-email-attachments/b.png' },
+    ]);
+    const result = await service.deleteForMessage('email-1');
+    expect(storage.deleteObject).toHaveBeenNthCalledWith(1, 'inbound-email-attachments/a.pdf');
+    expect(storage.deleteObject).toHaveBeenNthCalledWith(2, 'inbound-email-attachments/b.png');
+    expect(result.deletedObjects).toBe(2);
   });
 
   it('não gera download para attachment PENDING', async () => {
