@@ -998,6 +998,17 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
         territory_version: input.territory.version,
         assignment_id: input.territory.assignmentId,
         assignment_status: input.territory.assignmentStatus,
+        assignment_started_at: managerAssignment.started_at.toISOString(),
+        assignment_ended_at: managerAssignment.ended_at?.toISOString() || null,
+        territory_snapshot: {
+          territory_id: operator.territory.id,
+          territory_updated_at: operator.territory.updated_at.toISOString(),
+          neighborhoods: operator.territory.neighborhoods.map(n => ({
+            id: n.id,
+            name: n.name,
+            updated_at: n.updated_at.toISOString(),
+          })),
+        },
         template_sha256: templateHash,
         financial_activation_created: false,
         legacy_online_only_signed_migrated: legacyOnlineOnlySigned,
