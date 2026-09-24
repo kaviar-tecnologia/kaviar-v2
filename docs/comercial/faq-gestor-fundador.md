@@ -10,7 +10,7 @@
 
 ## Quanto custa?
 
-Taxa de ativação única de **R$ 497,00**. Essa taxa cobre o setup do território, acesso ao painel, orientação inicial e configuração do link de captação.
+Nesta versão, **não há taxa obrigatória de adesão, habilitação ou ativação do Gestor Territorial**. A ativação depende de aprovação cadastral, documental, contratual, territorial e operacional pela KAVIAR.
 
 ---
 
@@ -30,7 +30,7 @@ Taxa de ativação única de **R$ 497,00**. Essa taxa cobre o setup do territór
 
 A Plataforma KAVIAR retém uma taxa operacional de 18% sobre o valor da corrida realizada no território.
 
-Essa taxa cobre a infraestrutura tecnológica, servidores, APIs, WhatsApp, suporte central, compliance, manutenção da plataforma e operação administrativa da KAVIAR/KAVIAR.
+Essa taxa cobre a infraestrutura tecnológica, servidores, APIs, WhatsApp, suporte central, compliance, manutenção da plataforma e operação administrativa da KAVIAR.
 
 O motorista não paga mais uma cobrança fixa de 1 ou 2 créditos por corrida. O modelo passa a considerar uma taxa proporcional ao valor da corrida.
 
@@ -42,8 +42,8 @@ Do valor da taxa operacional da plataforma, o gestor territorial participa da ba
 
 A composição atual é:
 
-- 60% da taxa operacional fica com a matriz KAVIAR/KAVIAR
-- 40% da taxa operacional forma a base de apuração do gestor territorial
+- 60% da Taxa da Plataforma Elegível ficam com a KAVIAR
+- 40% da Taxa da Plataforma Elegível correspondem à participação econômica do gestor territorial nas operações elegíveis do território formalmente atribuído
 
 **Exemplo:**
 
@@ -52,10 +52,10 @@ Taxa operacional KAVIAR de 18%: R$ 9,00
 
 Distribuição da taxa:
 
-- Matriz KAVIAR/KAVIAR: R$ 5,40
+- Matriz KAVIAR: R$ 5,40
 - Base do gestor territorial: R$ 3,60
 
-Os valores finais dependem de apuração mensal, contrato vigente, deduções aplicáveis, comissões de parceiros, custos documentados, validação da central e regras financeiras em vigor.
+Os valores dependem de apuração mensal, contrato vigente e Ativação Financeira válida. Cancelamentos, estornos, chargebacks, fraude e não cobrança podem excluir ou ajustar operações. Custos internos, tributos próprios e gratificações financiadas pela KAVIAR, inclusive eventual gratificação anual ao motorista, não reduzem os 40% do gestor.
 
 ---
 
@@ -87,7 +87,7 @@ Não. A central KAVIAR apura o resultado mensalmente, revisa, aprova e efetua o 
 
 ## Como funciona o KAVIAR Pet?
 
-O KAVIAR Pet está em fase piloto assistida. Tutores solicitam corrida com animal pelo formulário público. Você, como gestor, apoia pedidos Pet assistidos no bairro, conforme orientação da central, enquanto a homologação de motoristas Pet e a confirmação operacional permanecem sob responsabilidade da KAVIAR/KAVIAR.
+O KAVIAR Pet está em fase piloto assistida. Tutores solicitam corrida com animal pelo formulário público. Você, como gestor, apoia pedidos Pet assistidos no bairro, conforme orientação da central, enquanto a homologação de motoristas Pet e a confirmação operacional permanecem sob responsabilidade da KAVIAR.
 
 ---
 
@@ -105,13 +105,13 @@ Sim, após o ciclo inicial de 90 dias, se o desempenho for positivo, você pode 
 
 ## E se eu não produzir resultado?
 
-Ao final do prazo, a central avalia o desempenho. Se não houver atividade mínima ou resultado, o território pode retornar à central sem renovação. A taxa de ativação não é reembolsável.
+Ao final do prazo, a central avalia o desempenho. Se não houver atividade mínima ou resultado, o território pode retornar à central sem renovação. Não há taxa obrigatória de ativação nesta versão.
 
 ---
 
 ## Tenho exclusividade?
 
-Você tem prioridade operacional na área vinculada durante o prazo do contrato. Porém, não é exclusividade absoluta e permanente — a KAVIAR pode operar diretamente no mesmo território quando necessário.
+Não há exclusividade absoluta ou permanente. O Gestor participa economicamente somente das operações elegíveis dentro do **Território Operacional Atribuído**. Áreas Reservadas KAVIAR / Área de Sombra, ainda que na mesma cidade ou bairro ampliado, ficam fora da participação do gestor. A delimitação válida é a registrada em mapa, cadastro eletrônico ou anexo territorial.
 
 ---
 
