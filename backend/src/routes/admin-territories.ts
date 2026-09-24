@@ -315,83 +315,23 @@ const financeRuleSchema = z.object({
 });
 
 // POST /api/admin/territories/:id/finance-rules
-router.post('/:id/finance-rules', async (req: Request, res: Response) => {
-  try {
-    const data = financeRuleSchema.parse(req.body);
-
-    if (Math.abs(data.matrix_share_percent + data.regional_share_percent - 100) > 0.01) {
-      return res.status(400).json({ success: false, error: 'matrix_share_percent + regional_share_percent deve ser 100%' });
-    }
-
-    const territory = await prisma.operational_territories.findUnique({ where: { id: req.params.id } });
-    if (!territory) return res.status(404).json({ success: false, error: 'Território não encontrado' });
-
-    // Desativar regra ativa anterior
-    await prisma.territory_finance_rules.updateMany({
-      where: { territory_id: req.params.id, is_active: true },
-      data: { is_active: false },
-    });
-
-    const rule = await prisma.territory_finance_rules.create({
-      data: {
-        territory_id: req.params.id,
-        matrix_share_percent: data.matrix_share_percent,
-        regional_share_percent: data.regional_share_percent,
-        partner_commission_percent: data.partner_commission_percent,
-        min_monthly_fee_cents: data.min_monthly_fee_cents ?? null,
-        revenue_threshold_cents: data.revenue_threshold_cents ?? null,
-        description: data.description || null,
-        is_active: true,
-        valid_from: data.valid_from ? new Date(data.valid_from) : null,
-        valid_until: data.valid_until ? new Date(data.valid_until) : null,
-        created_by: (req as any).admin.id,
-      },
-    });
-
-    const ctx = auditCtx(req);
-    audit({ adminId: ctx.adminId, adminEmail: ctx.adminEmail, action: 'create_territory_finance_rule', entityType: 'territory_finance_rule', entityId: rule.id, newValue: { matrix: data.matrix_share_percent, regional: data.regional_share_percent, partner: data.partner_commission_percent }, ipAddress: ctx.ip });
-
-    res.status(201).json({ success: true, data: rule });
-  } catch (error) {
-    if (error instanceof z.ZodError) return res.status(400).json({ success: false, error: error.errors[0].message });
-    res.status(500).json({ success: false, error: 'Erro ao criar regra' });
-  }
+// Legacy simulation rules are read-only after Gestor Territorial v1.2.
+// Current economics are fixed by the contract/rate snapshot and recognized by Wallet V2.
+router.post('/:id/finance-rules', async (_req: Request, res: Response) => {
+  return res.status(409).json({
+    success: false,
+    error: 'LEGACY_TERRITORY_FINANCE_RULES_READ_ONLY',
+    message: 'Regras percentuais legadas são somente leitura. O Gestor Territorial v1.2 usa Wallet V2 e a taxa contratual versionada.',
+  });
 });
 
 // PATCH /api/admin/territories/:id/finance-rules/:ruleId
-router.patch('/:id/finance-rules/:ruleId', async (req: Request, res: Response) => {
-  try {
-    const existing = await prisma.territory_finance_rules.findUnique({ where: { id: req.params.ruleId } });
-    if (!existing || existing.territory_id !== req.params.id) return res.status(404).json({ success: false, error: 'Regra não encontrada' });
-
-    const data = financeRuleSchema.partial().parse(req.body);
-
-    const matrix = data.matrix_share_percent ?? Number(existing.matrix_share_percent);
-    const regional = data.regional_share_percent ?? Number(existing.regional_share_percent);
-    if (Math.abs(matrix + regional - 100) > 0.01) {
-      return res.status(400).json({ success: false, error: 'matrix_share_percent + regional_share_percent deve ser 100%' });
-    }
-
-    const rule = await prisma.territory_finance_rules.update({
-      where: { id: req.params.ruleId },
-      data: {
-        ...(data.matrix_share_percent !== undefined && { matrix_share_percent: data.matrix_share_percent }),
-        ...(data.regional_share_percent !== undefined && { regional_share_percent: data.regional_share_percent }),
-        ...(data.partner_commission_percent !== undefined && { partner_commission_percent: data.partner_commission_percent }),
-        ...(data.min_monthly_fee_cents !== undefined && { min_monthly_fee_cents: data.min_monthly_fee_cents }),
-        ...(data.revenue_threshold_cents !== undefined && { revenue_threshold_cents: data.revenue_threshold_cents }),
-        ...(data.description !== undefined && { description: data.description }),
-      },
-    });
-
-    const ctx = auditCtx(req);
-    audit({ adminId: ctx.adminId, adminEmail: ctx.adminEmail, action: 'update_territory_finance_rule', entityType: 'territory_finance_rule', entityId: rule.id, oldValue: { matrix: Number(existing.matrix_share_percent), regional: Number(existing.regional_share_percent) }, newValue: { matrix, regional }, ipAddress: ctx.ip });
-
-    res.json({ success: true, data: rule });
-  } catch (error) {
-    if (error instanceof z.ZodError) return res.status(400).json({ success: false, error: error.errors[0].message });
-    res.status(500).json({ success: false, error: 'Erro ao atualizar regra' });
-  }
+router.patch('/:id/finance-rules/:ruleId', async (_req: Request, res: Response) => {
+  return res.status(409).json({
+    success: false,
+    error: 'LEGACY_TERRITORY_FINANCE_RULES_READ_ONLY',
+    message: 'Regras percentuais legadas não podem alterar o Contrato v1.2.',
+  });
 });
 
 // DELETE /api/admin/territories/:id/finance-rules/:ruleId
