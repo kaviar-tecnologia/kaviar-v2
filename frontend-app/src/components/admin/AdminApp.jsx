@@ -443,6 +443,7 @@ function AdminHome() {
               { Icon: Star, title: 'Avaliações', desc: 'Notas, comentários e atenção', to: '/admin/ratings' },
               ...(isSuperAdmin ? [
                 { Icon: Explore, title: 'Simulador de Corrida', desc: 'Teste origem/destino, preço e ganho', to: '/admin/ride-simulator' },
+                { Icon: BarChart, title: 'Match Monitor', desc: 'Monitorar matches territoriais em tempo real', to: '/admin/match-monitor' },
                 { Icon: Shield, title: 'Incidentes de Emergência', desc: 'Cofre de evidência e proteção', to: '/admin/emergency-events' },
               ] : []),
             ]},
@@ -501,6 +502,7 @@ function AdminHome() {
             { section: 'Governança e Estratégia', items: [
               ...(isSuperAdmin ? [
                 { Icon: Lock, title: 'Auditoria', desc: 'Logs e ações administrativas', to: '/admin/audit' },
+                { Icon: Security, title: 'Feature Flags', desc: 'Controle de funcionalidades e allowlists', to: '/admin/feature-flags' },
                 { Icon: Shield, title: 'Conformidade', desc: 'Documentos jurídicos e operacionais', to: '/admin/legal-compliance' },
                 { Icon: Science, title: 'KAVIAR Lab', desc: 'Inteligência territorial · Score de Maturidade', to: '/admin/lab' },
                 { Icon: Person, title: 'Preferência por Motorista Mulher', desc: 'Participantes, consentimentos e auditoria', to: '/admin/women-preference' },
