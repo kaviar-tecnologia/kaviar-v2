@@ -100,16 +100,9 @@ router.post('/submit-contract', (req: Request, res: Response) => {
 
       const file = req.file;
       if (!file) return res.status(400).json({ success: false, error: 'Arquivo PDF obrigatório' });
-
-      // SHA-256 do PDF enviado
-      const documentHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
-
-      // Upload para S3
-      const s3 = new S3Client({ region: process.env.AWS_REGION || 'us-east-2' });
-      const bucket = process.env.AWS_S3_BUCKET || 'kaviar-uploads-847895361928';
-      const s3Key = `contract-submissions/${profile.id}/${Date.now()}.pdf`;
-
-      await s3.send(new PutObjectCommand({ Bucket: bucket, Key: s3Key, Body: file.buffer, ContentType: 'application/pdf' }));
+      if (file.buffer.subarray(0, 5).toString('ascii') !== '%PDF-') {
+        return res.status(400).json({ success: false, error: 'Arquivo inválido: conteúdo não corresponde a PDF.' });
+      }
 
       const now = new Date();
       const submissionContractVersion =
@@ -124,6 +117,26 @@ router.post('/submit-contract', (req: Request, res: Response) => {
         profile.recipient_type === 'individual'
           ? profile.document_cpf
           : (profile.legal_representative_cpf || profile.document_cnpj);
+
+      // SHA-256 do PDF enviado
+      const documentHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
+
+      // Upload para S3 com metadados probatórios não sensíveis
+      const s3 = new S3Client({ region: process.env.AWS_REGION || 'us-east-2' });
+      const bucket = process.env.AWS_S3_BUCKET || 'kaviar-uploads-847895361928';
+      const s3Key = `contract-submissions/${profile.id}/${Date.now()}.pdf`;
+
+      await s3.send(new PutObjectCommand({
+        Bucket: bucket,
+        Key: s3Key,
+        Body: file.buffer,
+        ContentType: 'application/pdf',
+        Metadata: {
+          contract_version: submissionContractVersion,
+          document_sha256: documentHash,
+          operator_profile_id: profile.id,
+        },
+      }));
 
       // Supersede previous rejected submissions
       await prisma.contract_submissions.updateMany({
