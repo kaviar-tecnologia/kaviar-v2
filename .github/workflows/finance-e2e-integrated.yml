@@ -86,7 +86,7 @@ jobs:
           "
 
       - name: Run seed
-        run: cd backend && npx prisma db seed
+        run: cd backend && NODE_ENV=test npx prisma db seed
 
       - name: Seed E2E admins
         run: cd backend && E2E_SEED=1 npx tsx prisma/seed-e2e-admins.ts
