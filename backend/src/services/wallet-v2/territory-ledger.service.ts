@@ -31,6 +31,9 @@ export class TerritoryLedgerService {
     // Validate non-negative
     if (platformFeeCents < 0n) throw new Error('TERRITORY_LEDGER_INVALID_AMOUNT: platformFeeCents must be >= 0');
     if (managerShareCents < 0n) throw new Error('TERRITORY_LEDGER_INVALID_AMOUNT: managerShareCents must be >= 0');
+    if (!managerId && managerShareCents !== 0n) {
+      throw new Error('TERRITORY_LEDGER_INVALID_AMOUNT: territory without manager must record zero fee_share');
+    }
 
     const suffix = keySuffix ? `:${keySuffix}` : '';
     const platformKey = `territory_platform_fee:${rideId}${suffix}`;
@@ -38,7 +41,7 @@ export class TerritoryLedgerService {
 
     const shareDescription = managerId
       ? 'Parcela contratual gestor'
-      : 'Parcela territorial reservada';
+      : 'Área de Sombra KAVIAR — 100% da taxa para matriz';
 
     // INSERT with ON CONFLICT DO NOTHING
     const { rows: inserted } = await client.query(

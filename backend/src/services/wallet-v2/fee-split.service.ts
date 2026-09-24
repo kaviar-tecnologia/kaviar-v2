@@ -3,6 +3,12 @@ import { applyBasisPoints, PLATFORM_FEE_RATE_BPS, MANAGER_COMMISSION_RATE_BPS } 
 
 export const COMPETENCE_TIMEZONE = 'America/Sao_Paulo';
 
+function basisPointsToPercentString(rateBps: number): string {
+  const whole = Math.trunc(rateBps / 100);
+  const fractional = Math.abs(rateBps % 100).toString().padStart(2, '0');
+  return `${whole}.${fractional}`;
+}
+
 /**
  * Computes reference month from a Date using America/Sao_Paulo timezone.
  */
@@ -104,6 +110,12 @@ export class FeeSplitService {
     }
     if (params.platformFeeRateBps < 0 || params.platformFeeRateBps > 10000) throw new Error('INVARIANT: platformFeeRateBps out of range');
     if (params.managerCommissionRateBps < 0 || params.managerCommissionRateBps > 10000) throw new Error('INVARIANT: managerCommissionRateBps out of range');
+    if (!params.managerId && params.managerCommissionRateBps !== 0) {
+      throw new Error('INVARIANT: territory without manager must use 0 manager commission');
+    }
+    if (!params.managerId && split.manager_share_cents !== 0n) {
+      throw new Error('INVARIANT: territory without manager cannot create manager share');
+    }
 
     if (params.collectionStatus === 'collected' && (params.feePendingCents !== 0n || params.feeCollectedCents !== split.fee_amount_cents)) {
       throw new Error('INVARIANT: collected requires pending=0 and collected=total');
@@ -131,9 +143,9 @@ export class FeeSplitService {
          idempotency_key
        ) VALUES (
          $1, $2, $3,
-         18.00, $4, $5, $6,
-         60.00, $7,
-         40.00, $8,
+         $18, $4, $5, $6,
+         $19, $7,
+         $20, $8,
          $9, $10, $11,
          $12, $13,
          $14, 'DB_SETTLEMENT_CLOCK',
@@ -155,6 +167,9 @@ export class FeeSplitService {
         params.recognizedAt,
         params.platformFeeRateBps, params.managerCommissionRateBps,
         key,
+        basisPointsToPercentString(params.platformFeeRateBps),
+        basisPointsToPercentString(10000 - params.managerCommissionRateBps),
+        basisPointsToPercentString(params.managerCommissionRateBps),
       ]
     );
 

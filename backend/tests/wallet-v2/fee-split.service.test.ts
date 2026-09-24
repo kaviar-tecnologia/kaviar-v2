@@ -14,6 +14,14 @@ describe('FeeSplitService', () => {
     expect(split.matrix_share_cents + split.manager_share_cents).toBe(split.fee_amount_cents);
   });
 
+  it('calculateSplit supports Área de Sombra with 0% manager commission', () => {
+    const svc = new FeeSplitService({} as any);
+    const split = svc.calculateSplit(10000n, 1800, 0);
+    expect(split.fee_amount_cents).toBe(1800n);
+    expect(split.manager_share_cents).toBe(0n);
+    expect(split.matrix_share_cents).toBe(1800n);
+  });
+
   it('calculateSplit deterministic for odd amounts', () => {
     const svc = new FeeSplitService({} as any);
     const split = svc.calculateSplit(3333n);

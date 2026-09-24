@@ -77,7 +77,7 @@ describe('TerritoryLedgerService', () => {
     } finally { client.release(); }
   });
 
-  it('uses "Parcela territorial reservada" when managerId is null', async () => {
+  it('records Área de Sombra with zero manager share when managerId is null', async () => {
     const svc = new TerritoryLedgerService(pool);
     const client = await pool.connect();
     const rideId = `ride-nomanager-ledger-${RUN}`;
@@ -85,11 +85,27 @@ describe('TerritoryLedgerService', () => {
 
     try {
       await client.query('BEGIN');
-      await svc.recordCollectedFeeInClient(client, tid, null, null, 1800n, 720n, rideId, '2026-07');
+      await svc.recordCollectedFeeInClient(client, tid, null, null, 1800n, 0n, rideId, '2026-07');
       await client.query('COMMIT');
 
-      const { rows } = await pool.query("SELECT description FROM territory_ledger WHERE reference_id = $1 AND entry_type = 'fee_share'", [rideId]);
-      expect(rows[0].description).toBe('Parcela territorial reservada');
+      const { rows } = await pool.query("SELECT amount_cents, description FROM territory_ledger WHERE reference_id = $1 AND entry_type = 'fee_share'", [rideId]);
+      expect(rows[0].amount_cents).toBe('0');
+      expect(rows[0].description).toBe('Área de Sombra KAVIAR — 100% da taxa para matriz');
+    } finally { client.release(); }
+  });
+
+  it('rejects positive manager share when managerId is null', async () => {
+    const svc = new TerritoryLedgerService(pool);
+    const client = await pool.connect();
+    const rideId = `ride-invalid-nomanager-ledger-${RUN}`;
+    const tid = `territory-${RUN}`;
+
+    try {
+      await client.query('BEGIN');
+      await expect(
+        svc.recordCollectedFeeInClient(client, tid, null, null, 1800n, 720n, rideId, '2026-07')
+      ).rejects.toThrow('territory without manager must record zero fee_share');
+      await client.query('ROLLBACK');
     } finally { client.release(); }
   });
 });

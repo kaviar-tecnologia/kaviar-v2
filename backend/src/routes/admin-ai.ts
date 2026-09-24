@@ -667,7 +667,9 @@ router.post('/territory/create-manager', requireSuperAdmin, async (req: Request,
         data: {
           territory_id,
           admin_id: admin.id,
-          status: 'active',
+          // New territorial managers start in pre-production.
+          // Financial participation only begins after explicit production activation.
+          status: 'pending_approval',
           started_at: new Date(),
           created_by: (req as any).admin.id,
         },

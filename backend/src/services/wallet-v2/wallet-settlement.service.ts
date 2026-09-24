@@ -100,13 +100,15 @@ export class WalletSettlementService {
 
       if (params.territoryId) {
         const { rows: assignments } = await client.query(
-          `SELECT id, admin_id
-           FROM territory_manager_assignments
-           WHERE territory_id = $1
-             AND status = 'active'
-             AND started_at <= $2
-             AND (ended_at IS NULL OR ended_at > $2)
-           FOR SHARE`,
+          `SELECT tma.id, tma.admin_id
+           FROM territory_manager_assignments tma
+           JOIN admins a ON a.id = tma.admin_id
+           WHERE tma.territory_id = $1
+             AND tma.status = 'active'
+             AND a.is_active = true
+             AND tma.started_at <= $2
+             AND (tma.ended_at IS NULL OR tma.ended_at > $2)
+           FOR SHARE OF tma`,
           [params.territoryId, recognizedAt]
         );
 
@@ -125,7 +127,14 @@ export class WalletSettlementService {
       }
 
       // ═══ CALCULATE SPLIT ═══
-      const split = this.feeSplit.calculateSplit(params.finalPriceCents);
+      // Territory without an active manager is an Área de Sombra KAVIAR:
+      // 100% of the platform fee stays with KAVIAR and no manager obligation is created.
+      const effectiveManagerCommissionRateBps = managerId ? MANAGER_COMMISSION_RATE_BPS : 0;
+      const split = this.feeSplit.calculateSplit(
+        params.finalPriceCents,
+        PLATFORM_FEE_RATE_BPS,
+        effectiveManagerCommissionRateBps,
+      );
 
       // ═══ LOCK WALLET AND DECIDE ═══
       const locked = await this.wallet.getLockedBalance(client, params.driverId);
@@ -148,7 +157,7 @@ export class WalletSettlementService {
           recognizedAt,
           referenceMonth,
           platformFeeRateBps: PLATFORM_FEE_RATE_BPS,
-          managerCommissionRateBps: MANAGER_COMMISSION_RATE_BPS,
+          managerCommissionRateBps: effectiveManagerCommissionRateBps,
           feeCollectedCents: split.fee_amount_cents,
           feePendingCents: 0n,
           collectionStatus: 'collected',
@@ -203,7 +212,7 @@ export class WalletSettlementService {
           recognizedAt,
           referenceMonth,
           platformFeeRateBps: PLATFORM_FEE_RATE_BPS,
-          managerCommissionRateBps: MANAGER_COMMISSION_RATE_BPS,
+          managerCommissionRateBps: effectiveManagerCommissionRateBps,
           feeCollectedCents: collectableAmount,
           feePendingCents: split.fee_amount_cents - collectableAmount,
           collectionStatus: collectableAmount > 0n ? 'partial' : 'pending',
