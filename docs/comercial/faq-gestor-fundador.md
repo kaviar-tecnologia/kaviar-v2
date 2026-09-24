@@ -4,7 +4,7 @@
 
 ## O que é o Plano Gestor Fundador de Bairro?
 
-É uma autorização operacional temporária para você atuar como parceiro captador e apoio operacional do KAVIAR no seu bairro. Você usa o painel KAVIAR para indicar motoristas, parceiros e associações, acompanha métricas e ajuda a desenvolver a operação localmente.
+É um modelo de parceria operacional territorial autônoma. Quando a KAVIAR utilizar etapa piloto, ela será pré-contratual e poderá durar até 90 dias. A atuação definitiva como Gestor Territorial depende de aprovação e do Contrato de Parceria Operacional Territorial v1.2.
 
 ---
 
@@ -22,7 +22,7 @@ Nesta versão, **não há taxa obrigatória de adesão, habilitação ou ativaç
 - Visão de corridas, motoristas, financeiro e reputação do território
 - Apoio à operação KAVIAR Pet no bairro
 - Exportação de relatórios
-- Prazo inicial de 90 dias com possibilidade de renovação
+- Eventual programa piloto pré-contratual de até 90 dias; o contrato definitivo v1.2 é por prazo indeterminado
 
 ---
 
@@ -99,13 +99,13 @@ Você recebe um link pessoal de captação. Quando um motorista se cadastra pelo
 
 ## Posso expandir para outros bairros?
 
-Sim, após o ciclo inicial de 90 dias, se o desempenho for positivo, você pode solicitar a abertura de bairros próximos. A aprovação depende de avaliação da central.
+Sim. A expansão para bairros próximos pode ser solicitada após avaliação operacional. Não há direito automático à expansão, e eventual piloto de até 90 dias não altera essa regra.
 
 ---
 
 ## E se eu não produzir resultado?
 
-Ao final do prazo, a central avalia o desempenho. Se não houver atividade mínima ou resultado, o território pode retornar à central sem renovação. Não há taxa obrigatória de ativação nesta versão.
+Durante eventual piloto pré-contratual, a central pode avaliar desempenho e decidir não avançar para a formalização. Após a contratação definitiva, o encerramento segue o Contrato v1.2. Não há taxa obrigatória de ativação nesta versão.
 
 ---
 
@@ -121,4 +121,4 @@ KAVIAR é produto e plataforma da **KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA**
 
 ---
 
-*Documento informativo. A formalização ocorre mediante aceite do Termo de Autorização Operacional Territorial.*
+*Documento informativo. A formalização do Gestor Territorial ocorre pelo Contrato de Parceria Operacional Territorial v1.2. Eventual termo de piloto é pré-contratual e não cria Ativação Financeira.*
