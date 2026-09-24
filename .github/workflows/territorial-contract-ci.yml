@@ -1,0 +1,47 @@
+name: Territorial Contract CI
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/routes/admin-payouts.ts'
+      - 'backend/src/routes/admin-my-operator-profile.ts'
+      - 'backend/src/services/contracts/**'
+      - 'backend/tests/contract-template.test.ts'
+      - 'backend/tests/territorial-manager-contract-v1_2.test.ts'
+      - 'docs/contratos/**'
+      - 'docs/comercial/termo-autorizacao-operacional-territorial-fundador.md'
+      - 'docs/contrato-gestor-territorial-v1.md'
+      - 'docs/territorial/gestor-territorial-kaviar-modelo-comercial-v1.1.md'
+
+permissions:
+  contents: read
+
+jobs:
+  contract-v1-2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: cd backend && npm ci
+
+      - name: Generate Prisma Client
+        run: cd backend && npx prisma generate
+
+      - name: Run territorial contract tests
+        run: |
+          cd backend
+          npx vitest run \
+            tests/contract-template.test.ts \
+            tests/territorial-manager-contract-v1_2.test.ts
+
+      - name: Build backend
+        run: cd backend && npm run build
