@@ -65,45 +65,26 @@ O vínculo territorial:
 
 ---
 
-## 7. RESULTADO OPERACIONAL E REPASSE
+## 7. RESULTADOS DO PILOTO E AUSÊNCIA DE PARTICIPAÇÃO TERRITORIAL
 
-### 7.1 Apuração
-O resultado operacional do território será apurado mensalmente pela central KAVIAR, com base nas corridas concluídas e na taxa operacional da plataforma.
+7.1. O período piloto é exclusivamente pré-operacional e de avaliação. **Não gera participação territorial de 40%, repasse territorial, direito adquirido sobre a área ou Ativação Financeira.**
 
-### 7.2 Taxa operacional KAVIAR
-A Plataforma KAVIAR utiliza, na política atualmente adotada para corridas, taxa operacional de referência de 18% (dezoito por cento) sobre o valor da corrida. Essa referência pode mudar conforme a política de preços da plataforma, sem alterar automaticamente o percentual de participação do Gestor sobre a Taxa da Plataforma Elegível.
+7.2. O painel poderá exibir métricas, simulações ou valores meramente informativos para avaliação do modelo. Tais informações não constituem crédito, comissão, salário, promessa de pagamento ou obrigação de repasse.
 
-Durante a Ativação Financeira válida:
-- 60% (sessenta por cento) da Taxa da Plataforma Elegível ficam com a KAVIAR;
-- 40% (quarenta por cento) da Taxa da Plataforma Elegível correspondem à participação econômica do Gestor no Território Operacional Atribuído.
+7.3. A participação econômica territorial somente poderá nascer após:
+- assinatura e aprovação do Contrato de Parceria Operacional Territorial v1.2;
+- definição do Anexo Territorial vigente;
+- cumprimento das condições cadastrais e documentais;
+- Ativação Financeira expressa e válida no sistema.
 
-### 7.3 Base de repasse ao Gestor
-A participação de 40% não é reduzida por custos internos da KAVIAR, tributos próprios da KAVIAR, tecnologia, meios de pagamento, seguros ou gratificações/incentivos financiados pela KAVIAR, inclusive eventual gratificação anual ao motorista.
-
-Não integram a base operações canceladas, não cobradas, fraudulentas, integralmente estornadas ou sujeitas a chargeback/reversão definitiva.
-
-Operações realizadas em Área Reservada KAVIAR / Área de Sombra geram 0% ao Gestor e 100% da Taxa da Plataforma Elegível permanece com a KAVIAR.
-
-### 7.4 Condições do repasse
-O repasse ao Gestor:
-
-- Depende de Ativação Financeira válida no momento do reconhecimento da operação;
-- Depende de apuração mensal e validação da central;
-- Depende de emissão de documento fiscal quando aplicável;
-- Segue o calendário financeiro vigente;
-- Pode ser suspenso em caso de irregularidade, fraude, reversão ou descumprimento contratual.
-
-O percentual não representa garantia de volume de corridas, faturamento mínimo ou ganho determinado.
-
-### 7.5 Valores informativos
-Os valores exibidos no painel do Gestor são informativos e estimados até formalização da apuração mensal pela central.
+7.4. Ocorrendo a formalização definitiva, este termo piloto ficará superado para operações futuras. A partir daí, qualquer participação econômica será regida exclusivamente pelo Contrato v1.2 e seus anexos.
 
 ---
 
 ## 8. OBRIGAÇÕES DO GESTOR
 
 - Captar motoristas, parceiros e associações no território vinculado;
-- Manter atividade operacional mínima (uso do painel, captação, presença);
+- Participar voluntariamente das atividades do piloto, sem jornada mínima, escala, presença obrigatória ou meta disciplinar;
 - Cadastrar interessados para análise da central;
 - Manter sigilo sobre dados acessados no painel (LGPD);
 - Reportar problemas, ocorrências ou demandas à central;
@@ -131,7 +112,7 @@ O Gestor NÃO pode:
 
 ## 10. INDICAÇÕES E BÔNUS
 
-O Gestor pode indicar motoristas usando seu link pessoal de captação. Indicações que resultem em motoristas aprovados, ativos e em operação regular na plataforma podem gerar bônus conforme política vigente do sistema, contrato aplicável e aprovação da central. O valor e as condições do bônus seguem exclusivamente as regras da plataforma, podendo ser alterados a qualquer momento. Bônus não é automático e depende de apuração e aprovação.
+O participante do piloto pode indicar motoristas usando link pessoal de captação quando essa funcionalidade estiver autorizada. Eventual bônus de indicação é benefício promocional separado da participação territorial, depende de política específica vigente, critérios objetivos de elegibilidade e aprovação da central, e **não constitui Ativação Financeira nem gera os 40% do contrato de Gestor Territorial**.
 
 ---
 
