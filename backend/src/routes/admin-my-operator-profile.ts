@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { prisma } from '../lib/prisma';
 import { authenticateAdmin } from '../middlewares/auth';
 import { audit, auditCtx } from '../utils/audit';
+import { TERRITORIAL_MANAGER_CONTRACT_VERSION } from '../services/contracts/territorial-manager-contract-v1_2';
 
 const router = Router();
 router.use(authenticateAdmin);
@@ -120,7 +121,7 @@ router.post('/submit-contract', (req: Request, res: Response) => {
           signer_ip: req.ip || req.socket?.remoteAddress || null,
           signer_user_agent: (req.headers['user-agent'] || '').substring(0, 200) || null,
           document_hash: documentHash,
-          contract_version: 'v1.0',
+          contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
           submitted_at: now,
         },
       });
@@ -138,7 +139,7 @@ router.post('/submit-contract', (req: Request, res: Response) => {
         action: 'submit_contract',
         entityType: 'contract_submission',
         entityId: submission.id,
-        newValue: { document_hash: documentHash, signer_name: profile.display_name, signer_document: profile.document_cpf || profile.document_cnpj || null, s3_key: s3Key, contract_version: 'v1.0' },
+        newValue: { document_hash: documentHash, signer_name: profile.display_name, signer_document: profile.document_cpf || profile.document_cnpj || null, s3_key: s3Key, contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION },
         ipAddress: req.ip || req.socket?.remoteAddress || undefined,
       });
 
@@ -200,19 +201,29 @@ router.post('/accept-terms', async (req: Request, res: Response) => {
     }
 
     const now = new Date();
+    const isTerritorialManager = profile.relationship_type === 'territorial_manager';
+
     const updated = await prisma.operator_profiles.update({
       where: { admin_id: admin.id },
       data: {
         terms_accepted_at: now,
         responsibility_terms_accepted_at: now,
         confidentiality_terms_accepted_at: now,
-        terms_version: 'v1.0-captador',
+        terms_version: isTerritorialManager ? TERRITORIAL_MANAGER_CONTRACT_VERSION : 'v1.0-captador',
         terms_accepted_by: admin.id,
-        contract_status: 'signed',
+        ...(isTerritorialManager ? {} : { contract_status: 'signed' }),
       },
     });
 
-    res.json({ success: true, data: { accepted_at: updated.terms_accepted_at, terms_version: updated.terms_version } });
+    res.json({
+      success: true,
+      data: {
+        accepted_at: updated.terms_accepted_at,
+        terms_version: updated.terms_version,
+        contract_required: isTerritorialManager,
+        contract_status: updated.contract_status,
+      },
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Erro ao aceitar termos' });
   }
