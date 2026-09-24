@@ -740,9 +740,20 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
       },
     });
     if (!operator) return res.status(404).json({ success: false, error: 'Operador não encontrado' });
-    if (operator.contract_status === 'signed') {
-      return res.status(409).json({ success: false, error: 'Contrato já assinado. Não é possível gerar novo modelo.' });
+
+    const hasFormalSignedContract =
+      operator.contract_status === 'signed' && Boolean(operator.contract_url);
+    if (hasFormalSignedContract) {
+      return res.status(409).json({
+        success: false,
+        error: 'Contrato formal já assinado. Não é possível gerar novo modelo sem aditivo ou procedimento de substituição.',
+      });
     }
+
+    const legacyOnlineOnlySigned =
+      operator.relationship_type === 'territorial_manager' &&
+      operator.contract_status === 'signed' &&
+      !operator.contract_url;
 
     const email = operator.email || operator.admin.email || null;
     const telefone = operator.phone || operator.admin.phone || null;
@@ -932,6 +943,7 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
         territory_version: input.territory.version,
         template_sha256: templateHash,
         financial_activation_created: false,
+        legacy_online_only_signed_migrated: legacyOnlineOnlySigned,
         method: 'auto_generate_canonical_v1_2',
       } as any,
       ipAddress: ctx.ip,
@@ -966,6 +978,7 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
         territory_id: input.territory.id,
         territory_version: input.territory.version,
         financial_activation_created: false,
+        legacy_online_only_signed_migrated: legacyOnlineOnlySigned,
         whatsappSent,
         generated: true,
       },
