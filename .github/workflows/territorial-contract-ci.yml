@@ -20,6 +20,9 @@ jobs:
   contract-v1-2:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://kaviar_test:kaviar_test@127.0.0.1:5432/kaviar_contract_test
 
     steps:
       - uses: actions/checkout@v5
