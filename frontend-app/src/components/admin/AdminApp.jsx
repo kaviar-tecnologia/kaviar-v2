@@ -120,7 +120,6 @@ function FinanceHomeRedirect() {
 function AdminHeader() {
   const adminData = localStorage.getItem('kaviar_admin_data');
   const admin = adminData ? JSON.parse(adminData) : null;
-  const isAngelViewer = admin?.role === 'ANGEL_VIEWER';
   
   const handleLogout = () => {
     localStorage.removeItem('kaviar_admin_token');
@@ -150,18 +149,6 @@ function AdminHeader() {
         <Typography sx={{ color: '#9CA3AF', fontSize: 10, mt: 0.2 }}>KAVIAR — Rio de Janeiro/RJ — Atendimento digital</Typography>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 0.5 }}>
           <Chip label={admin?.role || 'ADMIN'} size="small" sx={{ fontSize: 10, height: 20, bgcolor: 'rgba(184,148,46,0.08)', color: '#B8942E', fontWeight: 600 }} />
-          {isAngelViewer && (
-            <Chip 
-              label="👁️ Modo Leitura" 
-              size="small"
-              sx={{ 
-                bgcolor: '#FFF3E0', 
-                color: '#E65100',
-                fontWeight: 'bold',
-                border: '1px solid #FFE0B2'
-              }} 
-            />
-          )}
         </Box>
       </Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, position: 'relative', zIndex: 1 }}>
@@ -320,26 +307,13 @@ function AdminHome() {
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-      {['ANGEL_VIEWER', 'INVESTOR_VIEW'].includes(admin?.role) && (
+      {admin?.role === 'INVESTOR_VIEW' && (
         <Card sx={{ mb: 3, bgcolor: '#FFFFFF', border: '1px solid #E8E5DE', cursor: 'pointer', borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.04)', '&:hover': { borderColor: '#B8942E', boxShadow: '0 2px 8px rgba(184,148,46,0.1)' } }}
           onClick={() => window.location.href = '/admin/visao'}>
           <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 2 }}>
             <Box>
               <Typography sx={{ color: '#1A1A1A', fontWeight: 700, fontSize: 15 }}>Visão do Projeto</Typography>
               <Typography sx={{ color: '#6B7280', fontSize: 12, mt: 0.3 }}>Visão estratégica, modelo e potencial de expansão</Typography>
-            </Box>
-            <Typography sx={{ color: '#B8942E', fontSize: 20 }}>→</Typography>
-          </CardContent>
-        </Card>
-      )}
-
-      {admin?.role === 'ANGEL_VIEWER' && (
-        <Card sx={{ mb: 3, bgcolor: '#FFFFFF', border: '1px solid #E8E5DE', cursor: 'pointer', borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.04)', '&:hover': { borderColor: '#B8942E', boxShadow: '0 2px 8px rgba(184,148,46,0.1)' } }}
-          onClick={() => window.location.href = '/admin/meu-contrato'}>
-          <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 2 }}>
-            <Box>
-              <Typography sx={{ color: '#1A1A1A', fontWeight: 700, fontSize: 15 }}>📋 Meu Contrato</Typography>
-              <Typography sx={{ color: '#6B7280', fontSize: 12, mt: 0.3 }}>Visualizar contrato, termos e status</Typography>
             </Box>
             <Typography sx={{ color: '#B8942E', fontSize: 20 }}>→</Typography>
           </CardContent>
@@ -674,7 +648,7 @@ export default function AdminApp() {
             </ProtectedAdminRoute>
           } />
           <Route path="/visao" element={
-            <ProtectedAdminRoute allowedRoles={['ANGEL_VIEWER', 'INVESTOR_VIEW', 'SUPER_ADMIN']}>
+            <ProtectedAdminRoute allowedRoles={['INVESTOR_VIEW', 'SUPER_ADMIN']}>
               <Box sx={{ bgcolor: '#fff', minHeight: '100vh' }}>
                 <InvestorVision />
               </Box>
@@ -1134,7 +1108,7 @@ export default function AdminApp() {
           <Route path="/regional-admins" element={<ProtectedAdminRoute requireSuperAdmin><RegionalAdminsPage /></ProtectedAdminRoute>} />
           <Route path="/territorial-payouts" element={<ProtectedAdminRoute requireSuperAdmin><TerritorialPayoutsPage /></ProtectedAdminRoute>} />
           <Route path="/legal-compliance" element={<ProtectedAdminRoute requireSuperAdmin><LegalCompliancePage /></ProtectedAdminRoute>} />
-          <Route path="/meu-contrato" element={<ProtectedAdminRoute allowedRoles={['ANGEL_VIEWER', 'TERRITORIAL_OPERATOR', 'TERRITORIAL_MANAGER', 'SUPER_ADMIN']}><MyContractPage /></ProtectedAdminRoute>} />
+          <Route path="/meu-contrato" element={<ProtectedAdminRoute allowedRoles={['TERRITORIAL_OPERATOR', 'TERRITORIAL_MANAGER', 'SUPER_ADMIN']}><MyContractPage /></ProtectedAdminRoute>} />
           <Route path="/manager-finance" element={<ProtectedAdminRoute allowedRoles={['TERRITORIAL_MANAGER', 'SUPER_ADMIN']}><ManagerFinance /></ProtectedAdminRoute>} />
           <Route path="/manager-team" element={<ProtectedAdminRoute allowedRoles={['TERRITORIAL_MANAGER', 'SUPER_ADMIN']}><ManagerTeamPage /></ProtectedAdminRoute>} />
           <Route path="/manager-reputation" element={<ProtectedAdminRoute allowedRoles={['TERRITORIAL_MANAGER', 'SUPER_ADMIN']}><ManagerReputation /></ProtectedAdminRoute>} />
