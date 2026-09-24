@@ -450,8 +450,28 @@ const uploadContract = multer({
   },
 });
 
+async function rejectManagerManualContractFlow(req: Request, res: Response, next: any) {
+  try {
+    const operator = await prisma.operator_profiles.findUnique({
+      where: { id: req.params.id },
+      select: { relationship_type: true },
+    });
+    if (!operator) return res.status(404).json({ success: false, error: 'Operador não encontrado' });
+    if (operator.relationship_type === 'territorial_manager') {
+      return res.status(409).json({
+        success: false,
+        error: 'Gestor Territorial usa exclusivamente o fluxo canônico v1.2; upload manual não é permitido.',
+        required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
+      });
+    }
+    next();
+  } catch (error) {
+    return res.status(500).json({ success: false, error: 'Erro ao validar fluxo contratual' });
+  }
+}
+
 // POST /operators/:id/contract — Upload de contrato (SUPER_ADMIN)
-router.post('/operators/:id/contract', uploadContract.single('file'), async (req: Request, res: Response) => {
+router.post('/operators/:id/contract', rejectManagerManualContractFlow, uploadContract.single('file'), async (req: Request, res: Response) => {
   try {
     const operator = await prisma.operator_profiles.findUnique({ where: { id: req.params.id } });
     if (!operator) return res.status(404).json({ success: false, error: 'Operador não encontrado' });
@@ -501,7 +521,7 @@ router.get('/operators/:id/contract-url', async (req: Request, res: Response) =>
 });
 
 // POST /operators/:id/contract-template — Upload modelo de contrato (SUPER_ADMIN)
-router.post('/operators/:id/contract-template', uploadContract.single('file'), async (req: Request, res: Response) => {
+router.post('/operators/:id/contract-template', rejectManagerManualContractFlow, uploadContract.single('file'), async (req: Request, res: Response) => {
   try {
     const operator = await prisma.operator_profiles.findUnique({ where: { id: req.params.id } });
     if (!operator) return res.status(404).json({ success: false, error: 'Operador não encontrado' });
