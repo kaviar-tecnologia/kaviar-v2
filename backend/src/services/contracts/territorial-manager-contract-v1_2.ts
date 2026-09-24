@@ -6,13 +6,13 @@ export const TERRITORIAL_MANAGER_CONTRACT_VERSION = 'v1.2' as const;
 export interface TerritorialSnapshotSource {
   id: string;
   updated_at: Date;
-  neighborhoods: Array<{ id: string; name: string; updated_at: Date }>;
+  neighborhoods: Array<{ id: string; name: string; is_active: boolean; updated_at: Date }>;
 }
 
 export function buildTerritorySnapshotVersion(territory: TerritorialSnapshotSource): string {
   const neighborhoods = [...territory.neighborhoods]
     .sort((a, b) => a.id.localeCompare(b.id))
-    .map(n => ({ id: n.id, name: n.name, updated_at: n.updated_at.toISOString() }));
+    .map(n => ({ id: n.id, name: n.name, is_active: n.is_active, updated_at: n.updated_at.toISOString() }));
 
   const canonical = JSON.stringify({
     territory_id: territory.id,
