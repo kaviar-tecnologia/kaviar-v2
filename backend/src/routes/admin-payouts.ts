@@ -548,7 +548,7 @@ router.patch('/submissions/:id/review', async (req: Request, res: Response) => {
 
     const submission = await prisma.contract_submissions.findUnique({
       where: { id: req.params.id },
-      include: { operator: { select: { id: true, admin_id: true } } },
+      include: { operator: { select: { id: true, admin_id: true, relationship_type: true } } },
     });
     if (!submission) return res.status(404).json({ success: false, error: 'Submissão não encontrada' });
     if (!['submitted', 'in_review'].includes(submission.status)) {
@@ -557,6 +557,19 @@ router.patch('/submissions/:id/review', async (req: Request, res: Response) => {
 
     const adminId = (req as any).admin.id;
     const now = new Date();
+
+    if (
+      action === 'approve' &&
+      submission.operator.relationship_type === 'territorial_manager' &&
+      submission.contract_version !== TERRITORIAL_MANAGER_CONTRACT_VERSION
+    ) {
+      return res.status(409).json({
+        success: false,
+        error: `Contrato legado não pode ser aprovado para Gestor Territorial. Gere e reenvie a versão ${TERRITORIAL_MANAGER_CONTRACT_VERSION}.`,
+        required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
+        submitted_contract_version: submission.contract_version,
+      });
+    }
 
     if (action === 'approve') {
       await prisma.contract_submissions.update({
