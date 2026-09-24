@@ -25,8 +25,8 @@ Você recebe uma **autorização operacional temporária** para atuar como parce
 |------|-------|
 | Taxa de ativação | R$ 0,00 — não há cobrança obrigatória nesta versão |
 | Ciclo inicial | 90 dias |
-| Território | 1 bairro ou comunidade |
-| Base potencial de apuração ao gestor | 40% da taxa operacional da plataforma (18% do valor da corrida), conforme contrato, desempenho e validação da central |
+| Território | Área formalmente atribuída em bairro/comunidade, com possíveis Áreas Reservadas KAVIAR |
+| Participação do gestor | 40% da Taxa da Plataforma Elegível nas operações elegíveis do território formalmente atribuído, durante Ativação Financeira válida |
 | Taxa operacional KAVIAR | 18% do valor da corrida (infraestrutura, tecnologia, suporte) |
 
 > Os percentuais apresentados não representam repasse automático nem garantia de ganho. Todo valor depende de apuração real, validação da central KAVIAR, conformidade operacional e contrato vigente.
