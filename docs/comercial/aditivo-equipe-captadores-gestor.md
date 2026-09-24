@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 # Aditivo Operacional — Equipe e Captadores do Gestor Territorial
+=======
+# Documento Operacional Complementar ao Contrato de Parceria Operacional Territorial v1.2 — Equipe e Captadores
+>>>>>>> ad6177fb (docs(commercial): bind manager team document to v1.2)
 
 **KAVIAR — Produto da KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA**
 **CNPJ: 67.783.601/0001-99**
@@ -36,7 +40,11 @@ O Gestor Territorial, no exercício de suas atribuições junto à plataforma KA
 
 ## 6. Vigência
 
+<<<<<<< HEAD
 Este aditivo acompanha o Contrato de Parceria Operacional Territorial KAVIAR v1.2 quando formalizado. Durante eventual programa piloto/pré-ativação, produz apenas efeitos operacionais internos e não cria Ativação Financeira ou participação territorial.
+=======
+Este documento acompanha a vigência do Contrato de Parceria Operacional Territorial v1.2 do Gestor e não altera a participação econômica, a delimitação territorial, a Ativação Financeira ou os poderes de representação previstos no contrato principal.
+>>>>>>> ad6177fb (docs(commercial): bind manager team document to v1.2)
 
 ---
 
