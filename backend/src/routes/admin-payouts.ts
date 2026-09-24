@@ -5,6 +5,8 @@ import { authenticateAdmin, requireSuperAdmin } from '../middlewares/auth';
 import { audit, auditCtx } from '../utils/audit';
 import { COMPANY } from '../config/company';
 import { isLegacyPayAllowed, isMonthLegacy, isValidReferenceMonth } from '../services/finance/territory/engine-selection';
+import crypto from 'crypto';
+import { buildTerritorialManagerContractV12, buildTerritorySnapshotVersion, TERRITORIAL_MANAGER_CONTRACT_VERSION, type TerritorialManagerContractInput } from '../services/contracts/territorial-manager-contract-v1_2';
 
 const router = Router();
 router.use(authenticateAdmin, requireSuperAdmin);
@@ -19,6 +21,32 @@ function maskCpf(cpf: string | null): string | null {
   if (!cpf) return null;
   return '***' + cpf.slice(-4);
 }
+
+async function findManagerAssignmentsForContract(adminId: string, territoryId: string, operatorProfileId: string) {
+  const now = new Date();
+  return prisma.territory_manager_assignments.findMany({
+    where: {
+      admin_id: adminId,
+      territory_id: territoryId,
+      status: { in: ['pending_approval', 'active', 'suspended'] },
+      AND: [
+        { OR: [{ ended_at: null }, { ended_at: { gt: now } }] },
+        { OR: [{ operator_profile_id: null }, { operator_profile_id: operatorProfileId }] },
+      ],
+    },
+    select: {
+      id: true,
+      territory_id: true,
+      operator_profile_id: true,
+      status: true,
+      started_at: true,
+      ended_at: true,
+      updated_at: true,
+    },
+    orderBy: { created_at: 'desc' },
+  });
+}
+
 
 // ─── Operator Profiles ───────────────────────────────────────────────────────
 
@@ -546,7 +574,7 @@ router.patch('/submissions/:id/review', async (req: Request, res: Response) => {
 
     const submission = await prisma.contract_submissions.findUnique({
       where: { id: req.params.id },
-      include: { operator: { select: { id: true, admin_id: true } } },
+      include: { operator: { select: { id: true, admin_id: true, relationship_type: true } } },
     });
     if (!submission) return res.status(404).json({ success: false, error: 'Submissão não encontrada' });
     if (!['submitted', 'in_review'].includes(submission.status)) {
@@ -556,6 +584,19 @@ router.patch('/submissions/:id/review', async (req: Request, res: Response) => {
     const adminId = (req as any).admin.id;
     const now = new Date();
 
+    if (
+      action === 'approve' &&
+      submission.operator.relationship_type === 'territorial_manager' &&
+      submission.contract_version !== TERRITORIAL_MANAGER_CONTRACT_VERSION
+    ) {
+      return res.status(409).json({
+        success: false,
+        error: `Contrato legado não pode ser aprovado para Gestor Territorial. Gere e reenvie a versão ${TERRITORIAL_MANAGER_CONTRACT_VERSION}.`,
+        required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
+        submitted_contract_version: submission.contract_version,
+      });
+    }
+
     if (action === 'approve') {
       await prisma.contract_submissions.update({
         where: { id: req.params.id },
@@ -563,7 +604,7 @@ router.patch('/submissions/:id/review', async (req: Request, res: Response) => {
       });
       await prisma.operator_profiles.update({
         where: { id: submission.operator_profile_id },
-        data: { contract_status: 'signed', contract_url: submission.s3_key, contract_reviewed_by: adminId, contract_reviewed_at: now, contract_signed_at: now, updated_at: now },
+        data: { contract_status: 'signed', contract_url: submission.s3_key, terms_version: submission.contract_version || undefined, contract_reviewed_by: adminId, contract_reviewed_at: now, contract_signed_at: submission.submitted_at || submission.created_at, updated_at: now },
       });
     } else {
       await prisma.contract_submissions.update({
@@ -591,35 +632,107 @@ router.get('/operators/:id/contract-data', async (req: Request, res: Response) =
   try {
     const operator = await prisma.operator_profiles.findUnique({
       where: { id: req.params.id },
-      include: { admin: { select: { name: true, email: true, phone: true } }, territory: { select: { name: true, city_name: true, uf: true } } },
+      include: {
+        admin: { select: { name: true, email: true, phone: true } },
+        territory: {
+          select: {
+            id: true,
+            name: true,
+            city_name: true,
+            uf: true,
+            updated_at: true,
+            neighborhoods: {
+              select: { id: true, name: true, is_active: true, updated_at: true },
+              orderBy: { name: 'asc' },
+            },
+          },
+        },
+      },
     });
     if (!operator) return res.status(404).json({ success: false, error: 'Operador não encontrado' });
 
-    const nome = operator.display_name || operator.admin.name;
-    const email = operator.admin.email;
+    const isTerritorialManager = operator.relationship_type === 'territorial_manager';
+    const managerAssignments = isTerritorialManager
+      ? await findManagerAssignmentsForContract(operator.admin_id, operator.territory_id, operator.id)
+      : [];
+    const managerAssignment = managerAssignments.length === 1 ? managerAssignments[0] : null;
+
+    const email = operator.email || operator.admin.email || null;
     const telefone = operator.phone || operator.admin.phone || null;
-    const cpf = operator.document_cpf || null;
     const endereco = operator.address || null;
     const territorio = operator.territory?.name || null;
-    const cidadeUf = operator.territory?.city_name && operator.territory?.uf ? `${operator.territory.city_name}/${operator.territory.uf}` : null;
+    const cidadeUf = operator.territory?.city_name && operator.territory?.uf
+      ? `${operator.territory.city_name}/${operator.territory.uf}`
+      : null;
     const pixKey = operator.pix_key || null;
 
     const missingFields: string[] = [];
-    if (!cpf) missingFields.push('cpf');
+    if (!email) missingFields.push('email');
     if (!endereco) missingFields.push('endereco');
     if (!telefone) missingFields.push('telefone');
     if (!territorio) missingFields.push('territorio');
     if (!cidadeUf) missingFields.push('cidadeUf');
 
-    const canGenerateContract = missingFields.length === 0;
+    if (operator.recipient_type === 'individual') {
+      if (!operator.full_name) missingFields.push('full_name');
+      if (!operator.document_cpf) missingFields.push('cpf');
+    } else {
+      if (!operator.document_cnpj) missingFields.push('cnpj');
+      if (!operator.legal_representative_name) missingFields.push('legal_representative_name');
+      if (!operator.legal_representative_cpf) missingFields.push('legal_representative_cpf');
+    }
+
+    if (!isTerritorialManager) missingFields.push('relationship_type_territorial_manager');
+    if (isTerritorialManager && managerAssignments.length === 0) missingFields.push('manager_assignment');
+    if (isTerritorialManager && managerAssignments.length > 1) missingFields.push('manager_assignment_ambiguous');
+
+    const canGenerateContract = missingFields.length === 0 && Boolean(managerAssignment);
+    const territoryVersion = operator.territory
+      ? buildTerritorySnapshotVersion(operator.territory)
+      : null;
 
     res.json({
       success: true,
       data: {
         canGenerateContract,
+        contractVersion: TERRITORIAL_MANAGER_CONTRACT_VERSION,
         missingFields,
-        availableFields: { nome, email, telefone, cpf, endereco, territorio, cidadeUf, pixKey },
-        warnings: { pixMissing: !pixKey, pixNote: !pixKey ? 'Pix não é obrigatório para geração do contrato, mas é necessário para ativação e repasses.' : null },
+        availableFields: {
+          recipientType: operator.recipient_type,
+          relationshipType: operator.relationship_type,
+          displayName: operator.display_name,
+          fullName: operator.full_name || null,
+          email,
+          telefone,
+          endereco,
+          cpf: operator.document_cpf || null,
+          rg: operator.document_rg || null,
+          companyName: operator.company_name || null,
+          tradeName: operator.trade_name || null,
+          cnpj: operator.document_cnpj || null,
+          legalRepresentativeName: operator.legal_representative_name || null,
+          legalRepresentativeCpf: operator.legal_representative_cpf || null,
+          territorio,
+          territoryId: operator.territory?.id || null,
+          territoryVersion,
+          neighborhoods: operator.territory?.neighborhoods?.map(n => n.name) || [],
+          managerAssignmentId: managerAssignment?.id || null,
+          managerAssignmentStatus: managerAssignment?.status || null,
+          cidadeUf,
+          pixKey,
+        },
+        warnings: {
+          pixMissing: !pixKey,
+          pixNote: !pixKey ? 'Pix não é obrigatório para gerar a minuta, mas será necessário para repasses quando aplicável.' : null,
+          contractApplicable: isTerritorialManager,
+          contractApplicabilityNote: isTerritorialManager
+            ? null
+            : 'A minuta v1.2 é exclusiva de Gestor Territorial.',
+          assignmentNote: isTerritorialManager && managerAssignments.length !== 1
+            ? 'É necessário exatamente um assignment territorial vigente e compatível para gerar a minuta v1.2.'
+            : null,
+          financialActivation: 'A geração/assinatura da minuta v1.2 não cria Ativação Financeira.',
+        },
       },
     });
   } catch (error) {
@@ -627,7 +740,7 @@ router.get('/operators/:id/contract-data', async (req: Request, res: Response) =
   }
 });
 
-// ─── Generate Contract Template (PDF) ────────────────────────────────────────
+// ─── Generate Contract Template v1.2 (PDF canônico) ──────────────────────────
 
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import path from 'path';
@@ -637,214 +750,321 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
   try {
     const operator = await prisma.operator_profiles.findUnique({
       where: { id: req.params.id },
-      include: { admin: { select: { name: true, email: true, phone: true } }, territory: { select: { name: true, city_name: true, uf: true } } },
+      include: {
+        admin: { select: { name: true, email: true, phone: true } },
+        territory: {
+          select: {
+            id: true,
+            name: true,
+            city_name: true,
+            uf: true,
+            updated_at: true,
+            neighborhoods: {
+              select: { id: true, name: true, is_active: true, updated_at: true },
+              orderBy: { name: 'asc' },
+            },
+          },
+        },
+      },
     });
     if (!operator) return res.status(404).json({ success: false, error: 'Operador não encontrado' });
-    if (operator.contract_status === 'signed') return res.status(409).json({ success: false, error: 'Contrato já assinado. Não é possível gerar novo modelo.' });
+    if (operator.relationship_type !== 'territorial_manager') {
+      return res.status(409).json({
+        success: false,
+        error: 'A minuta contratual v1.2 é exclusiva de Gestor Territorial.',
+      });
+    }
 
-    const nome = operator.display_name || operator.admin.name;
-    const email = operator.admin.email;
+    const managerAssignments = await findManagerAssignmentsForContract(
+      operator.admin_id,
+      operator.territory_id,
+      operator.id,
+    );
+    if (managerAssignments.length !== 1) {
+      return res.status(409).json({
+        success: false,
+        error: managerAssignments.length === 0
+          ? 'Assignment territorial vigente não encontrado para este Gestor e território.'
+          : 'Mais de um assignment territorial vigente foi encontrado para este Gestor e território. Regularize antes de gerar o contrato.',
+        assignment_count: managerAssignments.length,
+      });
+    }
+    const managerAssignment = managerAssignments[0];
+
+    const hasFormalSignedContract =
+      operator.contract_status === 'signed' && Boolean(operator.contract_url);
+    if (hasFormalSignedContract) {
+      return res.status(409).json({
+        success: false,
+        error: 'Contrato formal já assinado. Não é possível gerar novo modelo sem aditivo ou procedimento de substituição.',
+      });
+    }
+
+    const legacyOnlineOnlySigned =
+      operator.relationship_type === 'territorial_manager' &&
+      operator.contract_status === 'signed' &&
+      !operator.contract_url;
+
+    const email = operator.email || operator.admin.email || null;
     const telefone = operator.phone || operator.admin.phone || null;
-    const cpf = operator.document_cpf || null;
-    const rg = (operator as any).document_rg || '—';
     const endereco = operator.address || null;
     const territorio = operator.territory?.name || null;
-    const cidadeUf = operator.territory?.city_name && operator.territory?.uf ? `${operator.territory.city_name}/${operator.territory.uf}` : null;
+    const cidadeUf = operator.territory?.city_name && operator.territory?.uf
+      ? `${operator.territory.city_name}/${operator.territory.uf}`
+      : null;
 
     const missingFields: string[] = [];
-    if (!cpf) missingFields.push('cpf');
-    if (!endereco) missingFields.push('endereco');
+    if (!email) missingFields.push('email');
     if (!telefone) missingFields.push('telefone');
+    if (!endereco) missingFields.push('endereco');
     if (!territorio) missingFields.push('territorio');
     if (!cidadeUf) missingFields.push('cidadeUf');
 
-    if (missingFields.length > 0) {
-      return res.status(400).json({ success: false, error: 'Dados insuficientes para gerar contrato.', missingFields });
+    if (operator.recipient_type === 'individual') {
+      if (!operator.full_name) missingFields.push('full_name');
+      if (!operator.document_cpf) missingFields.push('cpf');
+    } else {
+      if (!operator.document_cnpj) missingFields.push('cnpj');
+      if (!operator.legal_representative_name) missingFields.push('legal_representative_name');
+      if (!operator.legal_representative_cpf) missingFields.push('legal_representative_cpf');
     }
 
-    // Generate PDF with pdfkit
+    if (missingFields.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Dados insuficientes para gerar contrato v1.2.',
+        missingFields,
+      });
+    }
+
+    const territoryVersion = buildTerritorySnapshotVersion(operator.territory);
+    const generatedAt = new Date();
+    const input: TerritorialManagerContractInput = {
+      recipientType: operator.recipient_type as TerritorialManagerContractInput['recipientType'],
+      displayName: operator.recipient_type === 'individual'
+        ? operator.full_name!
+        : (operator.company_name || operator.display_name || operator.admin.name),
+      email: email!,
+      phone: telefone!,
+      address: endereco!,
+      cpf: operator.document_cpf,
+      rg: operator.document_rg,
+      companyName: operator.company_name,
+      tradeName: operator.trade_name,
+      cnpj: operator.document_cnpj,
+      legalRepresentativeName: operator.legal_representative_name,
+      legalRepresentativeCpf: operator.legal_representative_cpf,
+      territory: {
+        id: operator.territory.id,
+        name: territorio!,
+        cityUf: cidadeUf!,
+        version: territoryVersion,
+        neighborhoods: operator.territory.neighborhoods.map(n => `${n.name} (${n.is_active ? 'ativo' : 'inativo'})`),
+        assignmentId: managerAssignment.id,
+        assignmentStatus: managerAssignment.status,
+      },
+      generatedAt: generatedAt.toISOString(),
+    };
+
+    const contract = buildTerritorialManagerContractV12(input);
+
     const PDFDocument = require('pdfkit');
     const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true });
     const chunks: Buffer[] = [];
-    doc.on('data', (c: Buffer) => chunks.push(c));
-
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
     const pdfDone = new Promise<Buffer>((resolve) => {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
     });
 
-    // Load logo
     const logoPath = path.resolve(__dirname, '../../assets/kaviar-logo.jpg');
     let logoBuffer: Buffer | null = null;
     try { logoBuffer = fs.readFileSync(logoPath); } catch {}
 
-    const dataHoje = new Date().toLocaleDateString('pt-BR');
+    const ensureSpace = (needed = 90) => {
+      if (doc.y > 760 - needed) doc.addPage();
+    };
 
-    // ─── CONTRATO PRINCIPAL ───
-    if (logoBuffer) doc.image(logoBuffer, 200, 40, { width: 160 });
-    doc.moveDown(6);
-    doc.fontSize(18).font('Helvetica-Bold').text('KAVIAR', { align: 'center' });
-    doc.fontSize(12).font('Helvetica').text('Contrato de Parceria Operacional Territorial — Plataforma KAVIAR', { align: 'center' });
-    if (COMPANY.cnpj.includes('AGUARDANDO')) {
-      doc.moveDown(0.3);
-      doc.fontSize(9).fillColor('#CC0000').text('MINUTA — dados empresariais pendentes de confirmação', { align: 'center' });
-      doc.fillColor('#1a1a1a');
-    }
-    doc.moveDown(1);
-    doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke('#B8942E');
-    doc.moveDown(0.5);
-
-    // Contratante
-    doc.fontSize(9).font('Helvetica-Bold').text('CONTRATANTE:');
-    doc.font('Helvetica').text(COMPANY.legalName);
-    doc.text(`CNPJ: ${COMPANY.cnpj}`);
-    doc.text(`${COMPANY.publicLocation} — ${COMPANY.serviceMode}`);
-    doc.text(`${COMPANY.email} | ${COMPANY.website}`);
-    doc.moveDown(0.8);
-
-    // Contratada
-    doc.font('Helvetica-Bold').text('CONTRATADA — PARTE GESTORA:');
-    doc.font('Helvetica');
-    doc.text(`Nome: ${nome}`);
-    doc.text(`CPF: ${cpf}`);
-    doc.text(`RG: ${rg}`);
-    doc.text(`E-mail: ${email}`);
-    doc.text(`Telefone: ${telefone}`);
-    doc.text(`Endereço: ${endereco}`);
-    doc.text(`Cidade/UF: ${cidadeUf}`);
-    doc.moveDown(1);
-    doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke('#ccc');
-    doc.moveDown(0.5);
-
-    // Cláusulas
-    const clausulas = [
-      { t: '1. OBJETO', b: `A KAVIAR TECNOLOGIA E SERVIÇOS DIGITAIS LTDA estabelece parceria operacional autônoma com a PARTE GESTORA para acompanhamento, captação e suporte local exclusivamente no Território Operacional Atribuído "${territorio}" (${cidadeUf}).` },
-      { t: '2. TERRITÓRIO OPERACIONAL', b: `Território atribuído: ${territorio}\nCidade/UF: ${cidadeUf}\nA indicação da cidade não significa atribuição de todo o município. Áreas Reservadas KAVIAR (Área de Sombra) e áreas não formalmente atribuídas ficam fora do território remunerado. Alterações de delimitação produzem efeitos prospectivos e serão formalmente registradas.` },
-      { t: '3. OBRIGAÇÕES DA PARTE GESTORA', b: '• Realizar captação dentro do território atribuído;\n• Apoiar a operação local sem assumir obrigações em nome da KAVIAR;\n• Reportar problemas operacionais;\n• Manter sigilo e cumprir LGPD;\n• Não prometer ganhos, preços, aprovações ou repasses não autorizados;\n• Não receber valores, assinar contratos ou representar a KAVIAR sem autorização expressa.' },
-      { t: '4. OBRIGAÇÕES DA KAVIAR', b: '• Disponibilizar ferramentas e métricas aplicáveis;\n• Manter a delimitação territorial registrada;\n• Processar apuração e repasses conforme Contrato e Anexo Comercial;\n• Comunicar alterações materiais com antecedência aplicável.' },
-      { t: '5. PARTICIPAÇÃO ECONÔMICA', b: 'Com Ativação Financeira válida, a PARTE GESTORA fará jus a 40% da Taxa da Plataforma Elegível reconhecida nas operações elegíveis dentro do Território Operacional Atribuído. Operações em Área Reservada KAVIAR / Área de Sombra geram 0% ao gestor e 100% da taxa permanece com a KAVIAR.' },
-      { t: '6. PAGAMENTO', b: 'A apuração será mensal. O pagamento depende de cadastro regular, documentação aplicável, ausência de bloqueio e documento fiscal quando exigível. Estornos, chargebacks, fraude ou não cobrança podem gerar exclusão ou ajuste proporcional.' },
-      { t: '7. VIGÊNCIA', b: 'Este contrato tem vigência de 12 meses a partir da assinatura, com renovação automática por iguais períodos, salvo manifestação contrária com 30 dias de antecedência. A vigência não implica Ativação Financeira automática.' },
-      { t: '8. RESCISÃO', b: '• Por qualquer parte, com 30 dias de antecedência;\n• Imediatamente por justa causa ou risco operacional relevante;\n• Valores reconhecidos até a data de corte permanecem sujeitos à apuração final;\n• Não há participação sobre operações futuras após o encerramento.' },
-      { t: '9. CONFIDENCIALIDADE E LGPD', b: 'A PARTE GESTORA manterá sigilo sobre dados e informações não públicas da plataforma e tratará dados pessoais somente para finalidades autorizadas, observando a LGPD e os controles de acesso da KAVIAR.' },
-      { t: '10. DISPOSIÇÕES GERAIS', b: '• Não há vínculo empregatício, sociedade, representação comercial, mandato ou exclusividade territorial absoluta;\n• Alteração do percentual econômico exige formalização escrita e efeito prospectivo;\n• Foro: comarca da Capital do Estado do Rio de Janeiro/RJ, ressalvada competência legal obrigatória.' },
-    ];
-
-    for (const c of clausulas) {
-      if (doc.y > 700) doc.addPage();
-      doc.font('Helvetica-Bold').fontSize(9).text(c.t);
-      doc.font('Helvetica').fontSize(9).text(c.b);
+    contract.parts.forEach((part, partIndex) => {
+      if (partIndex > 0) doc.addPage();
+      if (logoBuffer) doc.image(logoBuffer, 205, 35, { width: 150 });
+      doc.moveDown(5.8);
+      doc.font('Helvetica-Bold').fontSize(partIndex === 0 ? 15 : 14).text(part.title, { align: 'center' });
+      if (part.subtitle) {
+        doc.moveDown(0.25);
+        doc.font('Helvetica').fontSize(9).text(part.subtitle, { align: 'center' });
+      }
+      doc.moveDown(0.8);
+      doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke('#B8942E');
       doc.moveDown(0.6);
-    }
 
-    // Assinaturas
-    if (doc.y > 620) doc.addPage();
-    doc.moveDown(2);
-    doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke('#ccc');
+      for (const metadata of part.metadata || []) {
+        ensureSpace(35);
+        doc.font('Helvetica').fontSize(8.5).text(metadata);
+      }
+      if ((part.metadata || []).length) doc.moveDown(0.7);
+
+      for (const section of part.sections) {
+        ensureSpace(100);
+        doc.font('Helvetica-Bold').fontSize(9).text(section.title);
+        doc.moveDown(0.2);
+
+        for (const paragraph of section.paragraphs || []) {
+          ensureSpace(65);
+          doc.font('Helvetica').fontSize(8.7).text(paragraph, { align: 'justify', lineGap: 1.2 });
+          doc.moveDown(0.35);
+        }
+
+        for (const bullet of section.bullets || []) {
+          ensureSpace(45);
+          doc.font('Helvetica').fontSize(8.7).text(`• ${bullet}`, { indent: 10, lineGap: 1.1 });
+          doc.moveDown(0.2);
+        }
+        doc.moveDown(0.45);
+      }
+    });
+
+    ensureSpace(210);
     doc.moveDown(1);
-    doc.font('Helvetica').fontSize(9).text(`Local e data: Rio de Janeiro, ${dataHoje}`, { align: 'center' });
-    doc.moveDown(2);
+    doc.font('Helvetica-Bold').fontSize(10).text('ASSINATURAS', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.font('Helvetica').fontSize(8.5)
+      .text(`Versão contratual: ${TERRITORIAL_MANAGER_CONTRACT_VERSION}`, { align: 'center' })
+      .text(`Data de geração da minuta: ${generatedAt.toLocaleDateString('pt-BR')}`, { align: 'center' })
+      .text('A data acima não constitui Ativação Financeira.', { align: 'center' });
+    doc.moveDown(1.6);
+    doc.text('Local e data da assinatura: __________________________________________', { align: 'center' });
+    doc.moveDown(1.8);
     doc.text('___________________________________________', { align: 'center' });
     doc.text('KAVIAR TECNOLOGIA E SERVIÇOS DIGITAIS LTDA', { align: 'center' });
-    doc.moveDown(2);
+    doc.moveDown(1.8);
     doc.text('___________________________________________', { align: 'center' });
-    doc.text(`${nome} — Gestor(a) Territorial`, { align: 'center' });
+    const contractSignerName = input.recipientType === 'individual'
+      ? input.displayName
+      : (input.legalRepresentativeName || input.displayName);
+    doc.text(`${contractSignerName} — Gestor(a) Territorial / Representante`, { align: 'center' });
+    doc.moveDown(1.8);
+    doc.font('Helvetica-Bold').fontSize(8.5).text('TESTEMUNHAS — quando utilizadas para reforço probatório', { align: 'center' });
+    doc.moveDown(1.2);
+    doc.font('Helvetica').fontSize(8.5).text('1. __________________________________  Nome: ______________________________  CPF: __________________', { align: 'center' });
+    doc.moveDown(1.0);
+    doc.text('2. __________________________________  Nome: ______________________________  CPF: __________________', { align: 'center' });
 
-    // ─── ANEXO COMERCIAL (nova página) ───
-    doc.addPage();
-    if (logoBuffer) doc.image(logoBuffer, 200, 40, { width: 160 });
-    doc.moveDown(6);
-    doc.fontSize(16).font('Helvetica-Bold').text('ANEXO COMERCIAL I', { align: 'center' });
-    doc.fontSize(11).text('Regra Inicial de Repasse Territorial', { align: 'center' });
-    doc.fontSize(10).font('Helvetica').text('Plataforma KAVIAR', { align: 'center' });
-    doc.moveDown(1);
-    doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke('#B8942E');
-    doc.moveDown(0.5);
-
-    doc.font('Helvetica-Bold').fontSize(9).text('PARTES');
-    doc.font('Helvetica');
-    doc.text(`${COMPANY.legalName} — CNPJ: ${COMPANY.cnpj}`);
-    doc.text(`Gestor(a) Territorial: ${nome} — CPF: ${cpf}`);
-    doc.text(`Território: ${territorio} — ${cidadeUf}`);
-    doc.text(`Data de início: ${dataHoje}`);
-    doc.moveDown(1);
-
-    const anexoCl = [
-      { t: '1. PARTICIPAÇÃO ECONÔMICA', b: 'Com Ativação Financeira válida, a PARTE GESTORA fará jus a 40% (quarenta por cento) da Taxa da Plataforma Elegível reconhecida nas operações elegíveis realizadas dentro do Território Operacional Atribuído.' },
-      { t: '2. BASE DE CÁLCULO', b: '• A Taxa da Plataforma Elegível é a taxa operacional da KAVIAR aplicável à operação;\n• Na política atual de corridas, a referência é 18% do valor da corrida;\n• O percentual do gestor não incide sobre o valor integral da corrida;\n• Custos internos, tributos próprios da KAVIAR, meios de pagamento e gratificações/incentivos financiados pela KAVIAR, inclusive eventual gratificação anual ao motorista, não reduzem os 40% do gestor;\n• Cancelamentos, não cobrança, fraude, estornos e chargebacks/reversões definitivas não geram participação.' },
-      { t: '3. EXEMPLOS', b: `Território ativo com gestor: corrida de R$ 100,00 → taxa da plataforma de R$ 18,00 → gestor R$ 7,20 (40%) → KAVIAR R$ 10,80 (60%).\nÁrea Reservada KAVIAR / Área de Sombra: corrida de R$ 100,00 → taxa da plataforma de R$ 18,00 → gestor R$ 0,00 → KAVIAR R$ 18,00 (100%).` },
-      { t: '4. ÁREA RESERVADA E ATIVAÇÃO', b: '• Área Reservada KAVIAR / Área de Sombra não integra o território remunerado;\n• Vínculo com cidade ou região não significa participação sobre todo o município;\n• Cadastro, contrato ou acesso ao painel não geram direito econômico antes da Ativação Financeira;\n• Não há taxa obrigatória de adesão ou habilitação operacional nesta versão.' },
-      { t: '5. APURAÇÃO E PAGAMENTO', b: '• Apuração mensal por mês-calendário;\n• Reversões e ajustes serão identificados quando aplicáveis;\n• Pagamento conforme calendário financeiro da KAVIAR e exigências fiscais/cadastrais;\n• Valor mínimo para repasse: R$ 50,00, acumulando-se o saldo quando não atingido.' },
-      { t: '6. ALTERAÇÕES', b: '• O percentual econômico de 40% somente poderá ser alterado prospectivamente mediante formalização escrita;\n• Regras operacionais que não alterem o percentual poderão ser atualizadas conforme o Contrato;\n• Este anexo prevalece sobre comunicações verbais e materiais informais.' },
-    ];
-
-    for (const c of anexoCl) {
-      if (doc.y > 700) doc.addPage();
-      doc.font('Helvetica-Bold').fontSize(9).text(c.t);
-      doc.font('Helvetica').fontSize(9).text(c.b);
-      doc.moveDown(0.6);
-    }
-
-    // Assinaturas do anexo
-    if (doc.y > 620) doc.addPage();
-    doc.moveDown(2);
-    doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke('#ccc');
-    doc.moveDown(1);
-    doc.font('Helvetica').fontSize(9).text(`Rio de Janeiro, ${dataHoje}`, { align: 'center' });
-    doc.moveDown(2);
-    doc.text('___________________________________________', { align: 'center' });
-    doc.text('KAVIAR TECNOLOGIA E SERVIÇOS DIGITAIS LTDA', { align: 'center' });
-    doc.moveDown(2);
-    doc.text('___________________________________________', { align: 'center' });
-    doc.text(`${nome} — Gestor(a) Territorial`, { align: 'center' });
-
-    // Footer on all pages
     const pages = doc.bufferedPageRange();
     for (let i = 0; i < pages.count; i++) {
       doc.switchToPage(i);
       doc.fontSize(7).font('Helvetica').fillColor('#888888')
-        .text('KAVIAR — Plataforma de Mobilidade | contato@kaviar.com.br | kaviar.com.br', 50, 780, { align: 'center', width: 495 });
+        .text(
+          `KAVIAR — Contrato Territorial ${TERRITORIAL_MANAGER_CONTRACT_VERSION} | ${COMPANY.email} | ${COMPANY.website}`,
+          50,
+          780,
+          { align: 'center', width: 495 },
+        );
       doc.fillColor('#1a1a1a');
     }
 
     doc.end();
     const pdfBuffer = await pdfDone;
+    const templateHash = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
 
-    // Upload to S3
-    const s3Key = `manager-contract-templates/${req.params.id}/${Date.now()}.pdf`;
+    const s3Key = `manager-contract-templates/${req.params.id}/${TERRITORIAL_MANAGER_CONTRACT_VERSION}/${Date.now()}.pdf`;
     await contractS3.send(new PutObjectCommand({
       Bucket: contractBucket,
       Key: s3Key,
       Body: pdfBuffer,
       ContentType: 'application/pdf',
+      Metadata: {
+        contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
+        territory_id: input.territory.id,
+        territory_version: input.territory.version,
+        assignment_id: input.territory.assignmentId,
+        assignment_status: input.territory.assignmentStatus,
+        sha256: templateHash,
+      },
     }));
 
-    // Update operator
     const previousKey = operator.contract_template_url || null;
     await prisma.operator_profiles.update({
       where: { id: req.params.id },
-      data: { contract_template_url: s3Key, contract_status: 'available', updated_at: new Date() },
+      data: {
+        contract_template_url: s3Key,
+        contract_status: 'available',
+        terms_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
+        updated_at: new Date(),
+      },
     });
 
-    // Audit
     const ctx = auditCtx(req);
-    audit({ adminId: ctx.adminId, adminEmail: ctx.adminEmail, action: 'generate_contract_template', entityType: 'operator_profile', entityId: req.params.id, oldValue: previousKey ? { contract_template_url: previousKey } : undefined, newValue: { contract_template_url: s3Key, contract_status: 'available', method: 'auto_generate' } as any, ipAddress: ctx.ip });
+    audit({
+      adminId: ctx.adminId,
+      adminEmail: ctx.adminEmail,
+      action: 'generate_contract_template',
+      entityType: 'operator_profile',
+      entityId: req.params.id,
+      oldValue: previousKey ? { contract_template_url: previousKey } : undefined,
+      newValue: {
+        contract_template_url: s3Key,
+        contract_status: 'available',
+        contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
+        territory_id: input.territory.id,
+        territory_version: input.territory.version,
+        assignment_id: input.territory.assignmentId,
+        assignment_status: input.territory.assignmentStatus,
+        assignment_started_at: managerAssignment.started_at.toISOString(),
+        assignment_ended_at: managerAssignment.ended_at?.toISOString() || null,
+        territory_snapshot: {
+          territory_id: operator.territory.id,
+          territory_updated_at: operator.territory.updated_at.toISOString(),
+          neighborhoods: operator.territory.neighborhoods.map(n => ({
+            id: n.id,
+            name: n.name,
+            is_active: n.is_active,
+            updated_at: n.updated_at.toISOString(),
+          })),
+        },
+        template_sha256: templateHash,
+        financial_activation_created: false,
+        legacy_online_only_signed_migrated: legacyOnlineOnlySigned,
+        method: 'auto_generate_canonical_v1_2',
+      } as any,
+      ipAddress: ctx.ip,
+    });
 
-    // Notify (non-blocking)
     let whatsappSent = false;
     try {
       const operatorAdmin = operator.admin;
       if (operatorAdmin?.phone && process.env.WA_TPL_CONTRACT_AVAILABLE) {
         const { whatsappService } = await import('../modules/whatsapp');
         const firstName = operatorAdmin.name?.split(' ')[0] || operatorAdmin.name;
-        await whatsappService.sendTemplate({ to: operatorAdmin.phone, template: 'kaviar_contract_available_v1' as any, variables: { '1': firstName, '2': 'https://kaviar.com.br/admin/meu-contrato' } });
+        await whatsappService.sendTemplate({
+          to: operatorAdmin.phone,
+          template: 'kaviar_contract_available_v1' as any,
+          variables: { '1': firstName, '2': 'https://kaviar.com.br/admin/meu-contrato' },
+        });
         whatsappSent = true;
       }
     } catch (notifyErr) {
       console.error('[CONTRACT_NOTIFY_FAIL]', (notifyErr as Error).message?.slice(0, 100));
     }
-    console.log(`[CONTRACT_GENERATED] operator=${req.params.id} whatsapp=${whatsappSent}`);
 
-    res.json({ success: true, data: { contract_status: 'available', whatsappSent, generated: true } });
+    console.log(
+      `[CONTRACT_GENERATED] operator=${req.params.id} version=${TERRITORIAL_MANAGER_CONTRACT_VERSION} territory=${input.territory.id} whatsapp=${whatsappSent}`,
+    );
+
+    res.json({
+      success: true,
+      data: {
+        contract_status: 'available',
+        contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
+        territory_id: input.territory.id,
+        territory_version: input.territory.version,
+        assignment_id: input.territory.assignmentId,
+        assignment_status: input.territory.assignmentStatus,
+        financial_activation_created: false,
+        legacy_online_only_signed_migrated: legacyOnlineOnlySigned,
+        whatsappSent,
+        generated: true,
+      },
+    });
   } catch (error: any) {
     console.error('[admin-payouts] generate-contract-template error:', (error as Error).message?.slice(0, 200));
     res.status(500).json({ success: false, error: 'Erro ao gerar contrato automaticamente' });

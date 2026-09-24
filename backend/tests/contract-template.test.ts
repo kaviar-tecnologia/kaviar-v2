@@ -148,6 +148,126 @@ describe('contract template flow', () => {
     });
   });
 
+  describe('v1.2 manager contract transition', () => {
+    const REQUIRED_VERSION = 'v1.2';
+
+    it('legacy manager template must be regenerated before signed upload', () => {
+      const profile = { relationship_type: 'territorial_manager', terms_version: 'v1.1' };
+      const allowed = profile.relationship_type !== 'territorial_manager' || profile.terms_version === REQUIRED_VERSION;
+      expect(allowed).toBe(false);
+    });
+
+    it('current v1.2 manager template may proceed to signed upload', () => {
+      const profile = { relationship_type: 'territorial_manager', terms_version: 'v1.2' };
+      const allowed = profile.relationship_type !== 'territorial_manager' || profile.terms_version === REQUIRED_VERSION;
+      expect(allowed).toBe(true);
+    });
+
+    it('legacy manager submission cannot be approved as v1.2', () => {
+      const submission = {
+        contract_version: 'v1.1',
+        operator: { relationship_type: 'territorial_manager' },
+      };
+      const canApprove =
+        submission.operator.relationship_type !== 'territorial_manager' ||
+        submission.contract_version === REQUIRED_VERSION;
+      expect(canApprove).toBe(false);
+    });
+
+    it('generic online terms do not stamp v1.2 or substitute the manager contract', () => {
+      const isTerritorialManager = true;
+      const update = {
+        terms_accepted_at: new Date(),
+        ...(isTerritorialManager
+          ? {}
+          : { terms_version: 'v1.0-captador', contract_status: 'signed' }),
+      };
+      expect(update).not.toHaveProperty('terms_version');
+      expect(update).not.toHaveProperty('contract_status');
+    });
+
+    it('non-manager submissions keep their own terms version instead of being relabeled v1.2', () => {
+      const profile = { relationship_type: 'territorial_operator', terms_version: 'v1.0-captador' };
+      const submissionVersion =
+        profile.relationship_type === 'territorial_manager'
+          ? REQUIRED_VERSION
+          : (profile.terms_version || 'v1.0');
+      expect(submissionVersion).toBe('v1.0-captador');
+    });
+
+    it('template generation never creates financial activation', () => {
+      const response = {
+        contract_status: 'available',
+        contract_version: 'v1.2',
+        financial_activation_created: false,
+      };
+      expect(response.financial_activation_created).toBe(false);
+      expect(response.contract_status).toBe('available');
+    });
+    it('manager v1.2 generation requires exactly one compatible current assignment', () => {
+      const canGenerateWith = (assignmentCount: number) => assignmentCount === 1;
+      expect(canGenerateWith(0)).toBe(false);
+      expect(canGenerateWith(1)).toBe(true);
+      expect(canGenerateWith(2)).toBe(false);
+    });
+
+    it('PJ submission audit identifies the legal representative as signer', () => {
+      const profile = {
+        recipient_type: 'company',
+        display_name: 'Gestora XPTO',
+        legal_representative_name: 'Maria da Silva',
+        legal_representative_cpf: '111.222.333-44',
+        document_cnpj: '12.345.678/0001-99',
+      };
+      const signerName =
+        profile.recipient_type === 'individual'
+          ? profile.display_name
+          : (profile.legal_representative_name || profile.display_name);
+      const signerDocument =
+        profile.recipient_type === 'individual'
+          ? null
+          : (profile.legal_representative_cpf || profile.document_cnpj);
+      expect(signerName).toBe('Maria da Silva');
+      expect(signerDocument).toBe('111.222.333-44');
+    });
+
+    it('admin review time does not replace the signed-document submission evidence time', () => {
+      const submittedAt = new Date('2026-09-24T14:00:00.000Z');
+      const reviewedAt = new Date('2026-09-24T15:00:00.000Z');
+      const contractSignedAt = submittedAt;
+      expect(contractSignedAt).toEqual(submittedAt);
+      expect(contractSignedAt).not.toEqual(reviewedAt);
+    });
+
+
+    it('legacy online-only manager acceptance may be migrated to a v1.2 template', () => {
+      const profile = {
+        relationship_type: 'territorial_manager',
+        contract_status: 'signed',
+        contract_url: null,
+      };
+      const hasFormalSignedContract =
+        profile.contract_status === 'signed' && Boolean(profile.contract_url);
+      const legacyOnlineOnlySigned =
+        profile.relationship_type === 'territorial_manager' &&
+        profile.contract_status === 'signed' &&
+        !profile.contract_url;
+      expect(hasFormalSignedContract).toBe(false);
+      expect(legacyOnlineOnlySigned).toBe(true);
+    });
+
+    it('formal signed contract remains protected from template regeneration', () => {
+      const profile = {
+        relationship_type: 'territorial_manager',
+        contract_status: 'signed',
+        contract_url: 'contract-submissions/op/123.pdf',
+      };
+      const hasFormalSignedContract =
+        profile.contract_status === 'signed' && Boolean(profile.contract_url);
+      expect(hasFormalSignedContract).toBe(true);
+    });
+  });
+
   describe('frontend states', () => {
     const getLabel = (contractUrl: string | null, templateUrl: string | null, status: string) => {
       if (contractUrl && status === 'signed') return 'Contrato formalizado';

@@ -1,5 +1,8 @@
 # Gestor Territorial KAVIAR — Modelo Comercial v1.1
 
+> **SUPERADO PARA NOVAS CONTRATAÇÕES.** A versão jurídica vigente em preparação é a **v1.2 canônica**, definida em `backend/src/services/contracts/territorial-manager-contract-v1_2.ts`, com Anexo Comercial I, Anexo Territorial II e Anexo LGPD III. Este arquivo permanece apenas para histórico e comparação.
+
+
 **Documento conceitual/comercial — KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA**
 **CNPJ: 67.783.601/0001-99**
 **Produto: KAVIAR — Plataforma de mobilidade urbana comunitária**

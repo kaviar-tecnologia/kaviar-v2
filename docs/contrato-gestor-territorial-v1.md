@@ -1,5 +1,8 @@
 # KAVIAR
 
+> **SUPERADO PARA NOVAS CONTRATAÇÕES.** A versão jurídica vigente em preparação é a **v1.2 canônica**, definida em `backend/src/services/contracts/territorial-manager-contract-v1_2.ts`, com Anexo Comercial I, Anexo Territorial II e Anexo LGPD III. Este arquivo permanece apenas para histórico e comparação.
+
+
 ## Contrato de Parceria Operacional Territorial — Plataforma KAVIAR
 
 **Versão contratual:** v1.1
