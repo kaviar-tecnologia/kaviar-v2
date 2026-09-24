@@ -1,5 +1,7 @@
 # Gestor Territorial KAVIAR — Modelo Comercial v1
 
+> **SUPERADO / NÃO UTILIZAR PARA NOVAS CONTRATAÇÕES.** Mantido apenas como histórico. A política vigente está documentada na versão v1.1 e no Contrato de Parceria Operacional Territorial v1.1. Esta versão antiga contém referências a taxa de entrada e regras financeiras que não representam a política atual.
+
 **Documento conceitual/comercial — KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA**
 **CNPJ: 67.783.601/0001-99**
 **Produto: KAVIAR — Plataforma de mobilidade urbana comunitária**

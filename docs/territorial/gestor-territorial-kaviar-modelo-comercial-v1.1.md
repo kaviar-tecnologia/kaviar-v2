@@ -12,11 +12,11 @@
 
 O **Gestor Territorial KAVIAR** é um parceiro comercial autônomo que presta apoio operacional de captação, divulgação local e acompanhamento territorial para a plataforma KAVIAR em uma área geográfica definida.
 
-A relação entre o Gestor Territorial e a KAVIAR/KAVIAR é de **parceria comercial e prestação de apoio operacional**, sem constituir franquia, licença territorial definitiva, representação comercial exclusiva ou vínculo empregatício.
+A relação entre o Gestor Territorial e a KAVIAR é de **parceria comercial e prestação de apoio operacional**, sem constituir franquia, licença territorial definitiva, representação comercial exclusiva ou vínculo empregatício.
 
-**Esta relação não se enquadra no regime de franquia empresarial nos termos da Lei 13.966/2019.**
+**O modelo é estruturado como parceria operacional autônoma, e não como oferta de franquia. A qualificação jurídica depende da estrutura e da execução prática da relação, razão pela qual o modelo contratual deve permanecer sujeito a revisão jurídica quando houver mudança material de operação, marca, método, suporte, cobrança ou territorialidade.**
 
-**Não há transferência de know-how, manual operacional obrigatório, padronização de layout físico, cessão de território ou licença definitiva de uso da marca.**
+**Não há compra ou cessão definitiva de território, royalties territoriais, taxa obrigatória de entrada nesta versão ou licença exclusiva permanente de uso da marca.**
 
 ---
 
@@ -26,7 +26,7 @@ A relação entre o Gestor Territorial e a KAVIAR/KAVIAR é de **parceria comerc
 |---------|-------------------------------|---------------------------|
 | Perfil | Pessoa física (CPF) | Preferencialmente PJ (CNPJ/MEI/ME/LTDA) |
 | Contrato | Termo digital v1.0-captador | Contrato formal de parceria comercial |
-| Taxa de entrada | Nenhuma | Taxa de análise cadastral e ativação |
+| Taxa de entrada | Nenhuma | Nenhuma taxa obrigatória nesta versão |
 | Atuação | Indicar motoristas, acompanhar métricas | Apoiar operação local, captar parceiros, acompanhar território |
 | Coordenação | Não | Pode indicar e apoiar contatos locais, sem subordinação |
 | Financeiro | Bônus por indicação (regra do sistema) | Participação sobre resultados conforme contrato individual |
@@ -50,7 +50,7 @@ O Gestor Territorial KAVIAR compromete-se a:
 9. **Emitir documentação fiscal** quando aplicável (NFS-e, RPA ou equivalente);
 10. **Manter sigilo** sobre informações e dados acessados no painel.
 
-**O Gestor Territorial não contrata, comanda ou coordena pessoas em nome da KAVIAR/KAVIAR. Ele pode indicar, orientar e apoiar contatos locais, sempre de forma autônoma.**
+**O Gestor Territorial não contrata, comanda ou coordena pessoas em nome da KAVIAR. Ele pode indicar, orientar e apoiar contatos locais, sempre de forma autônoma.**
 
 ---
 
@@ -67,7 +67,7 @@ O Gestor Territorial **NÃO** tem poder para:
 - Acessar dados de territórios que não sejam o(s) seu(s);
 - Tomar decisões que vinculem juridicamente a KAVIAR perante terceiros;
 - Conceder exclusividade, descontos ou condições especiais sem aprovação da central;
-- Contratar, comandar ou coordenar pessoas em nome da KAVIAR/KAVIAR.
+- Contratar, comandar ou coordenar pessoas em nome da KAVIAR.
 
 ---
 
@@ -101,7 +101,7 @@ O Gestor Territorial **NÃO** tem poder para:
 | Alterar comissão ou participação própria | ❌ |
 | Acessar dados de outro território | ❌ |
 | Se apresentar como funcionário, sócio ou representante legal da KAVIAR | ❌ |
-| Contratar ou comandar pessoas em nome da KAVIAR/KAVIAR | ❌ |
+| Contratar ou comandar pessoas em nome da KAVIAR | ❌ |
 | Criar material de marketing sem aprovação | ❌ |
 | Compartilhar dados pessoais de motoristas/passageiros com terceiros | ❌ |
 | Prometer retorno financeiro a terceiros | ❌ |
@@ -115,7 +115,7 @@ O Gestor Territorial **NÃO** tem poder para:
 ```
 Motorista completa corrida
 → Passageiro paga (ou crédito é consumido)
-→ KAVIAR/KAVIAR recebe/controla receita principal
+→ KAVIAR recebe/controla receita principal
 → Sistema calcula taxa da plataforma
 → Sistema aplica participação territorial conforme contrato
 → Acumula por período definido
@@ -128,42 +128,31 @@ Motorista completa corrida
 - O KAVIAR é o recebedor/controlador principal de toda receita;
 - O Gestor NÃO recebe diretamente de motoristas, passageiros ou parceiros;
 - A participação é calculada pelo sistema, aprovada pela central e paga conforme periodicidade contratual;
-- **Percentuais de participação serão definidos em contrato individual, conforme território, fase de operação e condições comerciais**;
+- **A política atual prevê 40% da Taxa da Plataforma Elegível ao Gestor durante Ativação Financeira válida no território formalmente atribuído; alterações desse percentual exigem formalização escrita e efeito prospectivo**;
 - Mínimo para liberação de repasse: conforme contrato;
 - O Gestor deve emitir NFS-e ou documento fiscal equivalente para receber;
 - Este modelo é referencial e pode ser ajustado conforme evolução da operação.
 
 ---
 
-## H) Taxa de análise cadastral e ativação
+## H) Ativação cadastral e financeira
 
-| Item | Descrição |
-|------|-----------|
-| **O que é** | Taxa de análise cadastral e ativação de acesso ao painel de gestor |
-| **Valor** | Informado no momento da contratação (valor vigente pode variar) |
-| **O que NÃO é** | Não é taxa de franquia, não é mensalidade, não é investimento com retorno garantido, não é aquisição de território |
-| **Reembolsável?** | Não, exceto se a KAVIAR recusar o cadastro sem motivo |
-| **Pagamento** | PIX ou boleto antes da ativação |
-| **Inclui** | Análise cadastral, ativação do painel, orientações básicas |
-
-### Atenção
-
-- A taxa deve ser documentada como "serviço de análise cadastral e ativação de acesso";
-- Será emitido recibo ou nota fiscal de serviço;
-- O pagamento da taxa não confere direitos sobre território, marca, exclusividade ou participação;
-- O acesso depende de aprovação pela KAVIAR após análise cadastral.
+- Não há taxa obrigatória de adesão, análise, habilitação ou ativação nesta versão;
+- Cadastro, acesso ao painel e assinatura não ativam automaticamente participação econômica;
+- A participação econômica começa somente após Ativação Financeira expressa do território;
+- O território remunerado corresponde apenas à área formalmente atribuída.
 
 ---
 
 ## I) Regras de território
 
-1. O território é definido pelo KAVIAR com base em cidade, região administrativa, bairros ou comunidades;
-2. O território define a **área de atuação** do Gestor, não propriedade, cessão ou licença;
-3. O KAVIAR pode atuar diretamente no território a qualquer momento;
-4. O KAVIAR pode designar outros parceiros ou captadores no mesmo território se julgar necessário;
-5. Dados de atividade do território são visíveis ao Gestor conforme painel disponibilizado;
-6. O tamanho e abrangência do território podem ser ajustados conforme necessidade operacional;
-7. O território não é cedido, vendido, transferido ou licenciado ao Gestor.
+1. O território é definido pela KAVIAR por cadastro, mapa, bairros, comunidades ou outro identificador formal;
+2. Cidade, zona ou município não significam atribuição automática de toda a área;
+3. Áreas Reservadas KAVIAR / Área de Sombra ficam fora da participação econômica do Gestor;
+4. O território define **área de atuação atribuída**, não propriedade, cessão ou licença;
+5. A KAVIAR pode operar diretamente em áreas reservadas ou não atribuídas;
+6. Dados de atividade são visíveis conforme painel e escopo de acesso;
+7. Alterações territoriais produzem efeitos prospectivos e devem ser formalmente registradas.
 
 ---
 
@@ -171,13 +160,13 @@ Motorista completa corrida
 
 Não há exclusividade automática sobre o território.
 
-Eventuais condições especiais dependerão de contrato individual, prazo definido e avaliação da KAVIAR/KAVIAR. Mesmo com condições especiais, o KAVIAR mantém direito de operar diretamente e de rever condições por descumprimento ou necessidade operacional.
+Eventuais condições especiais dependerão de contrato individual, prazo definido e avaliação da KAVIAR. Mesmo com condições especiais, o KAVIAR mantém direito de operar diretamente e de rever condições por descumprimento ou necessidade operacional.
 
 ---
 
 ## K) Suspensão e cancelamento
 
-A KAVIAR/KAVIAR pode suspender ou cancelar o acesso do Gestor Territorial em caso de:
+A KAVIAR pode suspender ou cancelar o acesso do Gestor Territorial em caso de:
 
 - Fraude ou tentativa de fraude;
 - Cobrança indevida em nome do KAVIAR;
@@ -222,13 +211,13 @@ Violação de confidencialidade constitui motivo para cancelamento imediato e po
 
 ## N) Cláusulas de proteção
 
-1. **Não franquia** — Esta relação não se enquadra no regime de franquia empresarial nos termos da Lei 13.966/2019. Não há transferência de know-how, manual operacional obrigatório, padronização de layout físico ou cessão de território.
+1. **Estrutura de parceria** — O modelo é desenhado como parceria operacional autônoma, sem compra de território ou exclusividade permanente. A classificação jurídica deve considerar a execução prática e ser revista se houver mudança material no modelo.
 
 2. **Não vínculo** — Não há vínculo empregatício, salário, jornada obrigatória ou subordinação entre o Gestor e a KAVIAR. O Gestor é autônomo e responsável por suas obrigações fiscais e trabalhistas.
 
-3. **Não representação** — O Gestor não é representante legal, comercial ou judicial da KAVIAR/KAVIAR perante terceiros.
+3. **Não representação** — O Gestor não é representante legal, comercial ou judicial da KAVIAR perante terceiros.
 
-4. **Não investimento** — A taxa de análise cadastral não constitui investimento, aplicação financeira, aquisição de ativos ou garantia de retorno.
+4. **Não investimento** — Não há taxa obrigatória de entrada nesta versão, aquisição de ativos, compra de território ou garantia de retorno.
 
 ---
 
@@ -241,8 +230,7 @@ Para formalização da relação com qualquer Gestor Territorial, será necessá
 1. **Contrato de Parceria Comercial** — redigido ou revisado por advogado;
 2. **Termo de Confidencialidade e LGPD** — específico;
 3. **Documentação do Gestor** — CNPJ, contrato social, documentos pessoais do responsável;
-4. **Comprovante de taxa** — recibo ou nota fiscal de serviço;
-5. **Aceite digital no painel** — registro de data, IP e versão do termo.
+4. **Aceite digital no painel** — registro de data, IP e versão do termo.
 
 ---
 

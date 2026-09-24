@@ -23,13 +23,13 @@ Você recebe uma **autorização operacional temporária** para atuar como parce
 
 | Item | Valor |
 |------|-------|
-| Taxa de ativação | R$ 497,00 (única) |
+| Taxa de ativação | R$ 0,00 — não há cobrança obrigatória nesta versão |
 | Ciclo inicial | 90 dias |
-| Território | 1 bairro ou comunidade |
-| Base potencial de apuração ao gestor | 40% da taxa operacional da plataforma (18% do valor da corrida), conforme contrato, desempenho e validação da central |
+| Território | Área formalmente atribuída em bairro/comunidade, com possíveis Áreas Reservadas KAVIAR |
+| Participação do gestor | 40% da Taxa da Plataforma Elegível nas operações elegíveis do território formalmente atribuído, durante Ativação Financeira válida |
 | Taxa operacional KAVIAR | 18% do valor da corrida (infraestrutura, tecnologia, suporte) |
 
-> Os percentuais apresentados não representam repasse automático nem garantia de ganho. Todo valor depende de apuração real, validação da central KAVIAR/KAVIAR, conformidade operacional e contrato vigente.
+> Os percentuais apresentados não representam repasse automático nem garantia de ganho. Todo valor depende de apuração real, validação da central KAVIAR, conformidade operacional e contrato vigente.
 
 ---
 
@@ -44,7 +44,7 @@ Você recebe uma **autorização operacional temporária** para atuar como parce
 
 ---
 
-## O que a KAVIAR/KAVIAR faz
+## O que a KAVIAR faz
 
 - Mantém toda a tecnologia (plataforma, app, servidores, APIs)
 - Processa pagamentos, recargas de saldo e movimentações financeiras da plataforma
@@ -57,7 +57,7 @@ Você recebe uma **autorização operacional temporária** para atuar como parce
 
 ## O que NÃO é
 
-- ❌ Não é franquia
+- ❌ Não é apresentado como oferta de franquia
 - ❌ Não é compra de sistema
 - ❌ Não é venda de bairro
 - ❌ Não é sociedade
@@ -72,9 +72,11 @@ Você recebe uma **autorização operacional temporária** para atuar como parce
 - A central KAVIAR apura mensalmente o resultado operacional do território
 - A Plataforma KAVIAR retém uma taxa operacional de 18% sobre o valor das corridas
 - Da taxa operacional apurada:
-  - 60% ficam com a matriz KAVIAR/KAVIAR
-  - 40% formam a base de apuração do gestor territorial
-- O repasse efetivo depende de contrato vigente, apuração, aprovação, deduções aplicáveis e cronograma da central
+  - 60% ficam com a KAVIAR
+  - 40% correspondem à participação econômica do gestor territorial sobre a Taxa da Plataforma Elegível no território formalmente atribuído
+- O repasse efetivo depende de contrato vigente, Ativação Financeira, apuração e cronograma da central
+- Áreas Reservadas KAVIAR / Área de Sombra não integram o território remunerado e não geram participação ao gestor
+- Custos internos, tributos próprios e gratificações financiadas pela KAVIAR, inclusive eventual gratificação anual ao motorista, não reduzem os 40% do gestor
 - Não é automático nem garantido sem produção real
 
 ---
