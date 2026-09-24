@@ -163,6 +163,17 @@ describe('contract template flow', () => {
       expect(allowed).toBe(true);
     });
 
+    it('legacy manager submission cannot be approved as v1.2', () => {
+      const submission = {
+        contract_version: 'v1.1',
+        operator: { relationship_type: 'territorial_manager' },
+      };
+      const canApprove =
+        submission.operator.relationship_type !== 'territorial_manager' ||
+        submission.contract_version === REQUIRED_VERSION;
+      expect(canApprove).toBe(false);
+    });
+
     it('generic online terms do not substitute the manager contract', () => {
       const isTerritorialManager = true;
       const update = {
