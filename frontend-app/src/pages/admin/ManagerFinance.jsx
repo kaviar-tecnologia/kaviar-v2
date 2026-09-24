@@ -6,8 +6,8 @@ import { downloadCsv } from '../../utils/exportCsv';
 import { formatDate } from '../../utils/formatDate';
 
 const GOLD = '#B8942E';
-const STATUS_MAP = { calculated: 'Em apuração', requested: 'Solicitado', approved: 'Aprovado', paid: 'Pago', received: 'Recebido', canceled: 'Cancelado' };
-const STATUS_COLOR = { calculated: '#F59E0B', requested: '#8B5CF6', approved: '#3B82F6', paid: '#10B981', received: '#059669', canceled: '#EF4444' };
+const STATUS_MAP = { OPEN: 'Aberto', CALCULATED: 'Calculado', UNDER_REVIEW: 'Em revisão', APPROVED: 'Aprovado', OBLIGATION_CREATED: 'Reservado', CANCELLED: 'Cancelado' };
+const STATUS_COLOR = { OPEN: '#6B7280', CALCULATED: '#F59E0B', UNDER_REVIEW: '#8B5CF6', APPROVED: '#3B82F6', OBLIGATION_CREATED: '#10B981', CANCELLED: '#EF4444' };
 
 export default function ManagerFinance() {
   const [summary, setSummary] = useState(null);
@@ -45,10 +45,10 @@ export default function ManagerFinance() {
     const code = `REL-TER-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${String(new Date().getHours()).padStart(2,'0')}${String(new Date().getMinutes()).padStart(2,'0')}`;
     let text = `📊 Relatório do Gestor Territorial — KAVIAR\n👤 Gestor: ${admin?.name || '—'}\nBase operacional: KAVIAR\nCódigo: ${code}\nEmitido: ${new Date().toLocaleString('pt-BR')}\nPeríodo: ${period === '7d' ? '7 dias' : period === '30d' ? '30 dias' : '90 dias'}\n`;
     if (summary && !summary.empty) {
-      text += `\n🚗 Corridas: ${summary.rides_completed}\n💰 Bruto estimado: ${fmt(summary.gross_estimated)}\n🏦 Taxa plataforma: ${fmt(summary.platform_fee)}\n📍 Participação territorial: ${fmt(summary.regional_estimated)}`;
-      if (summary.has_rule) text += `\n💵 Líquido estimado: ${fmt(summary.net_estimated)}`;
+      text += `\n🚗 Operações reconhecidas: ${summary.rides_completed}\n🏦 Taxa da plataforma arrecadada: ${fmt(summary.platform_fee)}\n📍 Participação reconhecida do gestor: ${fmt(summary.regional_estimated)}`;
+      if (summary.has_rule) text += `\n💵 Valor reconhecido no período: ${fmt(summary.net_estimated)}`;
     }
-    text += `\n\n${forNote ? 'Este documento é uma base operacional para conferência e eventual emissão de nota fiscal pelo Gestor Territorial. Não substitui nota fiscal, recibo fiscal ou documento contábil oficial.' : 'Valores informativos e estimados. A apuração e eventual repasse são feitos pela central KAVIAR.'}`;
+    text += `\n\n${forNote ? 'Este documento é uma base operacional de valores já reconhecidos pelo Wallet V2 para conferência e eventual documento fiscal. Não substitui nota fiscal, recibo fiscal ou documento contábil oficial.' : 'Os valores exibidos vêm do Wallet V2 e representam reconhecimento financeiro do período; pagamento continua sujeito ao ciclo financeiro da central KAVIAR.'}`;
     return text;
   };
 
@@ -69,8 +69,8 @@ export default function ManagerFinance() {
           <Button size="small" sx={{ textTransform: 'none', color: '#25D366' }} onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(buildReportText(false))}`, '_blank')}>📱 WhatsApp</Button>
           <Button size="small" sx={{ textTransform: 'none', color: '#6B7280' }} onClick={() => { navigator.clipboard.writeText(buildReportText(true)); setSnack('Base para nota copiada!'); }}>📄 Base para Nota</Button>
           {summary && !summary.empty && <Button size="small" startIcon={<Download />} onClick={() => {
-            const h = ['Período', 'Corridas', 'Bruto Estimado', 'Taxa Plataforma', 'Participação Territorial', 'Líquido Estimado'];
-            const rows = [[period === '7d' ? '7 dias' : period === '30d' ? '30 dias' : '90 dias', summary.rides_completed, summary.gross_estimated, summary.platform_fee, summary.regional_estimated, summary.net_estimated || '']];
+            const h = ['Período', 'Operações Reconhecidas', 'Taxa Plataforma Arrecadada', 'Participação Reconhecida'];
+            const rows = [[period === '7d' ? '7 dias' : period === '30d' ? '30 dias' : '90 dias', summary.rides_completed, summary.platform_fee, summary.regional_estimated]];
             downloadCsv(h, rows, `kaviar-financeiro-territorial-${new Date().toISOString().split('T')[0]}.csv`);
           }} sx={{ textTransform: 'none', color: '#6B7280' }} variant="outlined">CSV</Button>}
         </Box>
@@ -96,10 +96,10 @@ export default function ManagerFinance() {
         {summary && !summary.empty ? (
           <Grid container spacing={1.5} sx={{ mb: 3 }}>
             {[
-              { label: 'Corridas', value: summary.rides_completed },
-              { label: 'Bruto estimado', value: fmt(summary.gross_estimated) },
-              { label: 'Taxa plataforma', value: fmt(summary.platform_fee) },
-              { label: 'Participação territorial', value: fmt(summary.regional_estimated) },
+              { label: 'Operações reconhecidas', value: summary.rides_completed },
+              { label: 'Taxa plataforma arrecadada', value: fmt(summary.platform_fee) },
+              { label: 'Participação reconhecida', value: fmt(summary.regional_estimated) },
+              { label: 'Ativação Financeira', value: summary.financial_activation_active ? 'Ativa' : 'Não ativa' },
             ].map(k => (
               <Grid item xs={6} sm={3} key={k.label}>
                 <Card sx={{ bgcolor: '#fff', borderTop: `3px solid ${GOLD}`, border: '1px solid #E8E5DE', borderRadius: 2 }}>
@@ -118,9 +118,9 @@ export default function ManagerFinance() {
           <Card sx={{ mb: 3, bgcolor: '#fff', border: '1px solid #E8E5DE', borderRadius: 2 }}>
             <CardContent sx={{ p: 2 }}>
               <Grid container spacing={2} alignItems="center">
-                <Grid item xs={4} sx={{ textAlign: 'center' }}><Typography sx={{ fontSize: 10, color: '#9CA3AF', textTransform: 'uppercase' }}>Comissões parceiros</Typography><Typography sx={{ fontSize: 16, fontWeight: 700 }}>{fmt(summary.partner_commissions)}</Typography></Grid>
-                <Grid item xs={4} sx={{ textAlign: 'center' }}><Typography sx={{ fontSize: 10, color: '#9CA3AF', textTransform: 'uppercase' }}>Líquido estimado</Typography><Typography sx={{ fontSize: 20, fontWeight: 800, color: GOLD }}>{fmt(summary.net_estimated)}</Typography></Grid>
-                <Grid item xs={4} sx={{ textAlign: 'center' }}><Typography sx={{ fontSize: 10, color: '#9CA3AF', textTransform: 'uppercase' }}>% Regional</Typography><Typography sx={{ fontSize: 16, fontWeight: 700 }}>{summary.regional_percent}%</Typography></Grid>
+                <Grid item xs={4} sx={{ textAlign: 'center' }}><Typography sx={{ fontSize: 10, color: '#9CA3AF', textTransform: 'uppercase' }}>Base</Typography><Typography sx={{ fontSize: 16, fontWeight: 700 }}>Wallet V2</Typography></Grid>
+                <Grid item xs={4} sx={{ textAlign: 'center' }}><Typography sx={{ fontSize: 10, color: '#9CA3AF', textTransform: 'uppercase' }}>Reconhecido no período</Typography><Typography sx={{ fontSize: 20, fontWeight: 800, color: GOLD }}>{fmt(summary.net_estimated)}</Typography></Grid>
+                <Grid item xs={4} sx={{ textAlign: 'center' }}><Typography sx={{ fontSize: 10, color: '#9CA3AF', textTransform: 'uppercase' }}>Participação contratual</Typography><Typography sx={{ fontSize: 16, fontWeight: 700 }}>{summary.regional_percent}%</Typography></Grid>
               </Grid>
             </CardContent>
           </Card>
@@ -135,9 +135,6 @@ export default function ManagerFinance() {
               <Box key={p.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.75, borderBottom: '1px solid #F3F4F6' }}>
                 <Box><Typography sx={{ fontSize: 13, fontWeight: 600 }}>{p.reference_month}</Typography><Typography sx={{ fontSize: 11, color: '#6B7280' }}>{fmt(p.approved_amount || p.calculated_amount)}{p.paid_at && ` • ${p.payment_method || 'PIX'} em ${formatDate(p.paid_at)}`}</Typography></Box>
                 <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-                  {p.status === 'calculated' && <Button size="small" variant="contained" sx={{ bgcolor: '#8B5CF6', textTransform: 'none', fontSize: 10, height: 24 }} onClick={async () => { const res = await fetch(`${API_BASE_URL}/api/admin/manager/finance/payouts/${p.id}/request`, { method: 'POST', headers }); const d = await res.json(); if (d.success) { load(); setSnack('Repasse solicitado!'); } else setSnack(d.error || 'Erro'); }}>Solicitar</Button>}
-                  {p.status === 'paid' && <Button size="small" variant="contained" sx={{ bgcolor: '#059669', textTransform: 'none', fontSize: 10, height: 24 }} onClick={async () => { if (!window.confirm('Confirmar que recebeu este repasse?')) return; const res = await fetch(`${API_BASE_URL}/api/admin/manager/finance/payouts/${p.id}/confirm-received`, { method: 'POST', headers }); const d = await res.json(); if (d.success) { load(); setSnack('Recebimento confirmado!'); } else setSnack(d.error || 'Erro'); }}>Confirmar Recebimento</Button>}
-                  {p.receipt_url && ['paid', 'received'].includes(p.status) && <Button size="small" sx={{ textTransform: 'none', fontSize: 10, height: 24, color: '#3B82F6' }} onClick={() => window.open(p.receipt_url, '_blank')}>📎 Comprovante</Button>}
                   <Chip label={STATUS_MAP[p.status] || p.status} size="small" sx={{ bgcolor: `${STATUS_COLOR[p.status] || '#6B7280'}15`, color: STATUS_COLOR[p.status] || '#6B7280', fontSize: 10, height: 22, fontWeight: 600 }} />
                 </Box>
               </Box>
@@ -153,9 +150,9 @@ export default function ManagerFinance() {
             <CardContent sx={{ p: 2 }}>
               <Typography sx={{ fontSize: 10, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.04em', mb: 1 }}>Regra Financeira Vigente</Typography>
               <Grid container spacing={1}>
-                <Grid item xs={4} sx={{ textAlign: 'center' }}><Typography sx={{ fontSize: 20, fontWeight: 800 }}>{Number(rules.regional_share_percent)}%</Typography><Typography sx={{ fontSize: 9, color: '#6B7280', textTransform: 'uppercase' }}>Regional</Typography></Grid>
-                <Grid item xs={4} sx={{ textAlign: 'center' }}><Typography sx={{ fontSize: 20, fontWeight: 800 }}>{Number(rules.matrix_share_percent)}%</Typography><Typography sx={{ fontSize: 9, color: '#6B7280', textTransform: 'uppercase' }}>Matriz</Typography></Grid>
-                <Grid item xs={4} sx={{ textAlign: 'center' }}><Typography sx={{ fontSize: 20, fontWeight: 800 }}>{Number(rules.partner_commission_percent)}%</Typography><Typography sx={{ fontSize: 9, color: '#6B7280', textTransform: 'uppercase' }}>Parceiros</Typography></Grid>
+                <Grid item xs={4} sx={{ textAlign: 'center' }}><Typography sx={{ fontSize: 20, fontWeight: 800 }}>{Number(rules.regional_share_percent)}%</Typography><Typography sx={{ fontSize: 9, color: '#6B7280', textTransform: 'uppercase' }}>Gestor</Typography></Grid>
+                <Grid item xs={4} sx={{ textAlign: 'center' }}><Typography sx={{ fontSize: 20, fontWeight: 800 }}>{Number(rules.matrix_share_percent)}%</Typography><Typography sx={{ fontSize: 9, color: '#6B7280', textTransform: 'uppercase' }}>KAVIAR</Typography></Grid>
+                <Grid item xs={4} sx={{ textAlign: 'center' }}><Typography sx={{ fontSize: 20, fontWeight: 800 }}>{rules.financial_activation_active ? 'ATIVA' : 'NÃO ATIVA'}</Typography><Typography sx={{ fontSize: 9, color: '#6B7280', textTransform: 'uppercase' }}>Ativação Financeira</Typography></Grid>
               </Grid>
               {rules.description && <Typography sx={{ fontSize: 11, color: '#6B7280', mt: 1 }}>{rules.description}</Typography>}
             </CardContent>
@@ -166,12 +163,12 @@ export default function ManagerFinance() {
         <Box className="print-footer" sx={{ display: 'none', '@media print': { display: 'block', mt: 4, pt: 2, borderTop: '1px solid #E5E7EB' } }}>
           <Typography sx={{ fontSize: 10, color: '#6B7280' }}>Relatório do Gestor Territorial — Base operacional KAVIAR.</Typography>
           <Typography sx={{ fontSize: 9, color: '#9CA3AF', mt: 0.5 }}>Este relatório possui finalidade operacional e gerencial do território. Não substitui nota fiscal, recibo fiscal ou documento contábil oficial.</Typography>
-          <Typography sx={{ fontSize: 9, color: '#9CA3AF' }}>Valores informativos e estimados. A apuração e eventual repasse são feitos pela central KAVIAR.</Typography>
+          <Typography sx={{ fontSize: 9, color: '#9CA3AF' }}>Valores reconhecidos pelo Wallet V2. O pagamento depende do ciclo financeiro e das validações da central KAVIAR.</Typography>
         </Box>
 
         {/* Disclaimer */}
         <Alert severity="warning" icon={false} sx={{ bgcolor: 'rgba(184,148,46,0.06)', border: '1px solid #E8E5DE', '& .MuiAlert-message': { color: '#6B7280', fontSize: 11 } }}>
-          Valores informativos e estimados. A apuração, aprovação e eventual repasse são feitos exclusivamente pela central KAVIAR, conforme contrato específico.
+          Os valores exibidos são reconhecidos pelo Wallet V2. Sem Ativação Financeira/assignment elegível, novas operações geram 0% ao gestor. Pagamento e documento fiscal seguem o ciclo financeiro da central KAVIAR.
         </Alert>
 
         {/* Print CSS */}

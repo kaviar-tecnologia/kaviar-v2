@@ -170,7 +170,7 @@ function buildRegulatoryDocument(input: RegulatoryDocInput) {
     '',
     'Declaração institucional:',
     'Esta comunicação possui finalidade exclusivamente informativa e de diligência regulatória. Não constitui início de operação sem requisitos locais e não substitui parecer jurídico ou ato administrativo competente.',
-    'O gestor territorial atua apenas como representante operacional para protocolo e acompanhamento local da solicitação, não assumindo obrigações jurídicas, regulatórias, financeiras ou contratuais em nome da KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA.',
+    'O gestor territorial poderá prestar apoio local e, somente quando houver autorização expressa da KAVIAR para o ato específico, protocolar ou acompanhar a solicitação. Essa atuação não lhe confere representação geral, procuração ou poderes para assumir obrigações jurídicas, regulatórias, financeiras ou contratuais em nome da KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA.',
     '',
     observation ? `Observação operacional: ${observation}` : 'Observação operacional: sem observações adicionais.',
     '',

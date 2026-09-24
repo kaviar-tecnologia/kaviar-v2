@@ -10,8 +10,17 @@ on:
       - 'backend/tests/territorial-manager-contract-v1_2.test.ts'
       - 'frontend-app/src/pages/admin/TerritorialPayoutsPage.jsx'
       - 'frontend-app/src/pages/admin/MyContractPage.jsx'
+      - 'frontend-app/src/pages/admin/ManagerFinance.jsx'
+      - 'frontend-app/src/pages/admin/ManagerHome.jsx'
+      - 'frontend-app/src/pages/admin/RegionalAdminsPage.jsx'
+      - 'frontend-app/src/pages/admin/TerritoryDetailPage.jsx'
+      - 'frontend-app/src/pages/admin/ComercialGestorPage.jsx'
+      - 'frontend-app/src/components/admin/DriverMunicipalRegularizationCard.jsx'
+      - 'backend/src/routes/admin-manager-finance.ts'
+      - 'backend/src/routes/admin-territories.ts'
+      - 'backend/src/routes/admin-regulatory-consultation.ts'
       - 'docs/contratos/**'
-      - 'docs/comercial/termo-autorizacao-operacional-territorial-fundador.md'
+      - 'docs/comercial/*.md'
       - 'docs/contrato-gestor-territorial-v1.md'
       - 'docs/territorial/gestor-territorial-kaviar-modelo-comercial-v1.1.md'
 
@@ -51,7 +60,8 @@ jobs:
           cd backend
           npx vitest run \
             tests/contract-template.test.ts \
-            tests/territorial-manager-contract-v1_2.test.ts
+            tests/territorial-manager-contract-v1_2.test.ts \
+            tests/regional-admins-status.test.ts
 
       - name: Build backend
         run: cd backend && npm run build

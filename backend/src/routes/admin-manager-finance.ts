@@ -13,12 +13,12 @@ router.use(requireTerritoryScope);
 // ─── GET /api/admin/manager/finance/summary ──────────────────────────────────
 router.get('/summary', async (req: Request, res: Response) => {
   try {
+    const admin = (req as any).admin;
     const scope = (req as any).territoryScope;
     const territoryIds = scope?.territoryIds || [];
-    const neighborhoodIds = scope?.neighborhoodIds || [];
 
-    if (neighborhoodIds.length === 0) {
-      return res.json({ success: true, data: { empty: true, message: 'Sem bairros vinculados ao território' } });
+    if (territoryIds.length === 0) {
+      return res.json({ success: true, data: { empty: true, message: 'Sem território vinculado' } });
     }
 
     const period = (req.query.period as string) || '30d';
@@ -27,58 +27,65 @@ router.get('/summary', async (req: Request, res: Response) => {
     since.setDate(since.getDate() - days);
     since.setHours(0, 0, 0, 0);
 
-    // Corridas completadas
-    const ridesCount = await prisma.rides_v2.count({
-      where: { status: 'completed', origin_neighborhood_id: { in: neighborhoodIds }, completed_at: { gte: since } },
-    });
+    const managerId = admin.role === 'TERRITORIAL_MANAGER' ? admin.id : null;
+    const ledgerWhere: any = {
+      territory_id: { in: territoryIds },
+      created_at: { gte: since },
+      ...(managerId ? { manager_id: managerId } : { manager_id: { not: null } }),
+    };
 
-    // Settlements agregados
-    const settlements = await prisma.ride_settlements.aggregate({
-      where: { origin_neighborhood_id: { in: neighborhoodIds }, settled_at: { gte: since, not: null } },
-      _sum: { final_price: true, fee_amount: true, driver_earnings: true },
-      _count: true,
-    });
+    const [platformAgg, managerAgg, recognizedRides, activeAssignments] = await Promise.all([
+      prisma.territory_ledger.aggregate({
+        where: { ...ledgerWhere, entry_type: 'platform_fee' },
+        _sum: { amount_cents: true },
+      }),
+      prisma.territory_ledger.aggregate({
+        where: { ...ledgerWhere, entry_type: 'fee_share' },
+        _sum: { amount_cents: true },
+      }),
+      prisma.ride_fee_splits.count({
+        where: {
+          territory_id: { in: territoryIds },
+          recognized_at: { gte: since },
+          ...(managerId ? { manager_id: managerId } : { manager_id: { not: null } }),
+        },
+      }),
+      managerId
+        ? prisma.territory_manager_assignments.findMany({
+            where: {
+              admin_id: managerId,
+              territory_id: { in: territoryIds },
+              status: 'active',
+              started_at: { lte: new Date() },
+              OR: [{ ended_at: null }, { ended_at: { gt: new Date() } }],
+            },
+            select: { id: true, territory_id: true, status: true, started_at: true, ended_at: true },
+          })
+        : Promise.resolve([]),
+    ]);
 
-    const gross = Number(settlements._sum.final_price || 0);
-    const fees = Number(settlements._sum.fee_amount || 0);
-
-    // Regra financeira ativa
-    const rule = await prisma.territory_finance_rules.findFirst({
-      where: { territory_id: { in: territoryIds }, is_active: true },
-      select: { regional_share_percent: true, partner_commission_percent: true },
-    });
-
-    const regionalPercent = rule ? Number(rule.regional_share_percent) : 0;
-    const regionalEstimated = fees * regionalPercent / 100;
-
-    // Comissões de parceiros
-    const partnerIds = (await prisma.territorial_partners.findMany({
-      where: { territory_id: { in: territoryIds } }, select: { id: true },
-    })).map(p => p.id);
-
-    let partnerCommissions = 0;
-    if (partnerIds.length > 0) {
-      const comms = await prisma.partner_commissions.aggregate({
-        where: { partner_id: { in: partnerIds }, created_at: { gte: since } },
-        _sum: { commission_amount: true },
-      });
-      partnerCommissions = Number(comms._sum.commission_amount || 0);
-    }
-
-    const netEstimated = Math.max(0, Math.round((regionalEstimated - partnerCommissions) * 100) / 100);
+    const platformFeeCents = platformAgg._sum.amount_cents || 0n;
+    const managerShareCents = managerAgg._sum.amount_cents || 0n;
+    const financialActivationActive = managerId ? activeAssignments.length > 0 : null;
 
     res.json({
       success: true,
       data: {
         period,
-        rides_completed: ridesCount,
-        gross_estimated: Math.round(gross * 100) / 100,
-        platform_fee: Math.round(fees * 100) / 100,
-        regional_estimated: Math.round(regionalEstimated * 100) / 100,
-        partner_commissions: Math.round(partnerCommissions * 100) / 100,
-        net_estimated: netEstimated,
-        has_rule: !!rule,
-        regional_percent: regionalPercent,
+        rides_completed: recognizedRides,
+        gross_estimated: null,
+        platform_fee: Number(platformFeeCents) / 100,
+        regional_estimated: Number(managerShareCents) / 100,
+        partner_commissions: 0,
+        net_estimated: Number(managerShareCents) / 100,
+        has_rule: true,
+        regional_percent: 40,
+        source: 'wallet_v2_territory_ledger',
+        financial_activation_active: financialActivationActive,
+        active_assignment_ids: activeAssignments.map(a => a.id),
+        note: financialActivationActive === false
+          ? 'Sem Ativação Financeira ativa. Valores eventualmente exibidos no período são históricos já reconhecidos antes da desativação.'
+          : 'Participação reconhecida pelo Wallet V2. Área de Sombra e ausência de assignment elegível geram 0% ao gestor.',
       },
     });
   } catch (error: any) {
@@ -88,8 +95,10 @@ router.get('/summary', async (req: Request, res: Response) => {
 });
 
 // ─── GET /api/admin/manager/finance/payouts ──────────────────────────────────
+// Read-only view of the canonical Wallet V2 payout-cycle engine.
 router.get('/payouts', async (req: Request, res: Response) => {
   try {
+    const admin = (req as any).admin;
     const scope = (req as any).territoryScope;
     const territoryIds = scope?.territoryIds || [];
 
@@ -97,73 +106,70 @@ router.get('/payouts', async (req: Request, res: Response) => {
       return res.json({ success: true, data: [] });
     }
 
-    const payouts = await prisma.territory_payouts.findMany({
-      where: { territory_id: { in: territoryIds } },
+    const cycles = await prisma.territory_payout_cycles.findMany({
+      where: {
+        territory_id: { in: territoryIds },
+        ...(admin.role === 'TERRITORIAL_MANAGER' ? { manager_id: admin.id } : {}),
+      },
       select: {
         id: true,
         reference_month: true,
-        calculated_amount: true,
-        approved_amount: true,
+        gross_manager_commission_cents: true,
+        approved_amount_cents: true,
         status: true,
-        paid_at: true,
-        payment_method: true,
-        receipt_url: true,
-        notes: true,
+        calculated_at: true,
+        approved_at: true,
         created_at: true,
       },
-      orderBy: { created_at: 'desc' },
+      orderBy: [{ reference_month: 'desc' }, { created_at: 'desc' }],
       take: 12,
     });
 
-    res.json({ success: true, data: payouts });
+    res.json({
+      success: true,
+      data: cycles.map(cycle => ({
+        id: cycle.id,
+        reference_month: cycle.reference_month,
+        calculated_amount: Number(cycle.gross_manager_commission_cents) / 100,
+        approved_amount: Number(cycle.approved_amount_cents) / 100,
+        status: cycle.status,
+        paid_at: null,
+        payment_method: null,
+        receipt_url: null,
+        notes: null,
+        created_at: cycle.created_at,
+        calculated_at: cycle.calculated_at,
+        approved_at: cycle.approved_at,
+        source: 'wallet_v2_payout_cycle',
+      })),
+    });
   } catch (error: any) {
     console.error('[MANAGER_FINANCE_PAYOUTS]', error.message);
     res.status(500).json({ success: false, error: 'Erro ao buscar repasses' });
   }
 });
 
-// POST /api/admin/manager/finance/payouts/:id/request — Gestor solicita repasse
-router.post('/payouts/:id/request', async (req: Request, res: Response) => {
-  try {
-    const admin = (req as any).admin;
-    const scope = (req as any).territoryScope;
-    const territoryIds = scope?.territoryIds || [];
-
-    const payout = await prisma.territory_payouts.findFirst({ where: { id: req.params.id, territory_id: { in: territoryIds } } });
-    if (!payout) return res.status(404).json({ success: false, error: 'Repasse não encontrado' });
-    if (payout.status !== 'calculated') return res.status(400).json({ success: false, error: 'Repasse não está disponível para solicitação' });
-
-    const meta = { requested_at: new Date().toISOString(), requested_by: admin.id };
-    await prisma.territory_payouts.update({ where: { id: payout.id }, data: { status: 'requested', notes: JSON.stringify(meta) } });
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: 'Erro ao solicitar repasse' });
-  }
+// Legacy self-service transitions are disabled for v1.2. Finance/central owns the payout-cycle workflow.
+router.post('/payouts/:id/request', async (_req: Request, res: Response) => {
+  return res.status(409).json({
+    success: false,
+    error: 'MANAGER_PAYOUT_SELF_SERVICE_DISABLED',
+    message: 'A apuração e o fluxo de pagamento são controlados pela central KAVIAR no motor financeiro Wallet V2.',
+  });
 });
 
-// POST /api/admin/manager/finance/payouts/:id/confirm-received — Gestor confirma recebimento
-router.post('/payouts/:id/confirm-received', async (req: Request, res: Response) => {
-  try {
-    const admin = (req as any).admin;
-    const scope = (req as any).territoryScope;
-    const territoryIds = scope?.territoryIds || [];
-
-    const payout = await prisma.territory_payouts.findFirst({ where: { id: req.params.id, territory_id: { in: territoryIds } } });
-    if (!payout) return res.status(404).json({ success: false, error: 'Repasse não encontrado' });
-    if (payout.status !== 'paid') return res.status(400).json({ success: false, error: 'Repasse precisa estar pago para confirmar recebimento' });
-
-    const existing = payout.notes ? JSON.parse(payout.notes) : {};
-    const meta = { ...existing, received_at: new Date().toISOString(), received_by: admin.id };
-    await prisma.territory_payouts.update({ where: { id: payout.id }, data: { status: 'received', notes: JSON.stringify(meta) } });
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: 'Erro ao confirmar recebimento' });
-  }
+router.post('/payouts/:id/confirm-received', async (_req: Request, res: Response) => {
+  return res.status(409).json({
+    success: false,
+    error: 'MANAGER_PAYOUT_SELF_SERVICE_DISABLED',
+    message: 'A confirmação financeira é registrada pelo fluxo central e pelas evidências de pagamento do Wallet V2.',
+  });
 });
 
 // ─── GET /api/admin/manager/finance/rules ────────────────────────────────────
 router.get('/rules', async (req: Request, res: Response) => {
   try {
+    const admin = (req as any).admin;
     const scope = (req as any).territoryScope;
     const territoryIds = scope?.territoryIds || [];
 
@@ -171,18 +177,30 @@ router.get('/rules', async (req: Request, res: Response) => {
       return res.json({ success: true, data: null });
     }
 
-    const rule = await prisma.territory_finance_rules.findFirst({
-      where: { territory_id: { in: territoryIds }, is_active: true },
-      select: {
-        matrix_share_percent: true,
-        regional_share_percent: true,
-        partner_commission_percent: true,
-        valid_from: true,
-        description: true,
+    const activeAssignments = admin.role === 'TERRITORIAL_MANAGER'
+      ? await prisma.territory_manager_assignments.count({
+          where: {
+            admin_id: admin.id,
+            territory_id: { in: territoryIds },
+            status: 'active',
+            started_at: { lte: new Date() },
+            OR: [{ ended_at: null }, { ended_at: { gt: new Date() } }],
+          },
+        })
+      : 0;
+
+    res.json({
+      success: true,
+      data: {
+        matrix_share_percent: 60,
+        regional_share_percent: 40,
+        partner_commission_percent: 0,
+        valid_from: null,
+        description: 'Regra contratual v1.2: 40% da Taxa da Plataforma Elegível ao Gestor; Área de Sombra/sem assignment elegível = 0%.',
+        source: 'contract_v1.2_wallet_v2',
+        financial_activation_active: admin.role === 'TERRITORIAL_MANAGER' ? activeAssignments > 0 : null,
       },
     });
-
-    res.json({ success: true, data: rule });
   } catch (error: any) {
     console.error('[MANAGER_FINANCE_RULES]', error.message);
     res.status(500).json({ success: false, error: 'Erro ao buscar regra financeira' });

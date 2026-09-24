@@ -22,7 +22,7 @@ Nesta versão, **não há taxa obrigatória de adesão, habilitação ou ativaç
 - Visão de corridas, motoristas, financeiro e reputação do território
 - Apoio à operação KAVIAR Pet no bairro
 - Exportação de relatórios
-- Prazo inicial de 90 dias com possibilidade de renovação
+- Programa piloto/pré-ativação de até 90 dias, sem participação territorial, antes da eventual formalização definitiva
 
 ---
 
@@ -99,7 +99,7 @@ Você recebe um link pessoal de captação. Quando um motorista se cadastra pelo
 
 ## Posso expandir para outros bairros?
 
-Sim, após o ciclo inicial de 90 dias, se o desempenho for positivo, você pode solicitar a abertura de bairros próximos. A aprovação depende de avaliação da central.
+Após o programa piloto/pré-ativação de até 90 dias, a continuidade e eventual ampliação territorial dependem de avaliação da central, formalização pelo Contrato v1.2 e delimitação/assignment específico. Não há direito automático a bairros próximos.
 
 ---
 
@@ -121,4 +121,4 @@ KAVIAR é produto e plataforma da **KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA**
 
 ---
 
-*Documento informativo. A formalização ocorre mediante aceite do Termo de Autorização Operacional Territorial.*
+*Documento informativo. O termo de piloto/pré-ativação não substitui o contrato definitivo. A formalização do Gestor Territorial ocorre pelo Contrato de Parceria Operacional Territorial KAVIAR v1.2.*

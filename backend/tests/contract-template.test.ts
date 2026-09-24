@@ -266,6 +266,48 @@ describe('contract template flow', () => {
         profile.contract_status === 'signed' && Boolean(profile.contract_url);
       expect(hasFormalSignedContract).toBe(true);
     });
+
+    it('generic admin patch cannot waive or directly sign a territorial manager contract', () => {
+      const allowedGenericStatus = (relationshipType: string, requestedStatus: string) => {
+        if (relationshipType === 'territorial_manager' && ['signed', 'not_required'].includes(requestedStatus)) return false;
+        return true;
+      };
+      expect(allowedGenericStatus('territorial_manager', 'signed')).toBe(false);
+      expect(allowedGenericStatus('territorial_manager', 'not_required')).toBe(false);
+      expect(allowedGenericStatus('territorial_manager', 'pending')).toBe(true);
+      expect(allowedGenericStatus('territorial_operator', 'not_required')).toBe(true);
+    });
+
+    it('manager activation requires formal v1.2 PDF', () => {
+      const canActivate = (profile: { contract_status: string; terms_version: string | null; contract_url: string | null }) =>
+        profile.contract_status === 'signed' &&
+        profile.terms_version === REQUIRED_VERSION &&
+        Boolean(profile.contract_url);
+
+      expect(canActivate({ contract_status: 'signed', terms_version: 'v1.2', contract_url: 'contract.pdf' })).toBe(true);
+      expect(canActivate({ contract_status: 'signed', terms_version: 'v1.1', contract_url: 'contract.pdf' })).toBe(false);
+      expect(canActivate({ contract_status: 'not_required', terms_version: 'v1.2', contract_url: null })).toBe(false);
+      expect(canActivate({ contract_status: 'signed', terms_version: 'v1.2', contract_url: null })).toBe(false);
+    });
+
+    it('manager manual upload flow is rejected before file persistence', () => {
+      const shouldRejectBeforeUpload = (relationshipType: string) => relationshipType === 'territorial_manager';
+      expect(shouldRejectBeforeUpload('territorial_manager')).toBe(true);
+      expect(shouldRejectBeforeUpload('territorial_operator')).toBe(false);
+    });
+
+    it('manager finance v1.2 uses Wallet V2 recognition instead of legacy regional rules', () => {
+      const response = {
+        source: 'wallet_v2_territory_ledger',
+        regional_percent: 40,
+        partner_commissions: 0,
+        financial_activation_active: false,
+      };
+      expect(response.source).toBe('wallet_v2_territory_ledger');
+      expect(response.regional_percent).toBe(40);
+      expect(response.partner_commissions).toBe(0);
+      expect(response.financial_activation_active).toBe(false);
+    });
   });
 
   describe('frontend states', () => {

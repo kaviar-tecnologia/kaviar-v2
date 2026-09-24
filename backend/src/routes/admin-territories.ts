@@ -491,7 +491,7 @@ router.get('/regional-admins/list', async (_req: Request, res: Response) => {
       select: {
         id: true, name: true, email: true, role: true, is_active: true, created_at: true,
         territory_access: { include: { territory: { select: { id: true, name: true, level: true, status: true } } } },
-        operator_profile: { select: { is_active: true, contract_status: true, document_status: true, contract_url: true, relationship_type: true, terms_accepted_at: true } },
+        operator_profile: { select: { is_active: true, contract_status: true, document_status: true, contract_url: true, relationship_type: true, terms_accepted_at: true, terms_version: true } },
       },
       orderBy: { created_at: 'desc' },
     });
@@ -503,6 +503,7 @@ router.get('/regional-admins/list', async (_req: Request, res: Response) => {
         document_status: a.operator_profile.document_status,
         has_contract: !!a.operator_profile.contract_url,
         has_online_acceptance: !!a.operator_profile.terms_accepted_at,
+        terms_version: a.operator_profile.terms_version,
         relationship_type: a.operator_profile.relationship_type,
       } : null,
     }));
