@@ -125,7 +125,14 @@ export class WalletSettlementService {
       }
 
       // ═══ CALCULATE SPLIT ═══
-      const split = this.feeSplit.calculateSplit(params.finalPriceCents);
+      // Territory without an active manager is an Área de Sombra KAVIAR:
+      // 100% of the platform fee stays with KAVIAR and no manager obligation is created.
+      const effectiveManagerCommissionRateBps = managerId ? MANAGER_COMMISSION_RATE_BPS : 0;
+      const split = this.feeSplit.calculateSplit(
+        params.finalPriceCents,
+        PLATFORM_FEE_RATE_BPS,
+        effectiveManagerCommissionRateBps,
+      );
 
       // ═══ LOCK WALLET AND DECIDE ═══
       const locked = await this.wallet.getLockedBalance(client, params.driverId);
@@ -148,7 +155,7 @@ export class WalletSettlementService {
           recognizedAt,
           referenceMonth,
           platformFeeRateBps: PLATFORM_FEE_RATE_BPS,
-          managerCommissionRateBps: MANAGER_COMMISSION_RATE_BPS,
+          managerCommissionRateBps: effectiveManagerCommissionRateBps,
           feeCollectedCents: split.fee_amount_cents,
           feePendingCents: 0n,
           collectionStatus: 'collected',
@@ -203,7 +210,7 @@ export class WalletSettlementService {
           recognizedAt,
           referenceMonth,
           platformFeeRateBps: PLATFORM_FEE_RATE_BPS,
-          managerCommissionRateBps: MANAGER_COMMISSION_RATE_BPS,
+          managerCommissionRateBps: effectiveManagerCommissionRateBps,
           feeCollectedCents: collectableAmount,
           feePendingCents: split.fee_amount_cents - collectableAmount,
           collectionStatus: collectableAmount > 0n ? 'partial' : 'pending',
