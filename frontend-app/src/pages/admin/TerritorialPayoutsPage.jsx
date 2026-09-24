@@ -12,6 +12,7 @@ function ContractDataDiagnostic({ operatorId, token, headers }) {
   const [editOpen, setEditOpen] = useState(false);
   const [form, setForm] = useState({
     email: '',
+    full_name: '',
     document_cpf: '',
     document_rg: '',
     company_name: '',
@@ -56,6 +57,7 @@ function ContractDataDiagnostic({ operatorId, token, headers }) {
     try {
       const body = {};
       if (form.email.trim()) body.email = form.email.trim();
+      if (form.full_name.trim()) body.full_name = form.full_name.trim();
       if (cpf) body.document_cpf = cpf;
       if (form.document_rg.trim()) body.document_rg = form.document_rg.trim();
       if (form.company_name.trim()) body.company_name = form.company_name.trim();
@@ -95,6 +97,7 @@ function ContractDataDiagnostic({ operatorId, token, headers }) {
     { key: 'telefone', label: 'Telefone' },
     ...(isIndividual
       ? [
+          { key: 'fullName', label: 'Nome completo' },
           { key: 'cpf', label: 'CPF' },
           { key: 'rg', label: 'RG/CIN' },
         ]
@@ -147,6 +150,7 @@ function ContractDataDiagnostic({ operatorId, token, headers }) {
             </Alert>
             <Button size="small" variant="outlined" onClick={() => { setForm({
               email: availableFields.email || '',
+              full_name: availableFields.fullName || '',
               document_cpf: availableFields.cpf || '',
               document_rg: availableFields.rg || '',
               company_name: availableFields.companyName || '',
@@ -177,7 +181,7 @@ function ContractDataDiagnostic({ operatorId, token, headers }) {
         <DialogContent>
           <Typography variant="body2" sx={{ color: '#9CA3AF', mb: 2 }}>O sistema irá gerar o PDF do contrato personalizado com os dados abaixo e disponibilizá-lo para assinatura.</Typography>
           <Box sx={{ p: 1.5, bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 1, border: '1px solid rgba(16,185,129,0.3)', mb: 2 }}>
-            <Typography variant="body2"><strong>{isIndividual ? 'Nome' : 'Razão social'}:</strong> {isIndividual ? availableFields?.displayName : availableFields?.companyName}</Typography>
+            <Typography variant="body2"><strong>{isIndividual ? 'Nome completo' : 'Razão social'}:</strong> {isIndividual ? availableFields?.fullName : availableFields?.companyName}</Typography>
             <Typography variant="body2"><strong>Versão:</strong> {data.contractVersion}</Typography>
             <Typography variant="body2"><strong>Assignment:</strong> {availableFields?.managerAssignmentId} ({availableFields?.managerAssignmentStatus})</Typography>
             <Typography variant="body2"><strong>Território:</strong> {availableFields?.territorio}</Typography>
@@ -198,6 +202,7 @@ function ContractDataDiagnostic({ operatorId, token, headers }) {
           <TextField label="E-mail" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB' } }} InputLabelProps={{ sx: { color: '#9CA3AF' } }} />
           {isIndividual ? (
             <>
+              <TextField label="Nome completo" value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB' } }} InputLabelProps={{ sx: { color: '#9CA3AF' } }} />
               <TextField label="CPF" value={form.document_cpf} onChange={e => setForm({ ...form, document_cpf: e.target.value })} size="small" placeholder="000.000.000-00" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB' } }} InputLabelProps={{ sx: { color: '#9CA3AF' } }} />
               <TextField label="RG/CIN (opcional)" value={form.document_rg} onChange={e => setForm({ ...form, document_rg: e.target.value })} size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB' } }} InputLabelProps={{ sx: { color: '#9CA3AF' } }} />
             </>
