@@ -1,4 +1,4 @@
-# TERMO DE AUTORIZAÇÃO OPERACIONAL TERRITORIAL — KAVIAR v1.0-FUNDADOR
+# TERMO DE AUTORIZAÇÃO OPERACIONAL TERRITORIAL — KAVIAR v1.1-FUNDADOR
 
 ---
 
@@ -18,14 +18,16 @@ Autorização operacional temporária para o Gestor atuar como captador autônom
 
 ## 3. NATUREZA DA RELAÇÃO
 
-Esta autorização constitui parceria operacional autônoma. **Não configura:**
+Esta autorização é estruturada como parceria operacional autônoma e **não tem por objeto ofertar ou conceder franquia empresarial**, vender território ou transferir sistema. A qualificação jurídica deve considerar a execução prática da relação e deverá ser revista se houver mudança material de modelo.
 
-- Franquia, nos termos da Lei 13.966/2019;
-- Sociedade, consórcio ou associação de qualquer natureza;
-- Representação comercial;
-- Vínculo empregatício, subordinação ou exclusividade automática;
-- Licença exclusiva ou cessão de direitos de propriedade intelectual;
-- Compra, venda ou transferência de sistema, código-fonte, marca ou banco de dados.
+O instrumento não concede:
+
+- Sociedade, consórcio ou associação;
+- Representação comercial ou mandato;
+- Vínculo empregatício, jornada ou subordinação;
+- Exclusividade territorial absoluta;
+- Licença exclusiva ou cessão de propriedade intelectual;
+- Compra, venda ou transferência de sistema, código-fonte, marca, banco de dados ou território.
 
 ---
 
@@ -186,4 +188,4 @@ Fica eleito o foro da Comarca da Capital do Estado do Rio de Janeiro/RJ, corresp
 *KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA — CNPJ 67.783.601/0001-99*
 
 *Aceite digital registrado em: [data/hora do aceite]*
-*Versão: v1.0-FUNDADOR*
+*Versão: v1.1-FUNDADOR*
