@@ -674,6 +674,7 @@ router.get('/operators/:id/contract-data', async (req: Request, res: Response) =
     if (!cidadeUf) missingFields.push('cidadeUf');
 
     if (operator.recipient_type === 'individual') {
+      if (!operator.full_name) missingFields.push('full_name');
       if (!operator.document_cpf) missingFields.push('cpf');
     } else {
       if (!operator.document_cnpj) missingFields.push('cnpj');
@@ -700,6 +701,7 @@ router.get('/operators/:id/contract-data', async (req: Request, res: Response) =
           recipientType: operator.recipient_type,
           relationshipType: operator.relationship_type,
           displayName: operator.display_name,
+          fullName: operator.full_name || null,
           email,
           telefone,
           endereco,
@@ -819,6 +821,7 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
     if (!cidadeUf) missingFields.push('cidadeUf');
 
     if (operator.recipient_type === 'individual') {
+      if (!operator.full_name) missingFields.push('full_name');
       if (!operator.document_cpf) missingFields.push('cpf');
     } else {
       if (!operator.document_cnpj) missingFields.push('cnpj');
@@ -838,7 +841,9 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
     const generatedAt = new Date();
     const input: TerritorialManagerContractInput = {
       recipientType: operator.recipient_type as TerritorialManagerContractInput['recipientType'],
-      displayName: operator.display_name || operator.admin.name,
+      displayName: operator.recipient_type === 'individual'
+        ? operator.full_name!
+        : (operator.company_name || operator.display_name || operator.admin.name),
       email: email!,
       phone: telefone!,
       address: endereco!,
@@ -933,7 +938,10 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
     doc.text('KAVIAR TECNOLOGIA E SERVIÇOS DIGITAIS LTDA', { align: 'center' });
     doc.moveDown(1.8);
     doc.text('___________________________________________', { align: 'center' });
-    doc.text(`${input.displayName} — Gestor(a) Territorial / Representante`, { align: 'center' });
+    const contractSignerName = input.recipientType === 'individual'
+      ? input.displayName
+      : (input.legalRepresentativeName || input.displayName);
+    doc.text(`${contractSignerName} — Gestor(a) Territorial / Representante`, { align: 'center' });
     doc.moveDown(1.8);
     doc.font('Helvetica-Bold').fontSize(8.5).text('TESTEMUNHAS — quando utilizadas para reforço probatório', { align: 'center' });
     doc.moveDown(1.2);
