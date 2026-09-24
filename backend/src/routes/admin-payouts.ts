@@ -22,6 +22,27 @@ function maskCpf(cpf: string | null): string | null {
   return '***' + cpf.slice(-4);
 }
 
+async function findManagerAssignmentsForContract(adminId: string, territoryId: string) {
+  const now = new Date();
+  return prisma.territory_manager_assignments.findMany({
+    where: {
+      admin_id: adminId,
+      territory_id: territoryId,
+      status: { in: ['pending_approval', 'active', 'suspended'] },
+      OR: [{ ended_at: null }, { ended_at: { gt: now } }],
+    },
+    select: {
+      id: true,
+      territory_id: true,
+      status: true,
+      started_at: true,
+      ended_at: true,
+      updated_at: true,
+    },
+    orderBy: { created_at: 'desc' },
+  });
+}
+
 
 // ─── Operator Profiles ───────────────────────────────────────────────────────
 
@@ -627,6 +648,12 @@ router.get('/operators/:id/contract-data', async (req: Request, res: Response) =
     });
     if (!operator) return res.status(404).json({ success: false, error: 'Operador não encontrado' });
 
+    const isTerritorialManager = operator.relationship_type === 'territorial_manager';
+    const managerAssignments = isTerritorialManager
+      ? await findManagerAssignmentsForContract(operator.admin_id, operator.territory_id)
+      : [];
+    const managerAssignment = managerAssignments.length === 1 ? managerAssignments[0] : null;
+
     const email = operator.email || operator.admin.email || null;
     const telefone = operator.phone || operator.admin.phone || null;
     const endereco = operator.address || null;
@@ -651,7 +678,11 @@ router.get('/operators/:id/contract-data', async (req: Request, res: Response) =
       if (!operator.legal_representative_cpf) missingFields.push('legal_representative_cpf');
     }
 
-    const canGenerateContract = missingFields.length === 0;
+    if (!isTerritorialManager) missingFields.push('relationship_type_territorial_manager');
+    if (isTerritorialManager && managerAssignments.length === 0) missingFields.push('manager_assignment');
+    if (isTerritorialManager && managerAssignments.length > 1) missingFields.push('manager_assignment_ambiguous');
+
+    const canGenerateContract = missingFields.length === 0 && Boolean(managerAssignment);
     const territoryVersion = operator.territory
       ? buildTerritorySnapshotVersion(operator.territory)
       : null;
@@ -664,6 +695,7 @@ router.get('/operators/:id/contract-data', async (req: Request, res: Response) =
         missingFields,
         availableFields: {
           recipientType: operator.recipient_type,
+          relationshipType: operator.relationship_type,
           displayName: operator.display_name,
           email,
           telefone,
@@ -679,12 +711,21 @@ router.get('/operators/:id/contract-data', async (req: Request, res: Response) =
           territoryId: operator.territory?.id || null,
           territoryVersion,
           neighborhoods: operator.territory?.neighborhoods?.map(n => n.name) || [],
+          managerAssignmentId: managerAssignment?.id || null,
+          managerAssignmentStatus: managerAssignment?.status || null,
           cidadeUf,
           pixKey,
         },
         warnings: {
           pixMissing: !pixKey,
           pixNote: !pixKey ? 'Pix não é obrigatório para gerar a minuta, mas será necessário para repasses quando aplicável.' : null,
+          contractApplicable: isTerritorialManager,
+          contractApplicabilityNote: isTerritorialManager
+            ? null
+            : 'A minuta v1.2 é exclusiva de Gestor Territorial.',
+          assignmentNote: isTerritorialManager && managerAssignments.length !== 1
+            ? 'É necessário exatamente um assignment territorial vigente e compatível para gerar a minuta v1.2.'
+            : null,
           financialActivation: 'A geração/assinatura da minuta v1.2 não cria Ativação Financeira.',
         },
       },
@@ -723,6 +764,27 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
       },
     });
     if (!operator) return res.status(404).json({ success: false, error: 'Operador não encontrado' });
+    if (operator.relationship_type !== 'territorial_manager') {
+      return res.status(409).json({
+        success: false,
+        error: 'A minuta contratual v1.2 é exclusiva de Gestor Territorial.',
+      });
+    }
+
+    const managerAssignments = await findManagerAssignmentsForContract(
+      operator.admin_id,
+      operator.territory_id,
+    );
+    if (managerAssignments.length !== 1) {
+      return res.status(409).json({
+        success: false,
+        error: managerAssignments.length === 0
+          ? 'Assignment territorial vigente não encontrado para este Gestor e território.'
+          : 'Mais de um assignment territorial vigente foi encontrado para este Gestor e território. Regularize antes de gerar o contrato.',
+        assignment_count: managerAssignments.length,
+      });
+    }
+    const managerAssignment = managerAssignments[0];
 
     const hasFormalSignedContract =
       operator.contract_status === 'signed' && Boolean(operator.contract_url);
@@ -790,6 +852,8 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
         cityUf: cidadeUf!,
         version: territoryVersion,
         neighborhoods: operator.territory.neighborhoods.map(n => n.name),
+        assignmentId: managerAssignment.id,
+        assignmentStatus: managerAssignment.status,
       },
       generatedAt: generatedAt.toISOString(),
     };
@@ -901,6 +965,8 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
         contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
         territory_id: input.territory.id,
         territory_version: input.territory.version,
+        assignment_id: input.territory.assignmentId,
+        assignment_status: input.territory.assignmentStatus,
         sha256: templateHash,
       },
     }));
@@ -930,6 +996,8 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
         contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
         territory_id: input.territory.id,
         territory_version: input.territory.version,
+        assignment_id: input.territory.assignmentId,
+        assignment_status: input.territory.assignmentStatus,
         template_sha256: templateHash,
         financial_activation_created: false,
         legacy_online_only_signed_migrated: legacyOnlineOnlySigned,
@@ -966,6 +1034,8 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
         contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
         territory_id: input.territory.id,
         territory_version: input.territory.version,
+        assignment_id: input.territory.assignmentId,
+        assignment_status: input.territory.assignmentStatus,
         financial_activation_created: false,
         legacy_online_only_signed_migrated: legacyOnlineOnlySigned,
         whatsappSent,
