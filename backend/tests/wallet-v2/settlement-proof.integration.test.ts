@@ -41,9 +41,26 @@ async function setupDriver(balance: bigint): Promise<string> {
 async function setupTerritory(): Promise<{ territoryId: string; managerId: string; assignmentId: string }> {
   const tid = `ter-${RUN}-${randomUUID().slice(0, 6)}`;
   const mid = `mgr-${RUN}-${randomUUID().slice(0, 6)}`;
+  const opid = `op-${mid}`;
   await pool.query(`INSERT INTO operational_territories (id,name,level,status,regulatory_status,created_at,updated_at) VALUES ($1,'T','neighborhood','active','not_applicable',NOW(),NOW()) ON CONFLICT DO NOTHING`, [tid]);
-  await pool.query(`INSERT INTO admins (id,name,email,phone,password,role,created_at,updated_at) VALUES ($1,'M',$2,'11','h','regional_manager',NOW(),NOW()) ON CONFLICT DO NOTHING`, [mid, `${mid}@t.l`]);
-  const { rows:[{id:aid}] } = await pool.query(`INSERT INTO territory_manager_assignments (territory_id,admin_id,status,started_at,created_by,updated_at) VALUES ($1,$2,'active',NOW()-INTERVAL '30 days',$2,NOW()) RETURNING id::text`, [tid, mid]);
+  await pool.query(`INSERT INTO admins (id,name,email,phone,password,role,is_active,created_at,updated_at) VALUES ($1,'M',$2,'11','h','TERRITORIAL_MANAGER',true,NOW(),NOW()) ON CONFLICT DO NOTHING`, [mid, `${mid}@t.l`]);
+  await pool.query(
+    `INSERT INTO operator_profiles (
+       id,admin_id,territory_id,is_active,recipient_type,display_name,relationship_type,
+       document_status,contract_status,terms_version,contract_url,pix_key,pix_key_type,
+       responsibility_terms_accepted_at,confidentiality_terms_accepted_at,created_at,updated_at
+     ) VALUES (
+       $1,$2,$3,true,'individual','Manager','territorial_manager',
+       'verified','signed','v1.2','contract-submissions/test.pdf','11999999999','phone',
+       NOW(),NOW(),NOW(),NOW()
+     )`,
+    [opid, mid, tid]
+  );
+  const { rows:[{id:aid}] } = await pool.query(
+    `INSERT INTO territory_manager_assignments (territory_id,admin_id,operator_profile_id,status,started_at,created_by,updated_at)
+     VALUES ($1,$2,$3,'active',NOW()-INTERVAL '30 days',$2,NOW()) RETURNING id::text`,
+    [tid, mid, opid]
+  );
   return { territoryId: tid, managerId: mid, assignmentId: aid };
 }
 
