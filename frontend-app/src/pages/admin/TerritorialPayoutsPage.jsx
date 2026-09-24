@@ -684,7 +684,7 @@ export default function TerritorialPayoutsPage() {
             </TextField></Box>
           <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Território</Typography>
             <TextField select value={opForm.territory_id} onChange={e => setOpForm({ ...opForm, territory_id: e.target.value })} fullWidth size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }}>
-              {legacyEligibleTerritories.map(t => <MenuItem key={t.id} value={t.id}>{t.name} ({t.level})</MenuItem>)}
+              {territories.map(t => <MenuItem key={t.id} value={t.id}>{t.name} ({t.level})</MenuItem>)}
             </TextField></Box>
           <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Nome de exibição</Typography>
             <TextField value={opForm.display_name} onChange={e => setOpForm({ ...opForm, display_name: e.target.value })} fullWidth size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }} /></Box>
@@ -704,8 +704,8 @@ export default function TerritorialPayoutsPage() {
               <MenuItem value="cpf">CPF</MenuItem><MenuItem value="cnpj">CNPJ</MenuItem><MenuItem value="email">Email</MenuItem><MenuItem value="phone">Telefone</MenuItem><MenuItem value="random">Aleatória</MenuItem>
             </TextField></Box>
           </Box>
-          <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Usuário de acesso autorizado (gestor operacional)</Typography>
-            <Typography variant="caption" sx={{ color: '#6B7280', display: 'block', mb: 1, fontSize: '0.7rem' }}>Este usuário acessa o painel em modo leitura. O gestor/operador territorial é o perfil responsável por recebimentos, contrato e repasses do KAVIAR.</Typography>
+          <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Conta de acesso territorial</Typography>
+            <Typography variant="caption" sx={{ color: '#6B7280', display: 'block', mb: 1, fontSize: '0.7rem' }}>{opForm.relationship_type === 'territorial_manager' ? 'A conta deve ter role TERRITORIAL_MANAGER. O contrato v1.2 e a Ativação Financeira continuam etapas separadas.' : 'A conta deve ter role de Operador Territorial. Este fluxo não cria Gestor Territorial.'}</Typography>
             {opForm.territory_id && !loadingAdmins && territoryAdmins.length === 0 && !createAccess && (
               <Alert severity="warning" sx={{ mb: 1 }}>Nenhum acesso vinculado a este território. Crie um abaixo.</Alert>
             )}
@@ -748,7 +748,7 @@ export default function TerritorialPayoutsPage() {
           <Alert severity="warning" sx={{ '& .MuiAlert-message': { fontSize: 11 } }}>Este cálculo existe apenas para Operador Territorial e competências legadas. Gestor Territorial usa Wallet V2.</Alert>
           <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Território</Typography>
             <TextField select value={calcForm.territory_id} onChange={e => setCalcForm({ ...calcForm, territory_id: e.target.value })} fullWidth size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }}>
-              {territories.map(t => <MenuItem key={t.id} value={t.id}>{t.name} ({t.level})</MenuItem>)}
+              {legacyEligibleTerritories.map(t => <MenuItem key={t.id} value={t.id}>{t.name} ({t.level})</MenuItem>)
             </TextField></Box>
           <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Mês (YYYY-MM)</Typography>
             <TextField value={calcForm.reference_month} onChange={e => setCalcForm({ ...calcForm, reference_month: e.target.value })} fullWidth size="small" placeholder="2026-05" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }} /></Box>
@@ -804,7 +804,16 @@ export default function TerritorialPayoutsPage() {
             <Typography variant="body2" sx={{ color: '#9CA3AF' }}>{RECIPIENT_LABELS[verifyTarget.recipient_type]} — {verifyTarget.territory?.name}</Typography>
           </Box>}
           <Typography variant="body2" sx={{ color: '#9CA3AF', mb: 2 }}>Confirme cada item antes de verificar:</Typography>
-          {[
+          {(verifyTarget?.relationship_type === 'territorial_manager' ? [
+            'Conferi a identidade do Gestor Territorial.',
+            'Conferi CPF/CNPJ e responsável legal, quando aplicável.',
+            'Conferi a titularidade dos dados financeiros cadastrados.',
+            'Conferi que o Gestor está vinculado ao território correto.',
+            'A verificação documental não formaliza o contrato v1.2.',
+            'A verificação documental não ativa participação financeira.',
+            'O Gestor utilizará o fluxo canônico de contrato v1.2.',
+            'A Ativação Financeira dependerá de assignment elegível separado.',
+          ] : [
             'Conferi a identidade do operador.',
             'Conferi CPF/CNPJ e responsável legal, quando aplicável.',
             'Conferi que o Pix pertence ao operador cadastrado.',
@@ -813,7 +822,7 @@ export default function TerritorialPayoutsPage() {
             'O operador aceitou as regras de confidencialidade e uso correto de dados do KAVIAR.',
             'O operador entende que repasse depende de aprovação manual da matriz/SUPER_ADMIN.',
             'Para PJ/Associação, contrato/termo está assinado ou registrado.',
-          ].map((label, i) => (
+          ]).map((label, i) => (
             <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1, cursor: 'pointer' }} onClick={() => { const c = [...verifyChecks]; c[i] = !c[i]; setVerifyChecks(c); }}>
               <input type="checkbox" checked={verifyChecks[i]} readOnly style={{ marginTop: 3, accentColor: '#B8942E' }} />
               <Typography variant="body2" sx={{ color: verifyChecks[i] ? '#E5E7EB' : '#6B7280' }}>{label}</Typography>
@@ -846,18 +855,20 @@ export default function TerritorialPayoutsPage() {
               {detailTarget.legal_representative_cpf && <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>CPF responsável</Typography><Typography sx={{ fontFamily: 'monospace' }}>{detailTarget.legal_representative_cpf}</Typography></Box>}
               <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Pix</Typography><Typography sx={{ fontFamily: 'monospace' }}>{detailTarget.pix_key || '—'} ({detailTarget.pix_key_type || '—'})</Typography></Box>
               {detailTarget.bank_name && <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Banco</Typography><Typography>{detailTarget.bank_name}</Typography></Box>}
-              <Box sx={{ display: 'flex', gap: 3 }}>
-                <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Doc</Typography><Chip label={detailTarget.document_status} size="small" sx={{ color: STATUS_COLORS[detailTarget.document_status], bgcolor: `${STATUS_COLORS[detailTarget.document_status]}15` }} /></Box>
-                <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Contrato</Typography><Chip label={detailTarget.contract_status} size="small" /></Box>
-                <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Status</Typography><Chip label={detailTarget.is_active ? 'Ativo' : 'Inativo'} size="small" color={detailTarget.is_active ? 'success' : 'default'} /></Box>
+              <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Docs</Typography><Chip label={detailTarget.document_status === 'verified' ? 'Verificados' : detailTarget.document_status === 'pending' ? 'Pendentes' : 'Rejeitados'} size="small" color={detailTarget.document_status === 'verified' ? 'success' : detailTarget.document_status === 'rejected' ? 'error' : 'warning'} /></Box>
+                <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Contrato</Typography><Chip label={detailTarget.relationship_type === 'territorial_manager' ? (detailTarget.contract_v1_2?.label || 'v1.2 pendente') : detailTarget.contract_status} size="small" color={detailTarget.relationship_type === 'territorial_manager' && detailTarget.contract_v1_2?.key === 'legacy_inconsistent' ? 'warning' : detailTarget.relationship_type === 'territorial_manager' && detailTarget.contract_v1_2?.key === 'formalized' ? 'success' : 'default'} /></Box>
+                <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Perfil Operacional</Typography><Chip label={detailTarget.legacy_operational_state === 'active_legacy' ? 'Ativo legado' : (detailTarget.is_active ? 'Ativo' : 'Inativo')} size="small" color={detailTarget.legacy_operational_state === 'active_legacy' ? 'warning' : detailTarget.is_active ? 'success' : 'default'} /></Box>
+                {detailTarget.relationship_type === 'territorial_manager' && <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Ativação Financeira</Typography><Chip label={detailTarget.financial_activation?.label || 'Não ativa'} size="small" color={detailTarget.financial_activation?.active ? 'success' : detailTarget.financial_activation?.key === 'suspended' ? 'warning' : 'default'} /></Box>}
               </Box>
+              {detailTarget.legacy_operational_state === 'active_legacy' && <Alert severity="warning">Estado legado preservado para histórico: perfil operacional marcado como ativo sem contrato v1.2 formalizado. Isso não cria Ativação Financeira nem participação econômica.</Alert>}
               {detailTarget.verified_at && <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Verificado em</Typography><Typography variant="body2">{formatDate(detailTarget.verified_at, { showTime: true })}</Typography></Box>}
               <Typography variant="subtitle2" sx={{ color: '#C8A84E', mt: 2, mb: 1 }}>Termos e Contrato</Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, p: 1.5, bgcolor: 'rgba(255,255,255,0.02)', borderRadius: 1, border: '1px solid rgba(184,148,46,0.15)' }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography variant="body2" sx={{ color: '#9CA3AF' }}>Termo de Responsabilidade</Typography><Typography variant="body2" sx={{ color: detailTarget.responsibility_terms_accepted_at ? '#059669' : '#DC2626' }}>{detailTarget.responsibility_terms_accepted_at ? formatDate(detailTarget.responsibility_terms_accepted_at, { showTime: true }) : 'Pendente'}</Typography></Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography variant="body2" sx={{ color: '#9CA3AF' }}>Confidencialidade/LGPD</Typography><Typography variant="body2" sx={{ color: detailTarget.confidentiality_terms_accepted_at ? '#059669' : '#DC2626' }}>{detailTarget.confidentiality_terms_accepted_at ? formatDate(detailTarget.confidentiality_terms_accepted_at, { showTime: true }) : 'Pendente'}</Typography></Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography variant="body2" sx={{ color: '#9CA3AF' }}>Versão dos termos</Typography><Typography variant="body2">{detailTarget.terms_version || '—'}</Typography></Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography variant="body2" sx={{ color: '#9CA3AF' }}>Contrato</Typography><Typography variant="body2" sx={{ color: detailTarget.contract_status === 'signed' ? '#059669' : '#6B7280' }}>{detailTarget.contract_status}{detailTarget.contract_signed_at ? ` (${formatDate(detailTarget.contract_signed_at)})` : ''}</Typography></Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography variant="body2" sx={{ color: '#9CA3AF' }}>Contrato</Typography><Typography variant="body2" sx={{ color: detailTarget.relationship_type === 'territorial_manager' && detailTarget.contract_v1_2?.formalized ? '#059669' : '#6B7280' }}>{detailTarget.relationship_type === 'territorial_manager' ? (detailTarget.contract_v1_2?.label || 'v1.2 pendente') : detailTarget.contract_status}{detailTarget.contract_signed_at && detailTarget.relationship_type !== 'territorial_manager' ? ` (${formatDate(detailTarget.contract_signed_at)})` : ''}</Typography></Box>
                 {detailTarget.contract_url && <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><Typography variant="body2" sx={{ color: '#9CA3AF' }}>URL contrato</Typography><Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}><Button size="small" onClick={() => window.open(detailTarget.contract_url, '_blank')} sx={{ color: '#2563EB', textTransform: 'none', fontSize: '0.8rem' }}>Abrir</Button><Button size="small" onClick={() => { navigator.clipboard.writeText(detailTarget.contract_url); setFeedback({ open: true, severity: 'success', message: 'Link copiado.' }); }} sx={{ color: '#6B7280', textTransform: 'none', fontSize: '0.8rem' }}>Copiar</Button></Box></Box>}
               </Box>
               <Alert severity="info" sx={{ mt: 2, bgcolor: 'rgba(37,99,235,0.05)', border: '1px solid rgba(37,99,235,0.2)' }}>Este aceite interno não substitui contrato jurídico formal nem orientação contábil.</Alert>
