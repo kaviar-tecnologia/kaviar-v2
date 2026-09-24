@@ -3,6 +3,12 @@ import { applyBasisPoints, PLATFORM_FEE_RATE_BPS, MANAGER_COMMISSION_RATE_BPS } 
 
 export const COMPETENCE_TIMEZONE = 'America/Sao_Paulo';
 
+function basisPointsToPercentString(rateBps: number): string {
+  const whole = Math.trunc(rateBps / 100);
+  const fractional = Math.abs(rateBps % 100).toString().padStart(2, '0');
+  return `${whole}.${fractional}`;
+}
+
 /**
  * Computes reference month from a Date using America/Sao_Paulo timezone.
  */
@@ -131,9 +137,9 @@ export class FeeSplitService {
          idempotency_key
        ) VALUES (
          $1, $2, $3,
-         18.00, $4, $5, $6,
-         60.00, $7,
-         40.00, $8,
+         $18, $4, $5, $6,
+         $19, $7,
+         $20, $8,
          $9, $10, $11,
          $12, $13,
          $14, 'DB_SETTLEMENT_CLOCK',
@@ -155,6 +161,9 @@ export class FeeSplitService {
         params.recognizedAt,
         params.platformFeeRateBps, params.managerCommissionRateBps,
         key,
+        basisPointsToPercentString(params.platformFeeRateBps),
+        basisPointsToPercentString(10000 - params.managerCommissionRateBps),
+        basisPointsToPercentString(params.managerCommissionRateBps),
       ]
     );
 
