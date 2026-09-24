@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildTerritorialManagerContractV12,
+  buildTerritorySnapshotVersion,
   TERRITORIAL_MANAGER_CONTRACT_VERSION,
   type TerritorialManagerContractInput,
 } from '../src/services/contracts/territorial-manager-contract-v1_2';
@@ -65,6 +66,41 @@ describe('territorial manager contract v1.2', () => {
     expect(text).toContain('Territory ID: territory-123');
     expect(text).toContain('Versão territorial: 2026-09-24T14:00:00.000Z');
     expect(text).toContain('Bairro A, Bairro B');
+  });
+
+  it('builds deterministic territory snapshot versions', () => {
+    const source = {
+      id: 'territory-123',
+      updated_at: new Date('2026-09-24T14:00:00.000Z'),
+      neighborhoods: [
+        { id: 'b', name: 'Bairro B', updated_at: new Date('2026-09-24T13:00:00.000Z') },
+        { id: 'a', name: 'Bairro A', updated_at: new Date('2026-09-24T12:00:00.000Z') },
+      ],
+    };
+    const reordered = { ...source, neighborhoods: [...source.neighborhoods].reverse() };
+    const first = buildTerritorySnapshotVersion(source);
+    const second = buildTerritorySnapshotVersion(reordered);
+    expect(first).toBe(second);
+    expect(first.startsWith('sha256:')).toBe(true);
+    expect(first.length).toBe(71);
+  });
+
+  it('changes territory snapshot version when composition changes', () => {
+    const base = {
+      id: 'territory-123',
+      updated_at: new Date('2026-09-24T14:00:00.000Z'),
+      neighborhoods: [
+        { id: 'a', name: 'Bairro A', updated_at: new Date('2026-09-24T12:00:00.000Z') },
+      ],
+    };
+    const changed = {
+      ...base,
+      neighborhoods: [
+        ...base.neighborhoods,
+        { id: 'b', name: 'Bairro B', updated_at: new Date('2026-09-24T13:00:00.000Z') },
+      ],
+    };
+    expect(buildTerritorySnapshotVersion(base)).not.toBe(buildTerritorySnapshotVersion(changed));
   });
 
   it('mirrors the backend allocation rule using the origin neighborhood', () => {
