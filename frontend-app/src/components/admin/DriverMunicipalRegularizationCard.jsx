@@ -357,7 +357,7 @@ export function DriverMunicipalRegularizationCard({ driverId, documents }) {
     <Paper sx={{ p: 3 }}>
       <Typography variant="h6" sx={{ mb: 1 }}>Regularização Municipal</Typography>
       <Alert severity="info" sx={{ mb: 2 }}>
-        Esta etapa controla a autorização municipal do motorista. O gestor territorial pode protocolar e acompanhar o processo junto à Prefeitura, mas a liberação final para operação depende de confirmação do Admin KAVIAR.
+        Esta etapa controla a autorização municipal do motorista. O Gestor Territorial somente pode protocolar ou acompanhar o processo junto à Prefeitura quando houver autorização expressa da KAVIAR para aquele ato. A liberação final para operação depende de confirmação do Admin KAVIAR.
       </Alert>
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
