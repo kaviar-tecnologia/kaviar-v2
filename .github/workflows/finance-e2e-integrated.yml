@@ -91,6 +91,14 @@ jobs:
       - name: Seed E2E admins
         run: cd backend && E2E_SEED=1 npx tsx prisma/seed-e2e-admins.ts
 
+      - name: Run manager financial eligibility tests
+        run: |
+          cd backend
+          npx vitest run \
+            tests/territorial-manager-profile-state.test.ts \
+            tests/wallet-shadow.test.ts \
+            tests/wallet-v2/wallet-settlement.service.test.ts
+
       - name: Run E2E integrated tests
         run: |
           cd frontend-app && E2E_DATABASE_URL=$DATABASE_URL \
