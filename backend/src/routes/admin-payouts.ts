@@ -596,7 +596,7 @@ router.patch('/submissions/:id/review', async (req: Request, res: Response) => {
       });
       await prisma.operator_profiles.update({
         where: { id: submission.operator_profile_id },
-        data: { contract_status: 'signed', contract_url: submission.s3_key, terms_version: submission.contract_version || undefined, contract_reviewed_by: adminId, contract_reviewed_at: now, contract_signed_at: now, updated_at: now },
+        data: { contract_status: 'signed', contract_url: submission.s3_key, terms_version: submission.contract_version || undefined, contract_reviewed_by: adminId, contract_reviewed_at: now, contract_signed_at: submission.submitted_at || submission.created_at, updated_at: now },
       });
     } else {
       await prisma.contract_submissions.update({
