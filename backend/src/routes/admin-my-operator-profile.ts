@@ -112,6 +112,10 @@ router.post('/submit-contract', (req: Request, res: Response) => {
       await s3.send(new PutObjectCommand({ Bucket: bucket, Key: s3Key, Body: file.buffer, ContentType: 'application/pdf' }));
 
       const now = new Date();
+      const submissionContractVersion =
+        profile.relationship_type === 'territorial_manager'
+          ? TERRITORIAL_MANAGER_CONTRACT_VERSION
+          : (profile.terms_version || 'v1.0');
 
       // Supersede previous rejected submissions
       await prisma.contract_submissions.updateMany({
@@ -132,7 +136,7 @@ router.post('/submit-contract', (req: Request, res: Response) => {
           signer_ip: req.ip || req.socket?.remoteAddress || null,
           signer_user_agent: (req.headers['user-agent'] || '').substring(0, 200) || null,
           document_hash: documentHash,
-          contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
+          contract_version: submissionContractVersion,
           submitted_at: now,
         },
       });
@@ -150,7 +154,7 @@ router.post('/submit-contract', (req: Request, res: Response) => {
         action: 'submit_contract',
         entityType: 'contract_submission',
         entityId: submission.id,
-        newValue: { document_hash: documentHash, signer_name: profile.display_name, signer_document: profile.document_cpf || profile.document_cnpj || null, s3_key: s3Key, contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION },
+        newValue: { document_hash: documentHash, signer_name: profile.display_name, signer_document: profile.document_cpf || profile.document_cnpj || null, s3_key: s3Key, contract_version: submissionContractVersion },
         ipAddress: req.ip || req.socket?.remoteAddress || undefined,
       });
 
@@ -220,9 +224,10 @@ router.post('/accept-terms', async (req: Request, res: Response) => {
         terms_accepted_at: now,
         responsibility_terms_accepted_at: now,
         confidentiality_terms_accepted_at: now,
-        terms_version: isTerritorialManager ? TERRITORIAL_MANAGER_CONTRACT_VERSION : 'v1.0-captador',
         terms_accepted_by: admin.id,
-        ...(isTerritorialManager ? {} : { contract_status: 'signed' }),
+        ...(isTerritorialManager
+          ? {}
+          : { terms_version: 'v1.0-captador', contract_status: 'signed' }),
       },
     });
 
