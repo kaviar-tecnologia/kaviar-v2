@@ -9,6 +9,7 @@ on:
       - 'backend/tests/contract-template.test.ts'
       - 'backend/tests/territorial-manager-contract-v1_2.test.ts'
       - 'frontend-app/src/pages/admin/TerritorialPayoutsPage.jsx'
+      - 'frontend-app/src/pages/admin/MyContractPage.jsx'
       - 'docs/contratos/**'
       - 'docs/comercial/termo-autorizacao-operacional-territorial-fundador.md'
       - 'docs/contrato-gestor-territorial-v1.md'
