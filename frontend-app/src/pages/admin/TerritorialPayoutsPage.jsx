@@ -439,12 +439,19 @@ export default function TerritorialPayoutsPage() {
   };
 
   const handleVerify = async (id) => {
+    const isManager = verifyTarget?.relationship_type === 'territorial_manager';
     const now = new Date().toISOString();
     const adminId = JSON.parse(atob(token.split('.')[1])).id || '';
-    const res = await fetch(`${API_BASE_URL}/api/admin/territorial-payouts/operators/${id}`, { method: 'PATCH', headers, body: JSON.stringify({ document_status: 'verified', contract_status: 'not_required', terms_accepted_at: now, responsibility_terms_accepted_at: now, confidentiality_terms_accepted_at: now, terms_version: 'v1.0', terms_accepted_by: adminId }) });
+    const body = isManager
+      ? { document_status: 'verified' }
+      : { document_status: 'verified', contract_status: 'not_required', terms_accepted_at: now, responsibility_terms_accepted_at: now, confidentiality_terms_accepted_at: now, terms_version: 'v1.0', terms_accepted_by: adminId };
+    const res = await fetch(`${API_BASE_URL}/api/admin/territorial-payouts/operators/${id}`, { method: 'PATCH', headers, body: JSON.stringify(body) });
     const d = await res.json();
-    if (d.success) { setVerifyOpen(false); setFeedback({ open: true, severity: 'success', message: 'Operador verificado com sucesso.' }); fetchAll(); }
-    else setFeedback({ open: true, severity: 'error', message: d.error || 'Erro ao verificar operador.' });
+    if (d.success) {
+      setVerifyOpen(false);
+      setFeedback({ open: true, severity: 'success', message: isManager ? 'Documentos do gestor verificados. Contrato v1.2 continua pendente até formalização.' : 'Operador verificado com sucesso.' });
+      fetchAll();
+    } else setFeedback({ open: true, severity: 'error', message: d.error || 'Erro ao verificar operador.' });
   };
 
   const handleActivate = async (id) => {
@@ -465,6 +472,11 @@ export default function TerritorialPayoutsPage() {
   const openVerifyModal = (op) => { setVerifyTarget(op); setVerifyChecks([false, false, false, false, false, false, false, false]); setVerifyOpen(true); };
 
   const handleRegularizeTerms = async (id) => {
+    if (verifyTarget?.relationship_type === 'territorial_manager') {
+      setVerifyOpen(false);
+      setFeedback({ open: true, severity: 'warning', message: 'Gestor Territorial não usa regularização v1.0. Gere e formalize o contrato canônico v1.2.' });
+      return;
+    }
     const now = new Date().toISOString();
     const adminId = JSON.parse(atob(token.split('.')[1])).id || '';
     const res = await fetch(`${API_BASE_URL}/api/admin/territorial-payouts/operators/${id}`, { method: 'PATCH', headers, body: JSON.stringify({ terms_accepted_at: now, responsibility_terms_accepted_at: now, confidentiality_terms_accepted_at: now, terms_version: 'v1.0', terms_accepted_by: adminId }) });
@@ -764,7 +776,7 @@ export default function TerritorialPayoutsPage() {
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setVerifyOpen(false)} sx={{ color: '#9CA3AF' }}>Cancelar</Button>
-          <Button onClick={() => verifyTarget.document_status === 'verified' ? handleRegularizeTerms(verifyTarget.id) : handleVerify(verifyTarget.id)} disabled={!verifyChecks.every(Boolean)} variant="contained" sx={{ bgcolor: '#059669', '&:hover': { bgcolor: '#047857' } }}>{verifyTarget?.document_status === 'verified' ? 'Confirmar Regularização' : 'Confirmar Verificação'}</Button>
+          <Button onClick={() => verifyTarget.document_status === 'verified' ? handleRegularizeTerms(verifyTarget.id) : handleVerify(verifyTarget.id)} disabled={!verifyChecks.every(Boolean)} variant="contained" sx={{ bgcolor: '#059669', '&:hover': { bgcolor: '#047857' } }}>{verifyTarget?.relationship_type === 'territorial_manager' ? (verifyTarget?.document_status === 'verified' ? 'Contrato v1.2 necessário' : 'Confirmar verificação documental') : (verifyTarget?.document_status === 'verified' ? 'Confirmar Regularização' : 'Confirmar Verificação')}</Button>
         </DialogActions>
       </Dialog>
 
@@ -810,7 +822,7 @@ export default function TerritorialPayoutsPage() {
           <ContractDataDiagnostic operatorId={detailTarget?.id} token={token} headers={headers} />
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => { setContractTarget(detailTarget); setContractForm({ contract_url: detailTarget?.contract_url || '', contract_signed_at: detailTarget?.contract_signed_at ? detailTarget.contract_signed_at.slice(0, 10) : '', contract_status: detailTarget?.contract_status || 'pending', notes: '' }); setContractOpen(true); }} sx={{ color: '#C8A84E' }}>Registrar Contrato</Button>
+          {detailTarget?.relationship_type !== 'territorial_manager' && <Button onClick={() => { setContractTarget(detailTarget); setContractForm({ contract_url: detailTarget?.contract_url || '', contract_signed_at: detailTarget?.contract_signed_at ? detailTarget.contract_signed_at.slice(0, 10) : '', contract_status: detailTarget?.contract_status || 'pending', notes: '' }); setContractOpen(true); }} sx={{ color: '#C8A84E' }}>Registrar Contrato</Button>}
           <Button onClick={() => setDetailOpen(false)} sx={{ color: '#9CA3AF' }}>Fechar</Button>
         </DialogActions>
       </Dialog>
@@ -888,13 +900,13 @@ export default function TerritorialPayoutsPage() {
           </Box>
           <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Status do contrato</Typography>
             <TextField select value={contractForm.contract_status} onChange={e => setContractForm({ ...contractForm, contract_status: e.target.value })} fullWidth size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }}>
-              <MenuItem value="signed">Assinado</MenuItem><MenuItem value="pending">Pendente</MenuItem><MenuItem value="not_required">Não necessário</MenuItem>
+              <MenuItem value="signed">Assinado</MenuItem><MenuItem value="pending">Pendente</MenuItem><MenuItem value="not_required">Não necessário (somente operador não gestor)</MenuItem>
             </TextField></Box>
           <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Data de assinatura</Typography>
             <TextField type="date" value={contractForm.contract_signed_at} onChange={e => setContractForm({ ...contractForm, contract_signed_at: e.target.value })} fullWidth size="small" InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }} /></Box>
           <Box><Typography variant="caption" sx={{ color: '#9CA3AF', display: 'block', mb: 0.5 }}>Observações (opcional)</Typography>
             <TextField value={contractForm.notes} onChange={e => setContractForm({ ...contractForm, notes: e.target.value })} fullWidth size="small" multiline rows={2} InputProps={{ sx: { bgcolor: 'rgba(255,255,255,0.05)', color: '#E5E7EB', '& fieldset': { borderColor: 'rgba(184,148,46,0.3)' } } }} /></Box>
-          <Alert severity="info" sx={{ bgcolor: 'rgba(37,99,235,0.05)', border: '1px solid rgba(37,99,235,0.2)' }}>Registro interno. Não substitui contrato jurídico formal nem orientação contábil.</Alert>
+          <Alert severity="info" sx={{ bgcolor: 'rgba(37,99,235,0.05)', border: '1px solid rgba(37,99,235,0.2)' }}>Registro manual disponível apenas para perfis que não sejam Gestor Territorial. Gestores usam exclusivamente o fluxo canônico v1.2.</Alert>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setContractOpen(false)} sx={{ color: '#9CA3AF' }}>Cancelar</Button>
