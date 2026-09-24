@@ -2,7 +2,7 @@
 ALTER TABLE "inbound_email_messages"
   ADD COLUMN "status_before_trash" VARCHAR(20),
   ADD COLUMN "trashed_at" TIMESTAMP(3),
-  ADD COLUMN "trashed_by_admin_id" UUID;
+  ADD COLUMN "trashed_by_admin_id" TEXT;
 
 ALTER TABLE "inbound_email_messages"
   DROP CONSTRAINT IF EXISTS "inbound_email_messages_status_check";
