@@ -120,6 +120,7 @@ export default function MyContractPage() {
                 <Grid item xs={12} sm={6}><Typography sx={{ fontSize: 12, color: '#6B7280' }}>Território</Typography><Typography sx={{ fontSize: 14, fontWeight: 600 }}>{profile.territory?.name || '—'}</Typography></Grid>
                 <Grid item xs={12} sm={6}><Typography sx={{ fontSize: 12, color: '#6B7280' }}>Função</Typography><Typography sx={{ fontSize: 14, fontWeight: 600 }}>Gestor Territorial</Typography></Grid>
                 <Grid item xs={12} sm={6}><Typography sx={{ fontSize: 12, color: '#6B7280' }}>Desde</Typography><Typography sx={{ fontSize: 14, fontWeight: 600 }}>{profile.created_at ? new Date(profile.created_at).toLocaleDateString('pt-BR') : '—'}</Typography></Grid>
+                <Grid item xs={12} sm={6}><Typography sx={{ fontSize: 12, color: '#6B7280' }}>Versão contratual</Typography><Typography sx={{ fontSize: 14, fontWeight: 600 }}>{profile.terms_version || 'Aguardando geração v1.2'}</Typography></Grid>
                 {admin?.email && <Grid item xs={12} sm={6}><Typography sx={{ fontSize: 12, color: '#6B7280' }}>Email</Typography><Typography sx={{ fontSize: 14, fontWeight: 600 }}>{admin.email}</Typography></Grid>}
                 <Grid item xs={12} sm={6}>
                   <Typography sx={{ fontSize: 12, color: '#6B7280' }}>Contrato</Typography>
@@ -130,7 +131,7 @@ export default function MyContractPage() {
                     <Chip label="Contrato disponível para análise" size="small" sx={{ mt: 0.5, bgcolor: 'rgba(59,130,246,0.1)', color: '#3B82F6', fontSize: 11, fontWeight: 600 }} />
                   )}
                   {!profile.contract_url && profile.contract_status === 'signed' && (
-                    <Chip label="Aceite online concluído — contrato formal pendente" size="small" sx={{ mt: 0.5, bgcolor: 'rgba(217,119,6,0.1)', color: '#D97706', fontSize: 11, fontWeight: 600 }} />
+                    <Chip label="Aceite online legado — contrato v1.2 formal pendente" size="small" sx={{ mt: 0.5, bgcolor: 'rgba(217,119,6,0.1)', color: '#D97706', fontSize: 11, fontWeight: 600 }} />
                   )}
                   {!profile.contract_url && profile.contract_status === 'available' && (
                     <Chip label="Modelo disponível — aguardando assinatura" size="small" sx={{ mt: 0.5, bgcolor: 'rgba(59,130,246,0.1)', color: '#3B82F6', fontSize: 11, fontWeight: 600 }} />
@@ -169,7 +170,8 @@ export default function MyContractPage() {
           {profile.contract_template_url && !profile.contract_url && profile.contract_status === 'available' && (
             <Alert severity="info" icon={false} sx={{ mb: 2, border: '2px solid #3B82F6', borderRadius: 2, bgcolor: '#EFF6FF', '& .MuiAlert-message': { width: '100%' } }}>
               <Typography sx={{ fontWeight: 700, color: '#1E40AF', fontSize: 13, mb: 0.5 }}>📋 Seu contrato está disponível para conferência e assinatura</Typography>
-              <Typography sx={{ color: '#1E40AF', fontSize: 12 }}>Baixe o modelo, assine e envie o PDF assinado pelo próprio painel.</Typography>
+              <Typography sx={{ color: '#1E40AF', fontSize: 12 }}>Baixe a minuta v1.2, confira o Anexo Comercial, o Anexo Territorial e o Anexo LGPD, assine e envie o PDF pelo próprio painel.</Typography>
+              <Typography sx={{ color: '#1E40AF', fontSize: 11, mt: 0.5, fontWeight: 600 }}>A assinatura não cria Ativação Financeira; a participação começa somente após ativação expressa e elegível no sistema.</Typography>
             </Alert>
           )}
 
@@ -180,7 +182,7 @@ export default function MyContractPage() {
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
                   <Box>
                     <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#1A1A1A' }}>Modelo de contrato disponível</Typography>
-                    <Typography sx={{ fontSize: 11, color: '#6B7280' }}>Baixe, assine e envie o PDF assinado abaixo.</Typography>
+                    <Typography sx={{ fontSize: 11, color: '#6B7280' }}>Baixe a versão {profile.terms_version || 'v1.2'}, assine e envie o PDF assinado abaixo.</Typography>
                   </Box>
                   <Button variant="outlined" size="small" sx={{ borderColor: '#3B82F6', color: '#3B82F6' }}
                     onClick={async () => { try { const res = await fetch(`${API_BASE_URL}/api/admin/my-operator-profile/contract-template-url`, { headers: { Authorization: `Bearer ${token}` } }); const data = await res.json(); if (data.success && data.data?.url) window.open(data.data.url, '_blank'); else alert('Modelo não disponível.'); } catch { alert('Erro ao abrir modelo.'); } }}>
@@ -269,7 +271,7 @@ export default function MyContractPage() {
 
           {/* Aviso legal */}
           <Alert severity="warning" icon={false} sx={{ bgcolor: 'rgba(184,148,46,0.06)', border: '1px solid #E8E5DE', '& .MuiAlert-message': { color: '#6B7280', fontSize: 11, lineHeight: 1.6 } }}>
-            Este acesso é operacional e restrito ao território vinculado. Não transfere propriedade do sistema, franquia, licença exclusiva, sociedade ou vínculo empregatício. O contrato específico do Gestor Territorial será formalizado pela central KAVIAR. Valores financeiros exibidos no painel são informativos e estimados até formalização e apuração contratual.
+            Este acesso é operacional e restrito ao território vinculado. Não transfere propriedade do sistema, franquia, licença exclusiva, sociedade ou vínculo empregatício. O contrato específico do Gestor Territorial será formalizado pela central KAVIAR. Valores financeiros exibidos no painel são informativos e estimados. Contrato assinado, por si só, não cria Ativação Financeira; a participação depende de assignment territorial elegível e ativação expressa no sistema.
           </Alert>
         </Box>
       </Box>
