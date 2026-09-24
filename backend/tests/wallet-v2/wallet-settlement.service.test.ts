@@ -30,17 +30,34 @@ async function setupDriver(balance: bigint = 10000n): Promise<string> {
   return id;
 }
 
-// Helper to create territory with active assignment
-async function setupTerritory(): Promise<{ territoryId: string; managerId: string; assignmentId: string }> {
+// Helper to create territory with a fully eligible v1.2 manager and active assignment.
+async function setupTerritory(): Promise<{ territoryId: string; managerId: string; assignmentId: string; profileId: string }> {
   const territoryId = `territory-${RUN}-${randomUUID().slice(0, 6)}`;
   const managerId = `manager-${RUN}-${randomUUID().slice(0, 6)}`;
+  const profileId = `profile-${RUN}-${randomUUID().slice(0, 6)}`;
   await pool.query(`INSERT INTO operational_territories (id, name, level, status, regulatory_status, created_at, updated_at) VALUES ($1, 'Test', 'neighborhood', 'active', 'not_applicable', NOW(), NOW()) ON CONFLICT DO NOTHING`, [territoryId]);
-  await pool.query(`INSERT INTO admins (id, name, email, phone, password, role, created_at, updated_at) VALUES ($1, 'Manager', $2, '11888', 'hash', 'regional_manager', NOW(), NOW()) ON CONFLICT DO NOTHING`, [managerId, `${managerId}@test.local`]);
+  await pool.query(`INSERT INTO admins (id, name, email, phone, password, role, is_active, created_at, updated_at) VALUES ($1, 'Manager', $2, '11888', 'hash', 'TERRITORIAL_MANAGER', true, NOW(), NOW()) ON CONFLICT DO NOTHING`, [managerId, `${managerId}@test.local`]);
+  await pool.query(
+    `INSERT INTO operator_profiles (
+       id, admin_id, territory_id, recipient_type, relationship_type, display_name,
+       document_status, contract_status, terms_version, contract_url, pix_key, pix_key_type,
+       responsibility_terms_accepted_at, confidentiality_terms_accepted_at,
+       is_active, created_at, updated_at
+     ) VALUES (
+       $1, $2, $3, 'individual', 'territorial_manager', 'Manager',
+       'verified', 'signed', 'v1.2', 'contract-submissions/test.pdf', '11999999999', 'phone',
+       NOW(), NOW(), true, NOW(), NOW()
+     )`,
+    [profileId, managerId, territoryId]
+  );
   const { rows: [{ id: assignmentId }] } = await pool.query(
-    `INSERT INTO territory_manager_assignments (territory_id, admin_id, status, started_at, created_by, updated_at)
-     VALUES ($1, $2, 'active', NOW() - INTERVAL '30 days', $2, NOW())
-     RETURNING id::text`, [territoryId, managerId]);
-  return { territoryId, managerId, assignmentId };
+    `INSERT INTO territory_manager_assignments (
+       territory_id, admin_id, operator_profile_id, status, started_at, created_by, updated_at
+     ) VALUES ($1, $2, $3, 'active', NOW() - INTERVAL '30 days', $2, NOW())
+     RETURNING id::text`,
+    [territoryId, managerId, profileId]
+  );
+  return { territoryId, managerId, assignmentId, profileId };
 }
 
 function createSettlement(driverId: string, territoryId?: string) {
@@ -52,6 +69,92 @@ function createSettlement(driverId: string, territoryId?: string) {
 }
 
 describe('Atomic Settlement', () => {
+  it('active assignment + pending contract => 0% manager and 100% KAVIAR', async () => {
+    const driverId = await setupDriver(10000n);
+    const { territoryId, profileId } = await setupTerritory();
+    await pool.query(
+      `UPDATE operator_profiles
+       SET contract_status='pending', terms_version=NULL, contract_url=NULL
+       WHERE id=$1`,
+      [profileId]
+    );
+
+    const svc = createSettlement(driverId);
+    const rideId = `ride-contract-pending-${RUN}-${randomUUID().slice(0, 4)}`;
+    await svc.handleReserve(rideId, driverId, 1800n);
+    await svc.settleRide({
+      rideId,
+      driverId,
+      finalPriceCents: 10000n,
+      reservedCents: 1800n,
+      territoryId,
+    });
+
+    const { rows: [split] } = await pool.query(
+      `SELECT manager_id, manager_assignment_id, matrix_share_percent, matrix_share_cents,
+              manager_share_percent, manager_share_cents, manager_commission_rate_bps
+       FROM ride_fee_splits WHERE ride_id=$1`,
+      [rideId]
+    );
+
+    expect(split.manager_id).toBeNull();
+    expect(split.manager_assignment_id).toBeNull();
+    expect(split.matrix_share_percent).toBe('100.00');
+    expect(split.matrix_share_cents).toBe('1800');
+    expect(split.manager_share_percent).toBe('0.00');
+    expect(split.manager_share_cents).toBe('0');
+    expect(split.manager_commission_rate_bps).toBe(0);
+
+    const { rows: ledger } = await pool.query(
+      `SELECT entry_type, amount_cents, manager_id
+       FROM territory_ledger WHERE reference_id=$1 ORDER BY entry_type`,
+      [rideId]
+    );
+    expect(ledger.find((row: any) => row.entry_type === 'platform_fee')?.amount_cents).toBe('1800');
+    expect(ledger.find((row: any) => row.entry_type === 'fee_share')?.amount_cents).toBe('0');
+    expect(ledger.find((row: any) => row.entry_type === 'fee_share')?.manager_id).toBeNull();
+  });
+
+  it('only a fully eligible v1.2 manager receives 40% of the platform fee', async () => {
+    const driverId = await setupDriver(10000n);
+    const { territoryId, managerId, assignmentId } = await setupTerritory();
+
+    const svc = createSettlement(driverId);
+    const rideId = `ride-manager-eligible-${RUN}-${randomUUID().slice(0, 4)}`;
+    await svc.handleReserve(rideId, driverId, 1800n);
+    await svc.settleRide({
+      rideId,
+      driverId,
+      finalPriceCents: 10000n,
+      reservedCents: 1800n,
+      territoryId,
+    });
+
+    const { rows: [split] } = await pool.query(
+      `SELECT manager_id, manager_assignment_id, matrix_share_percent, matrix_share_cents,
+              manager_share_percent, manager_share_cents, manager_commission_rate_bps
+       FROM ride_fee_splits WHERE ride_id=$1`,
+      [rideId]
+    );
+
+    expect(split.manager_id).toBe(managerId);
+    expect(split.manager_assignment_id).toBe(assignmentId);
+    expect(split.matrix_share_percent).toBe('60.00');
+    expect(split.matrix_share_cents).toBe('1080');
+    expect(split.manager_share_percent).toBe('40.00');
+    expect(split.manager_share_cents).toBe('720');
+    expect(split.manager_commission_rate_bps).toBe(4000);
+
+    const { rows: ledger } = await pool.query(
+      `SELECT entry_type, amount_cents, manager_id
+       FROM territory_ledger WHERE reference_id=$1 ORDER BY entry_type`,
+      [rideId]
+    );
+    expect(ledger.find((row: any) => row.entry_type === 'platform_fee')?.amount_cents).toBe('1800');
+    expect(ledger.find((row: any) => row.entry_type === 'fee_share')?.amount_cents).toBe('720');
+    expect(ledger.find((row: any) => row.entry_type === 'fee_share')?.manager_id).toBe(managerId);
+  });
+
   it('full collection: debit + split + ledger in one tx', async () => {
     const driverId = await setupDriver(10000n);
     const { territoryId } = await setupTerritory();

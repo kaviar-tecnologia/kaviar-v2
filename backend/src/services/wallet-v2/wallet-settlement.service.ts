@@ -6,6 +6,7 @@ import { PendingDebitService } from './pending-debit.service';
 import { assertSettlementActive } from './settlement-gate';
 import { applyBasisPoints, PLATFORM_FEE_RATE_BPS, MANAGER_COMMISSION_RATE_BPS } from '../finance/territory/monetary';
 import { referenceMonthFromDate, COMPETENCE_TIMEZONE } from './fee-split.service';
+import { evaluateTerritorialManagerFinancialProfile } from '../contracts/territorial-manager-financial-eligibility';
 
 /** Interface for any service that can execute a fee debit */
 export interface FeeDebitExecutor {
@@ -100,12 +101,29 @@ export class WalletSettlementService {
 
       if (params.territoryId) {
         const { rows: assignments } = await client.query(
-          `SELECT tma.id, tma.admin_id
+          `SELECT
+             tma.id,
+             tma.admin_id,
+             tma.operator_profile_id,
+             a.is_active AS admin_is_active,
+             a.role AS admin_role,
+             op.id AS profile_id,
+             op.relationship_type,
+             op.is_active,
+             op.document_status,
+             op.contract_status,
+             op.terms_version,
+             op.contract_url,
+             op.pix_key,
+             op.responsibility_terms_accepted_at,
+             op.confidentiality_terms_accepted_at
            FROM territory_manager_assignments tma
            JOIN admins a ON a.id = tma.admin_id
+           LEFT JOIN operator_profiles op
+             ON op.admin_id = tma.admin_id
+            AND op.territory_id = tma.territory_id
            WHERE tma.territory_id = $1
              AND tma.status = 'active'
-             AND a.is_active = true
              AND tma.started_at <= $2
              AND (tma.ended_at IS NULL OR tma.ended_at > $2)
            FOR SHARE OF tma`,
@@ -121,14 +139,25 @@ export class WalletSettlementService {
         }
 
         if (assignments.length === 1) {
-          managerId = assignments[0].admin_id;
-          managerAssignmentId = assignments[0].id;
+          const candidate = assignments[0];
+          const profileEligibility = evaluateTerritorialManagerFinancialProfile(candidate);
+          const adminEligible = candidate.admin_is_active === true && candidate.admin_role === 'TERRITORIAL_MANAGER';
+          const profileBindingMatches =
+            !candidate.operator_profile_id ||
+            candidate.operator_profile_id === candidate.profile_id;
+
+          if (adminEligible && profileBindingMatches && profileEligibility.eligible) {
+            managerId = candidate.admin_id;
+            managerAssignmentId = candidate.id;
+          }
         }
       }
 
       // ═══ CALCULATE SPLIT ═══
-      // Territory without an active manager is an Área de Sombra KAVIAR:
-      // 100% of the platform fee stays with KAVIAR and no manager obligation is created.
+      // Territory without a fully eligible Gestor Territorial is an Área de Sombra KAVIAR.
+      // An active assignment alone is NOT enough: the profile must also be active,
+      // verified and backed by a formal v1.2 contract + financial onboarding gates.
+      // Otherwise 100% of the platform fee stays with KAVIAR and no manager obligation is created.
       const effectiveManagerCommissionRateBps = managerId ? MANAGER_COMMISSION_RATE_BPS : 0;
       const split = this.feeSplit.calculateSplit(
         params.finalPriceCents,

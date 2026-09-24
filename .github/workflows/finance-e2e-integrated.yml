@@ -18,7 +18,7 @@ concurrency:
 env:
   NODE_VERSION: '24'
   TZ: America/Sao_Paulo
-  DATABASE_URL: postgresql://kaviar_e2e:e2e_password@localhost:5432/kaviar_e2e
+  DATABASE_URL: postgresql://kaviar_e2e:e2e_password@localhost:5432/kaviar_e2e_test
   JWT_SECRET: e2e-ci-secret-not-production
   NODE_ENV: test
   E2E_ADMIN_PASSWORD: e2e-ci-${{ github.run_id }}-${{ github.run_attempt }}
@@ -32,7 +32,7 @@ jobs:
       postgres:
         image: postgis/postgis:15-3.4
         env:
-          POSTGRES_DB: kaviar_e2e
+          POSTGRES_DB: kaviar_e2e_test
           POSTGRES_USER: kaviar_e2e
           POSTGRES_PASSWORD: e2e_password
         ports:
@@ -71,7 +71,7 @@ jobs:
 
       - name: Create legacy tables
         run: |
-          PGPASSWORD=e2e_password psql -U kaviar_e2e -h localhost -d kaviar_e2e -c "
+          PGPASSWORD=e2e_password psql -U kaviar_e2e -h localhost -d kaviar_e2e_test -c "
           CREATE TABLE IF NOT EXISTS admin_audit_logs (
             id SERIAL PRIMARY KEY, admin_id TEXT NOT NULL, admin_email TEXT,
             action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
@@ -90,6 +90,14 @@ jobs:
 
       - name: Seed E2E admins
         run: cd backend && E2E_SEED=1 npx tsx prisma/seed-e2e-admins.ts
+
+      - name: Run manager financial eligibility tests
+        run: |
+          cd backend
+          npx vitest run \
+            tests/territorial-manager-profile-state.test.ts \
+            tests/wallet-shadow.test.ts \
+            tests/wallet-v2/wallet-settlement.service.test.ts
 
       - name: Run E2E integrated tests
         run: |

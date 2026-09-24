@@ -3,6 +3,10 @@ import { prisma } from '../lib/prisma';
 import { authenticateAdmin, requireRole } from '../middlewares/auth';
 import { applyTerritoryScope } from '../middlewares/territory-scope';
 import { requireTerritoryScope } from '../middlewares/require-territory-scope';
+import {
+  evaluateTerritorialManagerFinancialProfile,
+  financialEligibilityReasonLabel,
+} from '../services/contracts/territorial-manager-financial-eligibility';
 
 const router = Router();
 router.use(authenticateAdmin);
@@ -34,7 +38,7 @@ router.get('/summary', async (req: Request, res: Response) => {
       ...(managerId ? { manager_id: managerId } : { manager_id: { not: null } }),
     };
 
-    const [platformAgg, managerAgg, recognizedRides, activeAssignments] = await Promise.all([
+    const [platformAgg, managerAgg, recognizedRides, activeAssignments, managerProfile] = await Promise.all([
       prisma.territory_ledger.aggregate({
         where: { ...ledgerWhere, entry_type: 'platform_fee' },
         _sum: { amount_cents: true },
@@ -62,11 +66,37 @@ router.get('/summary', async (req: Request, res: Response) => {
             select: { id: true, territory_id: true, status: true, started_at: true, ended_at: true },
           })
         : Promise.resolve([]),
+      managerId
+        ? prisma.operator_profiles.findUnique({
+            where: { admin_id: managerId },
+            select: {
+              relationship_type: true,
+              is_active: true,
+              document_status: true,
+              contract_status: true,
+              terms_version: true,
+              contract_url: true,
+              pix_key: true,
+              responsibility_terms_accepted_at: true,
+              confidentiality_terms_accepted_at: true,
+            },
+          })
+        : Promise.resolve(null),
     ]);
 
     const platformFeeCents = platformAgg._sum.amount_cents || 0n;
     const managerShareCents = managerAgg._sum.amount_cents || 0n;
-    const financialActivationActive = managerId ? activeAssignments.length > 0 : null;
+    const profileEligibility = managerId
+      ? evaluateTerritorialManagerFinancialProfile(managerProfile)
+      : null;
+    const financialActivationActive = managerId
+      ? activeAssignments.length > 0 && profileEligibility?.eligible === true
+      : null;
+    const financialActivationReason = managerId && !financialActivationActive
+      ? (profileEligibility?.eligible === false
+          ? financialEligibilityReasonLabel(profileEligibility.reason)
+          : 'Sem assignment ativo')
+      : null;
 
     res.json({
       success: true,
@@ -82,10 +112,11 @@ router.get('/summary', async (req: Request, res: Response) => {
         regional_percent: 40,
         source: 'wallet_v2_territory_ledger',
         financial_activation_active: financialActivationActive,
+        financial_activation_reason: financialActivationReason,
         active_assignment_ids: activeAssignments.map(a => a.id),
         note: financialActivationActive === false
-          ? 'Sem Ativação Financeira ativa. Valores eventualmente exibidos no período são históricos já reconhecidos antes da desativação.'
-          : 'Participação reconhecida pelo Wallet V2. Área de Sombra e ausência de assignment elegível geram 0% ao gestor.',
+          ? `Sem Ativação Financeira elegível${financialActivationReason ? `: ${financialActivationReason}` : ''}. Valores eventualmente exibidos no período são históricos já reconhecidos antes do bloqueio/desativação.`
+          : 'Participação reconhecida pelo Wallet V2. Somente assignment ativo + perfil totalmente elegível v1.2 geram 40%; caso contrário, 0% ao gestor.',
       },
     });
   } catch (error: any) {
@@ -177,8 +208,12 @@ router.get('/rules', async (req: Request, res: Response) => {
       return res.json({ success: true, data: null });
     }
 
-    const activeAssignments = admin.role === 'TERRITORIAL_MANAGER'
-      ? await prisma.territory_manager_assignments.count({
+    let financialActivationActive: boolean | null = null;
+    let financialActivationReason: string | null = null;
+
+    if (admin.role === 'TERRITORIAL_MANAGER') {
+      const [activeAssignments, profile] = await Promise.all([
+        prisma.territory_manager_assignments.count({
           where: {
             admin_id: admin.id,
             territory_id: { in: territoryIds },
@@ -186,8 +221,28 @@ router.get('/rules', async (req: Request, res: Response) => {
             started_at: { lte: new Date() },
             OR: [{ ended_at: null }, { ended_at: { gt: new Date() } }],
           },
-        })
-      : 0;
+        }),
+        prisma.operator_profiles.findUnique({
+          where: { admin_id: admin.id },
+          select: {
+            relationship_type: true,
+            is_active: true,
+            document_status: true,
+            contract_status: true,
+            terms_version: true,
+            contract_url: true,
+            pix_key: true,
+            responsibility_terms_accepted_at: true,
+            confidentiality_terms_accepted_at: true,
+          },
+        }),
+      ]);
+      const eligibility = evaluateTerritorialManagerFinancialProfile(profile);
+      financialActivationActive = activeAssignments > 0 && eligibility.eligible;
+      financialActivationReason = financialActivationActive
+        ? null
+        : (eligibility.eligible ? 'Sem assignment ativo' : financialEligibilityReasonLabel(eligibility.reason));
+    }
 
     res.json({
       success: true,
@@ -196,9 +251,10 @@ router.get('/rules', async (req: Request, res: Response) => {
         regional_share_percent: 40,
         partner_commission_percent: 0,
         valid_from: null,
-        description: 'Regra contratual v1.2: 40% da Taxa da Plataforma Elegível ao Gestor; Área de Sombra/sem assignment elegível = 0%.',
+        description: 'Regra contratual v1.2: 40% somente com assignment ativo e perfil totalmente elegível; qualquer gate pendente = 0% ao Gestor e 100% da Taxa da Plataforma para a KAVIAR.',
         source: 'contract_v1.2_wallet_v2',
-        financial_activation_active: admin.role === 'TERRITORIAL_MANAGER' ? activeAssignments > 0 : null,
+        financial_activation_active: financialActivationActive,
+        financial_activation_reason: financialActivationReason,
       },
     });
   } catch (error: any) {

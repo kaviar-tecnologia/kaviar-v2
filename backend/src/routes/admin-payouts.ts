@@ -82,7 +82,7 @@ router.get('/operators', async (_req: Request, res: Response) => {
         ? assignments.filter(a => a.admin_id === o.admin_id && a.territory_id === o.territory_id)
         : [];
       const financialActivation = o.relationship_type === 'territorial_manager'
-        ? deriveTerritorialManagerFinancialActivation(managerAssignments, now)
+        ? deriveTerritorialManagerFinancialActivation(managerAssignments, o, now)
         : null;
 
       return {
@@ -125,7 +125,7 @@ router.get('/operators/:id', async (req: Request, res: Response) => {
         })
       : [];
     const financialActivation = op.relationship_type === 'territorial_manager'
-      ? deriveTerritorialManagerFinancialActivation(managerAssignments)
+      ? deriveTerritorialManagerFinancialActivation(managerAssignments, op)
       : null;
 
     res.json({
