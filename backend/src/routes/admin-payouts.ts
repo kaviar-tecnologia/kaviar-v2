@@ -111,7 +111,35 @@ router.get('/operators/:id', async (req: Request, res: Response) => {
       include: { admin: { select: { name: true, email: true } }, territory: { select: { id: true, name: true } }, payouts: { orderBy: { created_at: 'desc' }, take: 10 } },
     });
     if (!op) return res.status(404).json({ success: false, error: 'Operador não encontrado' });
-    res.json({ success: true, data: op });
+
+    const contractV12 = deriveTerritorialManagerContractUiState(op);
+    const managerAssignments = op.relationship_type === 'territorial_manager'
+      ? await prisma.territory_manager_assignments.findMany({
+          where: {
+            admin_id: op.admin_id,
+            territory_id: op.territory_id,
+            OR: [{ ended_at: null }, { ended_at: { gt: new Date() } }],
+          },
+          select: { id: true, status: true, started_at: true, ended_at: true },
+          orderBy: { started_at: 'desc' },
+        })
+      : [];
+    const financialActivation = op.relationship_type === 'territorial_manager'
+      ? deriveTerritorialManagerFinancialActivation(managerAssignments)
+      : null;
+
+    res.json({
+      success: true,
+      data: {
+        ...op,
+        contract_v1_2: contractV12,
+        financial_activation: financialActivation,
+        legacy_operational_state:
+          op.relationship_type === 'territorial_manager' && op.is_active && !contractV12?.formalized
+            ? 'active_legacy'
+            : null,
+      },
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Erro ao buscar operador' });
   }
