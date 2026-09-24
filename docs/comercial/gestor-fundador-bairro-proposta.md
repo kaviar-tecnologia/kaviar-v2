@@ -8,7 +8,7 @@ O KAVIAR está selecionando **Gestores Territoriais Fundadores** para apoiar a o
 
 ## O que é
 
-Você recebe uma **autorização operacional temporária** para atuar como parceiro captador e apoio operacional no seu bairro, usando o painel KAVIAR com:
+Você pode participar de um **programa piloto pré-contratual de até 90 dias**, quando aplicável, e, após aprovação e formalização, atuar como **Gestor Territorial autônomo** nos limites do Contrato de Parceria Operacional Territorial v1.2. O painel KAVIAR oferece:
 
 - Link pessoal de captação de motoristas
 - Cadastro de parceiros e associações locais
@@ -24,7 +24,7 @@ Você recebe uma **autorização operacional temporária** para atuar como parce
 | Item | Valor |
 |------|-------|
 | Taxa de ativação | R$ 0,00 — não há cobrança obrigatória nesta versão |
-| Programa piloto/pré-ativação | Até 90 dias, sem Ativação Financeira nem participação territorial |
+*Este documento é informativo e não constitui contrato. A formalização do Gestor Territorial ocorre pelo Contrato de Parceria Operacional Territorial v1.2; eventual termo de piloto é apenas pré-contratual e não cria Ativação Financeira.*
 | Território | Área formalmente atribuída em bairro/comunidade, com possíveis Áreas Reservadas KAVIAR |
 | Participação do gestor | 40% da Taxa da Plataforma Elegível nas operações elegíveis do território formalmente atribuído, durante Ativação Financeira válida |
 | Taxa operacional KAVIAR | 18% do valor da corrida (infraestrutura, tecnologia, suporte) |
@@ -81,12 +81,9 @@ Você recebe uma **autorização operacional temporária** para atuar como parce
 
 ---
 
-## Renovação
+## Piloto, formalização e continuidade
 
-- Ao final do programa piloto de até 90 dias, a central avalia a continuidade
-- A continuidade como Gestor Territorial depende de formalização pelo Contrato de Parceria Operacional Territorial v1.2 e de Ativação Financeira expressa
-- Gestores fundadores com bom desempenho podem solicitar bairros próximos
-- Se não houver atividade mínima, o território pode retornar à central
+*Este documento é informativo e não constitui contrato. A formalização do Gestor Territorial ocorre pelo Contrato de Parceria Operacional Territorial v1.2; eventual termo de piloto é apenas pré-contratual e não cria Ativação Financeira.*
 
 ---
 
@@ -98,4 +95,4 @@ Fale conosco pelo WhatsApp: [número]
 
 *KAVIAR é produto e plataforma da KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA — CNPJ 67.783.601/0001-99.*
 
-*Este documento é informativo e não constitui contrato. O programa piloto/pré-ativação pode usar termo próprio, mas a formalização definitiva do Gestor Territorial ocorre pelo Contrato de Parceria Operacional Territorial KAVIAR v1.2.*
+*Este documento é informativo e não constitui contrato. A formalização do Gestor Territorial ocorre pelo Contrato de Parceria Operacional Territorial v1.2; eventual termo de piloto é apenas pré-contratual e não cria Ativação Financeira.*
