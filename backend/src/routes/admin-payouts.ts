@@ -165,10 +165,14 @@ router.patch('/operators/:id', async (req: Request, res: Response) => {
           required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
         });
       }
-      if (Object.prototype.hasOwnProperty.call(fields, 'terms_version')) {
+      if (
+        Object.prototype.hasOwnProperty.call(fields, 'terms_version') ||
+        Object.prototype.hasOwnProperty.call(fields, 'contract_url') ||
+        Object.prototype.hasOwnProperty.call(fields, 'contract_signed_at')
+      ) {
         return res.status(409).json({
           success: false,
-          error: 'A versão contratual do Gestor Territorial é controlada pelo fluxo canônico v1.2 e não pode ser alterada manualmente.',
+          error: 'Versão, PDF e data de assinatura do Gestor Territorial são controlados pelo fluxo canônico v1.2 e não podem ser alterados manualmente.',
           required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
         });
       }
@@ -199,7 +203,7 @@ router.patch('/operators/:id', async (req: Request, res: Response) => {
       const cs = updates.contract_status || existing.contract_status;
       if (isTerritorialManager) {
         const version = existing.terms_version || null;
-        if (cs !== 'signed' || version !== TERRITORIAL_MANAGER_CONTRACT_VERSION || !existing.contract_url) {
+        if (cs !== 'signed' || version !== TERRITORIAL_MANAGER_CONTRACT_VERSION || !existing.contract_url || !existing.contract_reviewed_at) {
           return res.status(409).json({
             success: false,
             error: 'Gestor Territorial só pode ser ativado após contrato formal v1.2 aprovado e PDF vinculado.',
