@@ -60,7 +60,8 @@ jobs:
           cd backend
           npx vitest run \
             tests/contract-template.test.ts \
-            tests/territorial-manager-contract-v1_2.test.ts
+            tests/territorial-manager-contract-v1_2.test.ts \
+            tests/regional-admins-status.test.ts
 
       - name: Build backend
         run: cd backend && npm run build
