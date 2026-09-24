@@ -30,6 +30,7 @@ import {
   Edit as EditIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
+import { API_BASE_URL } from '../../config/api';
 
 const LEADER_TYPES = [
   { value: 'PRESIDENTE_ASSOCIACAO', label: 'Presidente de Associação' },
@@ -70,12 +71,9 @@ export default function CommunityLeadersPanel() {
   
   const fetchNeighborhoods = async () => {
     try {
-      const token = localStorage.getItem('adminToken');
-      const response = await axios.get(
-        `${import.meta.env.VITE_API_URL}/api/admin/neighborhoods`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setNeighborhoods(response.data || []);
+      const token = localStorage.getItem('kaviar_admin_token');
+      const response = await axios.get(`${API_BASE_URL}/api/neighborhoods`);
+      setNeighborhoods(response.data?.data || []);
     } catch (err) {
       console.error('Error fetching neighborhoods:', err);
     }
@@ -84,10 +82,10 @@ export default function CommunityLeadersPanel() {
   const fetchLeaders = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('adminToken');
+      const token = localStorage.getItem('kaviar_admin_token');
       const params = selectedCity ? { city: selectedCity } : {};
       const response = await axios.get(
-        `${import.meta.env.VITE_API_URL}/api/admin/community-leaders`,
+        `${API_BASE_URL}/api/admin/community-leaders`,
         {
           headers: { Authorization: `Bearer ${token}` },
           params
@@ -123,9 +121,9 @@ export default function CommunityLeadersPanel() {
       setLoading(true);
       setError('');
       
-      const token = localStorage.getItem('adminToken');
+      const token = localStorage.getItem('kaviar_admin_token');
       await axios.post(
-        `${import.meta.env.VITE_API_URL}/api/admin/community-leaders`,
+        `${API_BASE_URL}/api/admin/community-leaders`,
         formData,
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -145,9 +143,9 @@ export default function CommunityLeadersPanel() {
   
   const handleVerify = async (leaderId, status) => {
     try {
-      const token = localStorage.getItem('adminToken');
+      const token = localStorage.getItem('kaviar_admin_token');
       await axios.patch(
-        `${import.meta.env.VITE_API_URL}/api/admin/community-leaders/${leaderId}/verify`,
+        `${API_BASE_URL}/api/admin/community-leaders/${leaderId}/verify`,
         { status },
         { headers: { Authorization: `Bearer ${token}` } }
       );
