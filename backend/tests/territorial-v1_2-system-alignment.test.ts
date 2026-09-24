@@ -9,12 +9,13 @@ function readRepoFile(relativePath: string): string {
 describe('territorial v1.2 system alignment', () => {
   it('blocks generic admin bypasses for territorial manager contracts', () => {
     const src = readRepoFile('backend/src/routes/admin-payouts.ts');
-    expect(src).toContain("Gestor Territorial exige Contrato de Parceria Operacional Territorial v1.2");
-    expect(src).toContain("não pode ser marcado como assinado por atualização manual");
+    expect(src).toContain("Status contratual do Gestor Territorial é controlado exclusivamente pelo fluxo formal v1.2");
+    expect(src).toContain("rejectManualManagerContractUpload");
     expect(src).toContain("Versão, PDF e data de assinatura do Gestor Territorial");
     expect(src).toContain("!existing.contract_reviewed_at");
-    expect(src).toContain("upload direto de contrato não é permitido");
-    expect(src).toContain("upload manual de modelo não é permitido");
+    expect(src).toContain("upload manual não é permitido");
+    expect(src).toContain("router.post('/operators/:id/contract', rejectManualManagerContractUpload");
+    expect(src).toContain("router.post('/operators/:id/contract-template', rejectManualManagerContractUpload");
   });
 
   it('uses Wallet V2 ledger recognition for manager finance', () => {
