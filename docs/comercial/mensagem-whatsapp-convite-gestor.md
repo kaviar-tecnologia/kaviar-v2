@@ -56,7 +56,7 @@ Estamos buscando parceiros de confiança para atuar como Gestores Territoriais e
 
 O gestor ajuda a trazer motoristas e parceiros locais para a plataforma, acompanha a operação pelo painel e pode participar economicamente das operações elegíveis do território formalmente atribuído, conforme contrato e apuração.
 
-O modelo é uma parceria operacional territorial, sem taxa obrigatória de ativação nesta versão, com ciclo inicial de 90 dias.
+O modelo prevê programa piloto/pré-ativação de até 90 dias, sem taxa obrigatória de ativação nesta versão e sem participação territorial antes da formalização contratual v1.2 e da Ativação Financeira.
 
 Posso explicar melhor se tiver interesse. Seria uma boa conversa para a comunidade.
 
