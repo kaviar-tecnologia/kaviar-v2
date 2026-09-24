@@ -1,4 +1,6 @@
-# TERMO DE AUTORIZAÇÃO OPERACIONAL TERRITORIAL — KAVIAR v1.1-FUNDADOR
+# TERMO DE PRÉ-ATIVAÇÃO / PROGRAMA PILOTO TERRITORIAL — KAVIAR v1.2-FUNDADOR
+
+> **Documento pré-contratual/piloto.** Este termo não substitui o Contrato de Parceria Operacional Territorial v1.2, não cria Ativação Financeira e não gera direito aos 40% antes da formalização e ativação previstas no contrato definitivo.
 
 ---
 
@@ -12,7 +14,7 @@
 
 ## 2. OBJETO
 
-Autorização operacional temporária para o Gestor atuar como captador autônomo e apoio operacional em área territorial definida pela KAVIAR ("Bairro" ou "Território"), nos termos e limites deste instrumento.
+Autorização temporária e pré-contratual para participação em programa piloto, permitindo ao potencial Gestor atuar como captador autônomo e apoio operacional em área definida pela KAVIAR, sem Ativação Financeira e sem substituir o Contrato de Parceria Operacional Territorial v1.2.
 
 ---
 
@@ -39,9 +41,13 @@ A liberação operacional depende de aprovação cadastral, documental, contratu
 
 ---
 
-## 5. PRAZO
+## 5. PRAZO DO PILOTO
 
-90 (noventa) dias corridos a partir da ativação do acesso ao painel territorial. Renovação condicionada a avaliação mútua de desempenho e formalização de novo ciclo.
+O programa piloto poderá durar até 90 (noventa) dias corridos a partir da liberação do acesso de teste ou pré-operação.
+
+Esse prazo não constitui vigência do contrato definitivo, não gera Ativação Financeira e não assegura continuidade, território ou participação econômica.
+
+Se as partes celebrarem o Contrato de Parceria Operacional Territorial v1.2, este termo ficará automaticamente superado quanto à relação definitiva, permanecendo apenas como registro histórico do período piloto.
 
 ---
 
@@ -188,4 +194,4 @@ Fica eleito o foro da Comarca da Capital do Estado do Rio de Janeiro/RJ, corresp
 *KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA — CNPJ 67.783.601/0001-99*
 
 *Aceite digital registrado em: [data/hora do aceite]*
-*Versão: v1.1-FUNDADOR*
+*Versão: v1.2-FUNDADOR — pré-ativação/piloto*
