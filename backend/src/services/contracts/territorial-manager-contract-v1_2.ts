@@ -1,6 +1,27 @@
+import crypto from 'crypto';
 import { COMPANY } from '../../config/company';
 
 export const TERRITORIAL_MANAGER_CONTRACT_VERSION = 'v1.2' as const;
+
+export interface TerritorialSnapshotSource {
+  id: string;
+  updated_at: Date;
+  neighborhoods: Array<{ id: string; name: string; updated_at: Date }>;
+}
+
+export function buildTerritorySnapshotVersion(territory: TerritorialSnapshotSource): string {
+  const neighborhoods = [...territory.neighborhoods]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map(n => ({ id: n.id, name: n.name, updated_at: n.updated_at.toISOString() }));
+
+  const canonical = JSON.stringify({
+    territory_id: territory.id,
+    territory_updated_at: territory.updated_at.toISOString(),
+    neighborhoods,
+  });
+
+  return `sha256:${crypto.createHash('sha256').update(canonical).digest('hex')}`;
+}
 
 export type TerritorialManagerRecipientType = 'individual' | 'company' | 'association';
 
