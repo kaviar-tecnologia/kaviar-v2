@@ -6,7 +6,7 @@ import { PendingDebitService } from './pending-debit.service';
 import { assertSettlementActive } from './settlement-gate';
 import { applyBasisPoints, PLATFORM_FEE_RATE_BPS, MANAGER_COMMISSION_RATE_BPS } from '../finance/territory/monetary';
 import { referenceMonthFromDate, COMPETENCE_TIMEZONE } from './fee-split.service';
-import { TERRITORIAL_MANAGER_CONTRACT_VERSION } from '../contracts/territorial-manager-contract-v1_2';
+import { evaluateTerritorialManagerFinancialProfile } from '../contracts/territorial-manager-financial-eligibility';
 
 /** Interface for any service that can execute a fee debit */
 export interface FeeDebitExecutor {
@@ -101,30 +101,33 @@ export class WalletSettlementService {
 
       if (params.territoryId) {
         const { rows: assignments } = await client.query(
-          `SELECT tma.id, tma.admin_id
+          `SELECT
+             tma.id,
+             tma.admin_id,
+             tma.operator_profile_id,
+             a.is_active AS admin_is_active,
+             a.role AS admin_role,
+             op.id AS profile_id,
+             op.relationship_type,
+             op.is_active,
+             op.document_status,
+             op.contract_status,
+             op.terms_version,
+             op.contract_url,
+             op.pix_key,
+             op.responsibility_terms_accepted_at,
+             op.confidentiality_terms_accepted_at
            FROM territory_manager_assignments tma
            JOIN admins a ON a.id = tma.admin_id
-           JOIN operator_profiles op
+           LEFT JOIN operator_profiles op
              ON op.admin_id = tma.admin_id
             AND op.territory_id = tma.territory_id
            WHERE tma.territory_id = $1
              AND tma.status = 'active'
-             AND a.is_active = true
-             AND a.role = 'TERRITORIAL_MANAGER'
              AND tma.started_at <= $2
              AND (tma.ended_at IS NULL OR tma.ended_at > $2)
-             AND op.relationship_type = 'territorial_manager'
-             AND op.is_active = true
-             AND op.document_status = 'verified'
-             AND op.contract_status = 'signed'
-             AND op.terms_version = $3
-             AND NULLIF(BTRIM(op.contract_url), '') IS NOT NULL
-             AND NULLIF(BTRIM(op.pix_key), '') IS NOT NULL
-             AND op.responsibility_terms_accepted_at IS NOT NULL
-             AND op.confidentiality_terms_accepted_at IS NOT NULL
-             AND (tma.operator_profile_id IS NULL OR tma.operator_profile_id = op.id)
            FOR SHARE OF tma`,
-          [params.territoryId, recognizedAt, TERRITORIAL_MANAGER_CONTRACT_VERSION]
+          [params.territoryId, recognizedAt]
         );
 
         if (assignments.length > 1) {
@@ -136,8 +139,17 @@ export class WalletSettlementService {
         }
 
         if (assignments.length === 1) {
-          managerId = assignments[0].admin_id;
-          managerAssignmentId = assignments[0].id;
+          const candidate = assignments[0];
+          const profileEligibility = evaluateTerritorialManagerFinancialProfile(candidate);
+          const adminEligible = candidate.admin_is_active === true && candidate.admin_role === 'TERRITORIAL_MANAGER';
+          const profileBindingMatches =
+            !candidate.operator_profile_id ||
+            candidate.operator_profile_id === candidate.profile_id;
+
+          if (adminEligible && profileBindingMatches && profileEligibility.eligible) {
+            managerId = candidate.admin_id;
+            managerAssignmentId = candidate.id;
+          }
         }
       }
 
