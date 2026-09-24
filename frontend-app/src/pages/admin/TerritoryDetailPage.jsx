@@ -406,7 +406,7 @@ function FinanceTab({ territoryId, token }) {
         <Typography variant="h6" sx={{ color: '#C8A84E', fontWeight: 700 }}>💰 KAVIAR Finance — Territorial</Typography>
       </Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3, px: 2, py: 1, bgcolor: 'rgba(184,148,46,0.08)', borderRadius: 1, border: '1px solid rgba(184,148,46,0.2)' }}>
-        <Typography variant="caption" sx={{ color: '#B8942E' }}>ℹ️ Simulação financeira. Estes valores não representam repasse real, saldo disponível, cobrança, split ou pagamento automático.</Typography>
+        <Typography variant="caption" sx={{ color: '#B8942E' }}>ℹ️ Simulação financeira legada. Não representa a participação contratual v1.2 nem altera o Wallet V2. O financeiro real do Gestor é reconhecido por assignment elegível no settlement.</Typography>
       </Box>
 
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 2, mb: 3 }}>
@@ -421,13 +421,13 @@ function FinanceTab({ territoryId, token }) {
       {/* Regras Financeiras */}
       <Box sx={{ mb: 3, p: 2, bgcolor: 'rgba(255,255,255,0.02)', borderRadius: 2, border: '1px solid rgba(184,148,46,0.15)' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="subtitle1" sx={{ color: '#C8A84E', fontWeight: 700 }}>📐 Regras Financeiras</Typography>
-          <Button size="small" onClick={() => setRuleOpen(true)} sx={{ color: '#B8942E' }}>+ Nova Regra</Button>
+          <Typography variant="subtitle1" sx={{ color: '#C8A84E', fontWeight: 700 }}>📐 Regras Financeiras Legadas — Simulação</Typography>
+          <Button size="small" disabled sx={{ color: '#9CA3AF' }}>Nova regra desativada — v1.2 usa Wallet V2</Button>
         </Box>
         {rules.filter(r => r.is_active).map(r => (
           <Box key={r.id} sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
             <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Matriz</Typography><Typography sx={{ color: '#C8A84E', fontWeight: 700 }}>{Number(r.matrix_share_percent)}%</Typography></Box>
-            <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Regional</Typography><Typography sx={{ color: '#34D399', fontWeight: 700 }}>{Number(r.regional_share_percent)}%</Typography></Box>
+            <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Legado regional</Typography><Typography sx={{ color: '#34D399', fontWeight: 700 }}>{Number(r.regional_share_percent)}%</Typography></Box>
             <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Parceiro</Typography><Typography sx={{ color: '#9CA3AF', fontWeight: 700 }}>{Number(r.partner_commission_percent)}%</Typography></Box>
             {r.description && <Box><Typography variant="caption" sx={{ color: '#6B7280' }}>Obs</Typography><Typography sx={{ color: '#9CA3AF' }}>{r.description}</Typography></Box>}
           </Box>
@@ -459,7 +459,7 @@ function FinanceTab({ territoryId, token }) {
 
       <Box sx={{ p: 2, bgcolor: 'rgba(255,255,255,0.02)', borderRadius: 2, border: '1px dashed rgba(184,148,46,0.2)' }}>
         <Typography variant="subtitle2" sx={{ color: '#6B7280', mb: 0.5 }}>📋 Em preparação</Typography>
-        <Typography variant="body2" sx={{ color: '#4B5563' }}>Repasses • Saldo pendente • Participação do operador regional • Financeiro ativo por território</Typography>
+        <Typography variant="body2" sx={{ color: '#4B5563' }}>Histórico/simulação legada. A participação real do Gestor v1.2 é reconhecida pelo Wallet V2 e depende de Ativação Financeira/assignment elegível.</Typography>
       </Box>
 
       {/* Modal criar regra */}
