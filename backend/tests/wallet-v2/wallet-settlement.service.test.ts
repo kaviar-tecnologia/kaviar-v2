@@ -185,7 +185,34 @@ describe('Atomic Settlement', () => {
     expect(ledger.find((r: any) => r.entry_type === 'fee_share').amount_cents).toBe('200');
   });
 
-  it('region without manager records "Parcela territorial reservada"', async () => {
+  it('inactive manager admin is treated as Área de Sombra', async () => {
+    const driverId = await setupDriver(10000n);
+    const { territoryId, managerId } = await setupTerritory();
+    await pool.query('UPDATE admins SET is_active = false WHERE id = $1', [managerId]);
+
+    const svc = createSettlement(driverId);
+    const rideId = `ride-inactive-manager-${RUN}`;
+
+    await svc.handleReserve(rideId, driverId, 1800n);
+    await svc.settleRide({ rideId, driverId, finalPriceCents: 10000n, reservedCents: 1800n, territoryId });
+
+    const { rows: [split] } = await pool.query(
+      `SELECT manager_id, manager_assignment_id, matrix_share_percent, matrix_share_cents,
+              manager_share_percent, manager_share_cents, manager_commission_rate_bps
+       FROM ride_fee_splits WHERE ride_id = $1`,
+      [rideId]
+    );
+
+    expect(split.manager_id).toBeNull();
+    expect(split.manager_assignment_id).toBeNull();
+    expect(split.matrix_share_percent).toBe('100.00');
+    expect(split.matrix_share_cents).toBe('1800');
+    expect(split.manager_share_percent).toBe('0.00');
+    expect(split.manager_share_cents).toBe('0');
+    expect(split.manager_commission_rate_bps).toBe(0);
+  });
+
+  it('Área de Sombra keeps 100% of platform fee with KAVIAR', async () => {
     // Create territory WITHOUT assignment
     const territoryId = `territory-nomanager-${RUN}`;
     await pool.query(`INSERT INTO operational_territories (id, name, level, status, regulatory_status, created_at, updated_at) VALUES ($1, 'No Manager', 'neighborhood', 'active', 'not_applicable', NOW(), NOW()) ON CONFLICT DO NOTHING`, [territoryId]);
@@ -197,12 +224,29 @@ describe('Atomic Settlement', () => {
     await svc.handleReserve(rideId, driverId, 1800n);
     await svc.settleRide({ rideId, driverId, finalPriceCents: 10000n, reservedCents: 1800n, territoryId });
 
-    const { rows: [split] } = await pool.query('SELECT manager_id, manager_assignment_id FROM ride_fee_splits WHERE ride_id = $1', [rideId]);
+    const { rows: [split] } = await pool.query(
+      `SELECT manager_id, manager_assignment_id, fee_amount_cents,
+              matrix_share_percent, matrix_share_cents,
+              manager_share_percent, manager_share_cents,
+              manager_commission_rate_bps
+       FROM ride_fee_splits WHERE ride_id = $1`,
+      [rideId]
+    );
     expect(split.manager_id).toBeNull();
     expect(split.manager_assignment_id).toBeNull();
+    expect(split.fee_amount_cents).toBe('1800');
+    expect(split.matrix_share_percent).toBe('100.00');
+    expect(split.matrix_share_cents).toBe('1800');
+    expect(split.manager_share_percent).toBe('0.00');
+    expect(split.manager_share_cents).toBe('0');
+    expect(split.manager_commission_rate_bps).toBe(0);
 
-    const { rows: ledger } = await pool.query("SELECT description FROM territory_ledger WHERE reference_id = $1 AND entry_type = 'fee_share'", [rideId]);
-    expect(ledger[0].description).toBe('Parcela territorial reservada');
+    const { rows: ledger } = await pool.query(
+      "SELECT amount_cents, description FROM territory_ledger WHERE reference_id = $1 AND entry_type = 'fee_share'",
+      [rideId]
+    );
+    expect(ledger[0].amount_cents).toBe('0');
+    expect(ledger[0].description).toBe('Área de Sombra KAVIAR — 100% da taxa para matriz');
   });
 
   it('competence boundary: 23:59 BRT stays in correct month', () => {
