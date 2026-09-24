@@ -124,7 +124,7 @@ Senha: [ver INVESTORS_ACCESS.md]
 
 ### 1. Clonar Repositório
 ```bash
-git clone https://github.com/usbtecnok/kaviar-v2.git
+git clone https://github.com/kaviar-tecnologia/kaviar-v2.git
 cd kaviar-v2/frontend-app
 ```
 
