@@ -52,6 +52,7 @@ const MAX_REPLY_ATTACHMENTS = 3;
 const MAX_REPLY_ATTACHMENT_SIZE_BYTES = 5 * 1024 * 1024;
 const REPLY_ATTACHMENT_ACCEPT = '.pdf,.jpg,.jpeg,.png';
 const SENT_STATUS_OPTIONS = ['ALL', 'SENT', 'ERROR'];
+const SENT_STATUS_LABELS = { ALL: 'Todos', SENT: 'Enviados', ERROR: 'Com erro' };
 const DEFAULT_SENT_FILTERS = {
   to: '',
   status: 'ALL',
@@ -441,7 +442,11 @@ export default function InstitutionalInboxPage() {
           const readResponse = await api.patch(`/api/admin/inbound-emails/${id}`, { status: 'READ' });
           const markedRead = readResponse.data?.data || { ...loaded, status: 'READ' };
           setSelectedEmail(markedRead);
-          setItems((prev) => prev.map((item) => (item.id === id ? { ...item, status: 'READ' } : item)));
+          setItems((prev) => (
+            filters.status === 'NEW'
+              ? prev.filter((item) => item.id !== id)
+              : prev.map((item) => (item.id === id ? { ...item, status: 'READ' } : item))
+          ));
         } catch {
           // A leitura do conteúdo não deve falhar só porque a marcação automática não persistiu.
         }
@@ -989,7 +994,7 @@ export default function InstitutionalInboxPage() {
                       onChange={(event) => setSentFilters((prev) => ({ ...prev, status: event.target.value }))}
                     >
                       {SENT_STATUS_OPTIONS.map((option) => (
-                        <MenuItem key={option} value={option}>{option}</MenuItem>
+                        <MenuItem key={option} value={option}>{SENT_STATUS_LABELS[option] || option}</MenuItem>
                       ))}
                     </Select>
                   </FormControl>
@@ -1365,7 +1370,7 @@ export default function InstitutionalInboxPage() {
               <Typography><strong>CCO:</strong> {selectedSentEmail.bcc_email || 'Nao informado'}</Typography>
               <Typography><strong>Assunto completo:</strong> {selectedSentEmail.subject || '-'}</Typography>
               <Typography><strong>Data/hora:</strong> {formatDateTime(selectedSentEmail.created_at)}</Typography>
-              <Typography><strong>Status:</strong> {selectedSentEmail.status || '-'}</Typography>
+              <Typography><strong>Status:</strong> {selectedSentEmail.status === 'SENT' ? 'Enviado' : selectedSentEmail.status === 'ERROR' ? 'Erro' : (selectedSentEmail.status || '-')}</Typography>
               <Typography><strong>Usuario admin:</strong> {selectedSentEmail.admin_email || '-'}</Typography>
               <Typography><strong>Provider:</strong> {selectedSentEmail.provider || '-'}</Typography>
               <Typography><strong>Provider message id:</strong> {selectedSentEmail.provider_message_id || '-'}</Typography>
