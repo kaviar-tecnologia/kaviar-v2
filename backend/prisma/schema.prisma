@@ -1752,6 +1752,9 @@ model inbound_email_messages {
   references_header    String?
   provider             String   @default("CLOUDFLARE_EMAIL_WORKER") @db.VarChar(64)
   status               String   @default("NEW") @db.VarChar(20)
+  status_before_trash  String?  @db.VarChar(20)
+  trashed_at           DateTime?
+  trashed_by_admin_id  String?  @db.Uuid
   has_attachments      Boolean  @default(false)
   attachment_count     Int      @default(0)
   attachments_metadata Json?    @db.JsonB
