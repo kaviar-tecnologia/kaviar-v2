@@ -189,7 +189,7 @@ export class ComplianceController {
   async approveDocument(req: Request, res: Response) {
     try {
       const { documentId } = req.params;
-      const adminId = (req as any).userId;
+      const adminId = (req as any).admin?.id || (req as any).userId;
       const emissionDate = req.body?.emission_date || req.body?.emissionDate || undefined;
 
       if (!adminId) {
@@ -226,7 +226,7 @@ export class ComplianceController {
   async rejectDocument(req: Request, res: Response) {
     try {
       const { documentId } = req.params;
-      const adminId = (req as any).userId;
+      const adminId = (req as any).admin?.id || (req as any).userId;
       const { reason } = rejectDocumentSchema.parse({ documentId, reason: req.body.reason });
 
       if (!adminId) {

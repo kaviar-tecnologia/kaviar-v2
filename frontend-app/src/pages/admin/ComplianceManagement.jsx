@@ -32,7 +32,7 @@ const isSuperAdmin = () => {
 };
 
 export default function ComplianceManagement() {
-  const [metrics, setMetrics] = useState({ pending: 0, expiring: 0, blocked: 0 });
+  const [metrics, setMetrics] = useState({ pending: 0, expiring: 0 });
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -41,41 +41,38 @@ export default function ComplianceManagement() {
   const [historyDialog, setHistoryDialog] = useState({ open: false, driverId: null, driverName: '', documents: [] });
 
   useEffect(() => {
-    loadMetrics();
-    loadPendingDocuments();
+    loadComplianceData();
   }, []);
 
-  const loadMetrics = async () => {
-    try {
-      const token = localStorage.getItem('kaviar_admin_token');
-      const response = await fetch(`${API_BASE_URL}/api/admin/compliance/metrics`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setMetrics(data.data);
-      }
-    } catch (err) {
-      console.error('Error loading metrics:', err);
-    }
-  };
-
-  const loadPendingDocuments = async () => {
+  const loadComplianceData = async () => {
     try {
       setLoading(true);
       setError('');
       const token = localStorage.getItem('kaviar_admin_token');
-      const response = await fetch(`${API_BASE_URL}/api/admin/compliance/documents/pending`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+      const headers = { 'Authorization': `Bearer ${token}` };
+      const [pendingResponse, expiringResponse] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/admin/compliance/documents/pending`, { headers }),
+        fetch(`${API_BASE_URL}/api/admin/compliance/documents/expiring`, { headers }),
+      ]);
+
+      if (!pendingResponse.ok || !expiringResponse.ok) {
+        throw new Error('Erro ao carregar compliance operacional');
+      }
+
+      const [pendingData, expiringData] = await Promise.all([
+        pendingResponse.json(),
+        expiringResponse.json(),
+      ]);
+
+      const pendingDocuments = pendingData.data || [];
+      const expiringDocuments = expiringData.data || [];
+      setDocuments(pendingDocuments);
+      setMetrics({
+        pending: pendingDocuments.length,
+        expiring: expiringDocuments.length,
       });
-      
-      if (!response.ok) throw new Error('Erro ao carregar documentos');
-      
-      const data = await response.json();
-      setDocuments(data.data || []);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Erro ao carregar compliance operacional');
     } finally {
       setLoading(false);
     }
@@ -128,8 +125,7 @@ export default function ComplianceManagement() {
       
       setSuccess(`Documento ${action === 'approve' ? 'aprovado' : 'rejeitado'} com sucesso`);
       setActionDialog({ open: false, action: null, document: null, reason: '' });
-      loadPendingDocuments();
-      loadMetrics();
+      loadComplianceData();
     } catch (err) {
       setError(err.message);
     }
@@ -175,9 +171,9 @@ export default function ComplianceManagement() {
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>{success}</Alert>}
 
-      {/* Métricas */}
+      {/* Métricas baseadas somente nos endpoints canônicos existentes */}
       <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid item xs={12} md={4}>
+        <Grid item xs={12} md={6}>
           <Card>
             <CardContent>
               <Typography color="textSecondary" gutterBottom>
@@ -189,26 +185,14 @@ export default function ComplianceManagement() {
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} md={4}>
+        <Grid item xs={12} md={6}>
           <Card>
             <CardContent>
               <Typography color="textSecondary" gutterBottom>
-                Vencendo (7 dias)
+                Vencendo ou vencidos (até 30 dias)
               </Typography>
               <Typography variant="h3">
                 {metrics.expiring}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} md={4}>
-          <Card>
-            <CardContent>
-              <Typography color="textSecondary" gutterBottom>
-                Bloqueados
-              </Typography>
-              <Typography variant="h3" color="error">
-                {metrics.blocked}
               </Typography>
             </CardContent>
           </Card>

@@ -19,6 +19,7 @@ import ExecutiveOperations from "../../pages/admin/ExecutiveOperations";
 import EmergencyEvents from "../../pages/admin/EmergencyEvents";
 import MatchMonitor from "../../pages/admin/MatchMonitor";
 import CommunitiesManagement from "../../pages/admin/CommunitiesManagement";
+import CommunityLeadersPanel from "../../pages/admin/CommunityLeadersPanel";
 import NeighborhoodsManagement from "../../pages/admin/NeighborhoodsManagement";
 import NeighborhoodsByCity from "../../pages/admin/NeighborhoodsByCity";
 import DriversManagement from "../../pages/admin/DriversManagement";
@@ -70,6 +71,7 @@ import TerritoryDetailPage from "../../pages/admin/TerritoryDetailPage";
 import RegionalAdminsPage from "../../pages/admin/RegionalAdminsPage";
 import TerritorialPayoutsPage from "../../pages/admin/TerritorialPayoutsPage";
 import LegalCompliancePage from "../../pages/admin/LegalCompliancePage";
+import ComplianceManagement from "../../pages/admin/ComplianceManagement";
 import ComercialGestorPage from "../../pages/admin/ComercialGestorPage";
 import CrmPage from "../../pages/admin/CrmPage";
 import RegulatoryConsultationPage from "../../pages/admin/RegulatoryConsultationPage";
@@ -443,6 +445,7 @@ function AdminHome() {
               { Icon: Star, title: 'Avaliações', desc: 'Notas, comentários e atenção', to: '/admin/ratings' },
               ...(isSuperAdmin ? [
                 { Icon: Explore, title: 'Simulador de Corrida', desc: 'Teste origem/destino, preço e ganho', to: '/admin/ride-simulator' },
+                { Icon: BarChart, title: 'Match Monitor', desc: 'Monitorar matches territoriais em tempo real', to: '/admin/match-monitor' },
                 { Icon: Shield, title: 'Incidentes de Emergência', desc: 'Cofre de evidência e proteção', to: '/admin/emergency-events' },
               ] : []),
             ]},
@@ -501,7 +504,9 @@ function AdminHome() {
             { section: 'Governança e Estratégia', items: [
               ...(isSuperAdmin ? [
                 { Icon: Lock, title: 'Auditoria', desc: 'Logs e ações administrativas', to: '/admin/audit' },
+                { Icon: Security, title: 'Feature Flags', desc: 'Controle de funcionalidades e allowlists', to: '/admin/feature-flags' },
                 { Icon: Shield, title: 'Conformidade', desc: 'Documentos jurídicos e operacionais', to: '/admin/legal-compliance' },
+                { Icon: CheckCircle, title: 'Compliance Operacional', desc: 'Documentos de compliance e revalidação de motoristas', to: '/admin/compliance-operacional' },
                 { Icon: Science, title: 'KAVIAR Lab', desc: 'Inteligência territorial · Score de Maturidade', to: '/admin/lab' },
                 { Icon: Person, title: 'Preferência por Motorista Mulher', desc: 'Participantes, consentimentos e auditoria', to: '/admin/women-preference' },
                 { Icon: CardGiftcard, title: 'Convites Investidor/Anjo', desc: 'Enviar convites read-only', to: '/admin/investor-invites' },
@@ -794,6 +799,14 @@ export default function AdminApp() {
               <Container maxWidth="lg" sx={{ mt: 2 }}>
                 <AdminHeader />
                 <CommunitiesManagement />
+              </Container>
+            </ProtectedAdminRoute>
+          } />
+          <Route path="/community-leaders" element={
+            <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'OPERATOR', 'TERRITORIAL_MANAGER', 'TERRITORIAL_OPERATOR']}>
+              <Container maxWidth="lg" sx={{ mt: 2 }}>
+                <AdminHeader />
+                <CommunityLeadersPanel />
               </Container>
             </ProtectedAdminRoute>
           } />
@@ -1108,6 +1121,7 @@ export default function AdminApp() {
           <Route path="/regional-admins" element={<ProtectedAdminRoute requireSuperAdmin><RegionalAdminsPage /></ProtectedAdminRoute>} />
           <Route path="/territorial-payouts" element={<ProtectedAdminRoute requireSuperAdmin><TerritorialPayoutsPage /></ProtectedAdminRoute>} />
           <Route path="/legal-compliance" element={<ProtectedAdminRoute requireSuperAdmin><LegalCompliancePage /></ProtectedAdminRoute>} />
+          <Route path="/compliance-operacional" element={<ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'TERRITORIAL_MANAGER', 'TERRITORIAL_OPERATOR']}><ComplianceManagement /></ProtectedAdminRoute>} />
           <Route path="/meu-contrato" element={<ProtectedAdminRoute allowedRoles={['TERRITORIAL_OPERATOR', 'TERRITORIAL_MANAGER', 'SUPER_ADMIN']}><MyContractPage /></ProtectedAdminRoute>} />
           <Route path="/manager-finance" element={<ProtectedAdminRoute allowedRoles={['TERRITORIAL_MANAGER', 'SUPER_ADMIN']}><ManagerFinance /></ProtectedAdminRoute>} />
           <Route path="/manager-team" element={<ProtectedAdminRoute allowedRoles={['TERRITORIAL_MANAGER', 'SUPER_ADMIN']}><ManagerTeamPage /></ProtectedAdminRoute>} />

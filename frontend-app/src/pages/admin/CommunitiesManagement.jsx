@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../../api';
 import {
   Box,
@@ -41,6 +42,8 @@ export default function CommunitiesManagement() {
   const [centerMode, setCenterMode] = useState(false);
   const [centerCandidate, setCenterCandidate] = useState(null);
   const [showOnlyWithMap, setShowOnlyWithMap] = useState(false);
+  const adminRole = JSON.parse(localStorage.getItem('kaviar_admin_data') || '{}')?.role;
+  const canAccessCommunityLeaders = ['SUPER_ADMIN', 'OPERATOR', 'TERRITORIAL_MANAGER', 'TERRITORIAL_OPERATOR'].includes(adminRole);
 
   useEffect(() => {
     fetchCommunities();
@@ -387,6 +390,15 @@ export default function CommunitiesManagement() {
             }
             label="Mostrar apenas com mapa"
           />
+          {canAccessCommunityLeaders && (
+            <Button
+              variant="outlined"
+              component={Link}
+              to="/admin/community-leaders"
+            >
+              Lideranças Comunitárias
+            </Button>
+          )}
           <Button
             variant="contained"
             startIcon={<LocationCity />}
