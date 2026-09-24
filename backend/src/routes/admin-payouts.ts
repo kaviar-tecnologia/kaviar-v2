@@ -526,7 +526,28 @@ router.patch('/payouts/:id/cancel', async (req: Request, res: Response) => {
 
 // POST /payouts/:id/receipt — upload receipt file
 import { uploadToS3 } from '../config/s3-upload';
-router.post('/payouts/:id/receipt', uploadToS3.single('file'), async (req: Request, res: Response) => {
+
+async function rejectManagerLegacyPayoutReceipt(req: Request, res: Response, next: any) {
+  try {
+    const payout = await prisma.territory_payouts.findUnique({
+      where: { id: req.params.id },
+      include: { operator: { select: { relationship_type: true } } },
+    });
+    if (!payout) return res.status(404).json({ success: false, error: 'Repasse não encontrado' });
+    if (!isLegacyPayoutMutationAllowedForRelationship(payout.operator.relationship_type)) {
+      return res.status(409).json({
+        success: false,
+        error: 'MANAGER_PAYOUT_WALLET_V2_REQUIRED',
+        message: 'Repasse legado de Gestor Territorial é somente histórico; comprovantes devem seguir o ciclo financeiro Wallet V2.',
+      });
+    }
+    next();
+  } catch {
+    return res.status(500).json({ success: false, error: 'Erro ao validar repasse legado' });
+  }
+}
+
+router.post('/payouts/:id/receipt', rejectManagerLegacyPayoutReceipt, uploadToS3.single('file'), async (req: Request, res: Response) => {
   try {
     const payout = await prisma.territory_payouts.findUnique({ where: { id: req.params.id } });
     if (!payout) return res.status(404).json({ success: false, error: 'Repasse não encontrado' });
