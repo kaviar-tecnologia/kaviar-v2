@@ -784,7 +784,7 @@ export default function InstitutionalInboxPage() {
                   />
                   <TextField
                     size="small"
-                    label="De"
+                    label="Data inicial"
                     type="date"
                     value={filters.dateFrom}
                     onChange={(event) => setFilters((prev) => ({ ...prev, dateFrom: event.target.value }))}
@@ -793,7 +793,7 @@ export default function InstitutionalInboxPage() {
                   />
                   <TextField
                     size="small"
-                    label="Até"
+                    label="Data final"
                     type="date"
                     value={filters.dateTo}
                     onChange={(event) => setFilters((prev) => ({ ...prev, dateTo: event.target.value }))}
