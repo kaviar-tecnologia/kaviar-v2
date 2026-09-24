@@ -1,7 +1,7 @@
 # Prospecção — Associação Parceira KAVIAR
 
-**Versão:** v2.0
-**Data:** Junho/2026
+**Versão:** v2.1
+**Data:** Setembro/2026
 **Status:** Documento comercial interno
 **Empresa:** KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA (CNPJ: 67.783.601/0001-99)
 **Plataforma:** KAVIAR — Mobilidade urbana comunitária
@@ -187,4 +187,4 @@ Este material é de uso interno da equipe comercial KAVIAR/KAVIAR. Não constitu
 
 ---
 
-*KAVIAR / KAVIAR — Prospecção Associação Parceira — v2.0 — Junho/2026*
+*KAVIAR — Prospecção Associação Parceira — v2.1 — Setembro/2026*
