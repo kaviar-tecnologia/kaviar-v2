@@ -592,7 +592,12 @@ export default function TerritorialPayoutsPage() {
                     <TableCell sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                       <Button size="small" onClick={() => openDetailModal(o)} sx={{ color: '#6B7280' }}>Detalhes</Button>
                       {o.document_status === 'pending' && <Button size="small" onClick={() => openVerifyModal(o)} sx={{ color: '#059669' }}>Verificar</Button>}
-                      {o.document_status === 'verified' && !o.is_active && <Button size="small" onClick={() => handleActivate(o.id)} sx={{ color: '#2563EB' }}>Ativar</Button>}
+                      {o.document_status === 'verified' && !o.is_active && (
+                         o.relationship_type !== 'territorial_manager' || (o.contract_status === 'signed' && o.terms_version === 'v1.2')
+                       ) && <Button size="small" onClick={() => handleActivate(o.id)} sx={{ color: '#2563EB' }}>Ativar</Button>}
+                       {o.document_status === 'verified' && !o.is_active && o.relationship_type === 'territorial_manager' && !(o.contract_status === 'signed' && o.terms_version === 'v1.2') && (
+                         <Chip label="Aguardando contrato v1.2" size="small" sx={{ color: '#92400E', bgcolor: '#FEF3C7', fontSize: 10 }} />
+                       )}
                       {o.is_active && !o.responsibility_terms_accepted_at && <Button size="small" onClick={() => openVerifyModal(o)} sx={{ color: '#D97706' }}>Regularizar Termos</Button>}
                       {o.is_active && <Button size="small" onClick={() => handleDeactivate(o.id)} sx={{ color: '#DC2626' }}>Desativar</Button>}
                     </TableCell>
@@ -772,7 +777,16 @@ export default function TerritorialPayoutsPage() {
             <Typography variant="body2" sx={{ color: '#9CA3AF' }}>{RECIPIENT_LABELS[verifyTarget.recipient_type]} — {verifyTarget.territory?.name}</Typography>
           </Box>}
           <Typography variant="body2" sx={{ color: '#9CA3AF', mb: 2 }}>Confirme cada item antes de verificar:</Typography>
-          {[
+          {(verifyTarget?.relationship_type === 'territorial_manager' ? [
+            'Conferi a identidade do Gestor Territorial.',
+            'Conferi CPF/CNPJ e representante legal, quando aplicável.',
+            'Conferi que o Pix pertence ao perfil cadastrado.',
+            'Conferi que o Gestor está vinculado ao território correto.',
+            'Estou apenas verificando documentos; esta etapa não assina nem dispensa o Contrato v1.2.',
+            'As obrigações de confidencialidade e LGPD serão formalizadas no Contrato v1.2 e Anexo LGPD.',
+            'O Gestor entende que participação depende de Ativação Financeira e assignment elegível.',
+            'O Contrato v1.2 será gerado, assinado, submetido e revisado pelo fluxo formal.',
+          ] : [
             'Conferi a identidade do operador.',
             'Conferi CPF/CNPJ e responsável legal, quando aplicável.',
             'Conferi que o Pix pertence ao operador cadastrado.',
@@ -781,7 +795,7 @@ export default function TerritorialPayoutsPage() {
             'O operador aceitou as regras de confidencialidade e uso correto de dados do KAVIAR.',
             'O operador entende que repasse depende de aprovação manual da matriz/SUPER_ADMIN.',
             'Para PJ/Associação, contrato/termo está assinado ou registrado.',
-          ].map((label, i) => (
+          ]).map((label, i) => (
             <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1, cursor: 'pointer' }} onClick={() => { const c = [...verifyChecks]; c[i] = !c[i]; setVerifyChecks(c); }}>
               <input type="checkbox" checked={verifyChecks[i]} readOnly style={{ marginTop: 3, accentColor: '#B8942E' }} />
               <Typography variant="body2" sx={{ color: verifyChecks[i] ? '#E5E7EB' : '#6B7280' }}>{label}</Typography>
@@ -791,7 +805,16 @@ export default function TerritorialPayoutsPage() {
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setVerifyOpen(false)} sx={{ color: '#9CA3AF' }}>Cancelar</Button>
-          <Button onClick={() => verifyTarget.document_status === 'verified' ? handleRegularizeTerms(verifyTarget.id) : handleVerify(verifyTarget.id)} disabled={!verifyChecks.every(Boolean)} variant="contained" sx={{ bgcolor: '#059669', '&:hover': { bgcolor: '#047857' } }}>{verifyTarget?.document_status === 'verified' ? 'Confirmar Regularização' : 'Confirmar Verificação'}</Button>
+          <Button
+            onClick={() => verifyTarget.document_status === 'verified' ? handleRegularizeTerms(verifyTarget.id) : handleVerify(verifyTarget.id)}
+            disabled={!verifyChecks.every(Boolean) || (verifyTarget?.relationship_type === 'territorial_manager' && verifyTarget?.document_status === 'verified')}
+            variant="contained"
+            sx={{ bgcolor: '#059669', '&:hover': { bgcolor: '#047857' } }}
+          >
+            {verifyTarget?.relationship_type === 'territorial_manager' && verifyTarget?.document_status === 'verified'
+              ? 'Documentos já verificados'
+              : verifyTarget?.document_status === 'verified' ? 'Confirmar Regularização' : 'Confirmar Verificação'}
+          </Button>
         </DialogActions>
       </Dialog>
 
