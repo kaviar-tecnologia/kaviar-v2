@@ -83,15 +83,21 @@ export default function RegionalAdminsPage() {
           <TableBody>
             {admins.map((a) => {
               const op = a.operator_profile;
+              const isManager = op?.relationship_type === 'territorial_manager';
               const contractLabel = !op ? '—'
+                : isManager && op.has_contract && op.contract_status === 'signed' && op.terms_version === 'v1.2' ? 'v1.2 formalizado'
+                : isManager && op.contract_status === 'submitted' ? 'v1.2 em análise'
+                : isManager && op.contract_status === 'available' ? 'v1.2 disponível'
+                : isManager && (op.contract_status === 'not_required' || (!op.has_contract && op.contract_status === 'signed')) ? 'Inconsistência — v1.2 pendente'
+                : isManager ? 'v1.2 pendente'
                 : op.has_contract && op.contract_status === 'signed' ? 'Formalizado'
                 : op.has_contract && op.contract_status === 'pending' ? 'Para análise'
                 : !op.has_contract && op.contract_status === 'signed' && op.has_online_acceptance ? 'Aceite online'
                 : op.contract_status === 'not_required' ? 'Não requerido'
                 : 'Pendente';
-              const contractColor = contractLabel === 'Formalizado' ? 'success'
-                : contractLabel === 'Para análise' ? 'info'
-                : contractLabel === 'Aceite online' ? 'warning'
+              const contractColor = contractLabel === 'v1.2 formalizado' || contractLabel === 'Formalizado' ? 'success'
+                : contractLabel === 'v1.2 em análise' || contractLabel === 'v1.2 disponível' || contractLabel === 'Para análise' ? 'info'
+                : contractLabel.indexOf('Inconsistência') === 0 || contractLabel === 'Aceite online' ? 'warning'
                 : 'default';
               return (
               <TableRow key={a.id}>
