@@ -93,6 +93,12 @@ describe('admin institutional inbox custom folders', () => {
     expect(auditMock).toHaveBeenCalledWith(expect.objectContaining({ action: 'INBOUND_EMAIL_FOLDER_CREATED' }));
   });
 
+  it('reserva nomes das caixas do sistema', async () => {
+    const res = await request(app).post('/api/admin/inbound-emails/folders').send({ name: 'Lixeira' });
+    expect(res.status).toBe(400);
+    expect(prismaMock.inbound_email_folders.create).not.toHaveBeenCalled();
+  });
+
   it('impede pasta duplicada ignorando maiusculas/minusculas', async () => {
     prismaMock.inbound_email_folders.findFirst.mockResolvedValueOnce({ id: 'existing' });
     const res = await request(app).post('/api/admin/inbound-emails/folders').send({ name: 'agerio' });
