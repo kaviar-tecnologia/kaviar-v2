@@ -60,7 +60,7 @@ describe(
           privateKeyPath:
             '/tmp/private-key.pem',
           repository:
-            'usbtecnok/kaviar-v2',
+            'kaviar-tecnologia/kaviar-v2',
         };
 
         const getConfig =
@@ -69,7 +69,7 @@ describe(
         const getCredentials =
           vi.fn(async () => ({
             repositoryUrl:
-              'https://github.com/usbtecnok/kaviar-v2.git',
+              'https://github.com/kaviar-tecnologia/kaviar-v2.git',
             installationToken:
               'temporary-token',
           }));
@@ -120,7 +120,7 @@ describe(
           },
           {
             repositoryUrl:
-              'https://github.com/usbtecnok/kaviar-v2.git',
+              'https://github.com/kaviar-tecnologia/kaviar-v2.git',
             installationToken:
               'temporary-token',
           },
@@ -153,13 +153,13 @@ describe(
                   privateKeyPath:
                     '/tmp/key.pem',
                   repository:
-                    'usbtecnok/kaviar-v2',
+                    'kaviar-tecnologia/kaviar-v2',
                 })) as any,
 
               getCredentials:
                 (async () => ({
                   repositoryUrl:
-                    'https://github.com/usbtecnok/kaviar-v2.git',
+                    'https://github.com/kaviar-tecnologia/kaviar-v2.git',
                   installationToken:
                     'temporary-token',
                 })) as any,
