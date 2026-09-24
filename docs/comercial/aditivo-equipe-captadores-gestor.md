@@ -1,4 +1,4 @@
-# Aditivo ao Termo de Autorização Operacional Territorial — Equipe e Captadores
+# Aditivo Operacional — Equipe e Captadores do Gestor Territorial
 
 **KAVIAR — Produto da KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA**
 **CNPJ: 67.783.601/0001-99**
@@ -36,7 +36,7 @@ O Gestor Territorial, no exercício de suas atribuições junto à plataforma KA
 
 ## 6. Vigência
 
-Este aditivo acompanha a vigência do Termo de Autorização Operacional Territorial do Gestor.
+Este aditivo acompanha o Contrato de Parceria Operacional Territorial KAVIAR v1.2 quando formalizado. Durante eventual programa piloto/pré-ativação, produz apenas efeitos operacionais internos e não cria Ativação Financeira ou participação territorial.
 
 ---
 
