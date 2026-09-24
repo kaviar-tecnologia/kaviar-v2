@@ -1,4 +1,9 @@
 import { TERRITORIAL_MANAGER_CONTRACT_VERSION } from './territorial-manager-contract-v1_2';
+import {
+  evaluateTerritorialManagerFinancialProfile,
+  financialEligibilityReasonLabel,
+  type TerritorialManagerFinancialProfileLike,
+} from './territorial-manager-financial-eligibility';
 
 export type TerritorialManagerContractUiKey =
   | 'formalized'
@@ -7,7 +12,7 @@ export type TerritorialManagerContractUiKey =
   | 'legacy_inconsistent'
   | 'pending';
 
-export interface TerritorialManagerProfileLike {
+export interface TerritorialManagerProfileLike extends TerritorialManagerFinancialProfileLike {
   relationship_type: string;
   contract_status: string;
   terms_version?: string | null;
@@ -54,6 +59,7 @@ export function deriveTerritorialManagerContractUiState(profile: TerritorialMana
 
 export function deriveTerritorialManagerFinancialActivation(
   assignments: TerritorialManagerAssignmentLike[],
+  profile: TerritorialManagerFinancialProfileLike | null | undefined,
   now = new Date(),
 ) {
   const current = assignments
@@ -61,15 +67,27 @@ export function deriveTerritorialManagerFinancialActivation(
     .sort((a, b) => b.started_at.getTime() - a.started_at.getTime());
 
   const active = current.find(a => a.status === 'active');
-  if (active) return { key: 'active' as const, label: 'Ativa', active: true, assignmentId: active.id };
+  if (active) {
+    const eligibility = evaluateTerritorialManagerFinancialProfile(profile);
+    if (!eligibility.eligible) {
+      return {
+        key: 'blocked' as const,
+        label: financialEligibilityReasonLabel(eligibility.reason) || 'Bloqueada',
+        active: false,
+        assignmentId: active.id,
+        reason: eligibility.reason,
+      };
+    }
+    return { key: 'active' as const, label: 'Ativa', active: true, assignmentId: active.id, reason: null };
+  }
 
   const suspended = current.find(a => a.status === 'suspended');
-  if (suspended) return { key: 'suspended' as const, label: 'Suspensa', active: false, assignmentId: suspended.id };
+  if (suspended) return { key: 'suspended' as const, label: 'Suspensa', active: false, assignmentId: suspended.id, reason: null };
 
   const pending = current.find(a => a.status === 'pending_approval');
-  if (pending) return { key: 'pending_approval' as const, label: 'Pendente', active: false, assignmentId: pending.id };
+  if (pending) return { key: 'pending_approval' as const, label: 'Pendente', active: false, assignmentId: pending.id, reason: null };
 
-  return { key: 'inactive' as const, label: 'Não ativa', active: false, assignmentId: null };
+  return { key: 'inactive' as const, label: 'Não ativa', active: false, assignmentId: null, reason: null };
 }
 
 export function isLegacyPayoutMutationAllowedForRelationship(relationshipType?: string | null): boolean {
