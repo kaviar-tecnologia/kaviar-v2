@@ -15,13 +15,34 @@ beforeEach(() => {
   process.env.WALLET_SHADOW_MODE = 'true';
 });
 
+const fullyEligibleCtx = {
+  territory_id: 'terr-1',
+  assignment_id: 'asgn-1',
+  assignment_status: 'active',
+  operator_profile_id: 'op-1',
+  admin_is_active: true,
+  admin_role: 'TERRITORIAL_MANAGER',
+  profile_id: 'op-1',
+  relationship_type: 'territorial_manager',
+  is_active: true,
+  document_status: 'verified',
+  contract_status: 'signed',
+  terms_version: 'v1.2',
+  contract_url: 'contract-submissions/test.pdf',
+  pix_key: '11999999999',
+  responsibility_terms_accepted_at: new Date('2026-09-01T00:00:00Z'),
+  confidentiality_terms_accepted_at: new Date('2026-09-01T00:00:00Z'),
+  matrix_share_percent: 60,
+  regional_share_percent: 40,
+};
+
 function setupMocks(opts: {
   feeConfig?: { id: string; pct: number } | null;
-  ctx?: { territory_id: string | null; assignment_id: string | null; assignment_status: string | null; matrix_share_percent: number | null; regional_share_percent: number | null };
+  ctx?: Record<string, any>;
 } = {}) {
   const {
     feeConfig = { id: 'cfg-1', pct: 18 },
-    ctx = { territory_id: 'terr-1', assignment_id: 'asgn-1', assignment_status: 'active', matrix_share_percent: 60, regional_share_percent: 40 }
+    ctx = fullyEligibleCtx,
   } = opts;
 
   mockQuery.mockImplementation(async (sql: string) => {
@@ -58,14 +79,30 @@ describe('shadowCalculate', () => {
     expect(p[8]! + p[10]!).toBe(p[6]);// shares sum = fee
   });
 
-  it('manager_suspended → splits normally but marks reason', async () => {
-    setupMocks({ ctx: { territory_id: 'terr-1', assignment_id: 'asgn-2', assignment_status: 'suspended', matrix_share_percent: 60, regional_share_percent: 40 } });
+  it('manager_suspended → 0% manager and marks reason', async () => {
+    setupMocks({ ctx: { ...fullyEligibleCtx, assignment_id: 'asgn-2', assignment_status: 'suspended' } });
     await shadowCalculate({ rideId: 'r2', driverId: 'd1', finalPriceCents: 2000, waitChargeCents: 0, legacyCreditCost: 1 });
     const p = mockQuery.mock.calls.find((c: any) => c[0].includes('INSERT INTO wallet_shadow'))![1] as any[];
     expect(p[14]).toBe('suspended');
     expect(p[15]).toBe('manager_suspended');
-    expect(p[8]).toBe(216);  // matrix 60% of 360
-    expect(p[10]).toBe(144); // manager 40%
+    expect(p[8]).toBe(360);
+    expect(p[10]).toBe(0);
+  });
+
+  it('active assignment + pending v1.2 contract → 0% manager in shadow', async () => {
+    setupMocks({
+      ctx: {
+        ...fullyEligibleCtx,
+        contract_status: 'pending',
+        terms_version: null,
+        contract_url: null,
+      },
+    });
+    await shadowCalculate({ rideId: 'r2-pending-contract', driverId: 'd1', finalPriceCents: 2000, waitChargeCents: 0, legacyCreditCost: 1 });
+    const p = mockQuery.mock.calls.find((call: any) => call[0].includes('INSERT INTO wallet_shadow'))![1] as any[];
+    expect(p[8]).toBe(360);
+    expect(p[10]).toBe(0);
+    expect(p[15]).toBe('manager_ineligible_contract_v1_2_not_formalized');
   });
 
   it('no territory → 100% matrix, no_manager', async () => {
@@ -186,7 +223,7 @@ describe('shadowCalculate', () => {
     mockQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('feature_flags')) return { rows: [{ enabled: true }] };
       if (sql.includes('platform_fee_configs')) return { rows: [{ id: 'cfg-1', platform_fee_percent: 18 }] };
-      if (sql.includes('rides_v2 r')) return { rows: [{ territory_id: 'terr-1', assignment_id: 'a1', assignment_status: 'active', matrix_share_percent: 60, regional_share_percent: 40 }] };
+      if (sql.includes('rides_v2 r')) return { rows: [{ ...fullyEligibleCtx, assignment_id: 'a1' }] };
       if (sql.includes('INSERT INTO wallet_shadow')) return { rows: [] };
       return { rows: [] };
     });
