@@ -17,6 +17,7 @@ const {
       count: vi.fn(),
       create: vi.fn(),
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       findUnique: vi.fn(),
       update: vi.fn(),
     },
@@ -40,6 +41,13 @@ vi.mock('@aws-sdk/client-s3', () => {
     input: any;
     constructor(input: any) {
       putObjectInputState.value = input;
+      this.input = input;
+    }
+  }
+
+  class DeleteObjectCommand {
+    input: any;
+    constructor(input: any) {
       this.input = input;
     }
   }
@@ -71,7 +79,7 @@ vi.mock('@aws-sdk/client-s3', () => {
     }
   }
 
-  return { PutObjectCommand, GetObjectCommand, HeadObjectCommand, S3Client };
+  return { PutObjectCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, S3Client };
 });
 
 vi.mock('@aws-sdk/s3-request-presigner', () => ({
@@ -99,6 +107,7 @@ describe('Inbound attachment presign contract', () => {
     prismaMock.inbound_email_attachments.count.mockResolvedValue(1);
     prismaMock.inbound_email_attachments.create.mockResolvedValue({ id: 'attachment-1' });
     prismaMock.inbound_email_attachments.findFirst.mockResolvedValue(null);
+    prismaMock.inbound_email_attachments.findMany.mockResolvedValue([]);
     prismaMock.inbound_email_attachments.findUnique.mockResolvedValue({
       id: 'attachment-1',
       inbound_email_id: 'email-1',

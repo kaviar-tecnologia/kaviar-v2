@@ -22,14 +22,37 @@ import {
   Typography,
 } from '@mui/material';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  ArchiveOutlined,
+  AttachFileOutlined,
+  DeleteForeverOutlined,
+  DeleteOutline,
+  InboxOutlined,
+  MailOutline,
+  MarkEmailReadOutlined,
+  RestoreOutlined,
+} from '@mui/icons-material';
 import api from '../../api';
 
 const PAGE_SIZE = 15;
-const STATUS_OPTIONS = ['ALL', 'NEW', 'READ', 'ARCHIVED'];
+const MAILBOX_VIEWS = [
+  { value: 'ALL', label: 'Recebidos', Icon: InboxOutlined },
+  { value: 'NEW', label: 'Não lidos', Icon: MailOutline },
+  { value: 'READ', label: 'Lidos', Icon: MarkEmailReadOutlined },
+  { value: 'ARCHIVED', label: 'Arquivados', Icon: ArchiveOutlined },
+  { value: 'TRASHED', label: 'Lixeira', Icon: DeleteOutline },
+];
+const STATUS_LABELS = {
+  NEW: 'Novo',
+  READ: 'Lido',
+  ARCHIVED: 'Arquivado',
+  TRASHED: 'Na lixeira',
+};
 const MAX_REPLY_ATTACHMENTS = 3;
 const MAX_REPLY_ATTACHMENT_SIZE_BYTES = 5 * 1024 * 1024;
 const REPLY_ATTACHMENT_ACCEPT = '.pdf,.jpg,.jpeg,.png';
 const SENT_STATUS_OPTIONS = ['ALL', 'SENT', 'ERROR'];
+const SENT_STATUS_LABELS = { ALL: 'Todos', SENT: 'Enviados', ERROR: 'Com erro' };
 const DEFAULT_SENT_FILTERS = {
   to: '',
   status: 'ALL',
@@ -56,6 +79,25 @@ function formatDateTime(value) {
   return date.toLocaleString('pt-BR');
 }
 
+function formatListDate(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday = date.toDateString() === yesterday.toDateString();
+  const time = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  if (sameDay) return `Hoje, ${time}`;
+  if (isYesterday) return `Ontem, ${time}`;
+  return `${date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}, ${time}`;
+}
+
+function formatSender(item) {
+  return item?.from_name?.trim() || item?.from_email || 'Remetente desconhecido';
+}
+
 function formatSubject(subject) {
   if (typeof subject !== 'string') return '(sem assunto)';
   const trimmed = subject.trim();
@@ -74,6 +116,7 @@ function StatusChip({ status }) {
     NEW: { label: 'Novo', color: '#1D4ED8', bg: '#DBEAFE' },
     READ: { label: 'Lido', color: '#166534', bg: '#DCFCE7' },
     ARCHIVED: { label: 'Arquivado', color: '#6B7280', bg: '#F3F4F6' },
+    TRASHED: { label: 'Na lixeira', color: '#991B1B', bg: '#FEE2E2' },
   };
   const cfg = map[status] || { label: status || 'N/A', color: '#374151', bg: '#E5E7EB' };
 
@@ -252,6 +295,12 @@ export default function InstitutionalInboxPage() {
   const [replyError, setReplyError] = useState('');
   const [replySuccess, setReplySuccess] = useState('');
   const [attachmentDownloadId, setAttachmentDownloadId] = useState(null);
+  const [trashBusyId, setTrashBusyId] = useState(null);
+  const [emptyTrashOpen, setEmptyTrashOpen] = useState(false);
+  const [emptyTrashConfirmation, setEmptyTrashConfirmation] = useState('');
+  const [emptyTrashLoading, setEmptyTrashLoading] = useState(false);
+  const [permanentDeleteTarget, setPermanentDeleteTarget] = useState(null);
+  const [permanentDeleteLoading, setPermanentDeleteLoading] = useState(false);
 
   const [sentFilters, setSentFilters] = useState(DEFAULT_SENT_FILTERS);
   const [sentItems, setSentItems] = useState([]);
@@ -385,7 +434,23 @@ export default function InstitutionalInboxPage() {
 
     try {
       const response = await api.get(`/api/admin/inbound-emails/${id}`);
-      setSelectedEmail(response.data?.data || null);
+      const loaded = response.data?.data || null;
+      setSelectedEmail(loaded);
+
+      if (loaded?.status === 'NEW') {
+        try {
+          const readResponse = await api.patch(`/api/admin/inbound-emails/${id}`, { status: 'READ' });
+          const markedRead = readResponse.data?.data || { ...loaded, status: 'READ' };
+          setSelectedEmail(markedRead);
+          setItems((prev) => (
+            filters.status === 'NEW'
+              ? prev.filter((item) => item.id !== id)
+              : prev.map((item) => (item.id === id ? { ...item, status: 'READ' } : item))
+          ));
+        } catch {
+          // A leitura do conteúdo não deve falhar só porque a marcação automática não persistiu.
+        }
+      }
     } catch (error) {
       setDetailsError(buildFriendlyError(error, 'Nao foi possivel carregar os detalhes do email.'));
     } finally {
@@ -426,7 +491,12 @@ export default function InstitutionalInboxPage() {
       const updated = response.data?.data;
       if (updated) {
         setSelectedEmail(updated);
-        setItems((prev) => prev.map((item) => (item.id === updated.id ? { ...item, status: updated.status, updated_at: updated.updated_at } : item)));
+        setItems((prev) => {
+          if (filters.status !== 'ALL' && filters.status !== updated.status) {
+            return prev.filter((item) => item.id !== updated.id);
+          }
+          return prev.map((item) => (item.id === updated.id ? { ...item, status: updated.status, updated_at: updated.updated_at } : item));
+        });
       }
     } catch (error) {
       setDetailsError(buildFriendlyError(error, 'Nao foi possivel atualizar o status.'));
@@ -436,14 +506,80 @@ export default function InstitutionalInboxPage() {
   };
 
   const clearFilters = () => {
-    setFilters({
-      status: 'ALL',
+    setFilters((prev) => ({
+      status: prev.status,
       to: '',
       from: '',
       q: '',
       dateFrom: '',
       dateTo: '',
-    });
+    }));
+  };
+
+  const selectMailbox = (status) => {
+    setPage(1);
+    setFilters((prev) => ({ ...prev, status }));
+  };
+
+  const moveToTrash = async (id) => {
+    setTrashBusyId(id);
+    setErrorMessage('');
+    try {
+      await api.post(`/api/admin/inbound-emails/${id}/trash`);
+      setItems((prev) => prev.filter((item) => item.id !== id));
+      if (selectedEmail?.id === id) closeDetails();
+    } catch (error) {
+      setErrorMessage(buildFriendlyError(error, 'Nao foi possivel mover o email para a lixeira.'));
+    } finally {
+      setTrashBusyId(null);
+    }
+  };
+
+  const restoreFromTrash = async (id) => {
+    setTrashBusyId(id);
+    setErrorMessage('');
+    try {
+      await api.post(`/api/admin/inbound-emails/${id}/restore`);
+      setItems((prev) => prev.filter((item) => item.id !== id));
+      if (selectedEmail?.id === id) closeDetails();
+    } catch (error) {
+      setErrorMessage(buildFriendlyError(error, 'Nao foi possivel restaurar o email.'));
+    } finally {
+      setTrashBusyId(null);
+    }
+  };
+
+  const permanentlyDelete = async () => {
+    if (!permanentDeleteTarget?.id) return;
+    setPermanentDeleteLoading(true);
+    setErrorMessage('');
+    try {
+      await api.delete(`/api/admin/inbound-emails/${permanentDeleteTarget.id}`);
+      setItems((prev) => prev.filter((item) => item.id !== permanentDeleteTarget.id));
+      if (selectedEmail?.id === permanentDeleteTarget.id) closeDetails();
+      setPermanentDeleteTarget(null);
+    } catch (error) {
+      setErrorMessage(buildFriendlyError(error, 'Nao foi possivel excluir definitivamente o email.'));
+    } finally {
+      setPermanentDeleteLoading(false);
+    }
+  };
+
+  const emptyTrash = async () => {
+    if (emptyTrashConfirmation.trim().toUpperCase() !== 'ESVAZIAR') return;
+    setEmptyTrashLoading(true);
+    setErrorMessage('');
+    try {
+      await api.delete('/api/admin/inbound-emails/trash', { data: { confirmation: 'EMPTY_TRASH' } });
+      setItems([]);
+      setHasMore(false);
+      setEmptyTrashOpen(false);
+      setEmptyTrashConfirmation('');
+    } catch (error) {
+      setErrorMessage(buildFriendlyError(error, 'Nao foi possivel esvaziar a lixeira.'));
+    } finally {
+      setEmptyTrashLoading(false);
+    }
   };
 
   const clearSentFilters = () => {
@@ -530,7 +666,7 @@ export default function InstitutionalInboxPage() {
   };
 
   const replyPreview = selectedEmail?.reply_preview || null;
-  const replyBlocked = replyPreview && !replyPreview.allowed;
+  const replyBlocked = selectedEmail?.status === 'TRASHED' || (replyPreview && !replyPreview.allowed);
 
   return (
     <Box sx={{ p: { xs: 2, md: 3 } }}>
@@ -597,46 +733,60 @@ export default function InstitutionalInboxPage() {
         {activeTab === 'RECEBIDOS' ? (
           <>
             <Card sx={{ borderRadius: 3, border: '1px solid #E8E5DE', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
-              <CardContent>
-                <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2} alignItems={{ xs: 'stretch', md: 'center' }}>
-                  <FormControl size="small" sx={{ minWidth: 160 }}>
-                    <InputLabel id="inbox-status-label">Status</InputLabel>
-                    <Select
-                      labelId="inbox-status-label"
-                      label="Status"
-                      value={filters.status}
-                      onChange={(event) => setFilters((prev) => ({ ...prev, status: event.target.value }))}
-                    >
-                      {STATUS_OPTIONS.map((option) => (
-                        <MenuItem key={option} value={option}>{option}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
+              <CardContent sx={{ py: '12px !important' }}>
+                <Stack direction="row" spacing={0.8} sx={{ flexWrap: 'wrap', gap: 0.5 }}>
+                  {MAILBOX_VIEWS.map(({ value, label, Icon }) => {
+                    const selected = filters.status === value;
+                    return (
+                      <Button
+                        key={value}
+                        size="small"
+                        variant={selected ? 'contained' : 'text'}
+                        startIcon={<Icon fontSize="small" />}
+                        onClick={() => selectMailbox(value)}
+                        sx={{
+                          borderRadius: 999,
+                          textTransform: 'none',
+                          fontWeight: 800,
+                          px: 1.4,
+                          color: selected ? '#FFFFFF' : '#475569',
+                        }}
+                      >
+                        {label}
+                      </Button>
+                    );
+                  })}
+                </Stack>
+              </CardContent>
+            </Card>
 
+            <Card sx={{ borderRadius: 3, border: '1px solid #E8E5DE', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
+              <CardContent>
+                <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1.2} alignItems={{ xs: 'stretch', lg: 'center' }}>
                   <TextField
                     size="small"
-                    label="Para"
-                    placeholder="suporte@kaviar.com.br"
-                    value={filters.to}
-                    onChange={(event) => setFilters((prev) => ({ ...prev, to: event.target.value }))}
+                    label="Buscar"
+                    placeholder="Assunto, nome ou email do remetente"
+                    value={filters.q}
+                    onChange={(event) => setFilters((prev) => ({ ...prev, q: event.target.value }))}
+                    sx={{ flex: 1, minWidth: { lg: 280 } }}
                   />
-
                   <TextField
                     size="small"
                     label="De"
-                    placeholder="cliente@email.com"
+                    placeholder="remetente@email.com"
                     value={filters.from}
                     onChange={(event) => setFilters((prev) => ({ ...prev, from: event.target.value }))}
+                    sx={{ minWidth: { lg: 190 } }}
                   />
-
                   <TextField
                     size="small"
-                    label="Busca"
-                    placeholder="assunto ou remetente"
-                    value={filters.q}
-                    onChange={(event) => setFilters((prev) => ({ ...prev, q: event.target.value }))}
+                    label="Para"
+                    placeholder="contato@kaviar.com.br"
+                    value={filters.to}
+                    onChange={(event) => setFilters((prev) => ({ ...prev, to: event.target.value }))}
+                    sx={{ minWidth: { lg: 190 } }}
                   />
-
                   <TextField
                     size="small"
                     label="Data inicial"
@@ -644,8 +794,8 @@ export default function InstitutionalInboxPage() {
                     value={filters.dateFrom}
                     onChange={(event) => setFilters((prev) => ({ ...prev, dateFrom: event.target.value }))}
                     InputLabelProps={{ shrink: true }}
+                    sx={{ minWidth: 145 }}
                   />
-
                   <TextField
                     size="small"
                     label="Data final"
@@ -653,76 +803,172 @@ export default function InstitutionalInboxPage() {
                     value={filters.dateTo}
                     onChange={(event) => setFilters((prev) => ({ ...prev, dateTo: event.target.value }))}
                     InputLabelProps={{ shrink: true }}
+                    sx={{ minWidth: 145 }}
                   />
-
-                  <Button variant="outlined" onClick={clearFilters}>
-                    Limpar
-                  </Button>
+                  <Button variant="outlined" onClick={clearFilters}>Limpar</Button>
                 </Stack>
               </CardContent>
             </Card>
 
+            {filters.status === 'TRASHED' ? (
+              <Alert
+                severity="warning"
+                action={
+                  <Button
+                    color="error"
+                    size="small"
+                    onClick={() => setEmptyTrashOpen(true)}
+                    disabled={loading || items.length === 0}
+                  >
+                    Esvaziar lixeira
+                  </Button>
+                }
+              >
+                Mensagens na lixeira podem ser restauradas. A exclusão definitiva também remove os anexos armazenados.
+              </Alert>
+            ) : null}
+
             {warningMessage && <Alert severity="warning">{warningMessage}</Alert>}
             {errorMessage && <Alert severity="error">{errorMessage}</Alert>}
 
-            <Card sx={{ borderRadius: 3, border: '1px solid #E8E5DE', boxShadow: '0 4px 16px rgba(0,0,0,0.03)' }}>
-              <CardContent>
-                <Stack spacing={1.2}>
-                  {loading && items.length === 0 ? (
-                    <Box sx={{ py: 5, display: 'flex', justifyContent: 'center' }}><CircularProgress /></Box>
-                  ) : null}
+            <Card sx={{ borderRadius: 3, border: '1px solid #E8E5DE', boxShadow: '0 4px 16px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
+              <CardContent sx={{ p: '0 !important' }}>
+                {loading && items.length === 0 ? (
+                  <Box sx={{ py: 5, display: 'flex', justifyContent: 'center' }}><CircularProgress /></Box>
+                ) : null}
 
-                  {!loading && items.length === 0 ? (
-                    <Alert severity="info">Nenhum email encontrado com os filtros atuais.</Alert>
-                  ) : null}
+                {!loading && items.length === 0 ? (
+                  <Box sx={{ p: 2 }}><Alert severity="info">Nenhum email encontrado nesta pasta.</Alert></Box>
+                ) : null}
 
-                  {items.map((item) => (
+                {items.map((item, index) => {
+                  const isUnread = item.status === 'NEW';
+                  const isTrash = item.status === 'TRASHED';
+                  return (
                     <Box
                       key={item.id}
                       sx={{
-                        border: '1px solid #E5E7EB',
-                        borderRadius: 2,
-                        p: 1.4,
-                        backgroundColor: '#FFFFFF',
+                        px: { xs: 1.5, md: 2 },
+                        py: 1.35,
+                        borderBottom: index === items.length - 1 ? 'none' : '1px solid #E5E7EB',
+                        borderLeft: isUnread ? '4px solid #2563EB' : '4px solid transparent',
+                        backgroundColor: isUnread ? '#F8FBFF' : '#FFFFFF',
+                        transition: 'background-color 120ms ease',
+                        '&:hover': { backgroundColor: '#F8FAFC' },
                       }}
                     >
-                      <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
-                        <Box sx={{ minWidth: 0, flex: 1 }}>
-                          <Typography sx={{ fontWeight: 700, color: '#111827' }}>{formatSubject(item.subject)}</Typography>
-                          <Typography sx={{ color: '#6B7280', fontSize: 13 }}>
-                            De: {item.from_name ? `${item.from_name} <${item.from_email}>` : item.from_email}
+                      <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2} alignItems={{ xs: 'stretch', md: 'center' }}>
+                        <Box
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => openDetails(item.id)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') openDetails(item.id);
+                          }}
+                          sx={{ minWidth: 0, flex: 1, cursor: 'pointer' }}
+                        >
+                          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.8} alignItems={{ xs: 'flex-start', sm: 'baseline' }}>
+                            <Typography
+                              sx={{
+                                fontWeight: isUnread ? 800 : 650,
+                                color: '#0F172A',
+                                minWidth: { sm: 170 },
+                                maxWidth: { sm: 220 },
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {formatSender(item)}
+                            </Typography>
+                            <Typography
+                              sx={{
+                                fontWeight: isUnread ? 800 : 650,
+                                color: '#111827',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                flex: 1,
+                                maxWidth: '100%',
+                              }}
+                            >
+                              {formatSubject(item.subject)}
+                            </Typography>
+                          </Stack>
+                          <Typography
+                            sx={{
+                              color: '#64748B',
+                              fontSize: 13,
+                              mt: 0.25,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {item.preview || item.from_email}
                           </Typography>
-                          <Typography sx={{ color: '#6B7280', fontSize: 13 }}>
-                            Para: {item.to_email}
-                          </Typography>
-                          <Typography sx={{ color: '#6B7280', fontSize: 12 }}>
-                            Recebido em: {formatDateTime(item.received_at)}
-                          </Typography>
-                          <RiskSummary risk={item.security_risk} />
                         </Box>
 
-                        <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'wrap' }}>
+                        <Stack direction="row" spacing={0.7} alignItems="center" sx={{ flexWrap: 'wrap', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
                           <RiskBadge risk={item.security_risk} />
-                          <StatusChip status={item.status} />
-                          <Chip size="small" label={formatAttachmentCount(item.attachment_count)} />
-                          <Button variant="outlined" size="small" onClick={() => openDetails(item.id)}>
-                            Ver detalhes
-                          </Button>
+                          {isUnread || isTrash || item.status === 'ARCHIVED' ? <StatusChip status={item.status} /> : null}
+                          {Number(item.attachment_count || 0) > 0 ? (
+                            <Chip
+                              size="small"
+                              icon={<AttachFileOutlined fontSize="small" />}
+                              label={formatAttachmentCount(item.attachment_count)}
+                              variant="outlined"
+                            />
+                          ) : null}
+                          <Typography sx={{ color: '#64748B', fontSize: 12, minWidth: 86, textAlign: { md: 'right' } }}>
+                            {formatListDate(item.received_at)}
+                          </Typography>
+                          {isTrash ? (
+                            <>
+                              <Button
+                                size="small"
+                                startIcon={<RestoreOutlined />}
+                                onClick={() => restoreFromTrash(item.id)}
+                                disabled={trashBusyId === item.id}
+                              >
+                                Restaurar
+                              </Button>
+                              <Button
+                                size="small"
+                                color="error"
+                                startIcon={<DeleteForeverOutlined />}
+                                onClick={() => setPermanentDeleteTarget(item)}
+                                disabled={trashBusyId === item.id}
+                              >
+                                Excluir
+                              </Button>
+                            </>
+                          ) : (
+                            <Button
+                              size="small"
+                              color="inherit"
+                              startIcon={<DeleteOutline />}
+                              onClick={() => moveToTrash(item.id)}
+                              disabled={trashBusyId === item.id}
+                            >
+                              Lixeira
+                            </Button>
+                          )}
                         </Stack>
                       </Stack>
                     </Box>
-                  ))}
+                  );
+                })}
 
-                  <Box sx={{ display: 'flex', justifyContent: 'center', pt: 1 }}>
-                    <Button
-                      variant="contained"
-                      onClick={() => loadList(page + 1, true)}
-                      disabled={loading || !hasMore}
-                    >
-                      {loading && items.length > 0 ? 'Carregando...' : hasMore ? 'Carregar mais' : 'Fim da lista'}
-                    </Button>
-                  </Box>
-                </Stack>
+                <Box sx={{ display: 'flex', justifyContent: 'center', p: 1.5, borderTop: items.length ? '1px solid #E5E7EB' : 'none' }}>
+                  <Button
+                    variant="text"
+                    onClick={() => loadList(page + 1, true)}
+                    disabled={loading || !hasMore}
+                  >
+                    {loading && items.length > 0 ? 'Carregando...' : hasMore ? 'Carregar mais' : 'Fim da lista'}
+                  </Button>
+                </Box>
               </CardContent>
             </Card>
           </>
@@ -748,7 +994,7 @@ export default function InstitutionalInboxPage() {
                       onChange={(event) => setSentFilters((prev) => ({ ...prev, status: event.target.value }))}
                     >
                       {SENT_STATUS_OPTIONS.map((option) => (
-                        <MenuItem key={option} value={option}>{option}</MenuItem>
+                        <MenuItem key={option} value={option}>{SENT_STATUS_LABELS[option] || option}</MenuItem>
                       ))}
                     </Select>
                   </FormControl>
@@ -880,7 +1126,7 @@ export default function InstitutionalInboxPage() {
               <Typography><strong>Destinatario:</strong> {selectedEmail.to_email}</Typography>
               <Typography><strong>Assunto:</strong> {formatSubject(selectedEmail.subject)}</Typography>
               <Typography><strong>Recebido em:</strong> {formatDateTime(selectedEmail.received_at)}</Typography>
-              <Typography><strong>Status:</strong> {selectedEmail.status}</Typography>
+              <Typography><strong>Status:</strong> {STATUS_LABELS[selectedEmail.status] || selectedEmail.status}</Typography>
               <Typography><strong>Message ID:</strong> {selectedEmail.message_id || '-'}</Typography>
               <Typography><strong>In-Reply-To:</strong> {selectedEmail.in_reply_to || '-'}</Typography>
               <Typography><strong>References:</strong> {selectedEmail.references_header || '-'}</Typography>
@@ -916,7 +1162,11 @@ export default function InstitutionalInboxPage() {
                     />
 
                     {replyBlocked ? (
-                      <Alert severity="warning">{replyPreview.blocked_reason || 'Este email nao pode ser respondido a partir da inbox institucional.'}</Alert>
+                      <Alert severity="warning">
+                        {selectedEmail?.status === 'TRASHED'
+                          ? 'Restaure este email antes de responder.'
+                          : (replyPreview.blocked_reason || 'Este email nao pode ser respondido a partir da inbox institucional.')}
+                      </Alert>
                     ) : null}
 
                     {replyError ? <Alert severity="error">{replyError}</Alert> : null}
@@ -1025,13 +1275,87 @@ export default function InstitutionalInboxPage() {
             </Stack>
           ) : null}
         </DialogContent>
-        <DialogActions sx={{ justifyContent: 'space-between', px: 2 }}>
-          <Stack direction="row" spacing={1}>
-            <Button onClick={() => applyStatus('NEW')} disabled={statusSaving || !selectedEmail}>Voltar para novo</Button>
-            <Button onClick={() => applyStatus('READ')} disabled={statusSaving || !selectedEmail}>Marcar como lido</Button>
-            <Button onClick={() => applyStatus('ARCHIVED')} disabled={statusSaving || !selectedEmail}>Arquivar</Button>
-          </Stack>
+        <DialogActions sx={{ justifyContent: 'space-between', px: 2, gap: 1, flexWrap: 'wrap' }}>
+          {selectedEmail?.status === 'TRASHED' ? (
+            <Stack direction="row" spacing={1}>
+              <Button
+                startIcon={<RestoreOutlined />}
+                onClick={() => restoreFromTrash(selectedEmail.id)}
+                disabled={trashBusyId === selectedEmail.id}
+              >
+                Restaurar
+              </Button>
+              <Button
+                color="error"
+                startIcon={<DeleteForeverOutlined />}
+                onClick={() => setPermanentDeleteTarget(selectedEmail)}
+              >
+                Excluir definitivamente
+              </Button>
+            </Stack>
+          ) : (
+            <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
+              <Button onClick={() => applyStatus('NEW')} disabled={statusSaving || !selectedEmail}>Marcar como não lido</Button>
+              <Button onClick={() => applyStatus('READ')} disabled={statusSaving || !selectedEmail}>Marcar como lido</Button>
+              <Button onClick={() => applyStatus('ARCHIVED')} disabled={statusSaving || !selectedEmail}>Arquivar</Button>
+              <Button
+                color="error"
+                startIcon={<DeleteOutline />}
+                onClick={() => moveToTrash(selectedEmail.id)}
+                disabled={trashBusyId === selectedEmail?.id}
+              >
+                Mover para lixeira
+              </Button>
+            </Stack>
+          )}
           <Button onClick={closeDetails}>Fechar</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={emptyTrashOpen} onClose={() => { if (!emptyTrashLoading) { setEmptyTrashOpen(false); setEmptyTrashConfirmation(''); } }} fullWidth maxWidth="xs">
+        <DialogTitle>Esvaziar lixeira</DialogTitle>
+        <DialogContent dividers>
+          <Alert severity="error" sx={{ mb: 2 }}>
+            Esta ação é permanente. Os emails e anexos armazenados serão excluídos definitivamente.
+          </Alert>
+          <Typography sx={{ mb: 1 }}>Digite <strong>ESVAZIAR</strong> para confirmar.</Typography>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            value={emptyTrashConfirmation}
+            onChange={(event) => setEmptyTrashConfirmation(event.target.value)}
+            disabled={emptyTrashLoading}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setEmptyTrashOpen(false); setEmptyTrashConfirmation(''); }} disabled={emptyTrashLoading}>Cancelar</Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={emptyTrash}
+            disabled={emptyTrashLoading || emptyTrashConfirmation.trim().toUpperCase() !== 'ESVAZIAR'}
+          >
+            {emptyTrashLoading ? 'Esvaziando...' : 'Excluir tudo definitivamente'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(permanentDeleteTarget)} onClose={() => { if (!permanentDeleteLoading) setPermanentDeleteTarget(null); }} fullWidth maxWidth="xs">
+        <DialogTitle>Excluir email definitivamente?</DialogTitle>
+        <DialogContent dividers>
+          <Alert severity="error">
+            Esta ação não pode ser desfeita. O email e seus anexos serão removidos do armazenamento.
+          </Alert>
+          {permanentDeleteTarget ? (
+            <Typography sx={{ mt: 2, fontWeight: 700 }}>{formatSubject(permanentDeleteTarget.subject)}</Typography>
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPermanentDeleteTarget(null)} disabled={permanentDeleteLoading}>Cancelar</Button>
+          <Button color="error" variant="contained" onClick={permanentlyDelete} disabled={permanentDeleteLoading}>
+            {permanentDeleteLoading ? 'Excluindo...' : 'Excluir definitivamente'}
+          </Button>
         </DialogActions>
       </Dialog>
 
@@ -1046,7 +1370,7 @@ export default function InstitutionalInboxPage() {
               <Typography><strong>CCO:</strong> {selectedSentEmail.bcc_email || 'Nao informado'}</Typography>
               <Typography><strong>Assunto completo:</strong> {selectedSentEmail.subject || '-'}</Typography>
               <Typography><strong>Data/hora:</strong> {formatDateTime(selectedSentEmail.created_at)}</Typography>
-              <Typography><strong>Status:</strong> {selectedSentEmail.status || '-'}</Typography>
+              <Typography><strong>Status:</strong> {selectedSentEmail.status === 'SENT' ? 'Enviado' : selectedSentEmail.status === 'ERROR' ? 'Erro' : (selectedSentEmail.status || '-')}</Typography>
               <Typography><strong>Usuario admin:</strong> {selectedSentEmail.admin_email || '-'}</Typography>
               <Typography><strong>Provider:</strong> {selectedSentEmail.provider || '-'}</Typography>
               <Typography><strong>Provider message id:</strong> {selectedSentEmail.provider_message_id || '-'}</Typography>

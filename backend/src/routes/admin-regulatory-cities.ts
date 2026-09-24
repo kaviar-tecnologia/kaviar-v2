@@ -866,6 +866,7 @@ router.get('/regulatory/cities/:id/communications', async (req: Request, res: Re
       }),
       prisma.inbound_email_messages.findMany({
         where: {
+          status: { notIn: ['TRASHED', 'DELETING'] },
           OR: [
             { from_email: { equals: contactEmail, mode: 'insensitive' } },
             { to_email: { equals: contactEmail, mode: 'insensitive' } },

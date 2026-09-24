@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import path from 'path';
 import {
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
@@ -83,6 +84,7 @@ export interface InboundAttachmentStorage {
     contentType: string;
   }): Promise<string>;
   headObject(storageKey: string): Promise<InboundAttachmentStorageHeadResult>;
+  deleteObject(storageKey: string): Promise<void>;
 }
 
 export class InboundAttachmentValidationError extends Error {
@@ -148,6 +150,10 @@ class S3InboundAttachmentStorage implements InboundAttachmentStorage {
       contentType: response.ContentType || null,
       metadata: response.Metadata || {},
     };
+  }
+
+  async deleteObject(storageKey: string): Promise<void> {
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: storageKey }));
   }
 }
 
@@ -573,6 +579,26 @@ export class InboundEmailAttachmentsService {
     });
 
     return updated;
+  }
+
+  async deleteForMessage(inboundEmailId: string) {
+    const normalizedId = inboundEmailId.trim();
+    const attachments = await prisma.inbound_email_attachments.findMany({
+      where: { inbound_email_id: normalizedId },
+      select: { id: true, storage_key: true },
+      orderBy: { created_at: 'asc' },
+    });
+
+    for (const attachment of attachments) {
+      await this.storage.deleteObject(attachment.storage_key);
+      this.log('delete_object_success', {
+        inbound_email_id: normalizedId,
+        attachment_id: attachment.id,
+        storage_key: attachment.storage_key,
+      });
+    }
+
+    return { deletedObjects: attachments.length };
   }
 
   async createDownloadUrl(attachmentId: string) {
