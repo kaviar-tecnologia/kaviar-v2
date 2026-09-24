@@ -8,6 +8,7 @@ on:
       - 'backend/src/services/contracts/**'
       - 'backend/tests/contract-template.test.ts'
       - 'backend/tests/territorial-manager-contract-v1_2.test.ts'
+      - 'backend/tests/territorial-manager-profile-state.test.ts'
       - 'frontend-app/src/pages/admin/TerritorialPayoutsPage.jsx'
       - 'frontend-app/src/pages/admin/MyContractPage.jsx'
       - 'frontend-app/src/pages/admin/ManagerFinance.jsx'
