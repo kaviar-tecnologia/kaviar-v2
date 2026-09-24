@@ -77,7 +77,7 @@ function buildBodyPreview(item: any): string {
   const source = typeof item?.normalized_body === 'string'
     ? item.normalized_body
     : (typeof item?.text_body === 'string' ? item.text_body : '');
-  return source.replace(/\\s+/g, ' ').trim().slice(0, 180);
+  return source.replace(/\s+/g, ' ').trim().slice(0, 180);
 }
 
 function auditSnapshot(item: any) {
