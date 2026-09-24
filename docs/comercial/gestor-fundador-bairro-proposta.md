@@ -24,7 +24,7 @@ Você recebe uma **autorização operacional temporária** para atuar como parce
 | Item | Valor |
 |------|-------|
 | Taxa de ativação | R$ 0,00 — não há cobrança obrigatória nesta versão |
-| Ciclo inicial | 90 dias |
+| Programa piloto/pré-ativação | Até 90 dias, sem Ativação Financeira nem participação territorial |
 | Território | Área formalmente atribuída em bairro/comunidade, com possíveis Áreas Reservadas KAVIAR |
 | Participação do gestor | 40% da Taxa da Plataforma Elegível nas operações elegíveis do território formalmente atribuído, durante Ativação Financeira válida |
 | Taxa operacional KAVIAR | 18% do valor da corrida (infraestrutura, tecnologia, suporte) |
@@ -83,8 +83,8 @@ Você recebe uma **autorização operacional temporária** para atuar como parce
 
 ## Renovação
 
-- Ao final dos 90 dias, a central avalia desempenho
-- Se o gestor produziu resultados e manteve atividade, pode renovar
+- Ao final do programa piloto de até 90 dias, a central avalia a continuidade
+- A continuidade como Gestor Territorial depende de formalização pelo Contrato de Parceria Operacional Territorial v1.2 e de Ativação Financeira expressa
 - Gestores fundadores com bom desempenho podem solicitar bairros próximos
 - Se não houver atividade mínima, o território pode retornar à central
 
@@ -98,4 +98,4 @@ Fale conosco pelo WhatsApp: [número]
 
 *KAVIAR é produto e plataforma da KAVIAR TECNOLOGIA E SERVICOS DIGITAIS LTDA — CNPJ 67.783.601/0001-99.*
 
-*Este documento é informativo e não constitui contrato. A formalização ocorre mediante aceite digital do Termo de Autorização Operacional Territorial.*
+*Este documento é informativo e não constitui contrato. O programa piloto/pré-ativação pode usar termo próprio, mas a formalização definitiva do Gestor Territorial ocorre pelo Contrato de Parceria Operacional Territorial KAVIAR v1.2.*
