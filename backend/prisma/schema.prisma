@@ -1755,6 +1755,7 @@ model inbound_email_messages {
   status_before_trash  String?  @db.VarChar(20)
   trashed_at           DateTime?
   trashed_by_admin_id  String?
+  custom_folder_id     String?  @db.Uuid
   has_attachments      Boolean  @default(false)
   attachment_count     Int      @default(0)
   attachments_metadata Json?    @db.JsonB
@@ -1763,11 +1764,24 @@ model inbound_email_messages {
   updated_at           DateTime @updatedAt
   attachments          inbound_email_attachments[]
   replies              email_send_logs[]         @relation("email_send_logs_reply_to_inbound_email")
+  custom_folder        inbound_email_folders?     @relation(fields: [custom_folder_id], references: [id], onDelete: SetNull)
 
   @@index([received_at])
   @@index([status, received_at])
   @@index([to_email, received_at])
   @@index([from_email, received_at])
+  @@index([custom_folder_id, received_at])
+}
+
+model inbound_email_folders {
+  id                  String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                String                   @unique @db.VarChar(80)
+  created_by_admin_id String?
+  created_at          DateTime                 @default(now())
+  updated_at          DateTime                 @updatedAt
+  messages            inbound_email_messages[]
+
+  @@index([name])
 }
 
 model inbound_email_attachments {
