@@ -228,17 +228,12 @@ router.patch('/operators/:id', async (req: Request, res: Response) => {
     const isTerritorialManager = existing.relationship_type === 'territorial_manager';
 
     if (isTerritorialManager) {
-      if (contract_status === 'not_required') {
+      if (contract_status !== undefined) {
         return res.status(409).json({
           success: false,
-          error: 'Gestor Territorial exige Contrato de Parceria Operacional Territorial v1.2; contrato não pode ser dispensado.'
+          error: 'Status contratual do Gestor Territorial é controlado exclusivamente pelo fluxo formal v1.2.',
           required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
         });
-      }
-      if (contract_status === 'signed') {
-        return res.status(409).json({
-          success: false,
-          error: 'Contrato de Gestor Territorial não pode ser marcado como assinado por atualização manual. Use o fluxo formal v1.2 de submissão e revisão.',
           required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
         });
       }
@@ -628,7 +623,7 @@ const uploadContract = multer({
   },
 });
 
-async function rejectManagerManualContractFlow(req: Request, res: Response, next: any) {
+const rejectManualManagerContractUpload = async (req: Request, res: Response, next: any) => {
   try {
     const operator = await prisma.operator_profiles.findUnique({
       where: { id: req.params.id },
@@ -643,13 +638,13 @@ async function rejectManagerManualContractFlow(req: Request, res: Response, next
       });
     }
     next();
-  } catch (error) {
+  } catch {
     return res.status(500).json({ success: false, error: 'Erro ao validar fluxo contratual' });
   }
-}
+};
 
 // POST /operators/:id/contract — Upload de contrato (SUPER_ADMIN)
-router.post('/operators/:id/contract', rejectManagerManualContractFlow, uploadContract.single('file'), async (req: Request, res: Response) => {
+router.post('/operators/:id/contract', rejectManualManagerContractUpload, uploadContract.single('file'), async (req: Request, res: Response) => {
   try {
     const operator = await prisma.operator_profiles.findUnique({ where: { id: req.params.id } });
     if (!operator) return res.status(404).json({ success: false, error: 'Operador não encontrado' });
@@ -699,7 +694,7 @@ router.get('/operators/:id/contract-url', async (req: Request, res: Response) =>
 });
 
 // POST /operators/:id/contract-template — Upload modelo de contrato (SUPER_ADMIN)
-router.post('/operators/:id/contract-template', rejectManagerManualContractFlow, uploadContract.single('file'), async (req: Request, res: Response) => {
+router.post('/operators/:id/contract-template', rejectManualManagerContractUpload, uploadContract.single('file'), async (req: Request, res: Response) => {
   try {
     const operator = await prisma.operator_profiles.findUnique({ where: { id: req.params.id } });
     if (!operator) return res.status(404).json({ success: false, error: 'Operador não encontrado' });
