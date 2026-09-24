@@ -6,7 +6,7 @@ import { audit, auditCtx } from '../utils/audit';
 import { COMPANY } from '../config/company';
 import { isLegacyPayAllowed, isMonthLegacy, isValidReferenceMonth } from '../services/finance/territory/engine-selection';
 import crypto from 'crypto';
-import { buildTerritorialManagerContractV12, TERRITORIAL_MANAGER_CONTRACT_VERSION, type TerritorialManagerContractInput } from '../services/contracts/territorial-manager-contract-v1_2';
+import { buildTerritorialManagerContractV12, buildTerritorySnapshotVersion, TERRITORIAL_MANAGER_CONTRACT_VERSION, type TerritorialManagerContractInput } from '../services/contracts/territorial-manager-contract-v1_2';
 
 const router = Router();
 router.use(authenticateAdmin, requireSuperAdmin);
@@ -22,23 +22,6 @@ function maskCpf(cpf: string | null): string | null {
   return '***' + cpf.slice(-4);
 }
 
-function buildTerritorySnapshotVersion(territory: {
-  id: string;
-  updated_at: Date;
-  neighborhoods: Array<{ id: string; name: string; updated_at: Date }>;
-}): string {
-  const neighborhoods = [...territory.neighborhoods]
-    .sort((a, b) => a.id.localeCompare(b.id))
-    .map(n => ({ id: n.id, name: n.name, updated_at: n.updated_at.toISOString() }));
-
-  const canonical = JSON.stringify({
-    territory_id: territory.id,
-    territory_updated_at: territory.updated_at.toISOString(),
-    neighborhoods,
-  });
-
-  return `sha256:${crypto.createHash('sha256').update(canonical).digest('hex')}`;
-}
 
 // ─── Operator Profiles ───────────────────────────────────────────────────────
 
