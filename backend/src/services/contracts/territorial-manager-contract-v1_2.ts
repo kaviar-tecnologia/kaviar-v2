@@ -44,6 +44,8 @@ export interface TerritorialManagerContractInput {
     cityUf: string;
     version: string;
     neighborhoods: string[];
+    assignmentId: string;
+    assignmentStatus: string;
   };
   generatedAt: string;
 }
@@ -118,7 +120,9 @@ export function buildTerritorialManagerContractV12(
     `Cidade/UF: ${input.territory.cityUf}`,
     `Versão territorial: ${input.territory.version}`,
     `Bairros/comunidades vinculados nesta versão: ${neighborhoodsText(input)}`,
-    'Ativação Financeira: NÃO É CRIADA POR ESTE DOCUMENTO. Depende de registro específico e válido nos sistemas da KAVIAR.',
+    `Manager Assignment ID: ${input.territory.assignmentId}`,
+    `Manager Assignment Status na geração: ${input.territory.assignmentStatus}`,
+    'Ativação Financeira: NÃO É CRIADA POR ESTE DOCUMENTO. Na versão atual do motor financeiro, participação exige assignment elegível com status active, administrador ativo e vigência temporal válida no momento do reconhecimento da operação.',
   ];
 
   const principal: ContractPart = {
@@ -139,7 +143,7 @@ export function buildTerritorialManagerContractV12(
           'Gestor Territorial: parceiro autônomo vinculado a Território Operacional Atribuído específico, responsável por atividades locais de captação, acompanhamento e apoio operacional nos limites deste Contrato.',
           'Território Operacional Atribuído: área geográfica formalmente vinculada ao Gestor, identificada por territory_id, cadastro eletrônico e Anexo Territorial vigente. A indicação de cidade, município, zona ou bairro ampliado não implica atribuição automática de toda a respectiva área.',
           'Área Reservada KAVIAR ou Área de Sombra: área não incluída no Território Operacional Atribuído ou expressamente reservada à operação direta da KAVIAR, expansão futura, ponto estratégico ou outro arranjo operacional. Operações reconhecidas nessas áreas não geram participação econômica ao Gestor.',
-          'Ativação Financeira: condição registrada nos sistemas da KAVIAR que habilita participação econômica. Cadastro, assinatura, acesso ao painel, geração deste PDF ou preparação do território, isoladamente, não constituem Ativação Financeira.',
+          'Ativação Financeira: condição registrada nos sistemas da KAVIAR que habilita participação econômica. Na versão atual do motor financeiro, exige assignment territorial elegível com status active, administrador ativo, início de vigência já alcançado e ausência de encerramento eficaz no instante de reconhecimento. Cadastro, assinatura, acesso ao painel, geração deste PDF ou preparação do território, isoladamente, não constituem Ativação Financeira.',
           'Taxa da Plataforma Elegível: taxa operacional da KAVIAR efetivamente reconhecida em Operação Elegível, conforme política de preços vigente, antes dos custos internos da KAVIAR e observadas as exclusões deste Contrato.',
           'Operação Elegível: operação que satisfaça cumulativamente os requisitos previstos na Cláusula 9.',
         ],
@@ -372,7 +376,7 @@ export function buildTerritorialManagerContractV12(
       {
         title: '1. REGRA DE DELIMITAÇÃO',
         paragraphs: [
-          'O território remunerado corresponde exclusivamente ao territory_id e à composição territorial registrados nesta versão. A cidade ou município não é, por si só, território remunerado.',
+          'O território remunerado corresponde exclusivamente ao territory_id e à composição territorial registrados nesta versão, em conjunto com assignment territorial financeiramente elegível. A cidade ou município não é, por si só, território remunerado.',
         ],
       },
       {
@@ -524,6 +528,8 @@ export const TERRITORIAL_MANAGER_CONTRACT_DOC_PLACEHOLDER: TerritorialManagerCon
     cityUf: '[CIDADE/UF]',
     version: '[VERSÃO TERRITORIAL]',
     neighborhoods: ['[BAIRROS/COMUNIDADES VINCULADOS]'],
+    assignmentId: '[ASSIGNMENT_ID]',
+    assignmentStatus: '[ASSIGNMENT_STATUS]',
   },
   generatedAt: '[DATA DE GERAÇÃO]',
 };
