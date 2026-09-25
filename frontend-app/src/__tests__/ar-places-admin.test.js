@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { AR_PLACES_DASHBOARD_CARD, canAccessArPlaces } from '../pages/admin/arPlacesPermissions';
+import { AR_PLACES_DASHBOARD_CARD, canAccessArPlaces, getAllowedArPlaceTransitions } from '../pages/admin/arPlacesPermissions';
 
 describe('AdminApp - seção KAVIAR AR e RBAC de rota', () => {
   const src = readFileSync(resolve(__dirname, '../components/admin/AdminApp.jsx'), 'utf8');
@@ -30,6 +30,13 @@ describe('AdminApp - seção KAVIAR AR e RBAC de rota', () => {
     expect(canAccessArPlaces('TERRITORIAL_MANAGER')).toBe(true);
     expect(canAccessArPlaces('TERRITORIAL_OPERATOR')).toBe(true);
     expect(canAccessArPlaces('FINANCE')).toBe(false);
+  });
+
+  it('SUPER_ADMIN pode reativar local INACTIVE para APPROVED', () => {
+    expect(getAllowedArPlaceTransitions('SUPER_ADMIN', 'INACTIVE')).toEqual([
+      { nextStatus: 'APPROVED', label: 'Reativar' },
+    ]);
+    expect(getAllowedArPlaceTransitions('TERRITORIAL_MANAGER', 'INACTIVE')).toEqual([]);
   });
 
   it('usa descrição neutra do card para todos os papéis permitidos', () => {
@@ -97,6 +104,12 @@ describe('ArPlacesPage - campos, filtros e conteúdo pt-BR', () => {
   it('operator fica sem ações de edição/criação', () => {
     expect(src).toContain('const isOperator = role === \'TERRITORIAL_OPERATOR\'');
     expect(src).toContain('{!isOperator && (');
+  });
+
+  it('mostra ação de reativação para local INACTIVE do SUPER_ADMIN', () => {
+    expect(src).toContain('handleReactivate');
+    expect(src).toContain("place.status === 'INACTIVE'");
+    expect(src).toContain('Reativar');
   });
 
   it('permite vincular parceiro owner e revisar pendências no modal', () => {
