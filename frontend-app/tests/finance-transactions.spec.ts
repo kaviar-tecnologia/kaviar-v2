@@ -4,7 +4,7 @@ const ADMIN_TOKEN = 'fake-token';
 const SA_DATA = JSON.stringify({ id: 'a1', name: 'Admin', email: 'a@t.l', role: 'SUPER_ADMIN' });
 const FIN_DATA = JSON.stringify({ id: 'f1', name: 'Finance', email: 'f@t.l', role: 'FINANCE' });
 
-const mockTxn = { id: 'txn-1', description: 'AWS Agosto', direction: 'OUT', transaction_type: 'EXPENSE', status: 'DRAFT', source_type: 'MANUAL', payment_method: 'PIX', competence_date: '2026-08-01', transaction_date: '2026-08-01', due_date: '2026-08-15', net_amount_cents: '15000', gross_amount_cents: '15000', account: { id: 'a1', name: 'Banco', code: 'B1' }, category: { id: 'c1', name: 'Tecnologia', code: 'TECH' }, cost_center: null, updated_at: '2026-08-01T00:00:00.000Z' };
+const mockTxn = { id: 'txn-1', description: 'AWS Agosto', direction: 'OUT', transaction_type: 'EXPENSE', status: 'DRAFT', source_type: 'MANUAL', payment_method: 'PIX', competence_date: '2026-08-01', transaction_date: '2026-08-01', due_date: '2026-08-15', net_amount_cents: '15000', gross_amount_cents: '15000', legal_entity_id: 'le-1', business_unit_id: 'fbu_corporate', legal_entity: { id: 'le-1', razao_social: 'KAVIAR TECNOLOGIA E SERVIÇOS DIGITAIS LTDA', nome_fantasia: 'KAVIAR', cnpj: '00000000000000', entity_type: 'MATRIZ', is_active: true }, business_unit: { id: 'fbu_corporate', code: 'CORPORATE', name: 'Corporativo', is_active: true }, account: { id: 'a1', name: 'Banco', code: 'B1' }, category: { id: 'c1', name: 'Tecnologia', code: 'TECH' }, cost_center: null, updated_at: '2026-08-01T00:00:00.000Z' };
 const mockPosted = { ...mockTxn, id: 'txn-2', status: 'POSTED', description: 'Twilio Jul', settlement_date: '2026-07-20', direction: 'OUT', transaction_type: 'EXPENSE', reversal_of_id: null, updated_at: '2026-08-05T10:00:00.000Z' };
 const mockReversal = { id: 'txn-reversal', description: 'Estorno: Twilio Jul', direction: 'IN', transaction_type: 'REVERSAL', status: 'POSTED', source_type: 'MANUAL', payment_method: 'INTERNAL', reversal_of_id: 'txn-2', competence_date: '2026-08-10', transaction_date: '2026-08-10', due_date: null, settlement_date: '2026-08-10', net_amount_cents: '15000', gross_amount_cents: '15000', account: { id: 'a1', name: 'Banco', code: 'B1' }, category: { id: 'c1', name: 'Tecnologia', code: 'TECH' }, cost_center: null, updated_at: '2026-08-10T00:00:00.000Z' };
 const mockPostedReversed = { ...mockPosted, status: 'REVERSED' };
@@ -14,12 +14,24 @@ const mockListAfterReversal = { success: true, data: [mockTxn, mockPostedReverse
 const mockAccounts = { success: true, data: [{ id: 'a1', name: 'Banco', code: 'B1' }], pagination: { total: 1 } };
 const mockCategories = { success: true, data: [{ id: 'c1', name: 'Tecnologia', code: 'TECH' }], pagination: { total: 1 } };
 const mockCostCenters = { success: true, data: [{ id: 'cc1', name: 'Administrativo', code: 'ADMIN' }], pagination: { total: 1 } };
+const mockLegalEntities = { success: true, data: [{ id: 'le-1', razao_social: 'KAVIAR TECNOLOGIA E SERVIÇOS DIGITAIS LTDA', nome_fantasia: 'KAVIAR', cnpj: '00000000000000', entity_type: 'MATRIZ', is_active: true }], pagination: { total: 1 } };
+const mockBusinessUnits = { success: true, data: [{ id: 'fbu_corporate', code: 'CORPORATE', name: 'Corporativo', is_active: true, sort_order: 10 }] };
 
 async function setupAuth(page, data = SA_DATA) {
   await page.addInitScript(({ token, adminData }) => {
     localStorage.setItem('kaviar_admin_token', token);
     localStorage.setItem('kaviar_admin_data', adminData);
   }, { token: ADMIN_TOKEN, adminData: data });
+
+  // Finance now requires explicit CNPJ + business-unit dimensions for manual entries.
+  // Keep these reference routes available in every scenario so tests can focus on
+  // the behavior under test without falling through to a real backend.
+  await page.route('**/api/admin/accounting/entities**', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockLegalEntities) })
+  );
+  await page.route('**/api/admin/finance/business-units**', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockBusinessUnits) })
+  );
 }
 
 async function interceptAPIs(page) {
