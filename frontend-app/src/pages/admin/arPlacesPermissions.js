@@ -1,7 +1,7 @@
 export const AR_PLACES_ALLOWED_ROLES = ['SUPER_ADMIN', 'TERRITORIAL_MANAGER', 'TERRITORIAL_OPERATOR'];
 export const AR_PLACES_DASHBOARD_CARD = {
   title: 'KAVIAR AR — Locais',
-  desc: 'Acessar locais AR de hotéis, comércios, turismo, CARE, Pet e aeroportos.',
+  desc: 'Acessar locais AR, incluindo hotéis, comércios, turismo, CARE, Pet, aeroportos e representações KAVIAR.',
   to: '/admin/ar-places',
 };
 

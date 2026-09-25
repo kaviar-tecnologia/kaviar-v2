@@ -176,6 +176,7 @@ enum ar_place_type {
   CARE
   PET
   AIRPORT
+  KAVIAR_POINT
 }
 
 enum ar_place_status {
