@@ -20,6 +20,7 @@ import {
   exportFinanceTransactionsCsv, fetchDashboardSummary,
 } from '../../services/adminFinanceService';
 import { parseBRLToCentsString, formatCentsStringToBRL } from '../../utils/brlCurrency';
+import FinanceModuleNav from '../../components/admin/finance/FinanceModuleNav';
 
 // ── Labels ─────────────────────────────────────────────────────────────────
 const DIR_LABELS = { IN: 'Entrada', OUT: 'Saída' };
@@ -234,6 +235,7 @@ export default function FinanceTransactionsPage() {
 
   return (
     <Container maxWidth="lg" sx={{ mt: 2, pb: 6 }}>
+      <FinanceModuleNav />
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
           <Typography variant="h5" sx={{ fontWeight: 700, color: '#F8FAFC' }}>💼 Lançamentos Financeiros</Typography>
