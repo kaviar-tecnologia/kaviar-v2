@@ -18,6 +18,7 @@ import {
   financeRecognitionPolicyPatchBodySchema,
   financeRecognitionPolicyRevokeBodySchema,
   financeRecognitionPolicySupersedBodySchema,
+  financeReceivablesQuerySchema,
   financeTransactionsListQuerySchema,
 } from '../services/finance/finance-query-validation';
 import {
@@ -420,6 +421,11 @@ router.post('/recognition-policies/:id/supersede', async (req: Request, res: Res
 // ── Dashboard Summary ─────────────────────────────────────────────────────────
 
 import { queryDashboardSummary } from '../services/finance/finance-dashboard.service';
+import {
+  getFinanceReceivablesSummary,
+  getFinanceTreasurySummary,
+  listFinanceReceivables,
+} from '../services/finance/finance-workspace.service';
 
 router.get('/dashboard-summary', async (req: Request, res: Response) => {
   try {
@@ -433,6 +439,40 @@ router.get('/dashboard-summary', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('[ADMIN_FINANCE_DASHBOARD_SUMMARY]', error);
     return res.status(500).json({ success: false, error: 'Erro interno ao gerar resumo financeiro.' });
+  }
+});
+
+// ── Professional Finance Workspace ────────────────────────────────────────────
+
+router.get('/receivables/summary', async (_req: Request, res: Response) => {
+  try {
+    const result = await getFinanceReceivablesSummary();
+    return res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('[ADMIN_FINANCE_RECEIVABLES_SUMMARY]', error);
+    return res.status(500).json({ success: false, error: 'Erro interno ao gerar resumo de contas a receber.' });
+  }
+});
+
+router.get('/receivables', async (req: Request, res: Response) => {
+  try {
+    const parsed = financeReceivablesQuerySchema.safeParse(req.query);
+    if (!parsed.success) return validationError(res, parsed.error);
+    const result = await listFinanceReceivables(parsed.data);
+    return res.json({ success: true, data: result.data, pagination: result.pagination });
+  } catch (error) {
+    console.error('[ADMIN_FINANCE_RECEIVABLES_LIST]', error);
+    return res.status(500).json({ success: false, error: 'Erro interno ao listar contas a receber.' });
+  }
+});
+
+router.get('/treasury-summary', async (_req: Request, res: Response) => {
+  try {
+    const result = await getFinanceTreasurySummary();
+    return res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('[ADMIN_FINANCE_TREASURY_SUMMARY]', error);
+    return res.status(500).json({ success: false, error: 'Erro interno ao gerar posição de tesouraria.' });
   }
 });
 
