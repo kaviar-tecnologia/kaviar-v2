@@ -31,6 +31,7 @@ import {
   listFinanceRecognitionPolicies,
 } from '../../services/adminFinanceService';
 import RecognitionPolicyFormDialog from '../../components/admin/finance/RecognitionPolicyFormDialog';
+import FinanceModuleNav from '../../components/admin/finance/FinanceModuleNav';
 import {
   RECOGNITION_POLICY_COLORS,
   RECOGNITION_POLICY_LABELS,
@@ -488,6 +489,7 @@ export default function FinanceRecognitionPoliciesPage() {
   return (
     <Box sx={{ minHeight: '100vh', background: BLUE.pageBg, py: 3 }}>
       <Container maxWidth="xl">
+        <FinanceModuleNav />
 
         {/* ── Page header ──────────────────────────────────────────────────── */}
         <Card sx={{ mb: 2.5, border: `1px solid ${BLUE.borderStrong}`, background: `linear-gradient(120deg, ${BLUE.cardBg} 0%, ${BLUE.sectionBg} 100%)`, boxShadow: '0 10px 25px rgba(37,99,235,0.10)' }}>
