@@ -1,21 +1,21 @@
 /**
  * Admin Finance — Obrigações (Contas a Pagar) — READ-ONLY.
  *
- * Visão consolidada, para a KAVIAR, das obrigações enviadas pelo Portal do Contador.
+ * Visão da matriz KAVIAR e de suas filiais diretas, com filtro opcional por CNPJ.
  * Reutiliza o MESMO modelo `accounting_payment_obligations`, o MESMO lifecycle e os
  * MESMOS mecanismos seguros de download (presigned URL) já usados pelo portal.
  *
  * Segurança:
  *   - authenticateAdmin + allowFinanceAccess (SUPER_ADMIN, EXECUTIVE_ADMIN, FINANCE)
- *   - Isolamento por legal_entity: SEMPRE fixado na entidade KAVIAR.
+ *   - Isolamento: apenas a matriz KAVIAR configurada e suas filiais diretas.
  *   - Não expõe DRAFT (visão da empresa começa em SENT_TO_COMPANY).
  *   - Não expõe tokens, hashes, storage keys ou dados bancários desnecessários.
  *
- * NÃO há endpoint de transição de estado aqui: a máquina de estados existente é
- * operada pelo Portal do Contador e pelo fluxo público da empresa (via token).
- * Esta rota é estritamente de leitura + downloads seguros.
+ * Reutiliza a máquina de estados existente para marcar pagamento e anexar comprovante.
+ * Não inicia transferências bancárias nem libera pagamentos automáticos.
  *
  * Rotas (base /api/admin/finance/obligations):
+ *   GET  /entities               — matriz e filiais no escopo autorizado
  *   GET  /                       — lista obrigações visíveis à empresa (>= SENT_TO_COMPANY)
  *   GET  /summary                — cards de resumo (pendentes, vencendo, vencidas, pagas, total)
  *   GET  /:id                    — detalhe de uma obrigação
@@ -48,7 +48,7 @@ const BUCKET = process.env.S3_UPLOADS_BUCKET || process.env.AWS_S3_BUCKET || 'ka
 const REGION = process.env.AWS_REGION || 'us-east-2';
 const s3Client = new S3Client({ region: REGION });
 
-// UUID fixo da legal_entity KAVIAR (ver migration 20260805163000_fix_kaviar_entity_uuid).
+// ID da matriz KAVIAR; filiais diretas são reconhecidas por parent_entity_id.
 // Configurável por env para outros ambientes, com fallback para o valor de produção.
 const KAVIAR_LEGAL_ENTITY_ID =
   process.env.KAVIAR_LEGAL_ENTITY_ID || '884907ff-5b04-4dfa-8613-a23216c5fa25';
@@ -120,6 +120,14 @@ export function computeDueStatus(dueDate: any, status: string): string {
 export function serializeForAdmin(o: any) {
   return {
     id: o.id,
+    legal_entity_id: o.legal_entity_id,
+    legal_entity: o.legal_entity ? {
+      id: o.legal_entity.id,
+      razao_social: o.legal_entity.razao_social,
+      nome_fantasia: o.legal_entity.nome_fantasia ?? null,
+      cnpj: o.legal_entity.cnpj,
+      entity_type: o.legal_entity.entity_type,
+    } : null,
     obligation_type: o.obligation_type,
     status: o.status,
     status_label: statusLabel(o.status),
@@ -168,13 +176,72 @@ export function serializeForAdmin(o: any) {
 
 const INCLUDE = {
   created_by_accountant: { select: { nome_completo: true } },
+  legal_entity: {
+    select: {
+      id: true,
+      razao_social: true,
+      nome_fantasia: true,
+      cnpj: true,
+      entity_type: true,
+      parent_entity_id: true,
+    },
+  },
 };
+
+// Escopo independente do parâmetro enviado pelo cliente: nunca consulta CNPJ
+// alheio à matriz KAVIAR, inclusive em detalhes, downloads e ações de pagamento.
+const COMPANY_ENTITY_WHERE = {
+  OR: [
+    { id: KAVIAR_LEGAL_ENTITY_ID },
+    { parent_entity_id: KAVIAR_LEGAL_ENTITY_ID, entity_type: 'FILIAL' as const },
+  ],
+};
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseEntityFilter(raw: unknown): { legal_entity_id?: string } | null {
+  if (raw === undefined) return {};
+  if (typeof raw !== 'string' || !UUID_PATTERN.test(raw)) return null;
+  return { legal_entity_id: raw };
+}
+
+function companyObligationsWhere(entityFilter: { legal_entity_id?: string }) {
+  return {
+    legal_entity: { is: COMPANY_ENTITY_WHERE },
+    ...entityFilter,
+  };
+}
+
+function isOwnedObligation(o: any): boolean {
+  return o.legal_entity_id === KAVIAR_LEGAL_ENTITY_ID ||
+    (o.legal_entity?.id === o.legal_entity_id &&
+      o.legal_entity?.entity_type === 'FILIAL' &&
+      o.legal_entity?.parent_entity_id === KAVIAR_LEGAL_ENTITY_ID);
+}
+
+router.get('/entities', async (_req: Request, res: Response) => {
+  try {
+    const entities = await prisma.legal_entities.findMany({
+      where: COMPANY_ENTITY_WHERE,
+      select: {
+        id: true, razao_social: true, nome_fantasia: true, cnpj: true,
+        entity_type: true, parent_entity_id: true, is_active: true,
+      },
+      orderBy: [{ entity_type: 'desc' }, { razao_social: 'asc' }],
+    });
+    return res.json({ success: true, data: entities });
+  } catch (err: any) {
+    console.error('[admin-obligations] entities error:', err?.message);
+    return res.status(500).json({ success: false, error: 'Erro interno' });
+  }
+});
 
 // ── Endpoints ───────────────────────────────────────────────────────────
 
 // GET / — lista obrigações visíveis à empresa KAVIAR
 router.get('/', async (req: Request, res: Response) => {
   try {
+    const entityFilter = parseEntityFilter(req.query.legal_entity_id);
+    if (!entityFilter) return res.status(400).json({ success: false, error: 'legal_entity_id inválido' });
     const statusFilter = req.query.status as string | undefined;
 
     // Nunca permitir consultar DRAFT (nem via filtro explícito).
@@ -185,7 +252,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     const obligations = await prisma.accounting_payment_obligations.findMany({
       where: {
-        legal_entity_id: KAVIAR_LEGAL_ENTITY_ID,
+        ...companyObligationsWhere(entityFilter),
         status: { in: statusIn as any },
       },
       include: INCLUDE,
@@ -201,11 +268,13 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // GET /summary — cards de resumo
-router.get('/summary', async (_req: Request, res: Response) => {
+router.get('/summary', async (req: Request, res: Response) => {
   try {
+    const entityFilter = parseEntityFilter(req.query.legal_entity_id);
+    if (!entityFilter) return res.status(400).json({ success: false, error: 'legal_entity_id inválido' });
     const all = await prisma.accounting_payment_obligations.findMany({
       where: {
-        legal_entity_id: KAVIAR_LEGAL_ENTITY_ID,
+        ...companyObligationsWhere(entityFilter),
         status: { in: [...COMPANY_VISIBLE_STATUSES] as any },
       },
       select: { status: true, due_date: true, amount_cents: true },
@@ -251,7 +320,7 @@ async function loadVisibleObligation(id: string) {
     include: INCLUDE,
   });
   if (!ob) return { notFound: true as const };
-  if (ob.legal_entity_id !== KAVIAR_LEGAL_ENTITY_ID) return { forbidden: true as const };
+  if (!isOwnedObligation(ob)) return { forbidden: true as const };
   if (!(COMPANY_VISIBLE_STATUSES as readonly string[]).includes(ob.status)) return { forbidden: true as const };
   return { ob };
 }
