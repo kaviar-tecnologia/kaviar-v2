@@ -34,7 +34,20 @@ import {
 import api from '../../api';
 import { canEditArPlaces, getAllowedArPlaceTransitions } from './arPlacesPermissions';
 
-const TYPE_OPTIONS = ['HOTEL', 'COMMERCE', 'TOURISM', 'CARE', 'PET', 'AIRPORT'];
+const TYPE_OPTIONS = ['HOTEL', 'COMMERCE', 'TOURISM', 'CARE', 'PET', 'AIRPORT', 'KAVIAR_POINT'];
+const TYPE_LABELS = {
+  HOTEL: 'HOTEL',
+  COMMERCE: 'COMMERCE',
+  TOURISM: 'TOURISM',
+  CARE: 'CARE',
+  PET: 'PET',
+  AIRPORT: 'AIRPORT',
+  KAVIAR_POINT: 'REPRESENTAÇÃO KAVIAR',
+};
+
+function getTypeLabel(type) {
+  return TYPE_LABELS[type] || type;
+}
 const STATUS_OPTIONS = ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'INACTIVE'];
 const PENDING_COMPARISON_FIELDS = [
   { key: 'name', label: 'Nome' },
@@ -390,7 +403,7 @@ export default function ArPlacesPage() {
             <Grid item xs={12} md={2}>
               <TextField fullWidth size="small" select label="Tipo" value={filters.type} onChange={(e) => setFilters((prev) => ({ ...prev, type: e.target.value }))}>
                 <MenuItem value="">Todos</MenuItem>
-                {TYPE_OPTIONS.map((option) => <MenuItem key={option} value={option}>{option}</MenuItem>)}
+                {TYPE_OPTIONS.map((option) => <MenuItem key={option} value={option}>{getTypeLabel(option)}</MenuItem>)}
               </TextField>
             </Grid>
             <Grid item xs={12} md={2}>
@@ -451,7 +464,7 @@ export default function ArPlacesPage() {
                 <TableRow key={place.id}>
                   <TableCell>{place.name}</TableCell>
                   <TableCell>{place.place_id}</TableCell>
-                  <TableCell>{place.type}</TableCell>
+                  <TableCell>{getTypeLabel(place.type)}</TableCell>
                   <TableCell>{place.city}/{place.state}</TableCell>
                   <TableCell>{place.territory?.name || '—'}</TableCell>
                   <TableCell>{place.owner_partner?.name || '—'}</TableCell>
