@@ -44,18 +44,28 @@ describe('public manager application flow', () => {
     expect(invite).not.toContain("MANAGER_INVITE_URL = 'https://kaviar.com.br/#gestor'");
   });
 
-  it('CRM uses a dedicated manager WhatsApp action for territorial manager leads', () => {
+  it('CRM maps WhatsApp action strictly by lead type', () => {
     expect(invite).toContain('openManagerWhatsAppInvite');
     expect(crm).toContain("lead.lead_type === 'TERRITORIAL_MANAGER'");
-    expect(crm).toContain("return 'manager'");
+    expect(crm).toContain("lead.lead_type === 'DRIVER' || lead.lead_type === 'PET_DRIVER'");
+    expect(crm).toContain("lead.lead_type === 'PASSENGER' || lead.lead_type === 'PRIVATE_RIDE_CLIENT'");
+    expect(crm).toContain("return 'contact'");
     expect(crm).toContain('WhatsApp Gestor');
-    expect(crm).toContain("selectedLead.lead_type === 'TERRITORIAL_MANAGER'");
+    expect(crm).toContain('WhatsApp Motorista');
+    expect(crm).toContain('WhatsApp Passageiro');
+    expect(crm).toContain('WhatsApp Contato');
   });
 
-  it('CRM hides the secondary driver/passenger action for manager leads', () => {
-    expect(crm).toContain("if (primaryInvite === 'manager') return null");
-    expect(crm).toContain('{secondaryInvite && (');
-    expect(crm).toContain('getLeadSecondaryInvite(menuLead)');
+  it('CRM no longer offers an inverted secondary WhatsApp action', () => {
+    expect(crm).not.toContain('getLeadSecondaryInvite');
+    expect(crm).not.toContain('secondaryInvite');
+    expect(crm).not.toContain('Secondary WhatsApp Menu');
+    expect(crm).not.toContain('<MoreVert');
+  });
+
+  it('CRM uses generic WhatsApp contact for non driver/passenger/manager leads', () => {
+    expect(crm).toContain('openWhatsAppContact');
+    expect(crm).toContain("else openWhatsAppContact(lead.phone)");
   });
 
   it('CRM shows the lead source explicitly in the detail drawer', () => {
