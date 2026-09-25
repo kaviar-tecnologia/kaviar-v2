@@ -98,6 +98,7 @@ const { authState, scopeState, dbState, prismaMock } = vi.hoisted(() => {
           instagram_url: data.instagram_url ?? null,
           latitude: data.latitude,
           longitude: data.longitude,
+          public_location_enabled: data.public_location_enabled ?? true,
           status: data.status ?? 'DRAFT',
           territory_id: data.territory_id ?? null,
           created_at: now(),
@@ -262,6 +263,7 @@ describe('admin ar places CRUD and RBAC', () => {
     expect(res.status).toBe(201);
     expect(res.body.data.type).toBe('KAVIAR_POINT');
     expect(res.body.data.status).toBe('DRAFT');
+    expect(res.body.data.public_location_enabled).toBe(false);
     expect(res.body.data.contents[0].grounding_rule).toContain('informações oficiais cadastradas e aprovadas pela KAVIAR');
     expect(res.body.data.contents[0].boundary_rule).toContain('Não apresente o local como filial');
   });
@@ -730,6 +732,9 @@ describe('public ar place endpoint only returns APPROVED', () => {
     const res = await request(app).get('/api/public/ar/places/by-place-id/status-approved');
     expect(res.status).toBe(200);
     expect(res.body.data.placeId).toBe('status-approved');
+    expect(res.body.data.address).toBeNull();
+    expect(res.body.data.latitude).toBe(-22.9);
+    expect(res.body.data.longitude).toBe(-43.2);
     expect(res.body.data.phone).toBe('+552133334444');
     expect(res.body.data.whatsapp).toBe('+5521999999999');
     expect(res.body.data.website_url).toBe('https://example.com/');
@@ -748,6 +753,46 @@ describe('public ar place endpoint only returns APPROVED', () => {
     expect(res.body.data.territory.city).toBe('Rio de Janeiro');
     expect(res.body.data.territory.state).toBe('RJ');
     expect(res.body.data.territory.id).toBeUndefined();
+  });
+
+  it('REPRESENTAÇÃO KAVIAR privada mantém endereço no admin e omite localização exata no endpoint público', async () => {
+    const create = await request(app).post('/api/admin/ar/places').send({
+      name: 'Representação KAVIAR Tambaú',
+      place_id: 'representacao-kaviar-tambau-privada',
+      type: 'KAVIAR_POINT',
+      city: 'Tambaú',
+      state: 'SP',
+      address: 'Rua Benjamin Spiga Real, 386 - Jardim das Pitas',
+      phone: '(21) 96864-8777',
+      latitude: -21.7063685,
+      longitude: -47.2886597,
+    });
+
+    expect(create.status).toBe(201);
+    expect(create.body.data.public_location_enabled).toBe(false);
+    expect(create.body.data.address).toContain('Benjamin Spiga Real');
+    expect(create.body.data.latitude).toBe(-21.7063685);
+    expect(create.body.data.longitude).toBe(-47.2886597);
+
+    const id = create.body.data.id;
+    await request(app).patch(`/api/admin/ar/places/${id}`).send({ status: 'SUBMITTED' });
+    await request(app).patch(`/api/admin/ar/places/${id}`).send({ status: 'APPROVED' });
+
+    const publicRes = await request(app).get('/api/public/ar/places/by-place-id/representacao-kaviar-tambau-privada');
+    expect(publicRes.status).toBe(200);
+    expect(publicRes.body.data.city).toBe('Tambaú');
+    expect(publicRes.body.data.state).toBe('SP');
+    expect(publicRes.body.data.phone).toBe('+5521968648777');
+    expect(publicRes.body.data.address).toBeUndefined();
+    expect(publicRes.body.data.latitude).toBeUndefined();
+    expect(publicRes.body.data.longitude).toBeUndefined();
+
+    const adminRes = await request(app).get(`/api/admin/ar/places/${id}`);
+    expect(adminRes.status).toBe(200);
+    expect(adminRes.body.data.address).toContain('Benjamin Spiga Real');
+    expect(adminRes.body.data.latitude).toBe(-21.7063685);
+    expect(adminRes.body.data.longitude).toBe(-47.2886597);
+    expect(adminRes.body.data.public_location_enabled).toBe(false);
   });
 
   it('local antigo sem contatos continua funcionando no endpoint público', async () => {
