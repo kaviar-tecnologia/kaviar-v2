@@ -66,6 +66,10 @@ import FinanceRecognitionPoliciesPage from "../../pages/admin/FinanceRecognition
 import AccountantReportPage from "../../pages/admin/AccountantReportPage";
 import FinanceTransactionsPage from "../../pages/admin/FinanceTransactionsPage";
 import FinancePayablesPage from "../../pages/admin/FinancePayablesPage";
+import FinanceOverviewPage from "../../pages/admin/FinanceOverviewPage";
+import FinanceReceivablesPage from "../../pages/admin/FinanceReceivablesPage";
+import FinanceTreasuryPage from "../../pages/admin/FinanceTreasuryPage";
+import FinancePaymentsOperationsPage from "../../pages/admin/FinancePaymentsOperationsPage";
 import TerritoriesPage from "../../pages/admin/TerritoriesPage";
 import TerritoryDetailPage from "../../pages/admin/TerritoryDetailPage";
 import RegionalAdminsPage from "../../pages/admin/RegionalAdminsPage";
@@ -110,7 +114,7 @@ import { useState, useEffect } from 'react';
 function FinanceHomeRedirect() {
   const adminData = localStorage.getItem('kaviar_admin_data');
   const admin = adminData ? JSON.parse(adminData) : null;
-  if (admin?.role === 'FINANCE') return <Navigate to="/admin/financeiro" replace />;
+  if (admin?.role === 'FINANCE') return <Navigate to="/admin/financeiro/visao-geral" replace />;
   if (admin?.role === 'EXECUTIVE_ADMIN') return <Navigate to="/admin/executive" replace />;
   if (admin?.role === 'TERRITORIAL_OPERATOR') return <OperatorHome />;
   if (admin?.role === 'TERRITORIAL_MANAGER') return <ManagerHome />;
@@ -738,6 +742,11 @@ export default function AdminApp() {
               <FinancePayments />
             </ProtectedAdminRoute>
           } />
+          <Route path="/financeiro/visao-geral" element={
+            <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
+              <FinanceOverviewPage />
+            </ProtectedAdminRoute>
+          } />
           <Route path="/financeiro" element={
             <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
               <FinanceiroPage />
@@ -761,6 +770,21 @@ export default function AdminApp() {
           <Route path="/financeiro/contas-a-pagar" element={
             <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
               <FinancePayablesPage />
+            </ProtectedAdminRoute>
+          } />
+          <Route path="/financeiro/contas-a-receber" element={
+            <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
+              <FinanceReceivablesPage />
+            </ProtectedAdminRoute>
+          } />
+          <Route path="/financeiro/tesouraria" element={
+            <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
+              <FinanceTreasuryPage />
+            </ProtectedAdminRoute>
+          } />
+          <Route path="/financeiro/pagamentos" element={
+            <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
+              <FinancePaymentsOperationsPage />
             </ProtectedAdminRoute>
           } />
           <Route path="/executive" element={
