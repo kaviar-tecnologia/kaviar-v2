@@ -258,7 +258,7 @@ export default function FinancePayablesPage() {
       {/* ═══════════════════════════════════════════════════════════════ */}
       {/* COBRANÇAS E OBRIGAÇÕES — Portal do Contador */}
       {/* ═══════════════════════════════════════════════════════════════ */}
-      <Typography variant="h6" fontWeight={600} mt={2} mb={2} color="warning.main">
+      <Typography variant="h6" fontWeight={700} mt={2} mb={2} sx={{ color: '#1D4ED8' }}>
         Cobranças e Obrigações
       </Typography>
       <Typography variant="body2" sx={{ mb: 2, color: '#475569' }}>
@@ -347,7 +347,61 @@ export default function FinancePayablesPage() {
       {obligations === null ? (
         <Box display="flex" justifyContent="center" p={2}><CircularProgress size={24} /></Box>
       ) : obligations.length > 0 ? (
-        <TableContainer component={Paper} sx={{ maxHeight: 520 }}>
+        <>
+          {/* Mobile: show complete payable details and actions without a 14-column table. */}
+          <Box sx={{ display: { xs: 'grid', lg: 'none' }, gap: 1.5 }}>
+            {obligations.map((o) => {
+              const due = dueStatusChip(o.due_status);
+              return (
+                <Card key={o.id} variant="outlined" sx={{ bgcolor: '#FFFFFF', borderColor: '#CBD5E1', borderRadius: 2 }}>
+                  <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1 }}>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="caption" sx={{ color: '#475569' }}>{o.obligation_type} · {o.origin_label}</Typography>
+                        <Typography fontWeight={700} sx={{ color: '#0F172A', overflowWrap: 'anywhere' }}>{o.description}</Typography>
+                      </Box>
+                      <Typography fontWeight={800} sx={{ color: '#0F172A', whiteSpace: 'nowrap' }}>{o.amount_display}</Typography>
+                    </Box>
+                    <Typography variant="body2" sx={{ color: '#334155' }}>
+                      {o.legal_entity?.nome_fantasia || o.legal_entity?.razao_social || 'Empresa não identificada'}
+                      {' · '}{o.legal_entity?.cnpj || 'CNPJ não informado'}
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: '#334155' }}>
+                      Beneficiário: {o.beneficiary || '—'} · Competência: {o.competence_display || '—'}
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <Chip size="small" label={o.status_label} color={obligationStatusColor(o.status)} />
+                      {due && <Chip size="small" label={due.label} color={due.color} />}
+                      <Typography variant="caption" sx={{ color: '#475569' }}>Vencimento original: {formatDateOnly(o.due_date)}</Typography>
+                    </Box>
+                    <Typography variant="caption" sx={{ color: '#475569' }}>Próxima ação: {o.action_owner_label}</Typography>
+                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                      {o.has_boleto && <Button size="small" variant="outlined" disabled={downloadingId === `${o.id}:boleto`} onClick={() => handleObligationDownload(o.id, 'boleto')}>Boleto / guia</Button>}
+                      {o.has_invoice_pdf && <Button size="small" variant="outlined" disabled={downloadingId === `${o.id}:invoice_pdf`} onClick={() => handleObligationDownload(o.id, 'invoice_pdf')}>NF PDF</Button>}
+                      {o.has_invoice_xml && <Button size="small" variant="outlined" disabled={downloadingId === `${o.id}:invoice_xml`} onClick={() => handleObligationDownload(o.id, 'invoice_xml')}>NF XML</Button>}
+                      {o.has_proof && <Button size="small" variant="outlined" disabled={downloadingId === `${o.id}:proof`} onClick={() => handleObligationDownload(o.id, 'proof')}>Comprovante</Button>}
+                      {canMarkPaid(o) && <Button size="small" color="success" variant="outlined" onClick={() => openPayDialog(o)}>Registrar pagamento</Button>}
+                      {canUploadProof(o) && (
+                        <Button size="small" variant="outlined" component="label" disabled={uploadingId === o.id}>
+                          {uploadingId === o.id ? 'Enviando…' : 'Enviar comprovante'}
+                          <input type="file" hidden accept="application/pdf,image/jpeg,image/png" onChange={(e) => { handleProofUpload(o, e.target.files?.[0]); e.target.value = ''; }} />
+                        </Button>
+                      )}
+                    </Box>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </Box>
+          <TableContainer component={Paper} sx={{
+            display: { xs: 'none', lg: 'block' },
+            maxHeight: 520,
+            overflowX: 'auto',
+            bgcolor: '#FFFFFF',
+            '& .MuiTableCell-root': { color: '#0F172A', borderBottom: '1px solid #E2E8F0' },
+            '& .MuiTableCell-head': { color: '#0F172A', bgcolor: '#EFF6FF', fontWeight: 700 },
+            '& .MuiSvgIcon-root': { color: '#2563EB' },
+          }}>
           <Table size="small" stickyHeader>
             <TableHead>
               <TableRow>
@@ -462,9 +516,10 @@ export default function FinancePayablesPage() {
               })}
             </TableBody>
           </Table>
-        </TableContainer>
+          </TableContainer>
+        </>
       ) : (
-        <Alert severity="info">Nenhuma cobrança ou obrigação pendente.</Alert>
+        <Alert severity="info">Nenhuma cobrança ou obrigação para o filtro selecionado.</Alert>
       )}
 
       {obligationPagination.totalPages > 1 && (
