@@ -95,6 +95,12 @@ describe('ArPlacesPage - campos, filtros e conteúdo pt-BR', () => {
     expect(src).toContain('longitude: String(longitude)');
   });
 
+  it('mostra retorno visual durante e após salvar uma edição', () => {
+    expect(src).toContain("setSaveMessage('Alterações salvas com sucesso.')");
+    expect(src).toContain("saving ? 'Salvando...' : form.id ? 'Salvar' : 'Criar'");
+    expect(src).toContain('severity="success"');
+  });
+
   it('envia conteúdo em locale pt-BR', () => {
     expect(src).toContain("locale: 'pt-BR'");
     expect(src).toContain('phone: form.phone.trim() || null');
