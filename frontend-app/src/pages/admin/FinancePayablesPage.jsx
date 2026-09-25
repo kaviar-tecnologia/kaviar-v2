@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   Box, Typography, Card, CardContent, Grid, CircularProgress, Alert, Divider,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Chip,
-  Dialog, DialogTitle, DialogContent, DialogActions, Button, IconButton, Tooltip, TextField,
+  Dialog, DialogTitle, DialogContent, DialogActions, Button, IconButton, Tooltip, TextField, MenuItem,
 } from '@mui/material';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import CloseIcon from '@mui/icons-material/Close';
@@ -121,6 +121,9 @@ export default function FinancePayablesPage() {
   const [cyclesData, setCyclesData] = useState(null);
   const [obligations, setObligations] = useState(null);
   const [obligationsSummary, setObligationsSummary] = useState(null);
+  const [legalEntities, setLegalEntities] = useState([]);
+  const [selectedEntityId, setSelectedEntityId] = useState('');
+  const obligationRequest = React.useRef(0);
   const [obligationsError, setObligationsError] = useState(null);
   const [downloadingId, setDownloadingId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -132,15 +135,26 @@ export default function FinancePayablesPage() {
   const [uploadingId, setUploadingId] = useState(null);
   const [actionMsg, setActionMsg] = useState(null);
 
-  const reloadObligations = React.useCallback(() => {
-    return Promise.all([
-      adminApi.getFinanceObligations(),
-      adminApi.getFinanceObligationsSummary(),
-    ]).then(([list, summary]) => {
+  const reloadObligations = React.useCallback(async () => {
+    const serial = ++obligationRequest.current;
+    const params = selectedEntityId ? { legal_entity_id: selectedEntityId } : {};
+    setObligationsError(null);
+    setObligations(null);
+    try {
+      const [list, summary] = await Promise.all([
+        adminApi.getFinanceObligations(params),
+        adminApi.getFinanceObligationsSummary(params),
+      ]);
+      if (serial !== obligationRequest.current) return;
       setObligations(list.data || []);
       setObligationsSummary(summary.data || null);
-    });
-  }, []);
+    } catch (error) {
+      if (serial !== obligationRequest.current) return;
+      setObligations([]);
+      setObligationsSummary(null);
+      setObligationsError(error.message || 'Erro ao carregar cobranças e obrigações');
+    }
+  }, [selectedEntityId]);
 
   useEffect(() => {
     Promise.all([
@@ -153,12 +167,17 @@ export default function FinancePayablesPage() {
       setCyclesData(cyc);
     }).catch(e => setError(e.message || 'Erro ao carregar dados')).finally(() => setLoading(false));
 
-    // Obrigações (Portal do Contador) — carregadas de forma independente para não
-    // quebrar a página caso o endpoint falhe.
-    reloadObligations().catch(e => {
-      setObligationsError(e.message || 'Erro ao carregar cobranças e obrigações');
-      setObligations([]);
-    });
+  }, []);
+
+  useEffect(() => {
+    adminApi.getFinanceObligationEntities()
+      .then((response) => setLegalEntities(response.data || []))
+      .catch(() => setObligationsError('Não foi possível carregar o cadastro de matriz e filiais.'));
+  }, []);
+
+  useEffect(() => {
+    reloadObligations();
+    return () => { obligationRequest.current += 1; };
   }, [reloadObligations]);
 
   const openEvidence = (evidence, name, pixMasked, type) => {
@@ -238,6 +257,26 @@ export default function FinancePayablesPage() {
       <Typography variant="h6" fontWeight={600} mt={2} mb={2} color="warning.main">
         Cobranças e Obrigações
       </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        Obrigações enviadas pelo Portal do Contador. Não são somadas automaticamente a despesas
+        previstas do ledger ou a pagamentos outbound, para evitar contagem duplicada.
+      </Typography>
+      <TextField
+        label="Empresa / filial"
+        size="small"
+        select
+        fullWidth
+        value={selectedEntityId}
+        onChange={(event) => setSelectedEntityId(event.target.value)}
+        sx={{ maxWidth: 520, mb: 2 }}
+      >
+        <MenuItem value="">Consolidado — matriz e filiais</MenuItem>
+        {legalEntities.map((entity) => (
+          <MenuItem key={entity.id} value={entity.id}>
+            {entity.nome_fantasia || entity.razao_social} — {entity.entity_type} ({entity.cnpj})
+          </MenuItem>
+        ))}
+      </TextField>
 
       {obligationsError && (
         <Alert severity="warning" sx={{ mb: 2 }}>{obligationsError}</Alert>
@@ -292,6 +331,7 @@ export default function FinancePayablesPage() {
             <TableHead>
               <TableRow>
                 <TableCell>Tipo</TableCell>
+                <TableCell>Empresa / CNPJ</TableCell>
                 <TableCell>Descrição</TableCell>
                 <TableCell>Beneficiário</TableCell>
                 <TableCell align="right">Valor</TableCell>
@@ -312,6 +352,10 @@ export default function FinancePayablesPage() {
                 return (
                   <TableRow key={o.id}>
                     <TableCell>{o.obligation_type}</TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{o.legal_entity?.nome_fantasia || o.legal_entity?.razao_social || '—'}</Typography>
+                      <Typography variant="caption" color="text.secondary">{o.legal_entity?.cnpj || 'CNPJ não informado'}</Typography>
+                    </TableCell>
                     <TableCell>{o.description}</TableCell>
                     <TableCell>{o.beneficiary || '—'}</TableCell>
                     <TableCell align="right">{o.amount_display}</TableCell>
