@@ -84,3 +84,7 @@ export function openDriverWhatsAppInvite(phone) {
 export function openPassengerWhatsAppInvite(phone) {
   openWhatsAppInvite(phone, 'passenger');
 }
+
+export function openManagerWhatsAppInvite(phone) {
+  openWhatsAppInvite(phone, 'manager');
+}

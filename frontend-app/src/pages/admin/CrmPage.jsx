@@ -8,7 +8,7 @@ import {
 import { Add, Download, Close, Phone, Email, Business, AccessTime, FilterList, Warning, LocationOn, WhatsApp, Assignment, MoreVert, Storefront, AccountBalance } from '@mui/icons-material';
 import { API_BASE_URL } from '../../config/api';
 import { formatDate } from '../../utils/formatDate';
-import { openDriverWhatsAppInvite, openPassengerWhatsAppInvite } from '../../utils/whatsappInvite';
+import { openDriverWhatsAppInvite, openPassengerWhatsAppInvite, openManagerWhatsAppInvite } from '../../utils/whatsappInvite';
 
 const GOLD = '#D4AF37';
 const BG = '#04070C';
@@ -270,13 +270,27 @@ export default function CrmPage() {
   const fmtDate = (d) => { if (!d) return '—'; const dt = new Date(d); return isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString('pt-BR'); };
 
   const getLeadPrimaryInvite = (lead) => {
+    if (lead.lead_type === 'TERRITORIAL_MANAGER') return 'manager';
     if (lead.lead_type === 'DRIVER' || lead.lead_type === 'PET_DRIVER') return 'driver';
     return 'passenger';
   };
 
+  const getLeadSecondaryInvite = (lead) => {
+    const primaryInvite = getLeadPrimaryInvite(lead);
+    if (primaryInvite === 'manager') return null;
+    return primaryInvite === 'driver' ? 'passenger' : 'driver';
+  };
+
+  const getInviteLabel = (inviteType) => {
+    if (inviteType === 'manager') return 'WhatsApp Gestor';
+    if (inviteType === 'driver') return 'WhatsApp Motorista';
+    return 'WhatsApp Passageiro';
+  };
+
   const openInviteForLead = (event, lead, inviteType) => {
     event.stopPropagation();
-    if (inviteType === 'driver') openDriverWhatsAppInvite(lead.phone);
+    if (inviteType === 'manager') openManagerWhatsAppInvite(lead.phone);
+    else if (inviteType === 'driver') openDriverWhatsAppInvite(lead.phone);
     else openPassengerWhatsAppInvite(lead.phone);
   };
 
@@ -445,7 +459,7 @@ export default function CrmPage() {
                         <Typography sx={{ fontSize: 11, color: TEXT_SECONDARY }}>
                           {lead.captured_by_member?.name || 'Não captado'} · {fmtDate(lead.created_at)}
                         </Typography>
-                        <Tooltip title={primaryInvite === 'driver' ? 'WhatsApp Motorista' : 'WhatsApp Passageiro'}>
+                        <Tooltip title={getInviteLabel(primaryInvite)}>
                           <IconButton size="small" onClick={(e) => openInviteForLead(e, lead, primaryInvite)} sx={{ color: '#25D366' }}>
                             <WhatsApp fontSize="small" />
                           </IconButton>
@@ -480,7 +494,7 @@ export default function CrmPage() {
                       const overdue = isOverdue(lead.next_action_at);
                       const noAction = isMissing(lead.next_action);
                       const primaryInvite = getLeadPrimaryInvite(lead);
-                      const secondaryInvite = primaryInvite === 'driver' ? 'passenger' : 'driver';
+                      const secondaryInvite = getLeadSecondaryInvite(lead);
                       return (
                         <TableRow key={lead.id} hover sx={{ cursor: 'pointer', borderLeft: overdue ? '3px solid #EF4444' : noAction ? '3px solid #F59E0B' : '3px solid transparent', '&:hover': { bgcolor: 'rgba(255,255,255,0.03)' } }} onClick={() => openDetail(lead)}>
                           <TableCell>
@@ -501,16 +515,18 @@ export default function CrmPage() {
                           <TableCell sx={{ fontSize: 12, color: TEXT_SECONDARY }}>{fmtDate(lead.created_at)}</TableCell>
                           <TableCell>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
-                              <Tooltip title={primaryInvite === 'driver' ? 'WhatsApp Motorista' : 'WhatsApp Passageiro'}>
+                              <Tooltip title={getInviteLabel(primaryInvite)}>
                                 <IconButton size="small" onClick={(e) => openInviteForLead(e, lead, primaryInvite)} sx={{ color: '#25D366' }}>
                                   <WhatsApp fontSize="small" />
                                 </IconButton>
                               </Tooltip>
-                              <Tooltip title={secondaryInvite === 'driver' ? 'WhatsApp Motorista' : 'WhatsApp Passageiro'}>
-                                <IconButton size="small" onClick={(e) => { e.stopPropagation(); setMenuAnchor(e.currentTarget); setMenuLead(lead); }} sx={{ color: 'rgba(255,255,255,0.3)', fontSize: 14 }}>
-                                  <MoreVert sx={{ fontSize: 16 }} />
-                                </IconButton>
-                              </Tooltip>
+                              {secondaryInvite && (
+                                <Tooltip title={getInviteLabel(secondaryInvite)}>
+                                  <IconButton size="small" onClick={(e) => { e.stopPropagation(); setMenuAnchor(e.currentTarget); setMenuLead(lead); }} sx={{ color: 'rgba(255,255,255,0.3)', fontSize: 14 }}>
+                                    <MoreVert sx={{ fontSize: 16 }} />
+                                  </IconButton>
+                                </Tooltip>
+                              )}
                             </Box>
                           </TableCell>
                         </TableRow>
@@ -528,10 +544,10 @@ export default function CrmPage() {
 
       {/* Secondary WhatsApp Menu */}
       <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => { setMenuAnchor(null); setMenuLead(null); }} PaperProps={darkDialogPaper}>
-        {menuLead && (
-          <MenuItem onClick={(e) => { const inv = getLeadPrimaryInvite(menuLead) === 'driver' ? 'passenger' : 'driver'; openInviteForLead(e, menuLead, inv); setMenuAnchor(null); setMenuLead(null); }} sx={{ fontSize: 13, color: '#25D366' }}>
+        {menuLead && getLeadSecondaryInvite(menuLead) && (
+          <MenuItem onClick={(e) => { const inv = getLeadSecondaryInvite(menuLead); openInviteForLead(e, menuLead, inv); setMenuAnchor(null); setMenuLead(null); }} sx={{ fontSize: 13, color: '#25D366' }}>
             <WhatsApp sx={{ fontSize: 16, mr: 1 }} />
-            {getLeadPrimaryInvite(menuLead) === 'driver' ? 'WhatsApp Passageiro' : 'WhatsApp Motorista'}
+            {getInviteLabel(getLeadSecondaryInvite(menuLead))}
           </MenuItem>
         )}
       </Menu>
@@ -552,6 +568,7 @@ export default function CrmPage() {
               {statusChip(selectedLead.status)}
               <Chip label={LEAD_TYPES.find(t => t.value === selectedLead.lead_type)?.label || selectedLead.lead_type} size="small" sx={{ bgcolor: 'rgba(255,255,255,0.08)', color: TEXT_SECONDARY }} />
               {priorityChip(selectedLead.priority)}
+              {selectedLead.source && <Chip label={`Origem: ${SOURCES.find(s => s.value === selectedLead.source)?.label || selectedLead.source}`} size="small" sx={{ bgcolor: 'rgba(59,130,246,0.10)', color: '#8CB8FF', border: '1px solid rgba(59,130,246,0.22)' }} />}
             </Box>
 
             {/* Contact Info Section */}
@@ -629,8 +646,14 @@ export default function CrmPage() {
             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
               <Button size="small" variant="outlined" onClick={() => { setNewStatus(selectedLead.status); setStatusOpen(true); }} sx={{ borderColor: CARD_BORDER, color: TEXT_SECONDARY, textTransform: 'none' }}>Alterar Status</Button>
               <Button size="small" variant="outlined" onClick={() => setInteractionOpen(true)} sx={{ borderColor: CARD_BORDER, color: TEXT_SECONDARY, textTransform: 'none' }}>+ Observação</Button>
-              <Button size="small" variant="outlined" startIcon={<WhatsApp />} onClick={() => openDriverWhatsAppInvite(selectedLead.phone)} sx={{ borderColor: 'rgba(37,211,102,0.4)', color: '#25D366', textTransform: 'none' }}>WhatsApp Motorista</Button>
-              <Button size="small" variant="outlined" startIcon={<WhatsApp />} onClick={() => openPassengerWhatsAppInvite(selectedLead.phone)} sx={{ borderColor: 'rgba(37,211,102,0.4)', color: '#25D366', textTransform: 'none' }}>WhatsApp Passageiro</Button>
+              {selectedLead.lead_type === 'TERRITORIAL_MANAGER' ? (
+                <Button size="small" variant="outlined" startIcon={<WhatsApp />} onClick={() => openManagerWhatsAppInvite(selectedLead.phone)} sx={{ borderColor: 'rgba(37,211,102,0.4)', color: '#25D366', textTransform: 'none' }}>WhatsApp Gestor</Button>
+              ) : (
+                <>
+                  <Button size="small" variant="outlined" startIcon={<WhatsApp />} onClick={() => openDriverWhatsAppInvite(selectedLead.phone)} sx={{ borderColor: 'rgba(37,211,102,0.4)', color: '#25D366', textTransform: 'none' }}>WhatsApp Motorista</Button>
+                  <Button size="small" variant="outlined" startIcon={<WhatsApp />} onClick={() => openPassengerWhatsAppInvite(selectedLead.phone)} sx={{ borderColor: 'rgba(37,211,102,0.4)', color: '#25D366', textTransform: 'none' }}>WhatsApp Passageiro</Button>
+                </>
+              )}
               {(isSuperAdmin || admin?.role === 'TERRITORIAL_MANAGER') && ['ACTIVE','INTERESTED','WAITING_DOCUMENTS','WAITING_CONTRACT','WAITING_APPROVAL'].includes(selectedLead.status) && ['LOCAL_BUSINESS','RESTAURANT','BAKERY','PIZZERIA','SNACK_BAR','MARKET','PHARMACY','PET_SHOP','BEAUTY_SALON','WORKSHOP'].includes(selectedLead.lead_type) && (
                 <Button size="small" variant="contained" startIcon={<Storefront />} sx={{ bgcolor: '#059669', textTransform: 'none', '&:hover': { bgcolor: '#047857' } }}
                   onClick={async () => {
