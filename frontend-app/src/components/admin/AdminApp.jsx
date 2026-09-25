@@ -66,6 +66,8 @@ import FinanceRecognitionPoliciesPage from "../../pages/admin/FinanceRecognition
 import AccountantReportPage from "../../pages/admin/AccountantReportPage";
 import FinanceTransactionsPage from "../../pages/admin/FinanceTransactionsPage";
 import FinancePayablesPage from "../../pages/admin/FinancePayablesPage";
+import FinanceReceivablesPage from "../../pages/admin/FinanceReceivablesPage";
+import FinanceTreasuryPage from "../../pages/admin/FinanceTreasuryPage";
 import TerritoriesPage from "../../pages/admin/TerritoriesPage";
 import TerritoryDetailPage from "../../pages/admin/TerritoryDetailPage";
 import RegionalAdminsPage from "../../pages/admin/RegionalAdminsPage";
@@ -761,6 +763,16 @@ export default function AdminApp() {
           <Route path="/financeiro/contas-a-pagar" element={
             <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
               <FinancePayablesPage />
+            </ProtectedAdminRoute>
+          } />
+          <Route path="/financeiro/contas-a-receber" element={
+            <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
+              <FinanceReceivablesPage />
+            </ProtectedAdminRoute>
+          } />
+          <Route path="/financeiro/tesouraria" element={
+            <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
+              <FinanceTreasuryPage />
             </ProtectedAdminRoute>
           } />
           <Route path="/executive" element={
