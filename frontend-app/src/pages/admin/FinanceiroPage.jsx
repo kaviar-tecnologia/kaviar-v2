@@ -50,7 +50,6 @@ import {
   listFinanceCostCenters,
   updateFinanceAccount,
   fetchDashboardSummary,
-  fetchFinanceObligationsSummary,
   fetchFinanceTreasuryHealth,
   fetchFinanceProviderHealth,
   listFinanceBusinessUnits,
@@ -209,7 +208,6 @@ export default function FinanceiroPage() {
   const [costCentersState, setCostCentersState] = useState(initialListState);
 
   const [executiveSummary, setExecutiveSummary] = useState(null);
-  const [obligationsSummary, setObligationsSummary] = useState(null);
   const [treasuryHealth, setTreasuryHealth] = useState(null);
   const [providerHealth, setProviderHealth] = useState(null);
   const [overviewLoading, setOverviewLoading] = useState(true);
@@ -454,13 +452,11 @@ export default function FinanceiroPage() {
     };
     const results = await Promise.allSettled([
       fetchDashboardSummary(dashboardFilters),
-      fetchFinanceObligationsSummary(),
       fetchFinanceTreasuryHealth(),
       fetchFinanceProviderHealth(),
     ]);
-    const [dashboard, obligations, treasury, provider] = results;
+    const [dashboard, treasury, provider] = results;
     if (dashboard.status === 'fulfilled') setExecutiveSummary(dashboard.value?.data || null);
-    if (obligations.status === 'fulfilled') setObligationsSummary(obligations.value?.data || null);
     if (treasury.status === 'fulfilled') setTreasuryHealth(treasury.value?.data || null);
     if (provider.status === 'fulfilled') setProviderHealth(provider.value?.data || null);
     if (results.every((result) => result.status === 'rejected')) {
@@ -1129,12 +1125,19 @@ export default function FinanceiroPage() {
           }}
         >
           <CardContent sx={{ py: 2.5 }}>
-            <Typography sx={{ color: BLUE.primary, fontWeight: 800, fontSize: 24 }}>
-              Estrutura e Plano Financeiro
-            </Typography>
-            <Typography sx={{ color: BLUE.subtext, mt: 0.5 }}>
-              Cadastros estruturais para contas financeiras, categorias contábeis e centros de custo.
-            </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <Box>
+                <Typography sx={{ color: BLUE.primary, fontWeight: 800, fontSize: 24 }}>
+                  Estrutura e Plano Financeiro
+                </Typography>
+                <Typography sx={{ color: BLUE.subtext, mt: 0.5 }}>
+                  Cadastros estruturais para contas financeiras, categorias contábeis e centros de custo.
+                </Typography>
+              </Box>
+              <Button variant="outlined" onClick={() => navigate('/admin/financeiro/filiais-territorios')}>
+                Filiais e territórios
+              </Button>
+            </Box>
 
             <Grid container spacing={1.5} sx={{ mt: 1 }}>
               {headerKpis.map((kpi) => (
