@@ -198,6 +198,13 @@ const COMPANY_ENTITY_WHERE = {
 };
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+function parsePageParameter(raw: unknown, fallback: number, max: number): number | null {
+  if (raw === undefined) return fallback;
+  if (typeof raw !== 'string' || !/^[1-9]\d{0,5}$/.test(raw)) return null;
+  const value = Number(raw);
+  return value <= max ? value : null;
+}
+
 function parseEntityFilter(raw: unknown): { legal_entity_id?: string } | null {
   if (raw === undefined) return {};
   if (typeof raw !== 'string' || !UUID_PATTERN.test(raw)) return null;
@@ -242,6 +249,11 @@ router.get('/', async (req: Request, res: Response) => {
   try {
     const entityFilter = parseEntityFilter(req.query.legal_entity_id);
     if (!entityFilter) return res.status(400).json({ success: false, error: 'legal_entity_id inválido' });
+    const page = parsePageParameter(req.query.page, 1, 10000);
+    const limit = parsePageParameter(req.query.limit, 50, 100);
+    if (page === null || limit === null) {
+      return res.status(400).json({ success: false, error: 'Paginação inválida' });
+    }
     const statusFilter = req.query.status as string | undefined;
 
     // Nunca permitir consultar DRAFT (nem via filtro explícito).
@@ -250,17 +262,26 @@ router.get('/', async (req: Request, res: Response) => {
         ? [statusFilter]
         : [...COMPANY_VISIBLE_STATUSES];
 
-    const obligations = await prisma.accounting_payment_obligations.findMany({
-      where: {
-        ...companyObligationsWhere(entityFilter),
-        status: { in: statusIn as any },
-      },
-      include: INCLUDE,
-      orderBy: [{ due_date: 'asc' }],
-      take: 200,
-    });
+    const where = {
+      ...companyObligationsWhere(entityFilter),
+      status: { in: statusIn as any },
+    };
+    const [obligations, total] = await Promise.all([
+      prisma.accounting_payment_obligations.findMany({
+        where,
+        include: INCLUDE,
+        orderBy: [{ due_date: 'asc' }, { id: 'asc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      prisma.accounting_payment_obligations.count({ where }),
+    ]);
 
-    res.json({ success: true, data: obligations.map(serializeForAdmin) });
+    res.json({
+      success: true,
+      data: obligations.map(serializeForAdmin),
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    });
   } catch (err: any) {
     console.error('[admin-obligations] list error:', err?.message);
     res.status(500).json({ success: false, error: 'Erro interno' });
