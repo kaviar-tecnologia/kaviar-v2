@@ -119,7 +119,7 @@ export default function FinanceTransactionsPage() {
       setBusinessUnits(units);
       return { accounts: accs, categories: cats, costCenters: ccs, legalEntities: entities, businessUnits: units };
     } catch (err) {
-      setRefsError('Não foi possível carregar as dimensões financeiras. Atualize os dados antes de criar um lançamento.');
+      setRefsError('Não foi possível carregar contas, categorias, centros de custo, empresas/filiais e linhas de negócio. Atualize os dados antes de criar um lançamento.');
       return null;
     } finally {
       setRefsLoading(false);
