@@ -30,6 +30,7 @@ export default function FinanceEntityTerritoriesPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [closeDialog, setCloseDialog] = useState({ open: false, row: null, effective_until: today(), loading: false });
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({ legal_entity_id: '', territory_id: '', effective_from: today(), notes: '' });
 
@@ -82,16 +83,18 @@ export default function FinanceEntityTerritoriesPage() {
     } finally { setSubmitting(false); }
   };
 
-  const closeAssignment = async (row) => {
-    const effectiveUntil = window.prompt('Data final da responsabilidade (AAAA-MM-DD):', today());
-    if (!effectiveUntil) return;
+  const confirmCloseAssignment = async () => {
+    if (!closeDialog.row || !closeDialog.effective_until) return;
     setError('');
+    setCloseDialog((prev) => ({ ...prev, loading: true }));
     try {
-      await closeFinanceEntityTerritoryAssignment(row.id, { effective_until: effectiveUntil });
+      await closeFinanceEntityTerritoryAssignment(closeDialog.row.id, { effective_until: closeDialog.effective_until });
+      setCloseDialog({ open: false, row: null, effective_until: today(), loading: false });
       setSuccess('Vínculo territorial encerrado sem alterar o histórico financeiro.');
       await load();
     } catch (err) {
       setError(err.message || 'Não foi possível encerrar o vínculo.');
+      setCloseDialog((prev) => ({ ...prev, loading: false }));
     }
   };
 
@@ -140,12 +143,48 @@ export default function FinanceEntityTerritoriesPage() {
                 <TableCell>{date(row.effective_from)} → {row.effective_until ? date(row.effective_until) : 'aberta'}</TableCell>
                 <TableCell><Chip size="small" color={row.is_active ? 'success' : 'default'} label={row.is_active ? 'Ativo' : 'Encerrado'} /></TableCell>
                 <TableCell>{row.notes || '—'}</TableCell>
-                {canWrite && <TableCell align="right">{row.is_active && <Button size="small" color="warning" onClick={() => closeAssignment(row)}>Encerrar</Button>}</TableCell>}
+                {canWrite && <TableCell align="right">{row.is_active && <Button size="small" color="warning" onClick={() => setCloseDialog({ open: true, row, effective_until: today(), loading: false })}>Encerrar</Button>}</TableCell>}
               </TableRow>)
             }
             {!loading && rows.length === 0 && <TableRow><TableCell colSpan={canWrite ? 7 : 6} align="center" sx={{ py: 5, color: '#64748B' }}>Nenhum vínculo cadastrado.</TableCell></TableRow>}
           </TableBody></Table>
         </Box></Card>
+
+        <Dialog
+          open={closeDialog.open}
+          onClose={() => !closeDialog.loading && setCloseDialog({ open: false, row: null, effective_until: today(), loading: false })}
+          maxWidth="sm"
+          fullWidth
+        >
+          <DialogTitle>Encerrar responsabilidade territorial</DialogTitle>
+          <DialogContent dividers>
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              O vínculo será encerrado somente a partir da data informada. Lançamentos e responsabilidades anteriores permanecem no histórico.
+            </Alert>
+            <Typography sx={{ mb: 2, fontSize: 14 }}>
+              <strong>{closeDialog.row?.legal_entity?.nome_fantasia || closeDialog.row?.legal_entity?.razao_social || 'Empresa/filial'}</strong>
+              {' → '}
+              <strong>{closeDialog.row?.territory?.name || 'Território'}</strong>
+            </Typography>
+            <TextField
+              fullWidth
+              required
+              type="date"
+              size="small"
+              label="Responsável até"
+              value={closeDialog.effective_until}
+              onChange={(e) => setCloseDialog((prev) => ({ ...prev, effective_until: e.target.value }))}
+              InputLabelProps={{ shrink: true }}
+              inputProps={{ min: closeDialog.row?.effective_from ? String(closeDialog.row.effective_from).slice(0, 10) : undefined }}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setCloseDialog({ open: false, row: null, effective_until: today(), loading: false })} disabled={closeDialog.loading}>Cancelar</Button>
+            <Button color="warning" variant="contained" onClick={confirmCloseAssignment} disabled={closeDialog.loading || !closeDialog.effective_until}>
+              {closeDialog.loading ? 'Encerrando...' : 'Confirmar encerramento'}
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         <Dialog open={dialogOpen} onClose={() => !submitting && setDialogOpen(false)} maxWidth="sm" fullWidth>
           <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><LinkIcon /> Vincular filial ao território</DialogTitle>
