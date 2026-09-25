@@ -381,6 +381,10 @@ export const fetchFinanceTreasurySummary = async () => {
   return performGet(`${FINANCE_BASE_PATH}/treasury-summary`, {}, 'Erro ao carregar posição de tesouraria.');
 };
 
+export const fetchAccountingObligationsSummary = async () => {
+  return performGet(`${FINANCE_BASE_PATH}/obligations/summary`, {}, 'Erro ao carregar resumo de contas a pagar.');
+};
+
 export const fetchOutboundProviderHealth = async () => {
   return performGet(`${FINANCE_BASE_PATH}/outbound/provider-health`, {}, 'Erro ao consultar provedor de pagamentos.');
 };
