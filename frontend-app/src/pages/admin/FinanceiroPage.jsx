@@ -55,6 +55,7 @@ import {
   hasAccountChanges,
 } from '../../utils/adminFinanceAccountUtils';
 import { useAdminAuth } from '../../hooks/useAdminAuth';
+import FinanceModuleNav from '../../components/admin/finance/FinanceModuleNav';
 
 const BLUE = {
   pageBg: 'linear-gradient(180deg, #EEF6FF 0%, #E3F0FF 100%)',
@@ -937,6 +938,7 @@ export default function FinanceiroPage() {
   return (
     <Box sx={{ minHeight: '100vh', background: BLUE.pageBg, py: 3 }}>
       <Container maxWidth="xl">
+        <FinanceModuleNav />
         <Card
           sx={{
             mb: 2,
