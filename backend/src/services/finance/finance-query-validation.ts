@@ -228,6 +228,12 @@ export const financeTransactionsListQuerySchema = financeTransactionsListQueryBa
   }
 });
 
+export const financeReceivablesQuerySchema = paginationSchema(50).extend({
+  search: optionalStrictString(180),
+  state: z.enum(['ALL', 'OPEN', 'OVERDUE', 'DUE_7', 'DUE_30', 'NO_DUE_DATE', 'SETTLED']).default('OPEN'),
+});
+
+
 export const financeIdParamSchema = z.object({
   id: strictTrimmedString(120),
 });
@@ -494,6 +500,7 @@ export type FinanceCategoriesListQuery = z.infer<typeof financeCategoriesListQue
 export type FinanceCostCentersListQuery = z.infer<typeof financeCostCentersListQuerySchema>;
 export type FinanceRecognitionPoliciesListQuery = z.infer<typeof financeRecognitionPoliciesListQuerySchema>;
 export type FinanceTransactionsListQuery = z.infer<typeof financeTransactionsListQuerySchema>;
+export type FinanceReceivablesQuery = z.infer<typeof financeReceivablesQuerySchema>;
 export type FinanceIdParam = z.infer<typeof financeIdParamSchema>;
 export type FinanceAccountCreateBody = z.infer<typeof financeAccountCreateBodySchema>;
 export type FinanceAccountPatchBody = z.infer<typeof financeAccountPatchBodySchema>;
