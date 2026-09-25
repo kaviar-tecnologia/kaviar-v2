@@ -37,10 +37,29 @@ const EDITABLE_STATUSES = ['DRAFT', 'PENDING'] as any[];
 const POSTABLE_STATUSES = ['DRAFT', 'PENDING'] as any[];
 const CANCELABLE_STATUSES = ['DRAFT', 'PENDING'] as any[];
 
-async function validateAccountActive(tx: Prisma.TransactionClient, id: string): Promise<void> {
-  const acc = await tx.financial_accounts.findUnique({ where: { id }, select: { id: true, is_active: true } });
+async function validateAccountActive(tx: Prisma.TransactionClient, id: string): Promise<{ legal_entity_id: string | null }> {
+  const acc = await tx.financial_accounts.findUnique({ where: { id }, select: { id: true, is_active: true, legal_entity_id: true } });
   if (!acc) throw new TransactionWriteError('Conta financeira não encontrada', 404);
   if (!acc.is_active) throw new TransactionWriteError('Conta financeira está inativa');
+  return { legal_entity_id: acc.legal_entity_id ?? null };
+}
+
+async function validateLegalEntityActive(tx: Prisma.TransactionClient, id: string): Promise<void> {
+  const entity = await tx.legal_entities.findUnique({ where: { id }, select: { id: true, is_active: true } });
+  if (!entity) throw new TransactionWriteError('Empresa/filial não encontrada', 404);
+  if (!entity.is_active) throw new TransactionWriteError('Empresa/filial está inativa');
+}
+
+async function validateBusinessUnitActive(tx: Prisma.TransactionClient, id: string): Promise<void> {
+  const unit = await tx.financial_business_units.findUnique({ where: { id }, select: { id: true, is_active: true } });
+  if (!unit) throw new TransactionWriteError('Produto/linha de negócio não encontrado', 404);
+  if (!unit.is_active) throw new TransactionWriteError('Produto/linha de negócio está inativo');
+}
+
+function assertAccountEntity(accountEntityId: string | null, legalEntityId: string): void {
+  if (accountEntityId && accountEntityId !== legalEntityId) {
+    throw new TransactionWriteError('A conta financeira pertence a outra empresa/filial');
+  }
 }
 
 async function validateCategoryActive(tx: Prisma.TransactionClient, id: string): Promise<void> {
@@ -64,9 +83,12 @@ export async function createFinanceTransaction(
   auditContext: FinanceTransactionAuditContext,
 ) {
   return prisma.$transaction(async (tx) => {
-    await validateAccountActive(tx, body.account_id);
+    const account = await validateAccountActive(tx, body.account_id);
     await validateCategoryActive(tx, body.category_id);
     await validateCostCenterActive(tx, body.cost_center_id);
+    await validateLegalEntityActive(tx, body.legal_entity_id);
+    await validateBusinessUnitActive(tx, body.business_unit_id);
+    assertAccountEntity(account.legal_entity_id, body.legal_entity_id);
 
     if (body.counterparty_account_id) {
       await validateAccountActive(tx, body.counterparty_account_id);
@@ -83,6 +105,8 @@ export async function createFinanceTransaction(
         counterparty_account_id: body.counterparty_account_id ?? null,
         category_id: body.category_id,
         cost_center_id: body.cost_center_id ?? null,
+        legal_entity_id: body.legal_entity_id,
+        business_unit_id: body.business_unit_id,
         direction: body.direction,
         transaction_type: body.transaction_type,
         status: 'DRAFT',
@@ -139,6 +163,8 @@ export async function updateFinanceTransaction(
     if (fields.account_id) await validateAccountActive(tx, fields.account_id);
     if (fields.category_id) await validateCategoryActive(tx, fields.category_id);
     await validateCostCenterActive(tx, fields.cost_center_id);
+    if (fields.legal_entity_id) await validateLegalEntityActive(tx, fields.legal_entity_id);
+    if (fields.business_unit_id) await validateBusinessUnitActive(tx, fields.business_unit_id);
     if (fields.counterparty_account_id) {
       await validateAccountActive(tx, fields.counterparty_account_id);
     }
@@ -147,6 +173,17 @@ export async function updateFinanceTransaction(
     const before = await tx.financial_transactions.findUnique({ where: { id }, select: FINANCE_TRANSACTION_DETAIL_SELECT });
     if (!before) throw new TransactionWriteError('Lançamento não encontrado', 404);
     if (before.source_type !== 'MANUAL') throw new TransactionWriteError('Somente lançamentos manuais podem ser editados', 403);
+
+    const effectiveLegalEntity = fields.legal_entity_id !== undefined
+      ? fields.legal_entity_id
+      : before.legal_entity_id;
+    const effectiveBusinessUnit = fields.business_unit_id !== undefined
+      ? fields.business_unit_id
+      : before.business_unit_id;
+    if (!effectiveLegalEntity) throw new TransactionWriteError('Empresa/filial é obrigatória');
+    if (!effectiveBusinessUnit) throw new TransactionWriteError('Produto/linha de negócio é obrigatório');
+    const effectiveAccountRecord = await validateAccountActive(tx, fields.account_id || before.account_id);
+    assertAccountEntity(effectiveAccountRecord.legal_entity_id, effectiveLegalEntity);
 
     // Validate direction/type compatibility considering existing + new values
     const effectiveDirection = fields.direction || before.direction;
