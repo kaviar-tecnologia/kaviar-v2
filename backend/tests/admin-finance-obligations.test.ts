@@ -79,7 +79,7 @@ vi.mock('../src/services/accounting/accounting-document-storage.service', () => 
   MAX_FILE_SIZE: 20 * 1024 * 1024,
 }));
 
-const { adminFinanceObligationsRoutes, serializeForAdmin, statusLabel } = await import('../src/routes/admin-finance-obligations');
+const { adminFinanceObligationsRoutes, serializeForAdmin, statusLabel, computeDueStatus } = await import('../src/routes/admin-finance-obligations');
 
 // ── App ─────────────────────────────────────────────────────────────────
 
@@ -171,11 +171,23 @@ describe('serializeForAdmin', () => {
     expect(statusLabel('SENT_TO_COMPANY')).toBe('Aguardando pagamento');
     expect(statusLabel('VIEWED')).toBe('Aguardando pagamento');
     expect(statusLabel('SCHEDULED')).toBe('Pagamento agendado');
-    expect(statusLabel('PAID')).toBe('Pago');
+    expect(statusLabel('PAID')).toBe('Pagamento informado');
     expect(statusLabel('PROOF_UPLOADED')).toBe('Comprovante enviado');
     expect(statusLabel('VERIFIED')).toBe('Verificado');
     expect(statusLabel('RECONCILED')).toBe('Conciliado');
     expect(statusLabel('REJECTED')).toBe('Comprovante rejeitado');
+  });
+
+  it('não apresenta pagamento informado ou comprovante enviado como dívida vencida', () => {
+    const historicalDue = new Date('2026-01-01T12:00:00Z');
+    for (const status of ['PAID', 'PROOF_UPLOADED', 'UNDER_VERIFICATION']) {
+      expect(computeDueStatus(historicalDue, status)).toBe('PAYMENT_REPORTED');
+      expect(serializeForAdmin(ob({ due_date: historicalDue, status })).due_status).toBe('PAYMENT_REPORTED');
+    }
+    for (const status of ['VERIFIED', 'RECONCILED']) {
+      expect(computeDueStatus(historicalDue, status)).toBe('CLOSED');
+    }
+    expect(computeDueStatus(historicalDue, 'VIEWED')).toBe('OVERDUE');
   });
 
   it('nunca expõe storage keys, tokens ou hashes', () => {
@@ -388,8 +400,29 @@ describe('GET /api/admin/finance/obligations/summary', () => {
     expect(res.body.data.overdue).toBe(1);
     expect(res.body.data.due_soon).toBe(1);
     expect(res.body.data.paid).toBe(1);
+    expect(res.body.data.awaiting_verification).toBe(1);
+    expect(res.body.data.confirmed).toBe(0);
+    expect(res.body.data.proof_rejected).toBe(0);
     expect(res.body.data.total_pending_cents).toBe(150000);
     expect(res.body.data.total_pending_display).toBe('R$ 1500,00');
+  });
+});
+
+describe('Summary: payment verification is not bank reconciliation', () => {
+  it('separa pagamentos informados, confirmados e comprovantes rejeitados', async () => {
+    prismaMock.accounting_payment_obligations.findMany.mockResolvedValue([
+      { status: 'PROOF_UPLOADED', due_date: new Date('2026-01-01T12:00:00Z'), amount_cents: 40500 },
+      { status: 'UNDER_VERIFICATION', due_date: new Date('2026-01-01T12:00:00Z'), amount_cents: 100 },
+      { status: 'RECONCILED', due_date: new Date('2026-01-01T12:00:00Z'), amount_cents: 100 },
+      { status: 'REJECTED', due_date: new Date('2026-01-01T12:00:00Z'), amount_cents: 100 },
+    ]);
+    const res = await request(makeApp()).get('/api/admin/finance/obligations/summary');
+    expect(res.status).toBe(200);
+    expect(res.body.data.awaiting_verification).toBe(2);
+    expect(res.body.data.confirmed).toBe(1);
+    expect(res.body.data.proof_rejected).toBe(1);
+    expect(res.body.data.paid).toBe(3);
+    expect(res.body.data.total_pending_cents).toBe(0);
   });
 });
 
