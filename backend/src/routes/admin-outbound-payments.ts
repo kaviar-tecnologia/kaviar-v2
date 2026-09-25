@@ -70,16 +70,27 @@ router.get('/obligations', async (req: Request, res: Response) => {
     const offset = parseInt(req.query.offset as string) || 0;
     const purpose = req.query.purpose as string | undefined;
     const status = req.query.status as string | undefined;
+    const legalEntityId = req.query.legal_entity_id as string | undefined;
+    const businessUnitId = req.query.business_unit_id as string | undefined;
 
     let where = 'WHERE 1=1';
     const params: any[] = [];
     let idx = 1;
-    if (purpose) { where += ` AND purpose = $${idx++}`; params.push(purpose); }
-    if (status) { where += ` AND status = $${idx++}`; params.push(status); }
+    if (purpose) { where += ` AND o.purpose = $${idx++}`; params.push(purpose); }
+    if (status) { where += ` AND o.status = $${idx++}`; params.push(status); }
+    if (legalEntityId) { where += ` AND o.legal_entity_id = $${idx++}`; params.push(legalEntityId); }
+    if (businessUnitId) { where += ` AND o.business_unit_id = $${idx++}`; params.push(businessUnitId); }
 
     const { rows } = await pool.query(
-      `SELECT id, payee_id, purpose, description_safe, net_amount_cents, due_date, status, failure_code, created_at
-       FROM financial_obligations ${where} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
+      `SELECT o.id, o.payee_id, o.purpose, o.description_safe, o.net_amount_cents, o.due_date, o.status,
+              o.failure_code, o.created_at, o.legal_entity_id, o.business_unit_id,
+              le.razao_social AS legal_entity_razao_social, le.nome_fantasia AS legal_entity_nome_fantasia,
+              le.cnpj AS legal_entity_cnpj, bu.code AS business_unit_code, bu.name AS business_unit_name
+       FROM financial_obligations o
+       LEFT JOIN legal_entities le ON le.id = o.legal_entity_id
+       LEFT JOIN financial_business_units bu ON bu.id = o.business_unit_id
+       ${where}
+       ORDER BY o.created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
       [...params, limit, offset]
     );
     res.json({ success: true, data: rows.map(r => ({ ...r, net_amount_cents: r.net_amount_cents.toString() })) });
@@ -89,24 +100,44 @@ router.get('/obligations', async (req: Request, res: Response) => {
 // POST /obligations (admin-created obligations)
 router.post('/obligations', async (req: Request, res: Response) => {
   try {
-    const { payeeId, purpose, descriptionSafe, grossAmountCents, discountAmountCents, dueDate, competenceDate, documentReference, idempotencyKey } = req.body;
-    if (!payeeId || !purpose || !grossAmountCents || !idempotencyKey) {
+    const {
+      payeeId, purpose, descriptionSafe, grossAmountCents, discountAmountCents, dueDate,
+      competenceDate, documentReference, idempotencyKey, legalEntityId, businessUnitId,
+    } = req.body;
+    if (!payeeId || !purpose || !grossAmountCents || !idempotencyKey || !legalEntityId || !businessUnitId) {
       return res.status(400).json({ success: false, error: 'Missing required fields' });
     }
+
+    const [{ rows: entities }, { rows: units }] = await Promise.all([
+      pool.query('SELECT id FROM legal_entities WHERE id = $1 AND is_active = true', [legalEntityId]),
+      pool.query('SELECT id FROM financial_business_units WHERE id = $1 AND is_active = true', [businessUnitId]),
+    ]);
+    if (!entities.length) return res.status(404).json({ success: false, error: 'LEGAL_ENTITY_NOT_FOUND_OR_INACTIVE' });
+    if (!units.length) return res.status(404).json({ success: false, error: 'BUSINESS_UNIT_NOT_FOUND_OR_INACTIVE' });
+
     const gross = BigInt(grossAmountCents);
     const discount = BigInt(discountAmountCents ?? '0');
     const net = gross - discount;
     if (net <= 0n) return res.status(400).json({ success: false, error: 'Net amount must be positive' });
 
     const { rows: [obl] } = await pool.query(
-      `INSERT INTO financial_obligations (payee_id, purpose, source_type, description_safe, gross_amount_cents, discount_amount_cents, net_amount_cents, due_date, competence_date, document_reference, idempotency_key, created_by_system, created_by_admin_id, status)
-       VALUES ($1, $2, 'ADMIN_CREATED', $3, $4, $5, $6, $7, $8, $9, $10, false, $11, 'BLOCKED_POLICY_REVIEW') RETURNING id, status, created_at`,
-      [payeeId, purpose, descriptionSafe ?? '', gross.toString(), discount.toString(), net.toString(), dueDate ?? null, competenceDate ?? null, documentReference ?? null, idempotencyKey, (req as any).admin?.id ?? null]
+      `INSERT INTO financial_obligations (
+         payee_id, purpose, source_type, legal_entity_id, business_unit_id, description_safe,
+         gross_amount_cents, discount_amount_cents, net_amount_cents, due_date, competence_date,
+         document_reference, idempotency_key, created_by_system, created_by_admin_id, status
+       )
+       VALUES ($1, $2, 'ADMIN_CREATED', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, false, $13, 'BLOCKED_POLICY_REVIEW')
+       RETURNING id, status, legal_entity_id, business_unit_id, created_at`,
+      [
+        payeeId, purpose, legalEntityId, businessUnitId, descriptionSafe ?? '', gross.toString(),
+        discount.toString(), net.toString(), dueDate ?? null, competenceDate ?? null,
+        documentReference ?? null, idempotencyKey, (req as any).admin?.id ?? null,
+      ]
     );
     await pool.query(
       `INSERT INTO financial_payment_audit (entity_type, entity_id, action, admin_id, details_safe)
        VALUES ('OBLIGATION', $1, 'CREATE', $2, $3)`,
-      [obl.id, (req as any).admin?.id ?? null, JSON.stringify({ purpose, grossAmountCents })]
+      [obl.id, (req as any).admin?.id ?? null, JSON.stringify({ purpose, grossAmountCents, legalEntityId, businessUnitId })]
     );
     res.status(201).json({ success: true, data: obl });
   } catch (err: any) {
@@ -130,9 +161,28 @@ router.get('/payouts', async (req: Request, res: Response) => {
   try {
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
     const offset = parseInt(req.query.offset as string) || 0;
+    const legalEntityId = req.query.legal_entity_id as string | undefined;
+    const businessUnitId = req.query.business_unit_id as string | undefined;
+
+    const params: any[] = [];
+    let idx = 1;
+    let where = 'WHERE 1=1';
+    if (legalEntityId) { where += ` AND o.legal_entity_id = $${idx++}`; params.push(legalEntityId); }
+    if (businessUnitId) { where += ` AND o.business_unit_id = $${idx++}`; params.push(businessUnitId); }
+
     const { rows } = await pool.query(
-      `SELECT id, obligation_id, payee_id, amount_cents, instrument, provider_name, status, external_reference, submitted_at, confirmed_at, failed_at, created_at
-       FROM financial_payouts ORDER BY created_at DESC LIMIT $1 OFFSET $2`, [limit, offset]
+      `SELECT p.id, p.obligation_id, p.payee_id, p.amount_cents, p.instrument, p.provider_name,
+              p.status, p.external_reference, p.submitted_at, p.confirmed_at, p.failed_at, p.created_at,
+              o.legal_entity_id, o.business_unit_id,
+              le.razao_social AS legal_entity_razao_social, le.nome_fantasia AS legal_entity_nome_fantasia,
+              le.cnpj AS legal_entity_cnpj, bu.code AS business_unit_code, bu.name AS business_unit_name
+       FROM financial_payouts p
+       JOIN financial_obligations o ON o.id = p.obligation_id
+       LEFT JOIN legal_entities le ON le.id = o.legal_entity_id
+       LEFT JOIN financial_business_units bu ON bu.id = o.business_unit_id
+       ${where}
+       ORDER BY p.created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
+      [...params, limit, offset]
     );
     res.json({ success: true, data: rows.map(r => ({ ...r, amount_cents: r.amount_cents.toString() })) });
   } catch (err: any) { res.status(500).json({ success: false, error: 'INTERNAL_ERROR' }); }
