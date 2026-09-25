@@ -296,6 +296,29 @@ describe('ArPlacesPage runtime behavior', () => {
     unmount();
   });
 
+  it('REPRESENTAÇÃO KAVIAR inicia com localização privada no formulário e payload', async () => {
+    setRole('SUPER_ADMIN');
+    const { container, unmount } = renderPage();
+    await flush();
+
+    const newBtn = Array.from(container.querySelectorAll('button')).find((btn) => btn.textContent === 'Novo local');
+    act(() => newBtn.click());
+    await flush();
+
+    setControlValue(container, 'Tipo', 'KAVIAR_POINT');
+    expect(inputByLabel(container, 'Localização pública')?.value).toBe('PRIVATE');
+
+    const createBtn = Array.from(container.querySelectorAll('button')).find((btn) => btn.textContent === 'Criar');
+    await act(async () => {
+      createBtn.click();
+    });
+
+    const createPayload = createArPlace.mock.calls[0][0];
+    expect(createPayload.type).toBe('KAVIAR_POINT');
+    expect(createPayload.public_location_enabled).toBe(false);
+    unmount();
+  });
+
   it('formulário carrega contatos atuais ao editar', async () => {
     setRole('SUPER_ADMIN');
     listArPlaces.mockResolvedValue({
