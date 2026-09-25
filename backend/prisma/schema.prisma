@@ -2430,6 +2430,7 @@ model operational_territories {
   ar_places            ar_places[]
   financial_cost_centers         financial_cost_centers[]          @relation("financial_cost_centers_territory")
   financial_recognition_policies financial_recognition_policies[]  @relation("financial_recognition_policies_territory")
+  financial_entity_assignments   financial_entity_territory_assignments[]
   territorial_dataset_versions   territorial_dataset_versions[]    @relation("territorial_dataset_versions_territory")
 
   @@unique([name, level, parent_id])
@@ -2445,6 +2446,8 @@ model financial_recognition_policies {
   scope_type           financial_recognition_scope_type
   territory_id         String?
   cost_center_id       String?
+  legal_entity_id      String?
+  business_unit_id     String?
   city                 String?
   state                String?
   policy               financial_recognition_policy
@@ -2460,8 +2463,10 @@ model financial_recognition_policies {
   created_at           DateTime                            @default(now())
   updated_at           DateTime                            @updatedAt
 
-  territory         operational_territories? @relation("financial_recognition_policies_territory", fields: [territory_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  cost_center       financial_cost_centers?  @relation("financial_recognition_policies_cost_center", fields: [cost_center_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  territory         operational_territories?  @relation("financial_recognition_policies_territory", fields: [territory_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  cost_center       financial_cost_centers?   @relation("financial_recognition_policies_cost_center", fields: [cost_center_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  legal_entity      legal_entities?           @relation("financial_recognition_policies_legal_entity", fields: [legal_entity_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  business_unit     financial_business_units? @relation(fields: [business_unit_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
   approved_by_admin admins?                  @relation("financial_recognition_policies_approved_by", fields: [approved_by_admin_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
   created_by_admin  admins?                  @relation("financial_recognition_policies_created_by", fields: [created_by_admin_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
   updated_by_admin  admins?                  @relation("financial_recognition_policies_updated_by", fields: [updated_by_admin_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
@@ -2470,8 +2475,50 @@ model financial_recognition_policies {
   @@index([subject, scope_type, status], map: "financial_recognition_policies_subject_scope_status_idx")
   @@index([territory_id])
   @@index([cost_center_id])
+  @@index([legal_entity_id])
+  @@index([business_unit_id])
   @@index([effective_from, effective_until], map: "financial_recognition_policies_effective_from_effective_until_i")
   @@map("financial_recognition_policies")
+}
+
+model financial_business_units {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  description String?
+  is_system   Boolean  @default(true)
+  is_active   Boolean  @default(true)
+  sort_order  Int      @default(0)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  transactions          financial_transactions[]
+  allocations           financial_transaction_allocations[]
+  recognition_policies  financial_recognition_policies[]
+  obligations           financial_obligations[]
+
+  @@index([is_active, sort_order])
+  @@map("financial_business_units")
+}
+
+model financial_entity_territory_assignments {
+  id              String   @id @default(uuid())
+  legal_entity_id String
+  territory_id    String
+  effective_from  DateTime @db.Date
+  effective_until DateTime? @db.Date
+  is_active       Boolean  @default(true)
+  notes           String?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  legal_entity legal_entities          @relation(fields: [legal_entity_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  territory    operational_territories @relation(fields: [territory_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([legal_entity_id, is_active])
+  @@index([territory_id, is_active])
+  @@index([effective_from, effective_until])
+  @@map("financial_entity_territory_assignments")
 }
 
 model financial_accounts {
@@ -2479,6 +2526,7 @@ model financial_accounts {
   code                     String
   name                     String
   type                     financial_account_type
+  legal_entity_id          String?
   institution_name         String?
   bank_code                String?
   agency_encrypted         String?
@@ -2502,6 +2550,7 @@ model financial_accounts {
   created_at               DateTime               @default(now())
   updated_at               DateTime               @updatedAt
 
+  legal_entity     legal_entities? @relation("financial_accounts_legal_entity", fields: [legal_entity_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
   created_by_admin admins? @relation("financial_accounts_created_by", fields: [created_by_admin_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
   updated_by_admin admins? @relation("financial_accounts_updated_by", fields: [updated_by_admin_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
   transactions_as_account financial_transactions[] @relation("FinancialTransactionAccount")
@@ -2509,6 +2558,7 @@ model financial_accounts {
 
   @@unique([code])
   @@index([type, is_active])
+  @@index([legal_entity_id])
   @@index([currency])
   @@map("financial_accounts")
 }
@@ -2598,6 +2648,8 @@ model financial_transactions {
   counterparty_account_id String?
   category_id             String?
   cost_center_id          String?
+  legal_entity_id         String?
+  business_unit_id        String?
   transfer_group_id       String?
 
   direction               financial_direction
@@ -2638,6 +2690,8 @@ model financial_transactions {
   counterparty_account    financial_accounts?          @relation("FinancialTransactionCounterpartyAccount", fields: [counterparty_account_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
   category                financial_categories?        @relation(fields: [category_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
   cost_center             financial_cost_centers?      @relation(fields: [cost_center_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  legal_entity            legal_entities?              @relation("financial_transactions_legal_entity", fields: [legal_entity_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  business_unit           financial_business_units?    @relation(fields: [business_unit_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
   reversal_of             financial_transactions?      @relation("FinancialTransactionReversal", fields: [reversal_of_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
   reversals               financial_transactions[]     @relation("FinancialTransactionReversal")
   created_by_admin        admins?                      @relation("FinancialTransactionCreatedBy", fields: [created_by_admin_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
@@ -2651,6 +2705,8 @@ model financial_transactions {
   @@index([counterparty_account_id])
   @@index([category_id, competence_date])
   @@index([cost_center_id, competence_date])
+  @@index([legal_entity_id, competence_date])
+  @@index([business_unit_id, competence_date])
   @@index([status, direction])
   @@index([source_type, source_id])
   @@index([provider, provider_event_id])
@@ -2668,6 +2724,7 @@ model financial_transaction_allocations {
   transaction_id      String
   category_id         String
   cost_center_id      String?
+  business_unit_id    String?
   amount_cents        BigInt
   allocation_type     financial_transaction_allocation_type
   description         String?
@@ -2679,11 +2736,13 @@ model financial_transaction_allocations {
   transaction         financial_transactions              @relation(fields: [transaction_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
   category            financial_categories                @relation(fields: [category_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
   cost_center         financial_cost_centers?            @relation(fields: [cost_center_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  business_unit       financial_business_units?          @relation(fields: [business_unit_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
   created_by_admin    admins?                             @relation("FinancialTransactionAllocationCreatedBy", fields: [created_by_admin_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   @@index([transaction_id])
   @@index([category_id])
   @@index([cost_center_id])
+  @@index([business_unit_id])
   @@index([allocation_type])
   @@index([created_by_admin_id])
   @@map("financial_transaction_allocations")
@@ -4273,6 +4332,8 @@ model financial_obligations {
   purpose                        String
   source_type                    String
   source_id                      String?
+  legal_entity_id                String?
+  business_unit_id               String?
   description_safe               String
   gross_amount_cents             BigInt
   discount_amount_cents          BigInt    @default(0)
@@ -4298,6 +4359,8 @@ model financial_obligations {
   updated_at                     DateTime  @default(now()) @db.Timestamptz
 
   payee                          financial_payees @relation(fields: [payee_id], references: [id], onDelete: Restrict)
+  legal_entity                   legal_entities? @relation("financial_obligations_legal_entity", fields: [legal_entity_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  business_unit                  financial_business_units? @relation(fields: [business_unit_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
   allocations                    financial_obligation_allocations[]
   payouts                        financial_payouts[]
   outbox                         financial_payout_outbox[]
@@ -4306,6 +4369,8 @@ model financial_obligations {
   @@index([purpose])
   @@index([status])
   @@index([due_date])
+  @@index([legal_entity_id])
+  @@index([business_unit_id])
   @@index([source_type, source_id])
 }
 
@@ -4614,6 +4679,11 @@ model legal_entities {
   recurring_templates accounting_recurring_templates[]    @relation("entity_recurring_templates")
   automation_config   accounting_automation_config?       @relation("entity_automation_config")
   automation_log      accounting_automation_log[]         @relation("entity_automation_log")
+  financial_accounts  financial_accounts[]                @relation("financial_accounts_legal_entity")
+  financial_transactions financial_transactions[]         @relation("financial_transactions_legal_entity")
+  financial_recognition_policies financial_recognition_policies[] @relation("financial_recognition_policies_legal_entity")
+  financial_obligations financial_obligations[]           @relation("financial_obligations_legal_entity")
+  financial_entity_assignments financial_entity_territory_assignments[]
   @@map("legal_entities")
 }
 
