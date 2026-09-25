@@ -193,10 +193,11 @@ router.post('/entity-territory-assignments', async (req: Request, res: Response)
     const conflict = await prisma.financial_entity_territory_assignments.findFirst({
       where: {
         territory_id,
-        is_active: true,
+        // Historical integrity: an open-ended new assignment cannot overlap
+        // any prior assignment, even one already closed administratively.
         OR: [{ effective_until: null }, { effective_until: { gte: effective_from } }],
       },
-      select: { id: true, legal_entity_id: true },
+      select: { id: true, legal_entity_id: true, effective_from: true, effective_until: true },
     });
     if (conflict) return res.status(409).json({ success: false, error: 'Território já possui empresa/filial responsável no período' });
 
