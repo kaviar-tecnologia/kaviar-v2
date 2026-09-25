@@ -634,6 +634,10 @@ describe('admin ar places CRUD and RBAC', () => {
     const inactivated = await request(app).patch(`/api/admin/ar/places/${id}`).send({ status: 'INACTIVE' });
     expect(inactivated.status).toBe(200);
 
+    const reactivated = await request(app).patch(`/api/admin/ar/places/${id}`).send({ status: 'APPROVED' });
+    expect(reactivated.status).toBe(200);
+    expect(reactivated.body.data.status).toBe('APPROVED');
+
     const created2 = await request(app).post('/api/admin/ar/places').send({
       place_id: 'tour-rio-2',
       name: 'Tour Rio 2',
