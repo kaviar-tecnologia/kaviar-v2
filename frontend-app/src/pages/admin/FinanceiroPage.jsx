@@ -53,7 +53,9 @@ import {
   fetchFinanceObligationsSummary,
   fetchFinanceTreasuryHealth,
   fetchFinanceProviderHealth,
+  listFinanceBusinessUnits,
 } from '../../services/adminFinanceService';
+import { listLegalEntities } from '../../services/adminAccountingService';
 import AccountFormDialog from '../../components/admin/finance/AccountFormDialog';
 import CategoryFormDialog from '../../components/admin/finance/CategoryFormDialog';
 import {
@@ -183,6 +185,7 @@ export default function FinanceiroPage() {
     limit: 25,
     search: '',
     type: '',
+    legal_entity_id: '',
     is_active: '',
     allows_negative_balance: '',
   });
@@ -211,6 +214,9 @@ export default function FinanceiroPage() {
   const [providerHealth, setProviderHealth] = useState(null);
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [overviewError, setOverviewError] = useState('');
+  const [legalEntities, setLegalEntities] = useState([]);
+  const [businessUnits, setBusinessUnits] = useState([]);
+  const [overviewFilters, setOverviewFilters] = useState({ legal_entity_id: '', business_unit_id: '' });
 
   const financeModules = [
     { label: 'Lançamentos', description: 'Receitas, despesas, baixas, estornos e DRE.', path: '/admin/financeiro/lancamentos', icon: <Assessment /> },
@@ -442,8 +448,12 @@ export default function FinanceiroPage() {
   const loadOverview = async () => {
     setOverviewLoading(true);
     setOverviewError('');
+    const dashboardFilters = {
+      ...(overviewFilters.legal_entity_id ? { legal_entity_id: overviewFilters.legal_entity_id } : {}),
+      ...(overviewFilters.business_unit_id ? { business_unit_id: overviewFilters.business_unit_id } : {}),
+    };
     const results = await Promise.allSettled([
-      fetchDashboardSummary(),
+      fetchDashboardSummary(dashboardFilters),
       fetchFinanceObligationsSummary(),
       fetchFinanceTreasuryHealth(),
       fetchFinanceProviderHealth(),
@@ -460,8 +470,18 @@ export default function FinanceiroPage() {
   };
 
   useEffect(() => {
-    loadOverview();
+    Promise.allSettled([
+      listLegalEntities({ page: 1, limit: 100, is_active: 'true' }),
+      listFinanceBusinessUnits(),
+    ]).then(([entities, units]) => {
+      if (entities.status === 'fulfilled') setLegalEntities(Array.isArray(entities.value?.data) ? entities.value.data : []);
+      if (units.status === 'fulfilled') setBusinessUnits(Array.isArray(units.value?.data) ? units.value.data : []);
+    });
   }, []);
+
+  useEffect(() => {
+    loadOverview();
+  }, [overviewFilters.legal_entity_id, overviewFilters.business_unit_id]);
 
   useEffect(() => {
     loadAccounts();
@@ -504,6 +524,23 @@ export default function FinanceiroPage() {
               <MenuItem value="">Todos</MenuItem>
               {ACCOUNT_TYPE_OPTIONS.map((option) => (
                 <MenuItem key={option} value={option}>{getAccountTypeLabel(option)}</MenuItem>
+              ))}
+            </TextField>
+          </Grid>
+          <Grid item xs={12} md={3}>
+            <TextField
+              fullWidth
+              select
+              size="small"
+              label="Empresa / filial"
+              value={accountsQuery.legal_entity_id}
+              onChange={(event) =>
+                setAccountsQuery((prev) => ({ ...prev, page: 1, legal_entity_id: event.target.value }))
+              }
+            >
+              <MenuItem value="">Todas</MenuItem>
+              {legalEntities.map((entity) => (
+                <MenuItem key={entity.id} value={entity.id}>{entity.nome_fantasia || entity.razao_social}</MenuItem>
               ))}
             </TextField>
           </Grid>
@@ -573,6 +610,7 @@ export default function FinanceiroPage() {
                 <TableRow>
                   <TableCell>Código</TableCell>
                   <TableCell>Nome</TableCell>
+                  <TableCell>Empresa / filial</TableCell>
                   <TableCell>Instituição</TableCell>
                   <TableCell>Tipo</TableCell>
                   <TableCell>Moeda</TableCell>
@@ -585,13 +623,13 @@ export default function FinanceiroPage() {
               <TableBody>
                 {accountsState.loading ? (
                   <TableRow>
-                      <TableCell colSpan={9} align="center" sx={{ py: 4 }}>
+                      <TableCell colSpan={10} align="center" sx={{ py: 4 }}>
                       <CircularProgress size={22} />
                     </TableCell>
                   </TableRow>
                 ) : accountsState.data.length === 0 ? (
                   <TableRow>
-                      <TableCell colSpan={9}>
+                      <TableCell colSpan={10}>
                       <EmptyState message="Nenhuma conta encontrada para os filtros selecionados." />
                     </TableCell>
                   </TableRow>
@@ -600,6 +638,7 @@ export default function FinanceiroPage() {
                     <TableRow hover key={item.id}>
                       <TableCell>{item.code || '-'}</TableCell>
                       <TableCell>{item.name || '-'}</TableCell>
+                      <TableCell>{item.legal_entity?.nome_fantasia || item.legal_entity?.razao_social || '-'}</TableCell>
                         <TableCell>{item.institution_name || '-'}</TableCell>
                       <TableCell>{item.type || '-'}</TableCell>
                       <TableCell>{item.currency || '-'}</TableCell>
@@ -1000,21 +1039,58 @@ export default function FinanceiroPage() {
               <Button variant="outlined" startIcon={<Refresh />} onClick={loadOverview} disabled={overviewLoading} sx={{ color: '#fff', borderColor: 'rgba(255,255,255,0.45)', textTransform: 'none' }}>Atualizar visão</Button>
             </Box>
 
+            <Grid container spacing={1.5} sx={{ mt: 1.5 }}>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  select
+                  fullWidth
+                  size="small"
+                  label="Empresa / filial"
+                  value={overviewFilters.legal_entity_id}
+                  onChange={(event) => setOverviewFilters((prev) => ({ ...prev, legal_entity_id: event.target.value }))}
+                  sx={{ '& .MuiInputBase-root': { bgcolor: 'rgba(255,255,255,0.96)' } }}
+                >
+                  <MenuItem value="">Consolidado — todas as empresas</MenuItem>
+                  {legalEntities.map((entity) => (
+                    <MenuItem key={entity.id} value={entity.id}>
+                      {entity.nome_fantasia || entity.razao_social} — {entity.entity_type}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  select
+                  fullWidth
+                  size="small"
+                  label="Produto / linha de negócio"
+                  value={overviewFilters.business_unit_id}
+                  onChange={(event) => setOverviewFilters((prev) => ({ ...prev, business_unit_id: event.target.value }))}
+                  sx={{ '& .MuiInputBase-root': { bgcolor: 'rgba(255,255,255,0.96)' } }}
+                >
+                  <MenuItem value="">Todos os produtos</MenuItem>
+                  {businessUnits.map((unit) => <MenuItem key={unit.id} value={unit.id}>{unit.name}</MenuItem>)}
+                </TextField>
+              </Grid>
+            </Grid>
+
             {overviewError && <Alert severity="warning" sx={{ mt: 2 }}>{overviewError}</Alert>}
 
             <Grid container spacing={1.5} sx={{ mt: 1 }}>
               {[
-                ['Receita realizada', executiveSummary?.summary?.realized_revenue_cents || '0'],
-                ['Despesa realizada', executiveSummary?.summary?.realized_expense_cents || '0'],
-                ['Resultado', executiveSummary?.summary?.realized_result_cents || '0'],
-                ['A receber previsto', executiveSummary?.summary?.forecast_revenue_cents || '0'],
-                ['Contas pendentes', obligationsSummary?.total_pending_cents || 0],
-                ['Déficit tesouraria', treasuryHealth?.deficitCents || '0'],
-              ].map(([label, value]) => (
+                ['Receita realizada', executiveSummary?.summary?.realized_revenue_cents || '0', true],
+                ['Despesa realizada', executiveSummary?.summary?.realized_expense_cents || '0', true],
+                ['Resultado', executiveSummary?.summary?.realized_result_cents || '0', true],
+                ['A receber previsto', executiveSummary?.summary?.forecast_revenue_cents || '0', true],
+                ['A pagar em aberto', executiveSummary?.summary?.forecast_expense_cents || '0', true],
+                ['Déficit tesouraria', treasuryHealth?.deficitCents || '0', Boolean(providerHealth?.available && treasuryHealth?.accountOwnershipConfirmed)],
+              ].map(([label, value, available]) => (
                 <Grid item xs={6} md={2} key={label}>
                   <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.10)', minHeight: 78 }}>
                     <Typography sx={{ color: '#CBD5E1', fontSize: 11 }}>{label}</Typography>
-                    <Typography sx={{ fontWeight: 800, fontSize: 18, mt: 0.5 }}>{formatCentsStringToBRL(String(value))}</Typography>
+                    <Typography sx={{ fontWeight: 800, fontSize: 18, mt: 0.5 }}>
+                      {available ? formatCentsStringToBRL(String(value)) : 'Não disponível'}
+                    </Typography>
                   </Box>
                 </Grid>
               ))}
@@ -1142,6 +1218,7 @@ export default function FinanceiroPage() {
         open={accountDialogOpen}
         mode={accountDialogMode}
         account={selectedAccount}
+        legalEntities={legalEntities}
         role={adminRole}
         isSuperAdmin={isSuperAdmin}
         submitting={accountSubmitting}
