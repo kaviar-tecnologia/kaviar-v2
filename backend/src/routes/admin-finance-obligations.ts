@@ -86,7 +86,7 @@ export function statusLabel(status: string): string {
     SENT_TO_COMPANY: 'Aguardando pagamento',
     VIEWED: 'Aguardando pagamento',
     SCHEDULED: 'Pagamento agendado',
-    PAID: 'Pago',
+    PAID: 'Pagamento informado',
     PROOF_UPLOADED: 'Comprovante enviado',
     UNDER_VERIFICATION: 'Em verificação',
     VERIFIED: 'Verificado',
@@ -106,6 +106,9 @@ function actionOwnerLabel(owner: string): string {
 // Situação de vencimento (mesma lógica do portal).
 export function computeDueStatus(dueDate: any, status: string): string {
   if (['RECONCILED', 'CANCELED', 'VERIFIED'].includes(status)) return 'CLOSED';
+  // A date after the due date does not mean payment is still outstanding when
+  // the company has already reported payment. Verification remains a separate step.
+  if (['PAID', 'PROOF_UPLOADED', 'UNDER_VERIFICATION'].includes(status)) return 'PAYMENT_REPORTED';
   const due = new Date(dueDate);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -312,7 +315,10 @@ router.get('/summary', async (req: Request, res: Response) => {
       const diff = Math.floor((new Date(o.due_date).getTime() - today.getTime()) / 86400000);
       return diff >= 0 && diff <= 7;
     });
-    const paid = all.filter(o => ['PAID', 'PROOF_UPLOADED', 'UNDER_VERIFICATION', 'VERIFIED', 'RECONCILED'].includes(o.status));
+    const awaitingVerification = all.filter(o => ['PAID', 'PROOF_UPLOADED', 'UNDER_VERIFICATION'].includes(o.status));
+    const confirmed = all.filter(o => ['VERIFIED', 'RECONCILED'].includes(o.status));
+    const proofRejected = all.filter(o => o.status === 'REJECTED');
+    const paid = [...awaitingVerification, ...confirmed];
 
     const totalPendingCents = pending.reduce((acc, o) => acc + o.amount_cents, 0);
 
@@ -323,7 +329,10 @@ router.get('/summary', async (req: Request, res: Response) => {
         pending: pending.length,
         due_soon: dueSoon.length,
         overdue: overdue.length,
-        paid: paid.length,
+        paid: paid.length, // Backward-compatible count of payments reported or confirmed.
+        awaiting_verification: awaitingVerification.length,
+        confirmed: confirmed.length,
+        proof_rejected: proofRejected.length,
         total_pending_cents: totalPendingCents,
         total_pending_display: `R$ ${(totalPendingCents / 100).toFixed(2).replace('.', ',')}`,
       },
