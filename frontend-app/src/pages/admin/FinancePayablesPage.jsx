@@ -123,6 +123,8 @@ export default function FinancePayablesPage() {
   const [obligationsSummary, setObligationsSummary] = useState(null);
   const [legalEntities, setLegalEntities] = useState([]);
   const [selectedEntityId, setSelectedEntityId] = useState('');
+  const [obligationPage, setObligationPage] = useState(1);
+  const [obligationPagination, setObligationPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 0 });
   const obligationRequest = React.useRef(0);
   const [obligationsError, setObligationsError] = useState(null);
   const [downloadingId, setDownloadingId] = useState(null);
@@ -137,7 +139,7 @@ export default function FinancePayablesPage() {
 
   const reloadObligations = React.useCallback(async () => {
     const serial = ++obligationRequest.current;
-    const params = selectedEntityId ? { legal_entity_id: selectedEntityId } : {};
+    const params = { page: obligationPage, limit: 50, ...(selectedEntityId ? { legal_entity_id: selectedEntityId } : {}) };
     setObligationsError(null);
     setObligations(null);
     try {
@@ -147,6 +149,7 @@ export default function FinancePayablesPage() {
       ]);
       if (serial !== obligationRequest.current) return;
       setObligations(list.data || []);
+      setObligationPagination(list.pagination || { page: obligationPage, limit: 50, total: (list.data || []).length, totalPages: 1 });
       setObligationsSummary(summary.data || null);
     } catch (error) {
       if (serial !== obligationRequest.current) return;
@@ -154,7 +157,7 @@ export default function FinancePayablesPage() {
       setObligationsSummary(null);
       setObligationsError(error.message || 'Erro ao carregar cobranças e obrigações');
     }
-  }, [selectedEntityId]);
+  }, [selectedEntityId, obligationPage]);
 
   useEffect(() => {
     Promise.all([
@@ -267,7 +270,7 @@ export default function FinancePayablesPage() {
         select
         fullWidth
         value={selectedEntityId}
-        onChange={(event) => setSelectedEntityId(event.target.value)}
+        onChange={(event) => { setSelectedEntityId(event.target.value); setObligationPage(1); }}
         sx={{ maxWidth: 520, mb: 2 }}
       >
         <MenuItem value="">Consolidado — matriz e filiais</MenuItem>
@@ -444,6 +447,24 @@ export default function FinancePayablesPage() {
         </TableContainer>
       ) : (
         <Alert severity="info">Nenhuma cobrança ou obrigação pendente.</Alert>
+      )}
+
+      {obligationPagination.totalPages > 1 && (
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1.5, mt: 2 }}>
+          <Typography variant="caption" color="text.secondary">
+            Página {obligationPagination.page} de {obligationPagination.totalPages} · {obligationPagination.total} obrigações
+          </Typography>
+          <Button
+            size="small" variant="outlined"
+            disabled={obligations === null || obligationPage <= 1}
+            onClick={() => setObligationPage((page) => page - 1)}
+          >Anterior</Button>
+          <Button
+            size="small" variant="outlined"
+            disabled={obligations === null || obligationPage >= obligationPagination.totalPages}
+            onClick={() => setObligationPage((page) => page + 1)}
+          >Próxima</Button>
+        </Box>
       )}
 
       <Divider sx={{ my: 4 }} />
