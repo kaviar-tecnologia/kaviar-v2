@@ -247,6 +247,25 @@ describe('admin ar places CRUD and RBAC', () => {
     expect(res.body.data.status).toBe('DRAFT');
   });
 
+  it('cria representação KAVIAR com tipo próprio e regras de IA seguras', async () => {
+    const res = await request(app).post('/api/admin/ar/places').send({
+      place_id: 'representacao-kaviar-tambau-sp',
+      name: 'Representação KAVIAR Tambaú',
+      type: 'KAVIAR_POINT',
+      city: 'Tambaú',
+      state: 'SP',
+      address: 'Rua Benjamin Espiga Real, 386',
+      latitude: -21.7073335,
+      longitude: -47.2749788,
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.type).toBe('KAVIAR_POINT');
+    expect(res.body.data.status).toBe('DRAFT');
+    expect(res.body.data.contents[0].grounding_rule).toContain('informações oficiais cadastradas e aprovadas pela KAVIAR');
+    expect(res.body.data.contents[0].boundary_rule).toContain('Não apresente o local como filial');
+  });
+
   it('aceita territory_id textual compatível com operational_territories.id', async () => {
     const res = await request(app).post('/api/admin/ar/places').send({
       place_id: 'hotel-territorio-textual',
