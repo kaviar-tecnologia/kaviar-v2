@@ -490,12 +490,16 @@ function AdminHome() {
             ]}] : []),
             { section: 'Financeiro', items: [
               ...(canAccessFinance ? [
-                { Icon: SmartToy, title: 'Chat KAVIAR', desc: 'Assistente operacional — consulta corridas, documentos e finanças.', to: '/admin/chat-kaviar' },
-                { Icon: Paid, title: 'Painel Financeiro Administrativo', desc: 'Contas, categorias e centros de custo em leitura', to: '/admin/financeiro' },
+                { Icon: Assessment, title: 'Visão Financeira', desc: 'Resultado, caixa, recebíveis, obrigações e saúde dos pagamentos.', to: '/admin/financeiro/visao-geral' },
+                { Icon: Paid, title: 'Lançamentos Financeiros', desc: 'Ledger, DRE gerencial, liquidação, cancelamento e estorno.', to: '/admin/financeiro/lancamentos' },
+                { Icon: Paid, title: 'Contas a Receber', desc: 'Aging, vencimentos e baixa dos recebíveis.', to: '/admin/financeiro/contas-a-receber' },
+                { Icon: Paid, title: 'Contas a Pagar', desc: 'Obrigações, boletos, notas fiscais, comprovantes e repasses.', to: '/admin/financeiro/contas-a-pagar' },
+                { Icon: CreditCard, title: 'Tesouraria', desc: 'Saldo atual e projetado por conta de caixa e equivalentes.', to: '/admin/financeiro/tesouraria' },
+                { Icon: Paid, title: 'Pagamentos e Repasses', desc: 'Beneficiários, obrigações outbound, payouts e reconciliação.', to: '/admin/financeiro/pagamentos' },
+                { Icon: Business, title: 'Estrutura Financeira', desc: 'Plano de contas, categorias e centros de custo.', to: '/admin/financeiro' },
                 { Icon: Description, title: 'Políticas financeiras', desc: 'Classificação, escopo, vigência e estado das regras de reconhecimento.', to: '/admin/financeiro/politicas' },
                 { Icon: Assessment, title: 'Área do Contador', desc: 'Relatório de corridas, receita e exportação CSV — somente leitura.', to: '/admin/financeiro/contador' },
-                { Icon: Paid, title: 'Lançamentos Manuais', desc: 'Despesas, receitas e obrigações cadastradas manualmente.', to: '/admin/financeiro/lancamentos' },
-                { Icon: Paid, title: 'Contas a Pagar', desc: 'Gratificação anual e repasses de gestores.', to: '/admin/financeiro/contas-a-pagar' },
+                { Icon: SmartToy, title: 'Chat KAVIAR', desc: 'Assistente operacional — consulta corridas, documentos e finanças.', to: '/admin/chat-kaviar' },
               ] : []),
               ...(isSuperAdmin ? [
                 { Icon: Business, title: 'Portal do Contador', desc: 'Empresas, escritórios, contadores e vínculos.', to: '/admin/portal-contador' },
