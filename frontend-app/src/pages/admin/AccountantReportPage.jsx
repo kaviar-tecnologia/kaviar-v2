@@ -39,6 +39,7 @@ import {
 } from '@mui/icons-material';
 import { API_BASE_URL } from '../../config/api';
 import ManualTransactionsTab from './ManualTransactionsTab';
+import FinanceModuleNav from '../../components/admin/finance/FinanceModuleNav';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────
 
@@ -275,6 +276,7 @@ export default function AccountantReportPage() {
 
   return (
     <Container maxWidth="lg" sx={{ mt: 2, pb: 6 }}>
+      <FinanceModuleNav />
       {/* Header + Tabs — clear surface with high contrast */}
       <Box
         sx={{
