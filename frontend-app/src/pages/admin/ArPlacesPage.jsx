@@ -80,6 +80,7 @@ const defaultForm = {
   instagram_url: '',
   latitude: '',
   longitude: '',
+  public_location_enabled: true,
   territory_id: '',
   owner_partner_id: '',
   status: 'DRAFT',
@@ -205,6 +206,7 @@ export default function ArPlacesPage() {
       instagram_url: record.instagram_url || '',
       latitude: String(record.latitude),
       longitude: String(record.longitude),
+      public_location_enabled: record.public_location_enabled !== false,
       territory_id: record.territory_id || '',
       owner_partner_id: record.owner_partner_id || '',
       status: record.status,
@@ -312,6 +314,7 @@ export default function ArPlacesPage() {
       instagram_url: form.instagram_url.trim() || null,
       latitude: Number(form.latitude),
       longitude: Number(form.longitude),
+      public_location_enabled: form.public_location_enabled,
       territory_id: form.territory_id || null,
       owner_partner_id: form.owner_partner_id || null,
       content: {
@@ -471,6 +474,7 @@ export default function ArPlacesPage() {
                   <TableCell>
                     <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
                       <Chip size="small" label={place.status} color={stateChipColor(place.status)} />
+                      {place.public_location_enabled === false && <Chip size="small" label="Localização privada" />}
                       {place.pending_change_request && <Chip size="small" label="Alteração pendente" color="warning" />}
                     </Box>
                   </TableCell>
@@ -505,7 +509,25 @@ export default function ArPlacesPage() {
             <Grid item xs={12} md={6}><TextField fullWidth label="Nome" value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} /></Grid>
             <Grid item xs={12} md={6}><TextField fullWidth label="placeId" value={form.place_id} onChange={(e) => setForm((prev) => ({ ...prev, place_id: e.target.value }))} /></Grid>
             <Grid item xs={12} md={4}>
-              <TextField fullWidth select label="Tipo" value={form.type} onChange={(e) => setForm((prev) => ({ ...prev, type: e.target.value }))}>
+              <TextField
+                fullWidth
+                select
+                label="Tipo"
+                value={form.type}
+                onChange={(e) => {
+                  const nextType = e.target.value;
+                  setForm((prev) => ({
+                    ...prev,
+                    type: nextType,
+                    public_location_enabled:
+                      nextType === 'KAVIAR_POINT'
+                        ? false
+                        : prev.type === 'KAVIAR_POINT'
+                          ? true
+                          : prev.public_location_enabled,
+                  }));
+                }}
+              >
                 {TYPE_OPTIONS.map((option) => <MenuItem key={option} value={option}>{getTypeLabel(option)}</MenuItem>)}
               </TextField>
             </Grid>
@@ -514,6 +536,25 @@ export default function ArPlacesPage() {
             <Grid item xs={12} md={8}><TextField fullWidth label="Endereço" value={form.address} onChange={(e) => { setGeocodeMessage(''); setForm((prev) => ({ ...prev, address: e.target.value })); }} /></Grid>
             <Grid item xs={12} md={2}><TextField fullWidth label="Latitude" value={form.latitude} onChange={(e) => setForm((prev) => ({ ...prev, latitude: e.target.value }))} /></Grid>
             <Grid item xs={12} md={2}><TextField fullWidth label="Longitude" value={form.longitude} onChange={(e) => setForm((prev) => ({ ...prev, longitude: e.target.value }))} /></Grid>
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                select
+                label="Localização pública"
+                value={form.public_location_enabled ? 'PUBLIC' : 'PRIVATE'}
+                onChange={(e) => setForm((prev) => ({ ...prev, public_location_enabled: e.target.value === 'PUBLIC' }))}
+              >
+                <MenuItem value="PRIVATE">Privada — somente uso interno</MenuItem>
+                <MenuItem value="PUBLIC">Pública — exibir endereço e coordenadas</MenuItem>
+              </TextField>
+            </Grid>
+            {!form.public_location_enabled && (
+              <Grid item xs={12}>
+                <Alert severity="info">
+                  Endereço e coordenadas continuam salvos para uso administrativo, mas não são enviados pela API pública do KAVIAR AR.
+                </Alert>
+              </Grid>
+            )}
             {canEdit && (
               <Grid item xs={12}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
