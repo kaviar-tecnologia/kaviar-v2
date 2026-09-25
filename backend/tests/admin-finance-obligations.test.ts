@@ -30,6 +30,7 @@ const { prismaMock, authState, auditSpy } = vi.hoisted(() => {
     legal_entities: { findMany: vi.fn() },
     accounting_payment_obligations: {
       findMany: vi.fn(),
+      count: vi.fn(),
       findUnique: vi.fn(),
       update: vi.fn(),
     },
@@ -142,6 +143,7 @@ function ob(overrides: any = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   authState.role = 'SUPER_ADMIN';
+  prismaMock.accounting_payment_obligations.count.mockResolvedValue(0);
   prismaMock.accounting_payment_obligations.update.mockImplementation(async ({ where, data }: any) => ({
     ...ob(),
     id: where.id,
@@ -312,6 +314,26 @@ describe('Multi-CNPJ — matriz e filiais da KAVIAR', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.total_pending_cents).toBe(2500);
     expect(prismaMock.accounting_payment_obligations.findMany.mock.calls[0][0].where.legal_entity_id).toBe(FILIAL_ID);
+  });
+
+  it('pagina a lista sem truncar silenciosamente a base de múltiplas filiais', async () => {
+    prismaMock.accounting_payment_obligations.count.mockResolvedValue(153);
+    prismaMock.accounting_payment_obligations.findMany.mockResolvedValue([filialOb()]);
+    const res = await request(makeApp())
+      .get('/api/admin/finance/obligations?legal_entity_id=' + FILIAL_ID + '&page=2&limit=25');
+    expect(res.status).toBe(200);
+    expect(res.body.pagination).toEqual({ page: 2, limit: 25, total: 153, totalPages: 7 });
+    const listOptions = prismaMock.accounting_payment_obligations.findMany.mock.calls[0][0];
+    expect(listOptions.skip).toBe(25);
+    expect(listOptions.take).toBe(25);
+    expect(prismaMock.accounting_payment_obligations.count.mock.calls[0][0].where)
+      .toEqual(listOptions.where);
+  });
+
+  it('rejeita paginação fora dos limites', async () => {
+    const res = await request(makeApp()).get('/api/admin/finance/obligations?page=0&limit=999');
+    expect(res.status).toBe(400);
+    expect(prismaMock.accounting_payment_obligations.findMany).not.toHaveBeenCalled();
   });
 
   it('recusa filtro inválido em listas e resumos', async () => {
