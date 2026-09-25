@@ -26,9 +26,11 @@ import {
   createFinanceRecognitionPolicy,
   getFinanceRecognitionPolicyById,
   listFinanceCostCenters,
+  listFinanceBusinessUnits,
   listTerritories,
   updateFinanceRecognitionPolicy,
 } from '../../../services/adminFinanceService';
+import { listLegalEntities } from '../../../services/adminAccountingService';
 
 const titleId = 'recognition-policy-form-title';
 const discardTitleId = 'recognition-policy-discard-title';
@@ -44,6 +46,8 @@ const defaultFormValues = () => ({
   scope_type: '',
   territory_id: '',
   cost_center_id: '',
+  legal_entity_id: '',
+  business_unit_id: '',
   city: '',
   state: '',
   effective_from: '',
@@ -61,6 +65,8 @@ function policyToFormValues(policy) {
     scope_type: policy.scope_type || '',
     territory_id: policy.territory_id || '',
     cost_center_id: policy.cost_center_id || '',
+    legal_entity_id: policy.legal_entity_id || '',
+    business_unit_id: policy.business_unit_id || '',
     city: policy.city || '',
     state: policy.state || '',
     effective_from: policy.effective_from ? policy.effective_from.substring(0, 10) : '',
@@ -119,6 +125,8 @@ function buildPostPayload(values) {
     scope_type: scope,
     territory_id: scope === 'TERRITORY' ? values.territory_id : null,
     cost_center_id: scope === 'COST_CENTER' ? values.cost_center_id : null,
+    legal_entity_id: values.legal_entity_id || null,
+    business_unit_id: values.business_unit_id || null,
     city: scope === 'CITY' ? values.city.trim() : null,
     state: scope === 'CITY' ? values.state.trim().toUpperCase() : null,
     effective_from: values.effective_from,
@@ -233,6 +241,10 @@ export default function RecognitionPolicyFormDialog({ open, mode, policyId, onCl
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
   const [reloadConfirmOpen, setReloadConfirmOpen] = useState(false);
 
+  const [legalEntities, setLegalEntities] = useState([]);
+  const [businessUnits, setBusinessUnits] = useState([]);
+  const [dimensionsLoading, setDimensionsLoading] = useState(false);
+
   const [territories, setTerritories] = useState([]);
   const [territoriesLoaded, setTerritoriesLoaded] = useState(false);
   const [loadingTerritories, setLoadingTerritories] = useState(false);
@@ -306,6 +318,22 @@ export default function RecognitionPolicyFormDialog({ open, mode, policyId, onCl
         });
     }
   }, [open, mode, policyId]);
+
+  useEffect(() => {
+    if (!open) {
+      setLegalEntities([]);
+      setBusinessUnits([]);
+      return;
+    }
+    setDimensionsLoading(true);
+    Promise.allSettled([
+      listLegalEntities({ page: 1, limit: 100, is_active: 'true' }),
+      listFinanceBusinessUnits(),
+    ]).then(([entities, units]) => {
+      if (entities.status === 'fulfilled') setLegalEntities(Array.isArray(entities.value?.data) ? entities.value.data : []);
+      if (units.status === 'fulfilled') setBusinessUnits(Array.isArray(units.value?.data) ? units.value.data : []);
+    }).finally(() => setDimensionsLoading(false));
+  }, [open]);
 
   // Lazy-load territories when scope = TERRITORY
   useEffect(() => {
@@ -568,6 +596,44 @@ export default function RecognitionPolicyFormDialog({ open, mode, policyId, onCl
               >
                 {RECOGNITION_POLICY_OPTIONS.map((p) => (
                   <MenuItem key={p} value={p}>{RECOGNITION_POLICY_LABELS[p]}</MenuItem>
+                ))}
+              </TextField>
+            </Grid>
+
+            {/* ── Independent accounting dimensions ────────────────────────────── */}
+            <Grid item xs={12} md={6}>
+              <TextField
+                label="Empresa / filial"
+                value={formValues.legal_entity_id}
+                onChange={(e) => handleChange('legal_entity_id', e.target.value)}
+                fullWidth
+                select
+                size="small"
+                disabled={dimensionsLoading}
+                helperText="Opcional. Em branco, a regra vale para todas as empresas/CNPJs dentro do escopo."
+              >
+                <MenuItem value="">Todas as empresas</MenuItem>
+                {legalEntities.map((entity) => (
+                  <MenuItem key={entity.id} value={entity.id}>
+                    {entity.nome_fantasia || entity.razao_social} — {entity.entity_type}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField
+                label="Produto / linha de negócio"
+                value={formValues.business_unit_id}
+                onChange={(e) => handleChange('business_unit_id', e.target.value)}
+                fullWidth
+                select
+                size="small"
+                disabled={dimensionsLoading}
+                helperText="Opcional. Permite regras específicas para Mobilidade, KAVIAR AR, Pet, Care e demais linhas."
+              >
+                <MenuItem value="">Todos os produtos</MenuItem>
+                {businessUnits.map((unit) => (
+                  <MenuItem key={unit.id} value={unit.id}>{unit.name}</MenuItem>
                 ))}
               </TextField>
             </Grid>
