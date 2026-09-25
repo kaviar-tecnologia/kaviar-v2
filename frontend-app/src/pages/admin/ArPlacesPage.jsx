@@ -309,6 +309,24 @@ export default function ArPlacesPage() {
     }
   }
 
+  async function handleReactivate(place) {
+    if (!isSuperAdmin || place.status !== 'INACTIVE') return;
+    const confirmed = window.confirm(`Reativar "${place.name}"? O local voltará a ficar publicado no KAVIAR AR.`);
+    if (!confirmed) return;
+
+    setSaving(true);
+    setError('');
+    try {
+      await updateArPlace(place.id, { status: 'APPROVED' });
+      await loadPlaces();
+      if (form.id === place.id) await refreshOpenPlace(place.id);
+    } catch (requestError) {
+      setError(requestError.message || 'Erro ao reativar local AR.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <Box sx={{ p: 2 }}>
       <Typography variant="h5" sx={{ mb: 2, fontWeight: 700 }}>KAVIAR AR · Locais AR</Typography>
@@ -391,11 +409,18 @@ export default function ArPlacesPage() {
                     </Box>
                   </TableCell>
                   <TableCell align="right">
-                    {canEdit && (
-                      <Button size="small" startIcon={<Edit />} onClick={() => openEditDialog(place.id)}>
-                        Editar
-                      </Button>
-                    )}
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5, flexWrap: 'wrap' }}>
+                      {canEdit && (
+                        <Button size="small" startIcon={<Edit />} onClick={() => openEditDialog(place.id)}>
+                          Editar
+                        </Button>
+                      )}
+                      {isSuperAdmin && place.status === 'INACTIVE' && (
+                        <Button size="small" color="success" disabled={saving} onClick={() => handleReactivate(place)}>
+                          Reativar
+                        </Button>
+                      )}
+                    </Box>
                   </TableCell>
                 </TableRow>
               ))}

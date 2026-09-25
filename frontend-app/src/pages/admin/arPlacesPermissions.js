@@ -13,7 +13,7 @@ const SUPER_ADMIN_TRANSITIONS = {
   ],
   APPROVED: [{ nextStatus: 'INACTIVE', label: 'Desativar' }],
   REJECTED: [{ nextStatus: 'DRAFT', label: 'Voltar para rascunho' }],
-  INACTIVE: [],
+  INACTIVE: [{ nextStatus: 'APPROVED', label: 'Reativar' }],
 };
 
 const MANAGER_TRANSITIONS = {
