@@ -145,6 +145,9 @@ export const CSV_HEADERS = [
   'Código exportação',
   'Notas do contador',
   'Centro de custo',
+  'Empresa/filial',
+  'CNPJ',
+  'Linha de negócio',
   'Data competência',
   'Data transação',
   'Vencimento',
@@ -183,6 +186,9 @@ export function buildCsvRow(row: any): string[] {
     csvSafe(row.category?.export_code),
     csvSafe(row.category?.accountant_notes),
     csvSafe(row.cost_center?.name),
+    csvSafe(row.legal_entity?.nome_fantasia || row.legal_entity?.razao_social),
+    csvSafe(row.legal_entity?.cnpj),
+    csvSafe(row.business_unit?.name),
     csvSafe(formatCivilDateBR(row.competence_date)),
     csvSafe(formatCivilDateBR(row.transaction_date)),
     csvSafe(formatCivilDateBR(row.due_date)),
@@ -240,6 +246,8 @@ const EXPORT_SELECT = {
     },
   },
   cost_center: { select: { id: true, code: true, name: true } },
+  legal_entity: { select: { id: true, razao_social: true, nome_fantasia: true, cnpj: true } },
+  business_unit: { select: { id: true, code: true, name: true } },
 };
 
 export interface CsvExportFilters {
@@ -248,6 +256,8 @@ export interface CsvExportFilters {
   counterparty_account_id?: string;
   category_id?: string;
   cost_center_id?: string;
+  legal_entity_id?: string;
+  business_unit_id?: string;
   direction?: string;
   transaction_type?: string;
   status?: string;
@@ -268,6 +278,8 @@ function buildWhereClause(filters: CsvExportFilters): Prisma.financial_transacti
   if (filters.counterparty_account_id) where.counterparty_account_id = filters.counterparty_account_id;
   if (filters.category_id) where.category_id = filters.category_id;
   if (filters.cost_center_id) where.cost_center_id = filters.cost_center_id;
+  if (filters.legal_entity_id) where.legal_entity_id = filters.legal_entity_id;
+  if (filters.business_unit_id) where.business_unit_id = filters.business_unit_id;
   if (filters.direction) where.direction = filters.direction as any;
   if (filters.transaction_type) where.transaction_type = filters.transaction_type as any;
   if (filters.status) where.status = filters.status as any;
