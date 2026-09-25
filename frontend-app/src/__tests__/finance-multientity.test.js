@@ -30,6 +30,12 @@ describe('finance multi-entity and business-unit foundation', () => {
     expect(financeHome).toContain('sem divisão por produto');
   });
 
+  it('warns when an active payment wallet has no verified CNPJ assignment', () => {
+    expect(financeHome).toContain("account.type === 'PIX_WALLET' && !account.legal_entity_id");
+    expect(financeHome).toContain('Sem CNPJ vinculado');
+    expect(financeHome).toContain('Confirme a titularidade com o provedor');
+  });
+
   it('requires entity and business unit on manual financial entries', () => {
     expect(transactions).toContain('Empresa / filial *');
     expect(transactions).toContain('Produto / linha de negócio *');
