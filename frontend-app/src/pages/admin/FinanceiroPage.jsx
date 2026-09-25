@@ -50,6 +50,7 @@ import {
   listFinanceCostCenters,
   updateFinanceAccount,
   fetchDashboardSummary,
+  fetchFinanceObligationsSummary,
   fetchFinanceTreasuryHealth,
   fetchFinanceProviderHealth,
   listFinanceBusinessUnits,
@@ -208,6 +209,7 @@ export default function FinanceiroPage() {
   const [costCentersState, setCostCentersState] = useState(initialListState);
 
   const [executiveSummary, setExecutiveSummary] = useState(null);
+  const [accountingObligationsSummary, setAccountingObligationsSummary] = useState(null);
   const [treasuryHealth, setTreasuryHealth] = useState(null);
   const [providerHealth, setProviderHealth] = useState(null);
   const [overviewLoading, setOverviewLoading] = useState(true);
@@ -450,13 +452,22 @@ export default function FinanceiroPage() {
       ...(overviewFilters.legal_entity_id ? { legal_entity_id: overviewFilters.legal_entity_id } : {}),
       ...(overviewFilters.business_unit_id ? { business_unit_id: overviewFilters.business_unit_id } : {}),
     };
+    // The accountant's bills are a separate source. They have no product
+    // dimension, so never imply a product-filtered total for them.
+    setAccountingObligationsSummary(null);
     const results = await Promise.allSettled([
       fetchDashboardSummary(dashboardFilters),
+      overviewFilters.business_unit_id
+        ? Promise.resolve(null)
+        : fetchFinanceObligationsSummary(
+            overviewFilters.legal_entity_id ? { legal_entity_id: overviewFilters.legal_entity_id } : {}
+          ),
       fetchFinanceTreasuryHealth(),
       fetchFinanceProviderHealth(),
     ]);
-    const [dashboard, treasury, provider] = results;
+    const [dashboard, obligations, treasury, provider] = results;
     if (dashboard.status === 'fulfilled') setExecutiveSummary(dashboard.value?.data || null);
+    if (obligations.status === 'fulfilled') setAccountingObligationsSummary(obligations.value?.data || null);
     if (treasury.status === 'fulfilled') setTreasuryHealth(treasury.value?.data || null);
     if (provider.status === 'fulfilled') setProviderHealth(provider.value?.data || null);
     if (results.every((result) => result.status === 'rejected')) {
@@ -1077,8 +1088,8 @@ export default function FinanceiroPage() {
                 ['Receita realizada', executiveSummary?.summary?.realized_revenue_cents || '0', true],
                 ['Despesa realizada', executiveSummary?.summary?.realized_expense_cents || '0', true],
                 ['Resultado', executiveSummary?.summary?.realized_result_cents || '0', true],
-                ['A receber previsto', executiveSummary?.summary?.forecast_revenue_cents || '0', true],
-                ['A pagar em aberto', executiveSummary?.summary?.forecast_expense_cents || '0', true],
+                ['Entradas previstas (ledger)', executiveSummary?.summary?.forecast_revenue_cents || '0', true],
+                ['Saídas previstas (ledger)', executiveSummary?.summary?.forecast_expense_cents || '0', true],
                 ['Déficit tesouraria', treasuryHealth?.deficitCents || '0', Boolean(providerHealth?.available && treasuryHealth?.accountOwnershipConfirmed)],
               ].map(([label, value, available]) => (
                 <Grid item xs={6} md={2} key={label}>
@@ -1093,6 +1104,18 @@ export default function FinanceiroPage() {
             </Grid>
 
             <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+              {!overviewFilters.business_unit_id && (
+                <Chip
+                  size="small"
+                  color={accountingObligationsSummary ? 'info' : 'warning'}
+                  label={accountingObligationsSummary
+                    ? `Contador em aberto: ${formatCentsStringToBRL(String(accountingObligationsSummary.total_pending_cents))}`
+                    : 'Obrigações do contador: não disponíveis'}
+                />
+              )}
+              {overviewFilters.business_unit_id && (
+                <Chip size="small" color="info" label="Obrigações do contador: sem divisão por produto" />
+              )}
               <Chip size="small" color={providerHealth?.available ? 'success' : 'warning'} label={providerHealth?.available ? `Provider ${providerHealth.provider}: disponível` : 'Provider financeiro: indisponível/desabilitado'} />
               <Chip size="small" color={treasuryHealth?.accountOwnershipConfirmed ? 'success' : 'warning'} label={treasuryHealth?.accountOwnershipConfirmed ? 'Titularidade financeira confirmada' : 'Titularidade financeira pendente'} />
               {overviewLoading && <CircularProgress size={18} sx={{ color: '#fff', ml: 1 }} />}
