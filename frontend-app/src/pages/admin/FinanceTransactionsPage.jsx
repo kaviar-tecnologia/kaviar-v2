@@ -458,8 +458,6 @@ function CreateDialog({ open, onClose, onCreated, accounts, categories, costCent
     if (!form.business_unit_id) { setError('Selecione o produto/linha de negócio.'); return; }
     if (!form.account_id) { setError('Selecione uma conta.'); return; }
     if (!form.category_id) { setError('Selecione uma categoria.'); return; }
-    if (!form.legal_entity_id) { setError('Selecione a empresa/filial.'); return; }
-    if (!form.business_unit_id) { setError('Selecione o produto/linha de negócio.'); return; }
     if (!form.description.trim()) { setError('Descrição obrigatória.'); return; }
     setSubmitting(true); setError('');
     try {
@@ -600,6 +598,8 @@ function EditDialog({ txn, onClose, onSaved, onConflict, accounts, categories, c
   const handleSave = async () => {
     const cents = parseBRLToCentsString(form.valor);
     if (!cents) { setError('Valor inválido.'); return; }
+    if (!form.legal_entity_id) { setError('Selecione a empresa/filial.'); return; }
+    if (!form.business_unit_id) { setError('Selecione o produto/linha de negócio.'); return; }
     if (!form.description.trim()) { setError('Descrição obrigatória.'); return; }
     setSubmitting(true); setError('');
     try {
