@@ -11,6 +11,7 @@ import RequestQuoteIcon from '@mui/icons-material/RequestQuote';
 import DownloadIcon from '@mui/icons-material/Download';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { adminApi } from '../../services/adminApi';
+import FinanceModuleNav from '../../components/admin/finance/FinanceModuleNav';
 
 const formatCents = (cents) => {
   if (!cents || cents === '0') return 'R$ 0,00';
@@ -228,6 +229,7 @@ export default function FinancePayablesPage() {
 
   return (
     <Box p={3}>
+      <FinanceModuleNav />
       <Typography variant="h5" fontWeight={700} gutterBottom>
         Contas a Pagar
       </Typography>
