@@ -42,7 +42,7 @@ describe('AdminApp - seção KAVIAR AR e RBAC de rota', () => {
   it('usa descrição neutra do card para todos os papéis permitidos', () => {
     expect(AR_PLACES_DASHBOARD_CARD).toMatchObject({
       title: 'KAVIAR AR — Locais',
-      desc: 'Acessar locais AR de hotéis, comércios, turismo, CARE, Pet e aeroportos.',
+      desc: 'Acessar locais AR, incluindo hotéis, comércios, turismo, CARE, Pet, aeroportos e representações KAVIAR.',
       to: '/admin/ar-places',
     });
   });
@@ -74,6 +74,12 @@ describe('ArPlacesPage - campos, filtros e conteúdo pt-BR', () => {
     expect(src).toContain('label="Cidade"');
     expect(src).toContain('label="UF"');
     expect(src).toContain('label="Território"');
+  });
+
+  it('oferece tipo próprio para representação KAVIAR', () => {
+    expect(src).toContain("'KAVIAR_POINT'");
+    expect(src).toContain("KAVIAR_POINT: 'REPRESENTAÇÃO KAVIAR'");
+    expect(src).toContain('getTypeLabel(place.type)');
   });
 
   it('possui formulário com dados básicos obrigatórios', () => {
