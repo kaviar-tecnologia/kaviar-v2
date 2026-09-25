@@ -107,6 +107,16 @@ jobs:
             tests/admin-inbound-email-trash.test.ts \
             tests/admin-inbox-ui.test.ts
 
+      - name: Run finance payables regression tests
+        run: |
+          cd backend
+          npx vitest run tests/admin-finance-obligations.test.ts
+
+      - name: Run finance dashboard contract tests
+        run: |
+          cd frontend-app
+          npx vitest run src/__tests__/finance-multientity.test.js
+
       - name: Run E2E integrated tests
         run: |
           cd frontend-app && E2E_DATABASE_URL=$DATABASE_URL \
