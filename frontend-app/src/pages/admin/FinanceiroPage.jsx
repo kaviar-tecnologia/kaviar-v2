@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Alert,
   Box,
@@ -28,10 +29,15 @@ import {
 } from '@mui/material';
 import {
   AccountBalance,
+  AccountBalanceWallet,
   Add,
+  Assessment,
   Category,
   Edit,
+  Payments,
   PlayCircleOutline,
+  Policy,
+  ReceiptLong,
   Refresh,
   Schema,
   StopCircleOutlined,
@@ -43,6 +49,10 @@ import {
   listFinanceCategories,
   listFinanceCostCenters,
   updateFinanceAccount,
+  fetchDashboardSummary,
+  fetchFinanceObligationsSummary,
+  fetchFinanceTreasuryHealth,
+  fetchFinanceProviderHealth,
 } from '../../services/adminFinanceService';
 import AccountFormDialog from '../../components/admin/finance/AccountFormDialog';
 import CategoryFormDialog from '../../components/admin/finance/CategoryFormDialog';
@@ -55,6 +65,7 @@ import {
   hasAccountChanges,
 } from '../../utils/adminFinanceAccountUtils';
 import { useAdminAuth } from '../../hooks/useAdminAuth';
+import { formatCentsStringToBRL } from '../../utils/brlCurrency';
 
 const BLUE = {
   pageBg: 'linear-gradient(180deg, #EEF6FF 0%, #E3F0FF 100%)',
@@ -131,6 +142,7 @@ function EmptyState({ message }) {
 }
 
 export default function FinanceiroPage() {
+  const navigate = useNavigate();
   const { getAdminData } = useAdminAuth();
 
   let admin = null;
@@ -192,6 +204,22 @@ export default function FinanceiroPage() {
   const [accountsState, setAccountsState] = useState(initialListState);
   const [categoriesState, setCategoriesState] = useState(initialListState);
   const [costCentersState, setCostCentersState] = useState(initialListState);
+
+  const [executiveSummary, setExecutiveSummary] = useState(null);
+  const [obligationsSummary, setObligationsSummary] = useState(null);
+  const [treasuryHealth, setTreasuryHealth] = useState(null);
+  const [providerHealth, setProviderHealth] = useState(null);
+  const [overviewLoading, setOverviewLoading] = useState(true);
+  const [overviewError, setOverviewError] = useState('');
+
+  const financeModules = [
+    { label: 'Lançamentos', description: 'Receitas, despesas, baixas, estornos e DRE.', path: '/admin/financeiro/lancamentos', icon: <Assessment /> },
+    { label: 'Contas a receber', description: 'Recebíveis, vencimentos e liquidações.', path: '/admin/financeiro/contas-a-receber', icon: <ReceiptLong /> },
+    { label: 'Contas a pagar', description: 'Obrigações, boletos, notas e comprovantes.', path: '/admin/financeiro/contas-a-pagar', icon: <Payments /> },
+    { label: 'Tesouraria', description: 'Saldo, compromissos, provider e payouts.', path: '/admin/financeiro/tesouraria', icon: <AccountBalanceWallet /> },
+    { label: 'Políticas', description: 'Regras de reconhecimento financeiro.', path: '/admin/financeiro/politicas', icon: <Policy /> },
+    { label: 'Contador', description: 'Relatórios financeiros e conciliação contábil.', path: '/admin/financeiro/contador', icon: <AccountBalance /> },
+  ];
 
   const headerKpis = useMemo(
     () => [
@@ -410,6 +438,30 @@ export default function FinanceiroPage() {
     closeCategoryDialog();
     loadCategories();
   };
+
+  const loadOverview = async () => {
+    setOverviewLoading(true);
+    setOverviewError('');
+    const results = await Promise.allSettled([
+      fetchDashboardSummary(),
+      fetchFinanceObligationsSummary(),
+      fetchFinanceTreasuryHealth(),
+      fetchFinanceProviderHealth(),
+    ]);
+    const [dashboard, obligations, treasury, provider] = results;
+    if (dashboard.status === 'fulfilled') setExecutiveSummary(dashboard.value?.data || null);
+    if (obligations.status === 'fulfilled') setObligationsSummary(obligations.value?.data || null);
+    if (treasury.status === 'fulfilled') setTreasuryHealth(treasury.value?.data || null);
+    if (provider.status === 'fulfilled') setProviderHealth(provider.value?.data || null);
+    if (results.every((result) => result.status === 'rejected')) {
+      setOverviewError('Não foi possível carregar o resumo financeiro operacional.');
+    }
+    setOverviewLoading(false);
+  };
+
+  useEffect(() => {
+    loadOverview();
+  }, []);
 
   useEffect(() => {
     loadAccounts();
@@ -937,6 +989,61 @@ export default function FinanceiroPage() {
   return (
     <Box sx={{ minHeight: '100vh', background: BLUE.pageBg, py: 3 }}>
       <Container maxWidth="xl">
+        <Card sx={{ mb: 2, border: '1px solid #CBD5E1', background: 'linear-gradient(135deg, #0F172A 0%, #172554 100%)', color: '#fff', boxShadow: '0 14px 32px rgba(15,23,42,0.18)' }}>
+          <CardContent sx={{ p: { xs: 2, md: 3 } }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <Box>
+                <Typography sx={{ fontSize: 12, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#93C5FD', fontWeight: 700 }}>KAVIAR Finance</Typography>
+                <Typography sx={{ fontWeight: 900, fontSize: { xs: 26, md: 34 }, lineHeight: 1.1 }}>Central Financeira</Typography>
+                <Typography sx={{ color: '#CBD5E1', mt: 0.75 }}>Visão consolidada de resultado, recebíveis, obrigações, tesouraria e controles contábeis.</Typography>
+              </Box>
+              <Button variant="outlined" startIcon={<Refresh />} onClick={loadOverview} disabled={overviewLoading} sx={{ color: '#fff', borderColor: 'rgba(255,255,255,0.45)', textTransform: 'none' }}>Atualizar visão</Button>
+            </Box>
+
+            {overviewError && <Alert severity="warning" sx={{ mt: 2 }}>{overviewError}</Alert>}
+
+            <Grid container spacing={1.5} sx={{ mt: 1 }}>
+              {[
+                ['Receita realizada', executiveSummary?.summary?.realized_revenue_cents || '0'],
+                ['Despesa realizada', executiveSummary?.summary?.realized_expense_cents || '0'],
+                ['Resultado', executiveSummary?.summary?.realized_result_cents || '0'],
+                ['A receber previsto', executiveSummary?.summary?.forecast_revenue_cents || '0'],
+                ['Contas pendentes', obligationsSummary?.total_pending_cents || 0],
+                ['Déficit tesouraria', treasuryHealth?.deficitCents || '0'],
+              ].map(([label, value]) => (
+                <Grid item xs={6} md={2} key={label}>
+                  <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.10)', minHeight: 78 }}>
+                    <Typography sx={{ color: '#CBD5E1', fontSize: 11 }}>{label}</Typography>
+                    <Typography sx={{ fontWeight: 800, fontSize: 18, mt: 0.5 }}>{formatCentsStringToBRL(String(value))}</Typography>
+                  </Box>
+                </Grid>
+              ))}
+            </Grid>
+
+            <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+              <Chip size="small" color={providerHealth?.available ? 'success' : 'warning'} label={providerHealth?.available ? `Provider ${providerHealth.provider}: disponível` : 'Provider financeiro: indisponível/desabilitado'} />
+              <Chip size="small" color={treasuryHealth?.accountOwnershipConfirmed ? 'success' : 'warning'} label={treasuryHealth?.accountOwnershipConfirmed ? 'Titularidade financeira confirmada' : 'Titularidade financeira pendente'} />
+              {overviewLoading && <CircularProgress size={18} sx={{ color: '#fff', ml: 1 }} />}
+            </Box>
+          </CardContent>
+        </Card>
+
+        <Grid container spacing={1.5} sx={{ mb: 2 }}>
+          {financeModules.map((module) => (
+            <Grid item xs={12} sm={6} lg={4} key={module.label}>
+              <Card onClick={() => navigate(module.path)} sx={{ height: '100%', cursor: 'pointer', border: '1px solid #DCE6F3', transition: 'transform .15s ease, box-shadow .15s ease', '&:hover': { transform: 'translateY(-2px)', boxShadow: '0 8px 20px rgba(15,23,42,0.10)' } }}>
+                <CardContent sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
+                  <Box sx={{ color: BLUE.primary, mt: 0.25 }}>{module.icon}</Box>
+                  <Box>
+                    <Typography sx={{ fontWeight: 800, color: BLUE.text }}>{module.label}</Typography>
+                    <Typography sx={{ color: BLUE.subtext, fontSize: 12, mt: 0.35 }}>{module.description}</Typography>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+
         <Card
           sx={{
             mb: 2,
@@ -947,10 +1054,10 @@ export default function FinanceiroPage() {
         >
           <CardContent sx={{ py: 2.5 }}>
             <Typography sx={{ color: BLUE.primary, fontWeight: 800, fontSize: 24 }}>
-              Painel Financeiro Administrativo
+              Estrutura e Plano Financeiro
             </Typography>
             <Typography sx={{ color: BLUE.subtext, mt: 0.5 }}>
-              Etapa 1C-B: painel financeiro com gestão de contas e consulta de categorias e centros de custo.
+              Cadastros estruturais para contas financeiras, categorias contábeis e centros de custo.
             </Typography>
 
             <Grid container spacing={1.5} sx={{ mt: 1 }}>

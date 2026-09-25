@@ -338,6 +338,26 @@ export const fetchDashboardSummary = async (params = {}) => {
   return performGet(`${FINANCE_BASE_PATH}/dashboard-summary`, params, 'Erro ao carregar resumo financeiro.');
 };
 
+export const fetchFinanceObligationsSummary = async () => {
+  return performGet(`${FINANCE_BASE_PATH}/obligations/summary`, {}, 'Erro ao carregar resumo de contas a pagar.');
+};
+
+export const fetchFinanceTreasuryHealth = async () => {
+  return performGet(`${FINANCE_BASE_PATH}/outbound/treasury/health`, {}, 'Erro ao carregar saúde da tesouraria.');
+};
+
+export const fetchFinanceProviderHealth = async () => {
+  return performGet(`${FINANCE_BASE_PATH}/outbound/provider-health`, {}, 'Erro ao carregar status do provedor financeiro.');
+};
+
+export const listOutboundObligations = async (params = {}) => {
+  return performGet(`${FINANCE_BASE_PATH}/outbound/obligations`, params, 'Erro ao carregar obrigações de pagamento.');
+};
+
+export const listOutboundPayouts = async (params = {}) => {
+  return performGet(`${FINANCE_BASE_PATH}/outbound/payouts`, params, 'Erro ao carregar pagamentos enviados.');
+};
+
 export function getFinanceCategoryErrorPresentation(error) {
   const status = error?.status || error?.response?.status || 500;
   const rawMessage = error?.message || error?.response?.data?.error || '';
