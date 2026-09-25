@@ -25,7 +25,9 @@ describe('finance multi-entity and business-unit foundation', () => {
     expect(financeHome).toContain('Empresa / filial');
     expect(financeHome).toContain('Produto / linha de negócio');
     expect(financeHome).toContain('Consolidado — todas as empresas');
-    expect(financeHome).toContain('A pagar em aberto');
+    expect(financeHome).toContain('Saídas previstas (ledger)');
+    expect(financeHome).toContain('Contador em aberto');
+    expect(financeHome).toContain('sem divisão por produto');
   });
 
   it('requires entity and business unit on manual financial entries', () => {
