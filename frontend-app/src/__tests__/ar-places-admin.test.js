@@ -87,6 +87,14 @@ describe('ArPlacesPage - campos, filtros e conteúdo pt-BR', () => {
     expect(src).toContain('label="Instagram"');
   });
 
+  it('permite buscar latitude e longitude automaticamente pelo endereço', () => {
+    expect(src).toContain('handleGeocodeAddress');
+    expect(src).toContain('Buscar coordenadas pelo endereço');
+    expect(src).toContain('geocodeArPlaceAddress');
+    expect(src).toContain('latitude: String(latitude)');
+    expect(src).toContain('longitude: String(longitude)');
+  });
+
   it('envia conteúdo em locale pt-BR', () => {
     expect(src).toContain("locale: 'pt-BR'");
     expect(src).toContain('phone: form.phone.trim() || null');
@@ -128,8 +136,10 @@ describe('adminArPlacesService - contratos de API', () => {
     expect(src).toContain("const BASE_PATH = '/api/admin/ar/places'");
   });
 
-  it('expõe list/get/create/update e revisão pendente', () => {
+  it('expõe list/get/create/update, geocoding e revisão pendente', () => {
     expect(src).toContain('export async function listArPlaces');
+    expect(src).toContain('export async function geocodeArPlaceAddress');
+    expect(src).toContain("api.get('/api/geo-proxy/geocode'");
     expect(src).toContain('export async function getArPlaceById');
     expect(src).toContain('export async function createArPlace');
     expect(src).toContain('export async function updateArPlace');

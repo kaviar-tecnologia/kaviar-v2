@@ -32,6 +32,15 @@ export async function listArPlaces(params = {}) {
   }
 }
 
+export async function geocodeArPlaceAddress(address) {
+  try {
+    const response = await api.get('/api/geo-proxy/geocode', { params: { address } });
+    return response.data;
+  } catch (error) {
+    toError(error, 'Erro ao buscar coordenadas do endereço.');
+  }
+}
+
 export async function getArPlaceById(id) {
   try {
     const response = await api.get(`${BASE_PATH}/${encodeURIComponent(id)}`);

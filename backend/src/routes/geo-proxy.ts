@@ -23,6 +23,54 @@ router.get('/reverse', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/geo-proxy/geocode?address=X
+router.get('/geocode', async (req: Request, res: Response) => {
+  if (!PLACES_KEY) return res.status(503).json({ success: false, error: 'Geo service unavailable' });
+
+  const address = typeof req.query.address === 'string' ? req.query.address.trim() : '';
+  if (address.length < 5) {
+    return res.status(400).json({ success: false, error: 'Endereço é obrigatório' });
+  }
+  if (address.length > 500) {
+    return res.status(400).json({ success: false, error: 'Endereço excede 500 caracteres' });
+  }
+
+  try {
+    const url =
+      `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${PLACES_KEY}&language=pt-BR&region=br`;
+    const upstream = await fetch(url);
+    const data: any = await upstream.json();
+
+    if (!upstream.ok) {
+      return res.status(502).json({ success: false, error: 'Falha ao consultar serviço de geocodificação' });
+    }
+
+    if (data?.status === 'ZERO_RESULTS') {
+      return res.status(404).json({ success: false, error: 'Endereço não encontrado' });
+    }
+
+    const first = data?.results?.[0];
+    const latitude = Number(first?.geometry?.location?.lat);
+    const longitude = Number(first?.geometry?.location?.lng);
+
+    if (data?.status !== 'OK' || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return res.status(502).json({ success: false, error: 'Resposta inválida do serviço de geocodificação' });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        latitude,
+        longitude,
+        formatted_address: first?.formatted_address || address,
+        place_id: first?.place_id || null,
+      },
+    });
+  } catch {
+    return res.status(502).json({ success: false, error: 'Geocoding failed' });
+  }
+});
+
 // GET /api/geo/autocomplete?input=X&lat=Y&lng=Z
 router.get('/autocomplete', async (req: Request, res: Response) => {
   if (!PLACES_KEY) return res.status(503).json({ error: 'Geo service unavailable' });
