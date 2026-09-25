@@ -17,8 +17,9 @@ import {
   listFinanceTransactions, listFinanceAccounts, listFinanceCategories,
   listFinanceCostCenters, createFinanceTransaction, updateFinanceTransaction,
   postFinanceTransaction, cancelFinanceTransaction, reverseFinanceTransaction,
-  exportFinanceTransactionsCsv, fetchDashboardSummary,
+  exportFinanceTransactionsCsv, fetchDashboardSummary, listFinanceBusinessUnits,
 } from '../../services/adminFinanceService';
+import { listLegalEntities } from '../../services/adminAccountingService';
 import { parseBRLToCentsString, formatCentsStringToBRL } from '../../utils/brlCurrency';
 
 // ── Labels ─────────────────────────────────────────────────────────────────
@@ -77,7 +78,7 @@ export default function FinanceTransactionsPage() {
   const [error, setError] = useState('');
   const [page, setPage] = useState(0);
   const [limit, setLimit] = useState(25);
-  const [filters, setFilters] = useState({ direction: '', status: '', transaction_type: '', search: '', competence_month: '' });
+  const [filters, setFilters] = useState({ direction: '', status: '', transaction_type: '', search: '', competence_month: '', legal_entity_id: '', business_unit_id: '' });
   // Dialogs
   const [createOpen, setCreateOpen] = useState(false);
   const [editDialog, setEditDialog] = useState(null); // txn to edit
@@ -90,6 +91,8 @@ export default function FinanceTransactionsPage() {
   const [accounts, setAccounts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [costCenters, setCostCenters] = useState([]);
+  const [legalEntities, setLegalEntities] = useState([]);
+  const [businessUnits, setBusinessUnits] = useState([]);
   const [refsLoading, setRefsLoading] = useState(false);
   const [refsError, setRefsError] = useState('');
 
@@ -97,20 +100,26 @@ export default function FinanceTransactionsPage() {
     setRefsLoading(true);
     setRefsError('');
     try {
-      const [a, c, cc] = await Promise.all([
+      const [a, c, cc, le, bu] = await Promise.all([
         listFinanceAccounts({ limit: 100, is_active: true }),
         listFinanceCategories({ limit: 100, is_active: true }),
         listFinanceCostCenters({ limit: 100, is_active: true }),
+        listLegalEntities({ page: 1, limit: 100, is_active: 'true' }),
+        listFinanceBusinessUnits(),
       ]);
       const accs = a?.data || [];
       const cats = c?.data || [];
       const ccs = cc?.data || [];
+      const entities = le?.data || [];
+      const units = bu?.data || [];
       setAccounts(accs);
       setCategories(cats);
       setCostCenters(ccs);
-      return { accounts: accs, categories: cats, costCenters: ccs };
+      setLegalEntities(entities);
+      setBusinessUnits(units);
+      return { accounts: accs, categories: cats, costCenters: ccs, legalEntities: entities, businessUnits: units };
     } catch (err) {
-      setRefsError('Não foi possível carregar contas, categorias e centros de custo. Atualize os dados antes de criar um lançamento.');
+      setRefsError('Não foi possível carregar as dimensões financeiras. Atualize os dados antes de criar um lançamento.');
       return null;
     } finally {
       setRefsLoading(false);
@@ -268,6 +277,12 @@ export default function FinanceTransactionsPage() {
           </Box>
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12} sm={3}><TextField label="Buscar" size="small" fullWidth value={filters.search} onChange={(e) => setFilters(f => ({ ...f, search: e.target.value }))} /></Grid>
+            <Grid item xs={12} sm={3}><TextField label="Empresa / filial" select size="small" fullWidth value={filters.legal_entity_id} onChange={(e) => setFilters(f => ({ ...f, legal_entity_id: e.target.value }))}>
+              <MenuItem value="">Consolidado</MenuItem>{legalEntities.map(e => <MenuItem key={e.id} value={e.id}>{e.nome_fantasia || e.razao_social}</MenuItem>)}
+            </TextField></Grid>
+            <Grid item xs={12} sm={3}><TextField label="Produto / linha" select size="small" fullWidth value={filters.business_unit_id} onChange={(e) => setFilters(f => ({ ...f, business_unit_id: e.target.value }))}>
+              <MenuItem value="">Todos</MenuItem>{businessUnits.map(u => <MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>)}
+            </TextField></Grid>
             <Grid item xs={6} sm={2}><TextField label="Competência (mês/ano)" type="month" size="small" fullWidth value={filters.competence_month} onChange={(e) => setFilters(f => ({ ...f, competence_month: e.target.value }))} InputLabelProps={{ shrink: true }} /></Grid>
             <Grid item xs={6} sm={2}><TextField label="Direção" select size="small" fullWidth value={filters.direction} onChange={(e) => setFilters(f => ({ ...f, direction: e.target.value }))}>
               <MenuItem value="">Todas</MenuItem><MenuItem value="IN">Entrada</MenuItem><MenuItem value="OUT">Saída</MenuItem>
@@ -364,6 +379,8 @@ export default function FinanceTransactionsPage() {
               <TableHead><TableRow sx={{ bgcolor: '#F9FAFB' }}>
                 <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>Competência</TableCell>
                 <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>Descrição</TableCell>
+                <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>Empresa</TableCell>
+                <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>Produto</TableCell>
                 <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>Categoria</TableCell>
                 <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>Direção</TableCell>
                 <TableCell sx={{ fontWeight: 700, fontSize: 11 }} align="right">Valor</TableCell>
@@ -373,11 +390,13 @@ export default function FinanceTransactionsPage() {
               </TableRow></TableHead>
               <TableBody>
                 {rows.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} align="center" sx={{ py: 6, color: '#9CA3AF' }}>Nenhum lançamento encontrado.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={10} align="center" sx={{ py: 6, color: '#9CA3AF' }}>Nenhum lançamento encontrado.</TableCell></TableRow>
                 ) : rows.map((txn) => (
                   <TableRow key={txn.id} hover>
                     <TableCell sx={{ fontSize: 11 }}>{formatCalendarDate(txn.competence_date)}</TableCell>
                     <TableCell sx={{ fontSize: 11, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{txn.description}</TableCell>
+                    <TableCell sx={{ fontSize: 11 }}>{txn.legal_entity?.nome_fantasia || txn.legal_entity?.razao_social || '—'}</TableCell>
+                    <TableCell sx={{ fontSize: 11 }}>{txn.business_unit?.name || '—'}</TableCell>
                     <TableCell sx={{ fontSize: 11 }}>{txn.category?.name || '—'}</TableCell>
                     <TableCell><Chip label={DIR_LABELS[txn.direction] || txn.direction} size="small" sx={{ fontSize: 10, height: 20, fontWeight: 600, bgcolor: txn.direction === 'IN' ? '#dcfce7' : '#fef2f2', color: txn.direction === 'IN' ? '#16a34a' : '#dc2626' }} /></TableCell>
                     <TableCell sx={{ fontSize: 11, fontWeight: 600 }} align="right">{formatCentsStringToBRL(txn.net_amount_cents)}</TableCell>
@@ -405,10 +424,10 @@ export default function FinanceTransactionsPage() {
       )}
 
       {/* Create Dialog */}
-      <CreateDialog open={createOpen} onClose={() => setCreateOpen(false)} onCreated={() => { setCreateOpen(false); fetchData(); }} accounts={accounts} categories={categories} costCenters={costCenters} />
+      <CreateDialog open={createOpen} onClose={() => setCreateOpen(false)} onCreated={() => { setCreateOpen(false); fetchData(); }} accounts={accounts} categories={categories} costCenters={costCenters} legalEntities={legalEntities} businessUnits={businessUnits} />
 
       {/* Edit Dialog */}
-      {editDialog && <EditDialog txn={editDialog} onClose={() => setEditDialog(null)} onSaved={() => { setEditDialog(null); fetchData(); }} onConflict={() => { setEditDialog(null); setConflictMsg('O lançamento foi alterado por outro administrador. Recarregue os dados.'); }} accounts={accounts} categories={categories} costCenters={costCenters} />}
+      {editDialog && <EditDialog txn={editDialog} onClose={() => setEditDialog(null)} onSaved={() => { setEditDialog(null); fetchData(); }} onConflict={() => { setEditDialog(null); setConflictMsg('O lançamento foi alterado por outro administrador. Recarregue os dados.'); }} accounts={accounts} categories={categories} costCenters={costCenters} legalEntities={legalEntities} businessUnits={businessUnits} />}
 
       {/* Post (Liquidate) Dialog */}
       {postDialog && <PostDialog txn={postDialog} onClose={() => setPostDialog(null)} onConfirm={handlePost} />}
@@ -423,8 +442,8 @@ export default function FinanceTransactionsPage() {
 }
 
 // ── Create Dialog ──────────────────────────────────────────────────────────
-function CreateDialog({ open, onClose, onCreated, accounts, categories, costCenters }) {
-  const [form, setForm] = useState({ account_id: '', category_id: '', cost_center_id: '', direction: 'OUT', transaction_type: 'EXPENSE', payment_method: 'PIX', competence_date: todayLocalISO(), transaction_date: todayLocalISO(), due_date: '', valor: '', description: '', memo: '', metadata: {} });
+function CreateDialog({ open, onClose, onCreated, accounts, categories, costCenters, legalEntities, businessUnits }) {
+  const [form, setForm] = useState({ account_id: '', category_id: '', cost_center_id: '', legal_entity_id: '', business_unit_id: '', direction: 'OUT', transaction_type: 'EXPENSE', payment_method: 'PIX', competence_date: todayLocalISO(), transaction_date: todayLocalISO(), due_date: '', valor: '', description: '', memo: '', metadata: {} });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
@@ -435,14 +454,20 @@ function CreateDialog({ open, onClose, onCreated, accounts, categories, costCent
   const handleSubmit = async () => {
     const cents = parseBRLToCentsString(form.valor);
     if (!cents) { setError('Valor inválido. Use formato: 150,00'); return; }
+    if (!form.legal_entity_id) { setError('Selecione a empresa/filial.'); return; }
+    if (!form.business_unit_id) { setError('Selecione o produto/linha de negócio.'); return; }
     if (!form.account_id) { setError('Selecione uma conta.'); return; }
     if (!form.category_id) { setError('Selecione uma categoria.'); return; }
+    if (!form.legal_entity_id) { setError('Selecione a empresa/filial.'); return; }
+    if (!form.business_unit_id) { setError('Selecione o produto/linha de negócio.'); return; }
     if (!form.description.trim()) { setError('Descrição obrigatória.'); return; }
     setSubmitting(true); setError('');
     try {
       const body = {
         account_id: form.account_id, category_id: form.category_id,
         cost_center_id: form.cost_center_id || undefined,
+        legal_entity_id: form.legal_entity_id,
+        business_unit_id: form.business_unit_id,
         direction: form.direction, transaction_type: form.transaction_type,
         payment_method: form.payment_method || undefined,
         competence_date: form.competence_date, transaction_date: form.transaction_date,
@@ -467,7 +492,9 @@ function CreateDialog({ open, onClose, onCreated, accounts, categories, costCent
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         <Grid container spacing={2} sx={{ mt: 1 }}>
           <Grid item xs={12}><TextField label="Descrição *" fullWidth size="small" value={form.description} onChange={set('description')} /></Grid>
-          <Grid item xs={6}><TextField label="Conta *" select fullWidth size="small" value={form.account_id} onChange={set('account_id')}>{accounts.map(a => <MenuItem key={a.id} value={a.id}>{a.name}</MenuItem>)}</TextField></Grid>
+          <Grid item xs={12} md={6}><TextField label="Empresa / filial *" select fullWidth size="small" value={form.legal_entity_id} onChange={(e) => setForm(f => ({ ...f, legal_entity_id: e.target.value, account_id: '' }))}>{legalEntities.map(e => <MenuItem key={e.id} value={e.id}>{e.nome_fantasia || e.razao_social} — {e.entity_type}</MenuItem>)}</TextField></Grid>
+          <Grid item xs={12} md={6}><TextField label="Produto / linha de negócio *" select fullWidth size="small" value={form.business_unit_id} onChange={set('business_unit_id')}>{businessUnits.map(u => <MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>)}</TextField></Grid>
+          <Grid item xs={6}><TextField label="Conta *" select fullWidth size="small" value={form.account_id} onChange={set('account_id')}>{accounts.filter(a => !a.legal_entity_id || a.legal_entity_id === form.legal_entity_id).map(a => <MenuItem key={a.id} value={a.id}>{a.name}</MenuItem>)}</TextField></Grid>
           <Grid item xs={6}><TextField label="Categoria *" select fullWidth size="small" value={form.category_id} onChange={set('category_id')}>{categories.map(c => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}</TextField></Grid>
           <Grid item xs={4}><TextField label="Direção *" select fullWidth size="small" value={form.direction} onChange={(e) => { setForm(f => ({ ...f, direction: e.target.value, transaction_type: e.target.value === 'IN' ? 'INCOME' : 'EXPENSE' })); }}><MenuItem value="OUT">Saída</MenuItem><MenuItem value="IN">Entrada</MenuItem></TextField></Grid>
           <Grid item xs={4}><TextField label="Tipo *" select fullWidth size="small" value={form.transaction_type} onChange={set('transaction_type')}>{typeOptions.map(o => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}</TextField></Grid>
@@ -539,7 +566,7 @@ function CancelDialog({ txn, onClose, onConfirm }) {
 }
 
 // ── Edit Dialog ────────────────────────────────────────────────────────────
-function EditDialog({ txn, onClose, onSaved, onConflict, accounts, categories, costCenters }) {
+function EditDialog({ txn, onClose, onSaved, onConflict, accounts, categories, costCenters, legalEntities, businessUnits }) {
   const centsToDisplay = (v) => {
     if (!v) return '';
     const s = String(v);
@@ -552,6 +579,8 @@ function EditDialog({ txn, onClose, onSaved, onConflict, accounts, categories, c
     account_id: txn.account_id || txn.account?.id || '',
     category_id: txn.category_id || txn.category?.id || '',
     cost_center_id: txn.cost_center_id || txn.cost_center?.id || '',
+    legal_entity_id: txn.legal_entity_id || txn.legal_entity?.id || '',
+    business_unit_id: txn.business_unit_id || txn.business_unit?.id || '',
     direction: txn.direction || 'OUT',
     transaction_type: txn.transaction_type || 'EXPENSE',
     payment_method: txn.payment_method || 'PIX',
@@ -580,6 +609,8 @@ function EditDialog({ txn, onClose, onSaved, onConflict, accounts, categories, c
         account_id: form.account_id || undefined,
         category_id: form.category_id || undefined,
         cost_center_id: form.cost_center_id || null,
+        legal_entity_id: form.legal_entity_id,
+        business_unit_id: form.business_unit_id,
         direction: form.direction,
         transaction_type: form.transaction_type,
         payment_method: form.payment_method || undefined,
@@ -612,7 +643,9 @@ function EditDialog({ txn, onClose, onSaved, onConflict, accounts, categories, c
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         <Grid container spacing={2} sx={{ mt: 1 }}>
           <Grid item xs={12}><TextField label="Descrição *" fullWidth size="small" value={form.description} onChange={set('description')} /></Grid>
-          <Grid item xs={6}><TextField label="Conta *" select fullWidth size="small" value={form.account_id} onChange={set('account_id')}>{accounts.map(a => <MenuItem key={a.id} value={a.id}>{a.name}</MenuItem>)}</TextField></Grid>
+          <Grid item xs={12} md={6}><TextField label="Empresa / filial *" select fullWidth size="small" value={form.legal_entity_id} onChange={(e) => setForm(f => ({ ...f, legal_entity_id: e.target.value, account_id: '' }))}>{legalEntities.map(e => <MenuItem key={e.id} value={e.id}>{e.nome_fantasia || e.razao_social} — {e.entity_type}</MenuItem>)}</TextField></Grid>
+          <Grid item xs={12} md={6}><TextField label="Produto / linha de negócio *" select fullWidth size="small" value={form.business_unit_id} onChange={set('business_unit_id')}>{businessUnits.map(u => <MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>)}</TextField></Grid>
+          <Grid item xs={6}><TextField label="Conta *" select fullWidth size="small" value={form.account_id} onChange={set('account_id')}>{accounts.filter(a => !a.legal_entity_id || a.legal_entity_id === form.legal_entity_id).map(a => <MenuItem key={a.id} value={a.id}>{a.name}</MenuItem>)}</TextField></Grid>
           <Grid item xs={6}><TextField label="Categoria *" select fullWidth size="small" value={form.category_id} onChange={set('category_id')}>{categories.map(c => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}</TextField></Grid>
           <Grid item xs={4}><TextField label="Direção" select fullWidth size="small" value={form.direction} onChange={(e) => { setForm(f => ({ ...f, direction: e.target.value, transaction_type: e.target.value === 'IN' ? 'INCOME' : 'EXPENSE' })); }}><MenuItem value="OUT">Saída</MenuItem><MenuItem value="IN">Entrada</MenuItem></TextField></Grid>
           <Grid item xs={4}><TextField label="Tipo" select fullWidth size="small" value={form.transaction_type} onChange={set('transaction_type')}>{typeOptions.map(o => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}</TextField></Grid>
