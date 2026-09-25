@@ -365,3 +365,42 @@ export function getFinanceCategoryErrorPresentation(error) {
   }
   return { status, message: rawMessage || 'Erro interno. Tente novamente.', showReload: false };
 }
+
+
+// ── Professional Finance Workspace ───────────────────────────────────────────
+
+export const listFinanceReceivables = async (params = {}) => {
+  return performGet(`${FINANCE_BASE_PATH}/receivables`, params, 'Erro ao carregar contas a receber.');
+};
+
+export const fetchFinanceReceivablesSummary = async () => {
+  return performGet(`${FINANCE_BASE_PATH}/receivables/summary`, {}, 'Erro ao carregar resumo de contas a receber.');
+};
+
+export const fetchFinanceTreasurySummary = async () => {
+  return performGet(`${FINANCE_BASE_PATH}/treasury-summary`, {}, 'Erro ao carregar posição de tesouraria.');
+};
+
+export const fetchOutboundProviderHealth = async () => {
+  return performGet(`${FINANCE_BASE_PATH}/outbound/provider-health`, {}, 'Erro ao consultar provedor de pagamentos.');
+};
+
+export const fetchOutboundTreasuryHealth = async () => {
+  return performGet(`${FINANCE_BASE_PATH}/outbound/treasury/health`, {}, 'Erro ao consultar saúde da tesouraria.');
+};
+
+export const listOutboundPayees = async (params = {}) => {
+  return performGet(`${FINANCE_BASE_PATH}/outbound/payees`, params, 'Erro ao listar beneficiários.');
+};
+
+export const listOutboundObligations = async (params = {}) => {
+  return performGet(`${FINANCE_BASE_PATH}/outbound/obligations`, params, 'Erro ao listar obrigações de pagamento.');
+};
+
+export const listOutboundPayouts = async (params = {}) => {
+  return performGet(`${FINANCE_BASE_PATH}/outbound/payouts`, params, 'Erro ao listar pagamentos enviados.');
+};
+
+export const runOutboundReconciliation = async () => {
+  return performPost(`${FINANCE_BASE_PATH}/outbound/reconciliation/run`, {}, 'Erro ao executar reconciliação de pagamentos.');
+};
