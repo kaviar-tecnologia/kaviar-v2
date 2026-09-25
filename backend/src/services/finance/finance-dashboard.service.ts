@@ -31,6 +31,8 @@ export interface DashboardFilters {
   counterparty_account_id?: string;
   category_id?: string;
   cost_center_id?: string;
+  legal_entity_id?: string;
+  business_unit_id?: string;
   direction?: string;
   transaction_type?: string;
   status?: string;
@@ -145,6 +147,8 @@ function buildWhereClause(filters: DashboardFilters): Prisma.financial_transacti
   if (filters.counterparty_account_id) where.counterparty_account_id = filters.counterparty_account_id;
   if (filters.category_id) where.category_id = filters.category_id;
   if (filters.cost_center_id) where.cost_center_id = filters.cost_center_id;
+  if (filters.legal_entity_id) where.legal_entity_id = filters.legal_entity_id;
+  if (filters.business_unit_id) where.business_unit_id = filters.business_unit_id;
   if (filters.direction) where.direction = filters.direction as any;
   if (filters.transaction_type) where.transaction_type = filters.transaction_type as any;
   if (filters.status) where.status = filters.status as any;
@@ -189,6 +193,8 @@ const DASHBOARD_SELECT = {
   account_id: true,
   category_id: true,
   cost_center_id: true,
+  legal_entity_id: true,
+  business_unit_id: true,
   account: { select: { id: true, code: true, name: true } },
   category: { select: { id: true, code: true, name: true, dre_group: true } },
   cost_center: { select: { id: true, code: true, name: true } },
