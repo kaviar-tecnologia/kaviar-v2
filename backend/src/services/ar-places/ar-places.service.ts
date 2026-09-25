@@ -124,7 +124,7 @@ function assertAllowedStatusTransition(role: string, from: ar_place_status, to: 
       SUBMITTED: ['APPROVED', 'REJECTED'],
       APPROVED: ['INACTIVE'],
       REJECTED: ['DRAFT'],
-      INACTIVE: [],
+      INACTIVE: ['APPROVED'],
     };
     if (!allowed[from].includes(to)) {
       throw new ArPlaceServiceError(409, `Transição de status inválida: ${from} -> ${to}`);
