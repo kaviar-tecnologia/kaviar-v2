@@ -90,7 +90,6 @@ export async function createObligationFromCycle(
       `SELECT legal_entity_id
        FROM financial_entity_territory_assignments
        WHERE territory_id = $1
-         AND is_active = true
          AND effective_from <= $2::date
          AND (effective_until IS NULL OR effective_until >= $2::date)
        ORDER BY effective_from DESC
