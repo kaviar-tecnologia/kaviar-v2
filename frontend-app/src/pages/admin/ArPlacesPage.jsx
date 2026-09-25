@@ -23,6 +23,7 @@ import {
 import { Add, Edit, Refresh } from '@mui/icons-material';
 import {
   listArPlaces,
+  geocodeArPlaceAddress,
   createArPlace,
   getArPlaceById,
   updateArPlace,
@@ -122,6 +123,8 @@ export default function ArPlacesPage() {
   const [saving, setSaving] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [pendingChange, setPendingChange] = useState(null);
+  const [geocoding, setGeocoding] = useState(false);
+  const [geocodeMessage, setGeocodeMessage] = useState('');
 
   const availableTransitions = useMemo(
     () => getAllowedArPlaceTransitions(role, form.status),
@@ -212,6 +215,7 @@ export default function ArPlacesPage() {
   function openCreateDialog() {
     setSelectedPlace(null);
     setPendingChange(null);
+    setGeocodeMessage('');
     setForm({
       ...defaultForm,
       territory_id: territories.length === 1 ? territories[0].id : '',
@@ -223,10 +227,48 @@ export default function ArPlacesPage() {
   async function openEditDialog(placeId) {
     try {
       await refreshOpenPlace(placeId);
+      setGeocodeMessage('');
       setDialogOpen(true);
       setError('');
     } catch (requestError) {
       setError(requestError.message || 'Erro ao carregar local AR.');
+    }
+  }
+
+  async function handleGeocodeAddress() {
+    const address = form.address.trim();
+    if (!address) {
+      setError('Informe o endereço antes de buscar as coordenadas.');
+      return;
+    }
+
+    const query = [address, form.city.trim(), form.state.trim().toUpperCase(), 'Brasil']
+      .filter(Boolean)
+      .join(', ');
+
+    setGeocoding(true);
+    setError('');
+    setGeocodeMessage('');
+
+    try {
+      const payload = await geocodeArPlaceAddress(query);
+      const latitude = payload?.data?.latitude;
+      const longitude = payload?.data?.longitude;
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        throw new Error('O serviço não retornou coordenadas válidas.');
+      }
+
+      setForm((prev) => ({
+        ...prev,
+        latitude: String(latitude),
+        longitude: String(longitude),
+      }));
+      setGeocodeMessage(`Coordenadas encontradas: ${payload.data.formatted_address || query}`);
+    } catch (requestError) {
+      setError(requestError.message || 'Erro ao buscar coordenadas do endereço.');
+    } finally {
+      setGeocoding(false);
     }
   }
 
@@ -445,9 +487,27 @@ export default function ArPlacesPage() {
             </Grid>
             <Grid item xs={12} md={4}><TextField fullWidth label="Cidade" value={form.city} onChange={(e) => setForm((prev) => ({ ...prev, city: e.target.value }))} /></Grid>
             <Grid item xs={12} md={4}><TextField fullWidth label="UF" value={form.state} onChange={(e) => setForm((prev) => ({ ...prev, state: e.target.value.toUpperCase() }))} /></Grid>
-            <Grid item xs={12} md={8}><TextField fullWidth label="Endereço" value={form.address} onChange={(e) => setForm((prev) => ({ ...prev, address: e.target.value }))} /></Grid>
+            <Grid item xs={12} md={8}><TextField fullWidth label="Endereço" value={form.address} onChange={(e) => { setGeocodeMessage(''); setForm((prev) => ({ ...prev, address: e.target.value })); }} /></Grid>
             <Grid item xs={12} md={2}><TextField fullWidth label="Latitude" value={form.latitude} onChange={(e) => setForm((prev) => ({ ...prev, latitude: e.target.value }))} /></Grid>
             <Grid item xs={12} md={2}><TextField fullWidth label="Longitude" value={form.longitude} onChange={(e) => setForm((prev) => ({ ...prev, longitude: e.target.value }))} /></Grid>
+            {canEdit && (
+              <Grid item xs={12}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                  <Button
+                    variant="outlined"
+                    onClick={handleGeocodeAddress}
+                    disabled={geocoding || !form.address.trim()}
+                  >
+                    {geocoding ? 'Buscando coordenadas...' : 'Buscar coordenadas pelo endereço'}
+                  </Button>
+                  {geocodeMessage && (
+                    <Typography variant="caption" color="success.main">
+                      {geocodeMessage}
+                    </Typography>
+                  )}
+                </Box>
+              </Grid>
+            )}
             <Grid item xs={12} md={3}><TextField fullWidth label="Telefone" value={form.phone} onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))} /></Grid>
             <Grid item xs={12} md={3}><TextField fullWidth label="WhatsApp" value={form.whatsapp} onChange={(e) => setForm((prev) => ({ ...prev, whatsapp: e.target.value }))} /></Grid>
             <Grid item xs={12} md={3}><TextField fullWidth label="Site" value={form.website_url} onChange={(e) => setForm((prev) => ({ ...prev, website_url: e.target.value }))} /></Grid>
