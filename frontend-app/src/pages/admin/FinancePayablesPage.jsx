@@ -76,6 +76,7 @@ const dueStatusChip = (dueStatus) => {
     case 'OVERDUE': return { label: 'Vencida', color: 'error' };
     case 'DUE_TODAY': return { label: 'Vence hoje', color: 'warning' };
     case 'DUE_SOON': return { label: 'Vencendo', color: 'warning' };
+    case 'PAYMENT_REPORTED': return null; // Status já informa pagamento; não exibir falsa dívida vencida.
     default: return null;
   }
 };
@@ -245,12 +246,12 @@ export default function FinancePayablesPage() {
   const canMarkPaid = (o) => ['VIEWED', 'SCHEDULED'].includes(o.status);
   const canUploadProof = (o) => ['PAID', 'REJECTED'].includes(o.status) && !o.has_proof;
 
-  if (loading) return <Box display="flex" justifyContent="center" p={4}><CircularProgress /></Box>;
-  if (error) return <Alert severity="error">{error}</Alert>;
+  if (loading) return <Box display="flex" justifyContent="center" p={4} sx={{ bgcolor: '#F6F8FB', minHeight: '100vh' }}><CircularProgress /></Box>;
+  if (error) return <Box p={3} sx={{ bgcolor: '#F6F8FB', minHeight: '100vh' }}><Alert severity="error">{error}</Alert></Box>;
 
   return (
-    <Box p={3}>
-      <Typography variant="h5" fontWeight={700} gutterBottom>
+    <Box sx={{ p: 3, minHeight: '100vh', bgcolor: '#F6F8FB', color: '#0F172A' }}>
+      <Typography variant="h5" fontWeight={700} gutterBottom sx={{ color: '#0F172A' }}>
         Contas a Pagar
       </Typography>
 
@@ -260,7 +261,7 @@ export default function FinancePayablesPage() {
       <Typography variant="h6" fontWeight={600} mt={2} mb={2} color="warning.main">
         Cobranças e Obrigações
       </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+      <Typography variant="body2" sx={{ mb: 2, color: '#475569' }}>
         Obrigações enviadas pelo Portal do Contador. Não são somadas automaticamente a despesas
         previstas do ledger ou a pagamentos outbound, para evitar contagem duplicada.
       </Typography>
@@ -271,7 +272,13 @@ export default function FinancePayablesPage() {
         fullWidth
         value={selectedEntityId}
         onChange={(event) => { setSelectedEntityId(event.target.value); setObligationPage(1); }}
-        sx={{ maxWidth: 520, mb: 2 }}
+        sx={{
+          maxWidth: 520, mb: 2,
+          '& .MuiInputBase-root': { bgcolor: '#FFFFFF', color: '#0F172A' },
+          '& .MuiInputLabel-root': { color: '#475569' },
+          '& .MuiOutlinedInput-notchedOutline': { borderColor: '#94A3B8' },
+          '& .MuiSvgIcon-root': { color: '#334155' },
+        }}
       >
         <MenuItem value="">Consolidado — matriz e filiais</MenuItem>
         {legalEntities.map((entity) => (
@@ -292,37 +299,48 @@ export default function FinancePayablesPage() {
       {/* Resumo */}
       {obligationsSummary && (
         <Grid container spacing={2} mb={2}>
-          <Grid item xs={6} md={2.4}>
+          <Grid item xs={6} md={2}>
             <Card><CardContent>
-              <Typography variant="caption" color="text.secondary">Pendentes</Typography>
+              <Typography variant="caption" color="text.secondary">Aguardando pagamento</Typography>
               <Typography variant="h6" fontWeight={700}>{obligationsSummary.pending}</Typography>
             </CardContent></Card>
           </Grid>
-          <Grid item xs={6} md={2.4}>
+          <Grid item xs={6} md={2}>
             <Card><CardContent>
               <Typography variant="caption" color="text.secondary">Vencendo (7 dias)</Typography>
               <Typography variant="h6" fontWeight={700} color="warning.main">{obligationsSummary.due_soon}</Typography>
             </CardContent></Card>
           </Grid>
-          <Grid item xs={6} md={2.4}>
+          <Grid item xs={6} md={2}>
             <Card><CardContent>
               <Typography variant="caption" color="text.secondary">Vencidas</Typography>
               <Typography variant="h6" fontWeight={700} color="error.main">{obligationsSummary.overdue}</Typography>
             </CardContent></Card>
           </Grid>
-          <Grid item xs={6} md={2.4}>
+          <Grid item xs={6} md={2}>
             <Card><CardContent>
-              <Typography variant="caption" color="text.secondary">Pagas</Typography>
-              <Typography variant="h6" fontWeight={700} color="success.main">{obligationsSummary.paid}</Typography>
+              <Typography variant="caption" color="text.secondary">Em conferência</Typography>
+              <Typography variant="h6" fontWeight={700} color="info.main">{obligationsSummary.awaiting_verification ?? 0}</Typography>
             </CardContent></Card>
           </Grid>
-          <Grid item xs={6} md={2.4}>
+          <Grid item xs={6} md={2}>
             <Card><CardContent>
-              <Typography variant="caption" color="text.secondary">Total pendente</Typography>
+              <Typography variant="caption" color="text.secondary">Verificadas / conciliadas</Typography>
+              <Typography variant="h6" fontWeight={700} color="success.main">{obligationsSummary.confirmed ?? 0}</Typography>
+            </CardContent></Card>
+          </Grid>
+          <Grid item xs={6} md={2}>
+            <Card><CardContent>
+              <Typography variant="caption" color="text.secondary">Valor aguardando pagamento</Typography>
               <Typography variant="h6" fontWeight={700}>{obligationsSummary.total_pending_display}</Typography>
             </CardContent></Card>
           </Grid>
         </Grid>
+      )}
+      {obligationsSummary?.proof_rejected > 0 && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          {obligationsSummary.proof_rejected} comprovante(s) rejeitado(s): revisar e reenviar antes de considerar a obrigação concluída.
+        </Alert>
       )}
 
       {/* Tabela de obrigações */}
