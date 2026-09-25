@@ -125,6 +125,7 @@ export default function ArPlacesPage() {
   const [pendingChange, setPendingChange] = useState(null);
   const [geocoding, setGeocoding] = useState(false);
   const [geocodeMessage, setGeocodeMessage] = useState('');
+  const [saveMessage, setSaveMessage] = useState('');
 
   const availableTransitions = useMemo(
     () => getAllowedArPlaceTransitions(role, form.status),
@@ -212,10 +213,17 @@ export default function ArPlacesPage() {
     loadPlaces();
   }, [filters.type, filters.status, filters.city, filters.state, filters.territoryId]);
 
+  useEffect(() => {
+    if (!saveMessage) return undefined;
+    const timeoutId = window.setTimeout(() => setSaveMessage(''), 4000);
+    return () => window.clearTimeout(timeoutId);
+  }, [saveMessage]);
+
   function openCreateDialog() {
     setSelectedPlace(null);
     setPendingChange(null);
     setGeocodeMessage('');
+    setSaveMessage('');
     setForm({
       ...defaultForm,
       territory_id: territories.length === 1 ? territories[0].id : '',
@@ -228,6 +236,7 @@ export default function ArPlacesPage() {
     try {
       await refreshOpenPlace(placeId);
       setGeocodeMessage('');
+      setSaveMessage('');
       setDialogOpen(true);
       setError('');
     } catch (requestError) {
@@ -275,6 +284,7 @@ export default function ArPlacesPage() {
   async function handleSubmit() {
     setSaving(true);
     setError('');
+    setSaveMessage('');
 
     const basePayload = {
       place_id: form.place_id.trim(),
@@ -306,6 +316,7 @@ export default function ArPlacesPage() {
       if (form.id) {
         await updateArPlace(form.id, { ...basePayload, status: form.status });
         await refreshOpenPlace(form.id);
+        setSaveMessage('Alterações salvas com sucesso.');
       } else {
         await createArPlace(basePayload);
         setDialogOpen(false);
@@ -603,9 +614,22 @@ export default function ArPlacesPage() {
             </Box>
           )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDialogOpen(false)} disabled={saving}>Cancelar</Button>
-          {canEdit && <Button onClick={handleSubmit} variant="contained" disabled={saving}>{form.id ? 'Salvar' : 'Criar'}</Button>}
+        <DialogActions sx={{ justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
+          <Box sx={{ flex: 1, minWidth: 220 }}>
+            {saveMessage && (
+              <Alert severity="success" sx={{ py: 0.25 }}>
+                {saveMessage}
+              </Alert>
+            )}
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button onClick={() => setDialogOpen(false)} disabled={saving}>Cancelar</Button>
+            {canEdit && (
+              <Button onClick={handleSubmit} variant="contained" disabled={saving}>
+                {saving ? 'Salvando...' : form.id ? 'Salvar' : 'Criar'}
+              </Button>
+            )}
+          </Box>
         </DialogActions>
       </Dialog>
     </Box>
