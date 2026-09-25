@@ -506,7 +506,7 @@ export default function ArPlacesPage() {
             <Grid item xs={12} md={6}><TextField fullWidth label="placeId" value={form.place_id} onChange={(e) => setForm((prev) => ({ ...prev, place_id: e.target.value }))} /></Grid>
             <Grid item xs={12} md={4}>
               <TextField fullWidth select label="Tipo" value={form.type} onChange={(e) => setForm((prev) => ({ ...prev, type: e.target.value }))}>
-                {TYPE_OPTIONS.map((option) => <MenuItem key={option} value={option}>{option}</MenuItem>)}
+                {TYPE_OPTIONS.map((option) => <MenuItem key={option} value={option}>{getTypeLabel(option)}</MenuItem>)}
               </TextField>
             </Grid>
             <Grid item xs={12} md={4}><TextField fullWidth label="Cidade" value={form.city} onChange={(e) => setForm((prev) => ({ ...prev, city: e.target.value }))} /></Grid>
