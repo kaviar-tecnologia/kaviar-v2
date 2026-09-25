@@ -93,6 +93,8 @@ export async function reverseFinanceTransaction(
           counterparty_account_id: original.counterparty_account_id,
           category_id: original.category_id,
           cost_center_id: original.cost_center_id,
+          legal_entity_id: original.legal_entity_id,
+          business_unit_id: original.business_unit_id,
           direction: reversedDirection as any,
           transaction_type: 'REVERSAL' as any,
           status: 'POSTED' as any,
