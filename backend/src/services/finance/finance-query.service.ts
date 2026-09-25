@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto';
 import { FINANCE_TRANSACTION_DETAIL_SELECT } from './finance-transaction-selects';
 
 const NON_FINAL_TRANSACTION_STATUSES = ['DRAFT', 'PENDING', 'BLOCKED'] as const;
-const ACCOUNT_STRUCTURAL_FIELDS = ['code', 'type', 'currency', 'opening_balance_cents', 'opening_balance_date'] as const;
+const ACCOUNT_STRUCTURAL_FIELDS = ['code', 'type', 'currency', 'opening_balance_cents', 'opening_balance_date', 'legal_entity_id'] as const;
 const ACCOUNT_FINANCE_PATCH_FIELDS = ['name', 'institution_name', 'bank_code', 'allows_negative_balance', 'is_cash_equivalent', 'is_active', 'notes'] as const;
 const CATEGORY_FINANCE_PATCH_FIELDS = ['name', 'parent_id', 'default_direction', 'requires_document', 'is_active', 'sort_order', 'accounting_code', 'accounting_nature', 'dre_group', 'balance_sheet_group', 'fiscal_classification', 'deductible', 'export_code', 'accountant_notes'] as const;
 const CATEGORY_SYSTEM_SUPER_ADMIN_PATCH_FIELDS = ['name', 'default_direction', 'requires_document', 'sort_order', 'accounting_code', 'accounting_nature', 'dre_group', 'balance_sheet_group', 'fiscal_classification', 'deductible', 'export_code', 'accountant_notes'] as const;
@@ -262,6 +262,7 @@ function serializeAccountAuditState(record: any) {
     code: record.code,
     name: record.name,
     type: record.type,
+    legal_entity_id: record.legal_entity_id ?? null,
     institution_name: record.institution_name ?? null,
     bank_code: record.bank_code ?? null,
     currency: record.currency,
@@ -328,6 +329,20 @@ async function assertTerritory(tx: any, territoryId: string | null | undefined) 
   if (!territory) throw new FinanceWriteError(404, 'Território não encontrado');
 }
 
+async function assertLegalEntity(tx: any, legalEntityId: string | null | undefined) {
+  if (!legalEntityId) return;
+  const entity = await tx.legal_entities.findUnique({ where: { id: legalEntityId }, select: { id: true, is_active: true } });
+  if (!entity) throw new FinanceWriteError(404, 'Empresa/filial não encontrada');
+  if (!entity.is_active) throw new FinanceWriteError(409, 'Empresa/filial está inativa');
+}
+
+async function assertBusinessUnit(tx: any, businessUnitId: string | null | undefined) {
+  if (!businessUnitId) return;
+  const unit = await tx.financial_business_units.findUnique({ where: { id: businessUnitId }, select: { id: true, is_active: true } });
+  if (!unit) throw new FinanceWriteError(404, 'Produto/linha de negócio não encontrado');
+  if (!unit.is_active) throw new FinanceWriteError(409, 'Produto/linha de negócio está inativo');
+}
+
 function paginationResult<T>(rows: T[], total: number, page: number, limit: number) {
   return {
     rows,
@@ -362,6 +377,7 @@ export async function listFinanceAccounts(query: any) {
   const searchFilter = buildStringSearchWhere(query.search, ['code', 'name']);
   if (searchFilter) Object.assign(where, searchFilter);
   if (query.type) where.type = query.type;
+  if (query.legal_entity_id) where.legal_entity_id = query.legal_entity_id;
   if (query.is_active !== undefined) where.is_active = query.is_active;
   if (query.is_cash_equivalent !== undefined) where.is_cash_equivalent = query.is_cash_equivalent;
   if (query.allows_negative_balance !== undefined) where.allows_negative_balance = query.allows_negative_balance;
@@ -377,6 +393,7 @@ export async function listFinanceAccounts(query: any) {
         code: true,
         name: true,
         type: true,
+        legal_entity_id: true,
         institution_name: true,
         bank_code: true,
         currency: true,
@@ -388,6 +405,7 @@ export async function listFinanceAccounts(query: any) {
         notes: true,
         created_at: true,
         updated_at: true,
+        legal_entity: { select: { id: true, razao_social: true, nome_fantasia: true, cnpj: true, entity_type: true, municipio: true, uf: true, is_active: true } },
         created_by_admin: { select: { id: true, name: true, role: true } },
         updated_by_admin: { select: { id: true, name: true, role: true } },
       },
@@ -406,6 +424,7 @@ export async function getFinanceAccountById(id: string) {
       code: true,
       name: true,
       type: true,
+      legal_entity_id: true,
       institution_name: true,
       bank_code: true,
       currency: true,
@@ -419,6 +438,7 @@ export async function getFinanceAccountById(id: string) {
       updated_at: true,
       created_by_admin_id: true,
       updated_by_admin_id: true,
+      legal_entity: { select: { id: true, razao_social: true, nome_fantasia: true, cnpj: true, entity_type: true, municipio: true, uf: true, is_active: true } },
       created_by_admin: { select: { id: true, name: true, role: true } },
       updated_by_admin: { select: { id: true, name: true, role: true } },
     },
@@ -579,6 +599,8 @@ export async function listFinanceRecognitionPolicies(query: any) {
   if (query.scope_type) where.scope_type = query.scope_type;
   if (query.policy) where.policy = query.policy;
   if (query.status) where.status = query.status;
+  if (query.legal_entity_id) where.legal_entity_id = query.legal_entity_id;
+  if (query.business_unit_id) where.business_unit_id = query.business_unit_id;
   if (query.territory_id) where.territory_id = query.territory_id;
   if (query.cost_center_id) where.cost_center_id = query.cost_center_id;
   if (query.city) where.city = query.city;
@@ -597,6 +619,8 @@ export async function listFinanceRecognitionPolicies(query: any) {
         scope_type: true,
         territory_id: true,
         cost_center_id: true,
+        legal_entity_id: true,
+        business_unit_id: true,
         city: true,
         state: true,
         policy: true,
@@ -613,6 +637,8 @@ export async function listFinanceRecognitionPolicies(query: any) {
         updated_at: true,
         territory: { select: { id: true, name: true, status: true } },
         cost_center: { select: { id: true, code: true, name: true, type: true, is_active: true } },
+        legal_entity: { select: { id: true, razao_social: true, nome_fantasia: true, cnpj: true, entity_type: true, municipio: true, uf: true, is_active: true } },
+        business_unit: { select: { id: true, code: true, name: true, is_active: true } },
         approved_by_admin: { select: { id: true, name: true, role: true } },
         created_by_admin: { select: { id: true, name: true, role: true } },
         updated_by_admin: { select: { id: true, name: true, role: true } },
@@ -634,6 +660,8 @@ export async function getFinanceRecognitionPolicyById(id: string) {
       scope_type: true,
       territory_id: true,
       cost_center_id: true,
+      legal_entity_id: true,
+      business_unit_id: true,
       city: true,
       state: true,
       policy: true,
@@ -650,6 +678,8 @@ export async function getFinanceRecognitionPolicyById(id: string) {
       updated_at: true,
       territory: { select: { id: true, name: true, status: true } },
       cost_center: { select: { id: true, code: true, name: true, type: true, is_active: true } },
+      legal_entity: { select: { id: true, razao_social: true, nome_fantasia: true, cnpj: true, entity_type: true, municipio: true, uf: true, is_active: true } },
+      business_unit: { select: { id: true, code: true, name: true, is_active: true } },
       approved_by_admin: { select: { id: true, name: true, role: true } },
       created_by_admin: { select: { id: true, name: true, role: true } },
       updated_by_admin: { select: { id: true, name: true, role: true } },
@@ -665,6 +695,8 @@ export async function listFinanceTransactions(query: any) {
   if (query.counterparty_account_id) where.counterparty_account_id = query.counterparty_account_id;
   if (query.category_id) where.category_id = query.category_id;
   if (query.cost_center_id) where.cost_center_id = query.cost_center_id;
+  if (query.legal_entity_id) where.legal_entity_id = query.legal_entity_id;
+  if (query.business_unit_id) where.business_unit_id = query.business_unit_id;
   if (query.direction) where.direction = query.direction;
   if (query.transaction_type) where.transaction_type = query.transaction_type;
   if (query.status) where.status = query.status;
@@ -699,6 +731,8 @@ export async function listFinanceTransactions(query: any) {
         origin_type: true,
         origin_id: true,
         reversal_of_id: true,
+        legal_entity_id: true,
+        business_unit_id: true,
         competence_date: true,
         transaction_date: true,
         due_date: true,
@@ -715,6 +749,8 @@ export async function listFinanceTransactions(query: any) {
         counterparty_account: { select: { id: true, code: true, name: true, type: true, is_active: true } },
         category: { select: { id: true, code: true, name: true, kind: true, is_active: true, is_postable: true } },
         cost_center: { select: { id: true, code: true, name: true, type: true, is_active: true } },
+        legal_entity: { select: { id: true, razao_social: true, nome_fantasia: true, cnpj: true, entity_type: true, municipio: true, uf: true, is_active: true } },
+        business_unit: { select: { id: true, code: true, name: true, is_active: true } },
       },
     }),
     prisma.financial_transactions.count({ where }),
@@ -735,6 +771,7 @@ export async function createFinanceAccount(data: any, actor: FinanceActor) {
     const openingBalance = BigInt(data.opening_balance_cents ?? '0');
     const allowsNegativeBalance = data.allows_negative_balance ?? false;
     assertOpeningBalanceConstraint(openingBalance, allowsNegativeBalance);
+    await assertLegalEntity(prisma, data.legal_entity_id);
 
     const created = await prisma.financial_accounts.create({
       data: {
@@ -742,6 +779,7 @@ export async function createFinanceAccount(data: any, actor: FinanceActor) {
         code: data.code,
         name: data.name,
         type: data.type,
+        legal_entity_id: data.legal_entity_id ?? null,
         institution_name: data.institution_name ?? null,
         bank_code: data.bank_code ?? null,
         currency: data.currency ?? 'BRL',
@@ -782,6 +820,7 @@ export async function updateFinanceAccount(id: string, data: any, actor: Finance
         code: true,
         name: true,
         type: true,
+        legal_entity_id: true,
         institution_name: true,
         bank_code: true,
         currency: true,
@@ -804,6 +843,7 @@ export async function updateFinanceAccount(id: string, data: any, actor: Finance
       ensureOnlyAllowedFields(data, ACCOUNT_FINANCE_PATCH_FIELDS, 'Campo sem permissão para FINANCE');
     }
 
+    if (data.legal_entity_id !== undefined) await assertLegalEntity(tx, data.legal_entity_id);
     const touchesStructuralFields = hasAnyField(data, ACCOUNT_STRUCTURAL_FIELDS);
     if (touchesStructuralFields && !isSuperAdmin(actor)) {
       throw new FinanceWriteError(403, 'Campo estrutural exige SUPER_ADMIN');
@@ -835,6 +875,7 @@ export async function updateFinanceAccount(id: string, data: any, actor: Finance
         'code',
         'name',
         'type',
+        'legal_entity_id',
         'institution_name',
         'bank_code',
         'currency',
@@ -866,6 +907,7 @@ export async function updateFinanceAccount(id: string, data: any, actor: Finance
           code: true,
           name: true,
           type: true,
+          legal_entity_id: true,
           institution_name: true,
           bank_code: true,
           currency: true,
@@ -1241,6 +1283,8 @@ function serializePolicyAuditState(policy: any) {
     scope_type: policy.scope_type,
     territory_id: policy.territory_id ?? null,
     cost_center_id: policy.cost_center_id ?? null,
+    legal_entity_id: policy.legal_entity_id ?? null,
+    business_unit_id: policy.business_unit_id ?? null,
     city: policy.city ?? null,
     state: policy.state ?? null,
     policy: policy.policy,
@@ -1259,21 +1303,27 @@ function serializePolicyAuditState(policy: any) {
 }
 
 function buildScopeMatchWhere(scope_type: string, policy: any) {
+  const dimensions = {
+    legal_entity_id: policy.legal_entity_id ?? null,
+    business_unit_id: policy.business_unit_id ?? null,
+  };
   switch (scope_type) {
     case 'GLOBAL':
-      return { territory_id: null, cost_center_id: null, city: null, state: null };
+      return { ...dimensions, territory_id: null, cost_center_id: null, city: null, state: null };
     case 'TERRITORY':
-      return { territory_id: policy.territory_id };
+      return { ...dimensions, territory_id: policy.territory_id };
     case 'CITY':
-      return { city: policy.city, state: policy.state };
+      return { ...dimensions, city: policy.city, state: policy.state };
     case 'COST_CENTER':
-      return { cost_center_id: policy.cost_center_id };
+      return { ...dimensions, cost_center_id: policy.cost_center_id };
     default:
       return {};
   }
 }
 
 function scopesMatch(a: any, b: any): boolean {
+  if ((a.legal_entity_id ?? null) !== (b.legal_entity_id ?? null)) return false;
+  if ((a.business_unit_id ?? null) !== (b.business_unit_id ?? null)) return false;
   switch (a.scope_type) {
     case 'GLOBAL':
       return true;
@@ -1335,6 +1385,8 @@ const POLICY_SELECT = {
   scope_type: true,
   territory_id: true,
   cost_center_id: true,
+  legal_entity_id: true,
+  business_unit_id: true,
   city: true,
   state: true,
   policy: true,
@@ -1397,6 +1449,8 @@ export async function createFinanceRecognitionPolicy(data: any, actor: FinanceAc
 
   try {
     const created = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await assertLegalEntity(tx, data.legal_entity_id);
+      await assertBusinessUnit(tx, data.business_unit_id);
       const id = buildPolicyId();
       const policy = await tx.financial_recognition_policies.create({
         data: {
@@ -1406,6 +1460,8 @@ export async function createFinanceRecognitionPolicy(data: any, actor: FinanceAc
           scope_type: data.scope_type,
           territory_id: data.territory_id ?? null,
           cost_center_id: data.cost_center_id ?? null,
+          legal_entity_id: data.legal_entity_id ?? null,
+          business_unit_id: data.business_unit_id ?? null,
           city: data.city ?? null,
           state: data.state ?? null,
           policy: data.policy,
@@ -1461,9 +1517,11 @@ export async function updateFinanceRecognitionPolicyDraft(id: string, data: any,
       if (current.status !== 'DRAFT') {
         throw new FinanceWriteError(409, 'Somente políticas DRAFT podem ser editadas');
       }
+      if (data.legal_entity_id !== undefined) await assertLegalEntity(tx, data.legal_entity_id);
+      if (data.business_unit_id !== undefined) await assertBusinessUnit(tx, data.business_unit_id);
 
       const updateData: any = { updated_by_admin_id: actor.id };
-      for (const key of ['code', 'subject', 'scope_type', 'territory_id', 'cost_center_id', 'city', 'state', 'policy', 'effective_from', 'effective_until', 'reason', 'notes']) {
+      for (const key of ['code', 'subject', 'scope_type', 'territory_id', 'cost_center_id', 'legal_entity_id', 'business_unit_id', 'city', 'state', 'policy', 'effective_from', 'effective_until', 'reason', 'notes']) {
         if (data[key] !== undefined) updateData[key] = data[key];
       }
 
