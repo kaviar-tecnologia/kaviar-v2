@@ -303,13 +303,17 @@ class AdminApiService {
   async rejectModality(id, rejected_reason, review_notes) { return this.patch(`/api/admin/modalities/${id}/reject`, { rejected_reason, review_notes }); }
   async suspendModality(id, review_notes) { return this.patch(`/api/admin/modalities/${id}/suspend`, { review_notes }); }
 
-  // Contas a Pagar — Obrigações (Portal do Contador). READ-ONLY + downloads seguros.
+  // Obrigações do Portal do Contador — leitura, registro de pagamento e comprovantes.
+  async getFinanceObligationEntities() {
+    return this.get('/api/admin/finance/obligations/entities');
+  }
   async getFinanceObligations(params = {}) {
     const qs = new URLSearchParams(params).toString();
     return this.get(`/api/admin/finance/obligations${qs ? '?' + qs : ''}`);
   }
-  async getFinanceObligationsSummary() {
-    return this.get('/api/admin/finance/obligations/summary');
+  async getFinanceObligationsSummary(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.get(`/api/admin/finance/obligations/summary${qs ? '?' + qs : ''}`);
   }
   async getFinanceObligationBoletoUrl(id) {
     return this.get(`/api/admin/finance/obligations/${id}/download-boleto`);
