@@ -32,6 +32,7 @@ export const ACCOUNT_STRUCTURAL_FIELDS = [
   'currency',
   'opening_balance_cents',
   'opening_balance_date',
+  'legal_entity_id',
 ];
 
 export const ACCOUNT_FUNCTIONAL_FIELDS = [
@@ -52,6 +53,7 @@ const defaultFormValues = {
   code: '',
   name: '',
   type: 'BANK',
+  legal_entity_id: '',
   currency: 'BRL',
   institution_name: '',
   bank_code: '',
@@ -271,6 +273,7 @@ const toComparableAccountState = (accountOrValues = {}) => {
     code: toUpperTrimmed(accountOrValues.code),
     name: typeof accountOrValues.name === 'string' ? accountOrValues.name.trim() : '',
     type: accountOrValues.type || 'BANK',
+    legal_entity_id: toNullableTrimmedString(accountOrValues.legal_entity_id),
     currency: toUpperTrimmed(accountOrValues.currency || 'BRL'),
     institution_name: toNullableTrimmedString(accountOrValues.institution_name),
     bank_code: toNullableTrimmedString(accountOrValues.bank_code),
@@ -290,6 +293,7 @@ export const getAccountFormValues = (account = null) => {
     code: account.code || '',
     name: account.name || '',
     type: account.type || 'BANK',
+    legal_entity_id: account.legal_entity_id || '',
     currency: account.currency || 'BRL',
     institution_name: account.institution_name || '',
     bank_code: account.bank_code || '',
@@ -319,6 +323,10 @@ export const validateAccountFormValues = (formValues, { mode = 'create', canEdit
 
   if (!ACCOUNT_TYPE_OPTIONS.includes(formValues.type)) {
     fieldErrors.type = 'Selecione um tipo de conta válido.';
+  }
+
+  if (!formValues.legal_entity_id) {
+    fieldErrors.legal_entity_id = 'Selecione a empresa/filial titular da conta.';
   }
 
   if (!/^[A-Z]{3}$/.test(toUpperTrimmed(formValues.currency))) {
@@ -370,6 +378,7 @@ export const buildCreateAccountPayload = (formValues) => {
     code: toUpperTrimmed(formValues.code),
     name: formValues.name.trim(),
     type: formValues.type,
+    legal_entity_id: toNullableTrimmedString(formValues.legal_entity_id),
     currency: toUpperTrimmed(formValues.currency),
     institution_name: toNullableTrimmedString(formValues.institution_name),
     bank_code: toNullableTrimmedString(formValues.bank_code),
@@ -405,6 +414,7 @@ export const buildUpdateAccountPayload = (formValues, originalAccount, options =
   assignIfChanged('code', next.code, current.code);
   assignIfChanged('name', next.name, current.name);
   assignIfChanged('type', next.type, current.type);
+  assignIfChanged('legal_entity_id', next.legal_entity_id, current.legal_entity_id);
   assignIfChanged('currency', next.currency, current.currency);
   assignIfChanged('institution_name', next.institution_name, current.institution_name);
   assignIfChanged('bank_code', next.bank_code, current.bank_code);

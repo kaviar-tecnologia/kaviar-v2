@@ -30,6 +30,7 @@ export default function AccountFormDialog({
   open,
   mode,
   account,
+  legalEntities = [],
   role,
   isSuperAdmin,
   submitting,
@@ -61,14 +62,14 @@ export default function AccountFormDialog({
 
   const structuralFieldsNotice = useMemo(() => {
     if (mode === 'create') {
-      return 'Codigo, tipo, moeda e saldo inicial seguem o contrato real do backend e passam a ser campos estruturais na edicao.';
+      return 'Código, tipo, empresa/filial titular, moeda e saldo inicial são campos estruturais. A titularidade define a qual CNPJ a conta financeira pertence.';
     }
 
     if (!canEditStructuralFields) {
-      return 'Codigo, tipo, moeda e saldo inicial sao campos estruturais. Nesta edicao, somente SUPER_ADMIN pode altera-los.';
+      return 'Código, tipo, empresa/filial titular, moeda e saldo inicial são campos estruturais. Nesta edição, somente SUPER_ADMIN pode alterá-los.';
     }
 
-    return 'Codigo, tipo, moeda e saldo inicial sao campos estruturais e devem seguir exatamente o contrato do backend.';
+    return 'Código, tipo, empresa/filial titular, moeda e saldo inicial são campos estruturais e ficam protegidos após uso da conta.';
   }, [canEditStructuralFields, mode]);
 
   const hasUnsavedChanges = useMemo(() => {
@@ -132,7 +133,7 @@ export default function AccountFormDialog({
     const name = formValues.name.trim();
     const currency = formValues.currency.trim();
 
-    if (!code || !name || !formValues.type || !currency) {
+    if (!code || !name || !formValues.type || !formValues.legal_entity_id || !currency) {
       setValidationError(requiredError);
       return;
     }
@@ -228,6 +229,26 @@ export default function AccountFormDialog({
             >
               {ACCOUNT_TYPE_OPTIONS.map((option) => (
                 <MenuItem key={option} value={option}>{getAccountTypeLabel(option)}</MenuItem>
+              ))}
+            </TextField>
+          </Grid>
+          <Grid item xs={12} md={8}>
+            <TextField
+              label="Empresa / filial titular"
+              value={formValues.legal_entity_id}
+              onChange={(event) => handleChange('legal_entity_id', event.target.value)}
+              fullWidth
+              required
+              select
+              size="small"
+              {...structuralInputProps}
+              error={Boolean(fieldErrors.legal_entity_id)}
+              helperText={fieldErrors.legal_entity_id || 'CNPJ responsável por esta conta financeira.'}
+            >
+              {legalEntities.map((entity) => (
+                <MenuItem key={entity.id} value={entity.id}>
+                  {(entity.nome_fantasia || entity.razao_social)} — {entity.cnpj} ({entity.entity_type})
+                </MenuItem>
               ))}
             </TextField>
           </Grid>

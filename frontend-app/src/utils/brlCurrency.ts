@@ -62,10 +62,12 @@ export function parseBRLToCentsString(input: string): string | null {
 export function formatCentsStringToBRL(cents: string | null | undefined): string {
   if (cents == null || cents === '') return '—';
   const str = String(cents).trim();
-  if (!/^\d+$/.test(str)) return '—';
+  const negative = str.startsWith('-');
+  const digits = negative ? str.slice(1) : str;
+  if (!/^\d+$/.test(digits)) return '—';
 
   // Pad to at least 3 chars (so we always have int + 2 frac)
-  const padded = str.padStart(3, '0');
+  const padded = digits.padStart(3, '0');
   const intPart = padded.slice(0, -2) || '0';
   const fracPart = padded.slice(-2);
 
@@ -74,6 +76,7 @@ export function formatCentsStringToBRL(cents: string | null | undefined): string
 
   // Add thousands separator
   const withSep = cleanInt.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const sign = negative && (cleanInt !== '0' || fracPart !== '00') ? '-' : '';
 
-  return `R$ ${withSep},${fracPart}`;
+  return `R$ ${sign}${withSep},${fracPart}`;
 }

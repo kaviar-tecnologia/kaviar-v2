@@ -131,6 +131,38 @@ export const FINANCE_RECOGNITION_POLICY_SEEDS: FinanceRecognitionPolicySeed[] = 
 ];
 
 async function seedFinancialFoundation(adminId: string, rioDeJaneiroTerritoryId: string) {
+  const businessUnits = [
+    { id: 'fbu_corporate', code: 'CORPORATE', name: 'Corporativo', description: 'Custos e receitas corporativos compartilhados', sort_order: 10 },
+    { id: 'fbu_mobility', code: 'MOBILITY', name: 'Mobilidade', description: 'Corridas e operação de mobilidade KAVIAR', sort_order: 20 },
+    { id: 'fbu_kaviar_ar', code: 'KAVIAR_AR', name: 'KAVIAR AR', description: 'Realidade aumentada, guia e experiências AR', sort_order: 30 },
+    { id: 'fbu_commerce', code: 'COMMERCE', name: 'Comércio', description: 'Parcerias e produtos de comércio local', sort_order: 40 },
+    { id: 'fbu_premium', code: 'PREMIUM', name: 'Premium', description: 'Turismo, aeroporto e serviços premium', sort_order: 50 },
+    { id: 'fbu_pet', code: 'PET', name: 'Pet', description: 'Produtos e serviços KAVIAR Pet', sort_order: 60 },
+    { id: 'fbu_care', code: 'CARE', name: 'Care', description: 'Produtos e serviços KAVIAR Care', sort_order: 70 },
+  ];
+
+  for (const unit of businessUnits) {
+    await prisma.financial_business_units.upsert({
+      where: { code: unit.code },
+      update: {
+        name: unit.name,
+        description: unit.description,
+        is_system: true,
+        is_active: true,
+        sort_order: unit.sort_order,
+      },
+      create: {
+        id: unit.id,
+        code: unit.code,
+        name: unit.name,
+        description: unit.description,
+        is_system: true,
+        is_active: true,
+        sort_order: unit.sort_order,
+      },
+    });
+  }
+
   const categoryByCode = new Map<string, { id: string }>();
 
   for (const seed of FINANCE_CATEGORY_SEEDS) {
@@ -407,7 +439,7 @@ async function main() {
   console.log('✅ Território: RJ (state) → Rio de Janeiro (city)');
 
   await seedFinancialFoundation(admin.id, rjCity.id);
-  console.log('✅ Base financeira 1A: categorias, centros de custo e políticas UNCLASSIFIED');
+  console.log('✅ Base financeira: linhas de negócio, categorias, centros de custo e políticas UNCLASSIFIED');
 
   // Regras municipais iniciais: Santa Rita do Passa Quatro/SP
   const santaRitaCar = await prisma.municipal_regulations.upsert({

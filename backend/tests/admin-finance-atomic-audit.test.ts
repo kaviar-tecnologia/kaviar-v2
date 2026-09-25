@@ -11,6 +11,8 @@ const { prismaMock, authState, txMock, executeRawMock } = vi.hoisted(() => {
     financial_accounts: { findUnique: vi.fn() },
     financial_categories: { findUnique: vi.fn() },
     financial_cost_centers: { findUnique: vi.fn() },
+    legal_entities: { findUnique: vi.fn() },
+    financial_business_units: { findUnique: vi.fn() },
     $executeRaw: executeRawMock,
   };
   const prismaMock: any = {
@@ -52,6 +54,9 @@ const fullMockRecord = {
   discount_amount_cents: BigInt(0), retention_amount_cents: BigInt(0),
   net_amount_cents: BigInt(15000), transfer_amount_cents: null,
   account_id: 'acc-1', counterparty_account_id: null, category_id: 'cat-1', cost_center_id: 'cc-1',
+  legal_entity_id: 'le-1', business_unit_id: 'bu-1',
+  legal_entity: { id: 'le-1', razao_social: 'KAVIAR', nome_fantasia: 'KAVIAR', cnpj: '00000000000000', entity_type: 'MATRIZ', municipio: 'Rio de Janeiro', uf: 'RJ', is_active: true },
+  business_unit: { id: 'bu-1', code: 'CORPORATE', name: 'Corporativo', is_active: true },
   account: { id: 'acc-1', code: 'BANK-01', name: 'Conta', type: 'BANK', is_active: true },
   counterparty_account: null,
   category: { id: 'cat-1', code: 'TECH', name: 'Tecnologia', kind: 'EXPENSE', is_active: true, is_postable: true, sort_order: 1 },
@@ -68,6 +73,7 @@ const fullMockRecord = {
 
 const validCreateBody = {
   account_id: 'acc-1', category_id: 'cat-1', cost_center_id: 'cc-1',
+  legal_entity_id: 'le-1', business_unit_id: 'bu-1',
   direction: 'OUT', transaction_type: 'EXPENSE', payment_method: 'PIX',
   competence_date: '2026-08-01', transaction_date: '2026-08-01',
   gross_amount_cents: '15000', net_amount_cents: '15000',
@@ -82,7 +88,9 @@ beforeEach(() => {
   executeRawMock.mockResolvedValue(1);
 
   // Default mocks for create flow
-  txMock.financial_accounts.findUnique.mockResolvedValue({ id: 'acc-1', is_active: true });
+  txMock.financial_accounts.findUnique.mockResolvedValue({ id: 'acc-1', is_active: true, legal_entity_id: 'le-1' });
+  txMock.legal_entities.findUnique.mockResolvedValue({ id: 'le-1', is_active: true });
+  txMock.financial_business_units.findUnique.mockResolvedValue({ id: 'bu-1', is_active: true });
   txMock.financial_categories.findUnique.mockResolvedValue({ id: 'cat-1', is_active: true });
   txMock.financial_cost_centers.findUnique.mockResolvedValue({ id: 'cc-1', is_active: true });
   txMock.financial_transactions.create.mockResolvedValue({ id: 'txn-new' });

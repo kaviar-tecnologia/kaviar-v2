@@ -1,4 +1,6 @@
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
+import { prisma } from '../lib/prisma';
 import { allowFinanceAccess, authenticateAdmin } from '../middlewares/auth';
 import { audit, auditCtx } from '../utils/audit';
 import {
@@ -116,6 +118,126 @@ function financeTransactionAuditContext(req: Request): FinanceTransactionAuditCo
     userAgent: ctx.ua,
   };
 }
+
+// ── Independent finance dimensions: legal entity + business unit ───────────
+
+const assignmentCreateSchema = z.object({
+  legal_entity_id: z.string().trim().min(1).max(120),
+  territory_id: z.string().trim().min(1).max(120),
+  effective_from: z.coerce.date(),
+  notes: z.string().trim().max(2000).nullable().optional(),
+}).strict();
+
+const assignmentCloseSchema = z.object({
+  effective_until: z.coerce.date(),
+}).strict();
+
+router.get('/business-units', async (req: Request, res: Response) => {
+  try {
+    const activeOnly = req.query.is_active !== 'false';
+    const rows = await prisma.financial_business_units.findMany({
+      where: activeOnly ? { is_active: true } : {},
+      orderBy: [{ sort_order: 'asc' }, { name: 'asc' }],
+      select: { id: true, code: true, name: true, description: true, is_system: true, is_active: true, sort_order: true },
+    });
+    return res.json({ success: true, data: rows });
+  } catch (error) {
+    console.error('[ADMIN_FINANCE_BUSINESS_UNITS_LIST]', error);
+    return res.status(500).json({ success: false, error: 'Erro interno do servidor' });
+  }
+});
+
+router.get('/entity-territory-assignments', async (req: Request, res: Response) => {
+  try {
+    const territoryId = typeof req.query.territory_id === 'string' ? req.query.territory_id.trim() : '';
+    const legalEntityId = typeof req.query.legal_entity_id === 'string' ? req.query.legal_entity_id.trim() : '';
+    const activeOnly = req.query.active_only !== 'false';
+    const rows = await prisma.financial_entity_territory_assignments.findMany({
+      where: {
+        ...(territoryId ? { territory_id: territoryId } : {}),
+        ...(legalEntityId ? { legal_entity_id: legalEntityId } : {}),
+        ...(activeOnly ? { is_active: true } : {}),
+      },
+      orderBy: [{ effective_from: 'desc' }, { created_at: 'desc' }],
+      select: {
+        id: true, legal_entity_id: true, territory_id: true,
+        effective_from: true, effective_until: true, is_active: true, notes: true,
+        legal_entity: { select: { id: true, razao_social: true, nome_fantasia: true, cnpj: true, entity_type: true, municipio: true, uf: true, is_active: true } },
+        territory: { select: { id: true, name: true, level: true, status: true, city_name: true, uf: true, is_active: true } },
+      },
+    });
+    return res.json({ success: true, data: rows });
+  } catch (error) {
+    console.error('[ADMIN_FINANCE_ENTITY_TERRITORY_LIST]', error);
+    return res.status(500).json({ success: false, error: 'Erro interno do servidor' });
+  }
+});
+
+router.post('/entity-territory-assignments', async (req: Request, res: Response) => {
+  try {
+    const admin = (req as any).admin;
+    if (admin?.role !== 'SUPER_ADMIN') return res.status(403).json({ success: false, error: 'Somente SUPER_ADMIN pode vincular filial e território' });
+    const parsed = assignmentCreateSchema.safeParse(req.body);
+    if (!parsed.success) return validationError(res, parsed.error);
+    const { legal_entity_id, territory_id, effective_from, notes } = parsed.data;
+
+    const [entity, territory] = await Promise.all([
+      prisma.legal_entities.findUnique({ where: { id: legal_entity_id }, select: { id: true, is_active: true } }),
+      prisma.operational_territories.findUnique({ where: { id: territory_id }, select: { id: true, is_active: true } }),
+    ]);
+    if (!entity) return res.status(404).json({ success: false, error: 'Empresa/filial não encontrada' });
+    if (!territory) return res.status(404).json({ success: false, error: 'Território não encontrado' });
+    if (!entity.is_active) return res.status(409).json({ success: false, error: 'Empresa/filial está inativa' });
+    if (!territory.is_active) return res.status(409).json({ success: false, error: 'Território está inativo' });
+
+    const conflict = await prisma.financial_entity_territory_assignments.findFirst({
+      where: {
+        territory_id,
+        // Historical integrity: an open-ended new assignment cannot overlap
+        // any prior assignment, even one already closed administratively.
+        OR: [{ effective_until: null }, { effective_until: { gte: effective_from } }],
+      },
+      select: { id: true, legal_entity_id: true, effective_from: true, effective_until: true },
+    });
+    if (conflict) return res.status(409).json({ success: false, error: 'Território já possui empresa/filial responsável no período' });
+
+    const created = await prisma.financial_entity_territory_assignments.create({
+      data: { legal_entity_id, territory_id, effective_from, notes: notes ?? null },
+      select: { id: true, legal_entity_id: true, territory_id: true, effective_from: true, effective_until: true, is_active: true, notes: true },
+    });
+    await registerFinanceAudit(req, 'FINANCE_ENTITY_TERRITORY_ASSIGN', 'financial_entity_territory_assignments', created.id, null, created);
+    return res.status(201).json({ success: true, data: created });
+  } catch (error) {
+    console.error('[ADMIN_FINANCE_ENTITY_TERRITORY_CREATE]', error);
+    return res.status(500).json({ success: false, error: 'Erro interno do servidor' });
+  }
+});
+
+router.patch('/entity-territory-assignments/:id/close', async (req: Request, res: Response) => {
+  try {
+    const admin = (req as any).admin;
+    if (admin?.role !== 'SUPER_ADMIN') return res.status(403).json({ success: false, error: 'Somente SUPER_ADMIN pode encerrar vínculo territorial' });
+    const id = String(req.params.id || '').trim();
+    const parsed = assignmentCloseSchema.safeParse(req.body);
+    if (!id) return res.status(400).json({ success: false, error: 'ID inválido' });
+    if (!parsed.success) return validationError(res, parsed.error);
+
+    const current = await prisma.financial_entity_territory_assignments.findUnique({ where: { id } });
+    if (!current) return res.status(404).json({ success: false, error: 'Vínculo não encontrado' });
+    if (!current.is_active) return res.status(409).json({ success: false, error: 'Vínculo já está encerrado' });
+    if (parsed.data.effective_until < current.effective_from) return res.status(400).json({ success: false, error: 'effective_until não pode ser anterior a effective_from' });
+
+    const updated = await prisma.financial_entity_territory_assignments.update({
+      where: { id },
+      data: { effective_until: parsed.data.effective_until, is_active: false },
+    });
+    await registerFinanceAudit(req, 'FINANCE_ENTITY_TERRITORY_CLOSE', 'financial_entity_territory_assignments', id, current, updated);
+    return res.json({ success: true, data: updated });
+  } catch (error) {
+    console.error('[ADMIN_FINANCE_ENTITY_TERRITORY_CLOSE]', error);
+    return res.status(500).json({ success: false, error: 'Erro interno do servidor' });
+  }
+});
 
 router.get('/accounts', async (req: Request, res: Response) => {
   try {

@@ -230,6 +230,38 @@ export const listFinanceCostCenters = async (params = {}) => {
   );
 };
 
+export const listFinanceBusinessUnits = async (params = {}) => {
+  return performGet(
+    `${FINANCE_BASE_PATH}/business-units`,
+    params,
+    'Não foi possível carregar linhas de negócio.'
+  );
+};
+
+export const listFinanceEntityTerritoryAssignments = async (params = {}) => {
+  return performGet(
+    `${FINANCE_BASE_PATH}/entity-territory-assignments`,
+    params,
+    'Não foi possível carregar vínculos entre filiais e territórios.'
+  );
+};
+
+export const createFinanceEntityTerritoryAssignment = async (payload) => {
+  return performPost(
+    `${FINANCE_BASE_PATH}/entity-territory-assignments`,
+    payload,
+    'Não foi possível vincular a empresa/filial ao território.'
+  );
+};
+
+export const closeFinanceEntityTerritoryAssignment = async (id, payload) => {
+  return performPatch(
+    `${FINANCE_BASE_PATH}/entity-territory-assignments/${encodeURIComponent(id)}/close`,
+    payload,
+    'Não foi possível encerrar o vínculo territorial.'
+  );
+};
+
 export const createFinanceAccount = async (payload) => {
   return performPost(
     `${FINANCE_BASE_PATH}/accounts`,

@@ -82,6 +82,35 @@ export async function createObligationFromCycle(
 
     const idempotencyKey = `territory_cycle_obligation:${cycleId}`;
     const amountCents = BigInt(cycle.approved_amount_cents);
+    const competenceDate = cycle.reference_month + '-01';
+
+    // Resolve the CNPJ legally responsible for this territory at the cycle competence.
+    // Fail closed: outbound money cannot be created without explicit entity attribution.
+    const { rows: [entityAssignment] } = await client.query(
+      `SELECT legal_entity_id
+       FROM financial_entity_territory_assignments
+       WHERE territory_id = $1
+         AND effective_from <= $2::date
+         AND (effective_until IS NULL OR effective_until >= $2::date)
+       ORDER BY effective_from DESC
+       LIMIT 1`,
+      [cycle.territory_id, competenceDate]
+    );
+    if (!entityAssignment?.legal_entity_id) {
+      await client.query('ROLLBACK');
+      throw makeError(
+        'TERRITORY_CYCLE_LEGAL_ENTITY_NOT_ASSIGNED',
+        `Territory ${cycle.territory_id} has no active legal entity assignment for ${cycle.reference_month}`
+      );
+    }
+
+    const { rows: [mobilityUnit] } = await client.query(
+      `SELECT id FROM financial_business_units WHERE code = 'MOBILITY' AND is_active = true LIMIT 1`
+    );
+    if (!mobilityUnit?.id) {
+      await client.query('ROLLBACK');
+      throw makeError('FINANCE_MOBILITY_BUSINESS_UNIT_MISSING', 'MOBILITY business unit is not active');
+    }
 
     // Ensure payee exists for manager
     const { rows: [payee] } = await client.query(
@@ -101,14 +130,14 @@ export async function createObligationFromCycle(
     // Create financial_obligation
     const { rows: [obligation] } = await client.query(
       `INSERT INTO financial_obligations (
-        payee_id, purpose, source_type, source_id,
+        payee_id, purpose, source_type, source_id, legal_entity_id, business_unit_id,
         description_safe, gross_amount_cents, net_amount_cents,
         competence_date, status, idempotency_key, created_by_system,
         created_at, updated_at
        ) VALUES (
-        $1, 'MANAGER_TERRITORIAL_COMMISSION', 'territory_payout_cycle', $2,
-        $3, $4, $4,
-        $5::date, 'DRAFT', $6, true,
+        $1, 'MANAGER_TERRITORIAL_COMMISSION', 'territory_payout_cycle', $2, $3, $4,
+        $5, $6, $6,
+        $7::date, 'DRAFT', $8, true,
         NOW(), NOW()
        )
        ON CONFLICT (idempotency_key) DO UPDATE SET updated_at = NOW()
@@ -116,9 +145,11 @@ export async function createObligationFromCycle(
       [
         payeeId,
         cycleId,
+        entityAssignment.legal_entity_id,
+        mobilityUnit.id,
         `Comissão territorial ${cycle.reference_month}`,
         amountCents.toString(),
-        cycle.reference_month + '-01',
+        competenceDate,
         idempotencyKey,
       ]
     );

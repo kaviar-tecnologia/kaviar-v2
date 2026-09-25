@@ -6,14 +6,18 @@ const { prismaMock, authState, txMock } = vi.hoisted(() => {
   const financial_accounts = { findUnique: vi.fn() };
   const financial_categories = { findUnique: vi.fn() };
   const financial_cost_centers = { findUnique: vi.fn() };
+  const legal_entities = { findUnique: vi.fn() };
+  const financial_business_units = { findUnique: vi.fn() };
   const financial_transactions = { create: vi.fn(), findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn(), findMany: vi.fn(), count: vi.fn() };
   const executeRawMock = vi.fn().mockResolvedValue(1);
-  const txMock: any = { financial_accounts, financial_categories, financial_cost_centers, financial_transactions, $executeRaw: executeRawMock };
+  const txMock: any = { financial_accounts, financial_categories, financial_cost_centers, legal_entities, financial_business_units, financial_transactions, $executeRaw: executeRawMock };
   const prismaMock: any = {
     admins: { findUnique: vi.fn() },
     financial_accounts,
     financial_categories,
     financial_cost_centers,
+    legal_entities,
+    financial_business_units,
     financial_transactions,
     $transaction: vi.fn((fn: any) => fn(txMock)),
     $executeRaw: executeRawMock,
@@ -36,6 +40,8 @@ const validCreateBody = {
   account_id: 'acc-1',
   category_id: 'cat-1',
   cost_center_id: 'cc-1',
+  legal_entity_id: 'le-1',
+  business_unit_id: 'bu-1',
   direction: 'OUT',
   transaction_type: 'EXPENSE',
   payment_method: 'PIX',
@@ -65,6 +71,9 @@ const mockTransaction = {
   reversal_of: null, reversals: [], allocations: [], outgoing_links: [], incoming_links: [],
   canceled_reason: null, canceled_at: null, created_at: new Date(), updated_at: new Date(),
   account_id: 'acc-1', counterparty_account_id: null, category_id: 'cat-1', cost_center_id: 'cc-1',
+  legal_entity_id: 'le-1', business_unit_id: 'bu-1',
+  legal_entity: { id: 'le-1', razao_social: 'KAVIAR', nome_fantasia: 'KAVIAR', cnpj: '00000000000000', entity_type: 'MATRIZ', municipio: 'Rio de Janeiro', uf: 'RJ', is_active: true },
+  business_unit: { id: 'bu-1', code: 'CORPORATE', name: 'Corporativo', is_active: true },
   created_by_admin_id: 'admin-1', approved_by_admin_id: null, responsible_admin_id: 'admin-1',
   reversal_of_id: null,
 };
@@ -72,7 +81,9 @@ const mockTransaction = {
 beforeEach(() => {
   vi.clearAllMocks();
   authState.admin = { id: 'admin-1', email: 'sa@test.local', role: 'SUPER_ADMIN' };
-  prismaMock.financial_accounts.findUnique.mockResolvedValue({ id: 'acc-1', is_active: true });
+  prismaMock.financial_accounts.findUnique.mockResolvedValue({ id: 'acc-1', is_active: true, legal_entity_id: 'le-1' });
+  prismaMock.legal_entities.findUnique.mockResolvedValue({ id: 'le-1', is_active: true });
+  prismaMock.financial_business_units.findUnique.mockResolvedValue({ id: 'bu-1', is_active: true });
   prismaMock.financial_categories.findUnique.mockResolvedValue({ id: 'cat-1', is_active: true });
   prismaMock.financial_cost_centers.findUnique.mockResolvedValue({ id: 'cc-1', is_active: true });
   prismaMock.financial_transactions.create.mockResolvedValue({ id: 'txn-1' });

@@ -18,6 +18,30 @@ export function serializeAdminSummary(admin: any) {
   };
 }
 
+export function serializeLegalEntitySummary(entity: any) {
+  if (!entity) return null;
+  return {
+    id: entity.id,
+    razao_social: entity.razao_social,
+    nome_fantasia: entity.nome_fantasia ?? null,
+    cnpj: entity.cnpj,
+    entity_type: entity.entity_type,
+    municipio: entity.municipio ?? null,
+    uf: entity.uf ?? null,
+    is_active: entity.is_active,
+  };
+}
+
+export function serializeBusinessUnitSummary(unit: any) {
+  if (!unit) return null;
+  return {
+    id: unit.id,
+    code: unit.code,
+    name: unit.name,
+    is_active: unit.is_active,
+  };
+}
+
 export function serializeAccountSummary(account: any) {
   if (!account) return null;
   return {
@@ -35,6 +59,8 @@ export function serializeAccountItem(account: any) {
     code: account.code,
     name: account.name,
     type: account.type,
+    legal_entity_id: account.legal_entity_id ?? null,
+    legal_entity: serializeLegalEntitySummary(account.legal_entity),
     institution_name: account.institution_name ?? null,
     bank_code: account.bank_code ?? null,
     currency: account.currency,
@@ -176,6 +202,8 @@ export function serializeRecognitionPolicyItem(policy: any) {
     scope_type: policy.scope_type,
     territory_id: policy.territory_id ?? null,
     cost_center_id: policy.cost_center_id ?? null,
+    legal_entity_id: policy.legal_entity_id ?? null,
+    business_unit_id: policy.business_unit_id ?? null,
     city: policy.city ?? null,
     state: policy.state ?? null,
     policy: policy.policy,
@@ -198,6 +226,8 @@ export function serializeRecognitionPolicyListItem(policy: any) {
     ...serializeRecognitionPolicyItem(policy),
     territory: serializeTerritorySummary(policy.territory),
     cost_center: serializeCostCenterSummary(policy.cost_center),
+    legal_entity: serializeLegalEntitySummary(policy.legal_entity),
+    business_unit: serializeBusinessUnitSummary(policy.business_unit),
   };
 }
 
@@ -206,6 +236,8 @@ export function serializeRecognitionPolicyDetail(policy: any) {
     ...serializeRecognitionPolicyItem(policy),
     territory: serializeTerritorySummary(policy.territory),
     cost_center: serializeCostCenterSummary(policy.cost_center),
+    legal_entity: serializeLegalEntitySummary(policy.legal_entity),
+    business_unit: serializeBusinessUnitSummary(policy.business_unit),
   };
 }
 
@@ -228,6 +260,7 @@ export function serializeTransactionAllocation(allocation: any) {
     transaction_id: allocation.transaction_id,
     category_id: allocation.category_id,
     cost_center_id: allocation.cost_center_id ?? null,
+    business_unit_id: allocation.business_unit_id ?? null,
     amount_cents: toBigIntString(allocation.amount_cents),
     allocation_type: allocation.allocation_type,
     description: allocation.description ?? null,
@@ -237,6 +270,7 @@ export function serializeTransactionAllocation(allocation: any) {
     updated_at: toIsoDate(allocation.updated_at),
     category: serializeCategorySummary(allocation.category),
     cost_center: serializeCostCenterSummary(allocation.cost_center),
+    business_unit: serializeBusinessUnitSummary(allocation.business_unit),
   };
 }
 
@@ -268,6 +302,10 @@ export function serializeTransactionItem(transaction: any) {
     origin_type: transaction.origin_type,
     origin_id: transaction.origin_id ?? null,
     reversal_of_id: transaction.reversal_of_id ?? null,
+    legal_entity_id: transaction.legal_entity_id ?? null,
+    business_unit_id: transaction.business_unit_id ?? null,
+    legal_entity: serializeLegalEntitySummary(transaction.legal_entity),
+    business_unit: serializeBusinessUnitSummary(transaction.business_unit),
     account: serializeAccountSummary(transaction.account),
     counterparty_account: serializeAccountSummary(transaction.counterparty_account),
     category: serializeCategorySummary(transaction.category),
@@ -301,6 +339,8 @@ export function serializeTransactionDetail(transaction: any) {
     counterparty_account_id: transaction.counterparty_account_id ?? null,
     category_id: transaction.category_id ?? null,
     cost_center_id: transaction.cost_center_id ?? null,
+    legal_entity_id: transaction.legal_entity_id ?? null,
+    business_unit_id: transaction.business_unit_id ?? null,
     transfer_group_id: transaction.transfer_group_id ?? null,
     direction: transaction.direction,
     transaction_type: transaction.transaction_type,
@@ -333,6 +373,8 @@ export function serializeTransactionDetail(transaction: any) {
     counterparty_account: serializeAccountSummary(transaction.counterparty_account),
     category: serializeCategorySummary(transaction.category),
     cost_center: serializeCostCenterSummary(transaction.cost_center),
+    legal_entity: serializeLegalEntitySummary(transaction.legal_entity),
+    business_unit: serializeBusinessUnitSummary(transaction.business_unit),
     reversal_of: serializeTransactionSummary(transaction.reversal_of),
     reversals: Array.isArray(transaction.reversals) ? transaction.reversals.map(serializeTransactionSummary) : [],
     allocations: Array.isArray(transaction.allocations)

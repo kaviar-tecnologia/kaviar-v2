@@ -68,6 +68,7 @@ import FinanceTransactionsPage from "../../pages/admin/FinanceTransactionsPage";
 import FinancePayablesPage from "../../pages/admin/FinancePayablesPage";
 import FinanceReceivablesPage from "../../pages/admin/FinanceReceivablesPage";
 import FinanceTreasuryPage from "../../pages/admin/FinanceTreasuryPage";
+import FinanceEntityTerritoriesPage from "../../pages/admin/FinanceEntityTerritoriesPage";
 import TerritoriesPage from "../../pages/admin/TerritoriesPage";
 import TerritoryDetailPage from "../../pages/admin/TerritoryDetailPage";
 import RegionalAdminsPage from "../../pages/admin/RegionalAdminsPage";
@@ -773,6 +774,11 @@ export default function AdminApp() {
           <Route path="/financeiro/tesouraria" element={
             <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
               <FinanceTreasuryPage />
+            </ProtectedAdminRoute>
+          } />
+          <Route path="/financeiro/filiais-territorios" element={
+            <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
+              <FinanceEntityTerritoriesPage />
             </ProtectedAdminRoute>
           } />
           <Route path="/executive" element={
