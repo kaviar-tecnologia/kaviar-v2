@@ -40,6 +40,7 @@ import ReceiptValidation from "./pages/ReceiptValidation";
 import PrivateRideRequest from "./pages/PrivateRideRequest";
 import RegionPage from "./pages/RegionPage";
 import KaviarLanding from "./pages/KaviarLanding";
+import ManagerLeadPage from "./pages/ManagerLeadPage";
 import PetLanding from "./pages/PetLanding";
 import PetRideRequest from "./pages/PetRideRequest";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
@@ -460,6 +461,7 @@ export default function App() {
       <DriverProvider>
         <Routes>
           <Route path="/" element={<KaviarLanding />} />
+          <Route path="/gestor" element={<ManagerLeadPage />} />
 
           {/* Tela de escolha */}
           <Route path="/login" element={<Login />} />

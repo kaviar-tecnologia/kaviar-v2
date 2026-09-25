@@ -287,7 +287,7 @@ export default function KaviarLanding() {
               <Button href={driverStore} target="_blank" rel="noopener noreferrer" sx={buttonBlue}>
                 Baixar Motorista na Google Play
               </Button>
-              <Button href="#gestores" sx={buttonManager}>
+              <Button href="/gestor" sx={buttonManager}>
                 Quero ser gestor KAVIAR
               </Button>
             </Stack>
@@ -718,7 +718,7 @@ export default function KaviarLanding() {
                     Gestores locais podem estruturar uma operação forte para passageiros, motoristas e comércios parceiros, com suporte de uma plataforma feita para o contexto regional.
                   </Typography>
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.95}>
-                    <Button href="#paineis" sx={buttonGold}>
+                    <Button href="/gestor" sx={buttonGold}>
                       Quero ser gestor KAVIAR
                     </Button>
                     <Button href="#paineis" sx={buttonBlue}>
