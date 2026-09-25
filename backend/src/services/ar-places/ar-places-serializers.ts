@@ -42,6 +42,7 @@ type ArPlaceWithRelations = {
   instagram_url?: string | null;
   latitude: unknown;
   longitude: unknown;
+  public_location_enabled?: boolean;
   status: ar_place_status;
   territory_id: string | null;
   owner_partner_id?: string | null;
@@ -158,6 +159,7 @@ export function serializeArPlaceListItem(record: ArPlaceWithRelations) {
     instagram_url: record.instagram_url ?? null,
     latitude: toNumber(record.latitude),
     longitude: toNumber(record.longitude),
+    public_location_enabled: record.public_location_enabled !== false,
     status: record.status,
     territory_id: record.territory_id,
     owner_partner_id: record.owner_partner_id ?? record.owner_partner?.id ?? null,
@@ -191,6 +193,7 @@ export function serializeArPlaceDetail(record: ArPlaceWithRelations) {
     instagram_url: record.instagram_url ?? null,
     latitude: toNumber(record.latitude),
     longitude: toNumber(record.longitude),
+    public_location_enabled: record.public_location_enabled !== false,
     status: record.status,
     territory_id: record.territory_id,
     owner_partner_id: record.owner_partner_id ?? record.owner_partner?.id ?? null,
@@ -233,19 +236,25 @@ export function serializePublicArPlace(record: ArPlaceWithRelations, locale: 'pt
     (record.contents || [])[0] ||
     null;
 
+  const publicLocationEnabled = record.public_location_enabled !== false;
+
   return {
     placeId: record.place_id,
     name: record.name,
     type: record.type,
     city: record.city,
     state: record.state,
-    address: record.address,
+    ...(publicLocationEnabled
+      ? {
+          address: record.address,
+          latitude: toNumber(record.latitude),
+          longitude: toNumber(record.longitude),
+        }
+      : {}),
     ...(record.phone ? { phone: record.phone } : {}),
     ...(record.whatsapp ? { whatsapp: record.whatsapp } : {}),
     ...(record.website_url ? { website_url: record.website_url } : {}),
     ...(record.instagram_url ? { instagram_url: record.instagram_url } : {}),
-    latitude: toNumber(record.latitude),
-    longitude: toNumber(record.longitude),
     territory: record.territory
       ? {
           name: record.territory.name,
