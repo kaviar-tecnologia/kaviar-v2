@@ -3343,6 +3343,7 @@ model ar_places {
   instagram_url    String?         @db.VarChar(500)
   latitude         Decimal         @db.Decimal(10, 8)
   longitude        Decimal         @db.Decimal(11, 8)
+  public_location_enabled Boolean  @default(true)
   status           ar_place_status @default(DRAFT)
   territory_id     String?
   owner_partner_id String?

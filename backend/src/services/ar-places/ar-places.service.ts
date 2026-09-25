@@ -441,6 +441,7 @@ export async function createAdminArPlace(
         instagram_url: body.instagram_url ?? null,
         latitude: body.latitude,
         longitude: body.longitude,
+        public_location_enabled: body.public_location_enabled ?? body.type !== 'KAVIAR_POINT',
         status: targetStatus,
         territory_id: body.territory_id || null,
         owner_partner_id: body.owner_partner_id || null,
@@ -511,6 +512,11 @@ export async function updateAdminArPlace(
   if (body.instagram_url !== undefined) data.instagram_url = body.instagram_url;
   if (body.latitude !== undefined) data.latitude = body.latitude;
   if (body.longitude !== undefined) data.longitude = body.longitude;
+  if (body.public_location_enabled !== undefined) {
+    data.public_location_enabled = body.public_location_enabled;
+  } else if (body.type === 'KAVIAR_POINT' && existing.type !== 'KAVIAR_POINT') {
+    data.public_location_enabled = false;
+  }
   if (body.territory_id !== undefined) data.territory = body.territory_id ? { connect: { id: body.territory_id } } : { disconnect: true };
   if (body.owner_partner_id !== undefined) {
     data.owner_partner = body.owner_partner_id ? { connect: { id: body.owner_partner_id } } : { disconnect: true };

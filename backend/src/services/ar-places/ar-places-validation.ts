@@ -122,6 +122,7 @@ export const arPlaceCreateBodySchema = z.object({
   instagram_url: optionalInstagramField(),
   latitude: z.coerce.number().min(-90).max(90),
   longitude: z.coerce.number().min(-180).max(180),
+  public_location_enabled: z.boolean().optional(),
   territory_id: z.preprocess(
     (value) => (typeof value === 'string' ? value.trim() : value),
     z.string().min(1).max(120).regex(TERRITORY_ID_REGEX, 'territory_id inválido').nullable().optional(),
@@ -155,6 +156,7 @@ export const arPlacePatchBodySchema = z
     instagram_url: optionalInstagramField(),
     latitude: z.coerce.number().min(-90).max(90).optional(),
     longitude: z.coerce.number().min(-180).max(180).optional(),
+    public_location_enabled: z.boolean().optional(),
     territory_id: z.preprocess(
       (value) => (typeof value === 'string' ? value.trim() : value),
       z.string().min(1).max(120).regex(TERRITORY_ID_REGEX, 'territory_id inválido').nullable().optional(),

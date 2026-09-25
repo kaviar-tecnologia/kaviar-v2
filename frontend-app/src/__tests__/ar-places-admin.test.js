@@ -93,6 +93,16 @@ describe('ArPlacesPage - campos, filtros e conteúdo pt-BR', () => {
     expect(src).toContain('label="Instagram"');
   });
 
+  it('controla privacidade da localização e mantém representação KAVIAR privada por padrão', () => {
+    expect(src).toContain('label="Localização pública"');
+    expect(src).toContain('Privada — somente uso interno');
+    expect(src).toContain('Pública — exibir endereço e coordenadas');
+    expect(src).toContain("nextType === 'KAVIAR_POINT'");
+    expect(src).toContain('public_location_enabled: form.public_location_enabled');
+    expect(src).toContain('não são enviados pela API pública do KAVIAR AR');
+    expect(src).toContain('Localização privada');
+  });
+
   it('permite buscar latitude e longitude automaticamente pelo endereço', () => {
     expect(src).toContain('handleGeocodeAddress');
     expect(src).toContain('Buscar coordenadas pelo endereço');
