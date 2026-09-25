@@ -218,7 +218,8 @@ router.patch('/entity-territory-assignments/:id/close', async (req: Request, res
     if (admin?.role !== 'SUPER_ADMIN') return res.status(403).json({ success: false, error: 'Somente SUPER_ADMIN pode encerrar vínculo territorial' });
     const id = String(req.params.id || '').trim();
     const parsed = assignmentCloseSchema.safeParse(req.body);
-    if (!id || !parsed.success) return validationError(res, parsed.success ? { message: 'ID inválido' } : parsed.error);
+    if (!id) return res.status(400).json({ success: false, error: 'ID inválido' });
+    if (!parsed.success) return validationError(res, parsed.error);
 
     const current = await prisma.financial_entity_territory_assignments.findUnique({ where: { id } });
     if (!current) return res.status(404).json({ success: false, error: 'Vínculo não encontrado' });
