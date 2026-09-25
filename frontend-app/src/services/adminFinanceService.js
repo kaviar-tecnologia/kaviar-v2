@@ -370,8 +370,8 @@ export const fetchDashboardSummary = async (params = {}) => {
   return performGet(`${FINANCE_BASE_PATH}/dashboard-summary`, params, 'Erro ao carregar resumo financeiro.');
 };
 
-export const fetchFinanceObligationsSummary = async () => {
-  return performGet(`${FINANCE_BASE_PATH}/obligations/summary`, {}, 'Erro ao carregar resumo de contas a pagar.');
+export const fetchFinanceObligationsSummary = async (params = {}) => {
+  return performGet(`${FINANCE_BASE_PATH}/obligations/summary`, params, 'Erro ao carregar obrigações do Portal do Contador.');
 };
 
 export const fetchFinanceTreasuryHealth = async () => {

@@ -21,13 +21,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const KAVIAR_ID = '884907ff-5b04-4dfa-8613-a23216c5fa25';
 const OTHER_ID = '00000000-0000-0000-0000-0000000000ff';
+const FILIAL_ID = '00000000-0000-0000-0000-0000000000aa';
 
 // ── Hoisted state/mocks ─────────────────────────────────────────────────
 
 const { prismaMock, authState, auditSpy } = vi.hoisted(() => {
   const prismaMock: any = {
+    legal_entities: { findMany: vi.fn() },
     accounting_payment_obligations: {
       findMany: vi.fn(),
+      count: vi.fn(),
       findUnique: vi.fn(),
       update: vi.fn(),
     },
@@ -93,6 +96,14 @@ function ob(overrides: any = {}) {
   return {
     id: overrides.id || 'ob-1',
     legal_entity_id: KAVIAR_ID,
+    legal_entity: {
+      id: KAVIAR_ID,
+      razao_social: 'KAVIAR',
+      nome_fantasia: 'KAVIAR',
+      cnpj: '00000000000000',
+      entity_type: 'MATRIZ',
+      parent_entity_id: null,
+    },
     obligation_type: 'HONORARIOS',
     status: 'SENT_TO_COMPANY',
     action_owner: 'COMPANY',
@@ -132,6 +143,7 @@ function ob(overrides: any = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   authState.role = 'SUPER_ADMIN';
+  prismaMock.accounting_payment_obligations.count.mockResolvedValue(0);
   prismaMock.accounting_payment_obligations.update.mockImplementation(async ({ where, data }: any) => ({
     ...ob(),
     id: where.id,
@@ -198,7 +210,10 @@ describe('GET /api/admin/finance/obligations', () => {
     prismaMock.accounting_payment_obligations.findMany.mockResolvedValue([]);
     await request(makeApp()).get('/api/admin/finance/obligations');
     const call = prismaMock.accounting_payment_obligations.findMany.mock.calls[0][0];
-    expect(call.where.legal_entity_id).toBe(KAVIAR_ID);
+    expect(call.where.legal_entity.is.OR).toEqual([
+      { id: KAVIAR_ID },
+      { parent_entity_id: KAVIAR_ID, entity_type: 'FILIAL' },
+    ]);
     expect(call.where.status.in).not.toContain('DRAFT');
     expect(call.where.status.in).toContain('SENT_TO_COMPANY');
   });
@@ -249,7 +264,114 @@ describe('GET /api/admin/finance/obligations', () => {
     prismaMock.accounting_payment_obligations.findMany.mockResolvedValue([]);
     await request(makeApp()).get('/api/admin/finance/obligations');
     const call = prismaMock.accounting_payment_obligations.findMany.mock.calls[0][0];
-    expect(call.where.legal_entity_id).toBe(KAVIAR_ID);
+    expect(call.where.legal_entity.is.OR).toEqual([
+      { id: KAVIAR_ID },
+      { parent_entity_id: KAVIAR_ID, entity_type: 'FILIAL' },
+    ]);
+  });
+});
+
+describe('Multi-CNPJ — matriz e filiais da KAVIAR', () => {
+  const filialOb = () => ob({
+    id: 'ob-filial',
+    legal_entity_id: FILIAL_ID,
+    legal_entity: {
+      id: FILIAL_ID, razao_social: 'KAVIAR FILIAL',
+      nome_fantasia: 'KAVIAR FILIAL', cnpj: '00000000000001',
+      entity_type: 'FILIAL', parent_entity_id: KAVIAR_ID,
+    },
+  });
+
+  it('lista matriz e filiais diretas sem expor outras empresas', async () => {
+    prismaMock.legal_entities.findMany.mockResolvedValue([
+      { id: KAVIAR_ID, entity_type: 'MATRIZ' },
+      { id: FILIAL_ID, entity_type: 'FILIAL' },
+    ]);
+    const res = await request(makeApp()).get('/api/admin/finance/obligations/entities');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(2);
+    const where = prismaMock.legal_entities.findMany.mock.calls[0][0].where;
+    expect(where.OR[0]).toEqual({ id: KAVIAR_ID });
+    expect(where.OR[1]).toEqual({ parent_entity_id: KAVIAR_ID, entity_type: 'FILIAL' });
+  });
+
+  it('filtra a lista pela filial, SEM perder o limite do grupo KAVIAR', async () => {
+    prismaMock.accounting_payment_obligations.findMany.mockResolvedValue([filialOb()]);
+    const res = await request(makeApp()).get('/api/admin/finance/obligations?legal_entity_id=' + FILIAL_ID);
+    expect(res.status).toBe(200);
+    expect(res.body.data[0].legal_entity_id).toBe(FILIAL_ID);
+    expect(res.body.data[0].legal_entity.cnpj).toBe('00000000000001');
+    const where = prismaMock.accounting_payment_obligations.findMany.mock.calls[0][0].where;
+    expect(where.legal_entity_id).toBe(FILIAL_ID);
+    expect(where.legal_entity.is.OR).toHaveLength(2);
+  });
+
+  it('inclui somente obrigações do CNPJ selecionado no resumo', async () => {
+    prismaMock.accounting_payment_obligations.findMany.mockResolvedValue([
+      { status: 'SENT_TO_COMPANY', due_date: new Date(), amount_cents: 2500 },
+    ]);
+    const res = await request(makeApp()).get('/api/admin/finance/obligations/summary?legal_entity_id=' + FILIAL_ID);
+    expect(res.status).toBe(200);
+    expect(res.body.data.total_pending_cents).toBe(2500);
+    expect(prismaMock.accounting_payment_obligations.findMany.mock.calls[0][0].where.legal_entity_id).toBe(FILIAL_ID);
+  });
+
+  it('pagina a lista sem truncar silenciosamente a base de múltiplas filiais', async () => {
+    prismaMock.accounting_payment_obligations.count.mockResolvedValue(153);
+    prismaMock.accounting_payment_obligations.findMany.mockResolvedValue([filialOb()]);
+    const res = await request(makeApp())
+      .get('/api/admin/finance/obligations?legal_entity_id=' + FILIAL_ID + '&page=2&limit=25');
+    expect(res.status).toBe(200);
+    expect(res.body.pagination).toEqual({ page: 2, limit: 25, total: 153, totalPages: 7 });
+    const listOptions = prismaMock.accounting_payment_obligations.findMany.mock.calls[0][0];
+    expect(listOptions.skip).toBe(25);
+    expect(listOptions.take).toBe(25);
+    expect(prismaMock.accounting_payment_obligations.count.mock.calls[0][0].where)
+      .toEqual(listOptions.where);
+  });
+
+  it('rejeita paginação fora dos limites', async () => {
+    const res = await request(makeApp()).get('/api/admin/finance/obligations?page=0&limit=999');
+    expect(res.status).toBe(400);
+    expect(prismaMock.accounting_payment_obligations.findMany).not.toHaveBeenCalled();
+  });
+
+  it('recusa filtro inválido em listas e resumos', async () => {
+    const list = await request(makeApp()).get('/api/admin/finance/obligations?legal_entity_id=any');
+    const summary = await request(makeApp()).get('/api/admin/finance/obligations/summary?legal_entity_id=any');
+    expect(list.status).toBe(400);
+    expect(summary.status).toBe(400);
+    expect(prismaMock.accounting_payment_obligations.findMany).not.toHaveBeenCalled();
+  });
+
+  it('permite detalhe, download e pagamento de filial pertencente à KAVIAR', async () => {
+    prismaMock.accounting_payment_obligations.findUnique.mockResolvedValue(
+      filialOb()
+    );
+    const detail = await request(makeApp()).get('/api/admin/finance/obligations/ob-filial');
+    expect(detail.status).toBe(200);
+    expect(detail.body.data.legal_entity_id).toBe(FILIAL_ID);
+
+    prismaMock.accounting_payment_obligations.findUnique.mockResolvedValue(
+      { ...filialOb(), boleto_storage_key: 'filial/seguro.pdf', boleto_filename: 'seguro.pdf' }
+    );
+    const boleto = await request(makeApp()).get('/api/admin/finance/obligations/ob-filial/download-boleto');
+    expect(boleto.status).toBe(200);
+
+    prismaMock.accounting_payment_obligations.findUnique.mockResolvedValue({ ...filialOb(), status: 'VIEWED' });
+    const paid = await request(makeApp()).post('/api/admin/finance/obligations/ob-filial/mark-paid').send({});
+    expect(paid.status).toBe(200);
+  });
+
+  it('rejeita filial de outra matriz mesmo quando o id coincide com o filtro', async () => {
+    prismaMock.accounting_payment_obligations.findUnique.mockResolvedValue(
+      ob({
+        legal_entity_id: FILIAL_ID,
+        legal_entity: { id: FILIAL_ID, entity_type: 'FILIAL', parent_entity_id: OTHER_ID },
+      })
+    );
+    const res = await request(makeApp()).get('/api/admin/finance/obligations/ob-filial/download-boleto');
+    expect(res.status).toBe(404);
   });
 });
 
