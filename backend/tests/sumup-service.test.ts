@@ -11,6 +11,7 @@ describe('sumup-service', () => {
     process.env.SUMUP_BASE_URL = 'https://api.sumup.com';
     process.env.SUMUP_MERCHANT_CODE = 'MDATH499';
     process.env.SUMUP_ENABLED = 'true';
+    delete process.env.SUMUP_CHECKOUT_CALLBACK_URL;
   });
 
   it('createSumUpCheckout cria checkout com Authorization Bearer', async () => {
@@ -153,4 +154,27 @@ describe('sumup-service', () => {
     process.env.SUMUP_ENABLED = 'true';
     expect(isSumUpEnabled()).toBe(true);
   });
+  it('native callback URL usa HTTPS sem credenciais ou fragmentos', async () => {
+    process.env.SUMUP_CHECKOUT_CALLBACK_URL = 'https://api.kaviar.com.br/api/webhooks/sumup/callback';
+    const { getSumUpCheckoutCallbackUrl } = await import('../src/services/sumup-service');
+    expect(getSumUpCheckoutCallbackUrl()).toBe('https://api.kaviar.com.br/api/webhooks/sumup/callback');
+  });
+
+  it.each([
+    'http://api.kaviar.com.br/api/webhooks/sumup/callback',
+    'https://user:pass@api.kaviar.com.br/api/webhooks/sumup/callback',
+    'https://api.kaviar.com.br/api/webhooks/sumup/callback?token=secret',
+    'https://api.kaviar.com.br/api/webhooks/sumup/callback#secret',
+    'not-a-url',
+  ])('native callback URL insegura é recusada: %s', async (url) => {
+    process.env.SUMUP_CHECKOUT_CALLBACK_URL = url;
+    const { getSumUpCheckoutCallbackUrl } = await import('../src/services/sumup-service');
+    expect(() => getSumUpCheckoutCallbackUrl()).toThrow('Configuração de callback SumUp inválida.');
+  });
+
+  it('não publica callback sem configuração explícita', async () => {
+    const { getSumUpCheckoutCallbackUrl } = await import('../src/services/sumup-service');
+    expect(getSumUpCheckoutCallbackUrl()).toBeUndefined();
+  });
+
 });
