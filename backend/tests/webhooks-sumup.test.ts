@@ -29,6 +29,7 @@ describe('webhooks-sumup routes', () => {
     vi.clearAllMocks();
     process.env.SUMUP_WEBHOOK_TOKEN = 'webhook-secret';
     process.env.SUMUP_RECONCILE_TOKEN = 'reconcile-secret';
+    process.env.SUMUP_CHECKOUT_CALLBACK_URL = 'https://api.kaviar.com.br/api/webhooks/sumup/callback';
   });
 
   it('6.1) webhook repassa checkout_id para reconciliação por external_id', async () => {
@@ -137,4 +138,45 @@ describe('webhooks-sumup routes', () => {
     expect(res.status).toBe(502);
     expect(res.body.success).toBe(false);
   });
+  it('native callback aceita evento oficial sem token, mas só passa id à verificação API', async () => {
+    mockReconcileByExternalId.mockResolvedValueOnce({ final_status: 'confirmed', credited: true });
+    const res = await request(app)
+      .post('/api/webhooks/sumup/callback')
+      .send({ event_type: 'CHECKOUT_STATUS_CHANGED', id: 'checkout-native-1', status: 'PAID' });
+    expect(res.status).toBe(204);
+    expect(mockReconcileByExternalId).toHaveBeenCalledWith('checkout-native-1');
+  });
+
+  it('native callback ignora eventos desconhecidos sem reconciliar', async () => {
+    const res = await request(app)
+      .post('/api/webhooks/sumup/callback')
+      .send({ event_type: 'UNKNOWN_EVENT', id: 'checkout-x' });
+    expect(res.status).toBe(204);
+    expect(mockReconcileByExternalId).not.toHaveBeenCalled();
+  });
+
+  it('native callback rejeita id inválido', async () => {
+    const res = await request(app)
+      .post('/api/webhooks/sumup/callback')
+      .send({ event_type: 'CHECKOUT_STATUS_CHANGED', id: '../../invalid' });
+    expect(res.status).toBe(400);
+    expect(mockReconcileByExternalId).not.toHaveBeenCalled();
+  });
+
+  it('native callback desabilitado sem configuração explícita', async () => {
+    delete process.env.SUMUP_CHECKOUT_CALLBACK_URL;
+    const res = await request(app)
+      .post('/api/webhooks/sumup/callback')
+      .send({ event_type: 'CHECKOUT_STATUS_CHANGED', id: 'checkout-native-1' });
+    expect(res.status).toBe(503);
+    expect(mockReconcileByExternalId).not.toHaveBeenCalled();
+  });
+
+  it('endpoint interno continua exigindo token, mesmo com payload nativo', async () => {
+    const res = await request(app)
+      .post('/api/webhooks/sumup')
+      .send({ event_type: 'CHECKOUT_STATUS_CHANGED', id: 'checkout-native-1' });
+    expect(res.status).toBe(401);
+  });
+
 });
