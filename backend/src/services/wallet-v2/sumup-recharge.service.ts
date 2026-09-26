@@ -1,6 +1,6 @@
 import { pool } from '../../db';
 import { PoolClient } from 'pg';
-import { getSumUpCheckout } from '../sumup-service';
+import { getSumUpCheckout, SumUpError, SumUpCheckoutCreateResponse } from '../sumup-service';
 import { WalletService } from './wallet.service';
 import { FeeSplitService } from './fee-split.service';
 import { TerritoryLedgerService } from './territory-ledger.service';
@@ -22,6 +22,29 @@ export type SumUpRechargeReconcileResult = {
   final_status: 'confirmed' | 'expired' | 'pending' | 'not_found' | 'ignored';
   credited: boolean;
 };
+
+/**
+ * A checkout being PAID is not enough by itself: bind the provider's response
+ * to the exact local recharge before touching wallet balances.
+ */
+function assertPaidCheckoutMatchesRecharge(
+  checkout: SumUpCheckoutCreateResponse,
+  recharge: { id: string; external_id: string | null; amount_cents: number | string },
+): void {
+  const merchantCode = process.env.SUMUP_MERCHANT_CODE?.trim();
+  const amount = checkout.amount;
+  const multiplied = typeof amount === 'number' ? amount * 100 : NaN;
+  const rounded = Math.round(multiplied);
+  const validCents = Number.isFinite(multiplied) && Number.isSafeInteger(rounded) &&
+    Math.abs(multiplied - rounded) < 0.000001 && rounded > 0;
+
+  if (!merchantCode || checkout.id !== recharge.external_id ||
+      checkout.checkout_reference !== `wallet_v2:${recharge.id}` ||
+      checkout.currency !== 'BRL' || checkout.merchant_code !== merchantCode ||
+      !validCents || BigInt(rounded) !== BigInt(recharge.amount_cents)) {
+    throw new SumUpError(502, 'Dados do checkout SumUp não correspondem à recarga.');
+  }
+}
 
 async function applyRechargeCreditAtomic(
   recharge: { id: string; driver_id: string; amount_cents: number | string },
@@ -149,6 +172,7 @@ export async function reconcileSumUpRechargeById(rechargeId: string, expectedDri
         };
       }
 
+      assertPaidCheckoutMatchesRecharge(checkout, lockedRow);
       await applyRechargeCreditAtomic(lockedRow, client);
 
       await client.query(
