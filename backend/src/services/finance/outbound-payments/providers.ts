@@ -145,12 +145,14 @@ export class AsaasOutboundPaymentProvider implements OutboundPaymentProvider {
       if (err.name === 'AbortError') {
         return { success: false, errorCode: 'TIMEOUT', errorMessage: 'Request timed out', isTimeout: true };
       }
-      const isDefinitive = err.status === 400 || err.status === 422;
+      // A rejected HTTP response after POST is not independent evidence
+      // that Asaas did NOT create a transfer/bill. Reconcile rather than
+      // releasing a reservation or automatically retrying.
       return {
         success: false,
         errorCode: `HTTP_${err.status ?? 'UNKNOWN'}`,
         errorMessage: err.message,
-        isDefinitiveFailure: isDefinitive,
+        isDefinitiveFailure: false,
         isTimeout: false,
       };
     }
@@ -243,12 +245,14 @@ export class AsaasOutboundPaymentProvider implements OutboundPaymentProvider {
       if (err.name === 'AbortError') {
         return { success: false, errorCode: 'TIMEOUT', errorMessage: 'Request timed out', isTimeout: true };
       }
-      const isDefinitive = err.status === 400 || err.status === 422;
+      // A rejected HTTP response after POST is not independent evidence
+      // that Asaas did NOT create a transfer/bill. Reconcile rather than
+      // releasing a reservation or automatically retrying.
       return {
         success: false,
         errorCode: `HTTP_${err.status ?? 'UNKNOWN'}`,
         errorMessage: err.message,
-        isDefinitiveFailure: isDefinitive,
+        isDefinitiveFailure: false,
       };
     }
   }
