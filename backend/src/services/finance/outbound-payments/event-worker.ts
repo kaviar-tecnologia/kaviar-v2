@@ -13,7 +13,7 @@
 
 import { Pool } from 'pg';
 import { processProviderEvent, EventProcessorDeps } from './event-processor';
-import { createOutboundPaymentProvider } from './providers';
+import { AsaasOutboundPaymentProvider, createOutboundPaymentProvider } from './providers';
 import { AnnualIncentiveLedgerService } from '../annual-incentive-ledger.service';
 
 const BATCH_SIZE = 10;
@@ -39,7 +39,7 @@ export async function processEventBatch(deps: EventWorkerDeps): Promise<number> 
     const { rows } = await client.query(
       `SELECT id, provider_name, provider_event_id, event_category, event_type, payload_safe, processing_attempts
        FROM financial_provider_events
-       WHERE processing_status IN ('PENDING', 'FAILED_RETRYABLE')
+       WHERE processing_status IN ('PENDING', 'FAILED_RETRYABLE', 'PROCESSING')
          AND next_processing_at <= NOW()
        ORDER BY created_at ASC
        LIMIT $1
@@ -50,7 +50,8 @@ export async function processEventBatch(deps: EventWorkerDeps): Promise<number> 
 
     if (events.length > 0) {
       await client.query(
-        `UPDATE financial_provider_events SET processing_status = 'PROCESSING'
+        `UPDATE financial_provider_events
+         SET processing_status = 'PROCESSING', next_processing_at = NOW() + INTERVAL '15 minutes'
          WHERE id = ANY($1)`,
         [events.map(e => e.id)]
       );
@@ -68,7 +69,9 @@ export async function processEventBatch(deps: EventWorkerDeps): Promise<number> 
   let processed = 0;
   for (const event of events) {
     try {
-      const provider = createOutboundPaymentProvider();
+      const provider = event.provider_name === 'asaas'
+        ? new AsaasOutboundPaymentProvider()
+        : createOutboundPaymentProvider();
       const normalized = provider.normalizeWebhook(event.payload_safe);
       // Override with stored values (more reliable than re-normalizing)
       normalized.providerEventId = event.provider_event_id;
@@ -76,15 +79,19 @@ export async function processEventBatch(deps: EventWorkerDeps): Promise<number> 
       normalized.eventType = event.event_type as any;
 
       const processorDeps: EventProcessorDeps = { pool, ledgerService };
-      await processProviderEvent(processorDeps, normalized, event.provider_name);
+      const outcome = await processProviderEvent(processorDeps, normalized, event.provider_name);
+      if (!outcome.processed) {
+        throw new Error('PAYOUT_NOT_MATCHED_YET');
+      }
 
-      // Mark processed
+      // Unknown event types (e.g. blocked/refunded) are retained without
+      // ever treating them as a successful payment.
       await pool.query(
         `UPDATE financial_provider_events
-         SET processing_status = 'PROCESSED', processed = true, processed_at = NOW(),
+         SET processing_status = $2, processed = true, processed_at = NOW(),
              processing_attempts = processing_attempts + 1
          WHERE id = $1`,
-        [event.id]
+        [event.id, normalized.eventType === 'UNKNOWN' ? 'IGNORED_UNKNOWN_EVENT' : 'PROCESSED']
       );
       processed++;
     } catch (err: any) {
@@ -95,7 +102,7 @@ export async function processEventBatch(deps: EventWorkerDeps): Promise<number> 
            SET processing_status = 'FAILED_REVIEW_REQUIRED', processing_error_safe = $1,
                processing_attempts = $2
            WHERE id = $3`,
-          [err.message?.slice(0, 200), attempts, event.id]
+          ['PROCESSING_FAILED', attempts, event.id]
         );
       } else {
         const backoff = BASE_BACKOFF_MS * Math.pow(2, attempts - 1);
@@ -105,7 +112,7 @@ export async function processEventBatch(deps: EventWorkerDeps): Promise<number> 
            SET processing_status = 'FAILED_RETRYABLE', processing_error_safe = $1,
                processing_attempts = $2, next_processing_at = $3
            WHERE id = $4`,
-          [err.message?.slice(0, 200), attempts, nextAt, event.id]
+          ['PROCESSING_FAILED', attempts, nextAt, event.id]
         );
       }
     }
