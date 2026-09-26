@@ -5,6 +5,7 @@ import { WalletService } from '../services/wallet-v2/wallet.service';
 import crypto from 'crypto';
 import {
   createSumUpCheckout,
+  getSumUpCheckoutCallbackUrl,
   getSumUpCheckoutPaymentMethods,
   getSumUpMerchantPaymentMethods,
   hasSumUpPixPaymentMethod,
@@ -263,10 +264,9 @@ router.post('/recharge', async (req: Request, res: Response) => {
     const pkg = await pool.query('SELECT id, amount_cents, label FROM recharge_packages WHERE id = $1 AND is_active = true', [package_id]);
     if (!pkg.rows[0]) return res.status(400).json({ success: false, error: 'Pacote inválido ou inativo' });
 
-    await pool.query(
-      "UPDATE wallet_recharges SET status='expired', updated_at=NOW() WHERE driver_id=$1 AND payment_provider='sumup' AND status='pending' AND created_at < NOW() - INTERVAL '20 minutes'",
-      [driverId]
-    );
+    // Do not locally expire a checkout just because it is old: the provider may
+    // already have received Pix while its notification is still in flight.
+    // Only provider-confirmed FAILED/EXPIRED/CANCELLED may expire a recharge.
 
     // Anti-spam: max 3 pending válidas do provedor ativo (SumUp)
     const countRes = await pool.query(
@@ -296,6 +296,7 @@ router.post('/recharge', async (req: Request, res: Response) => {
       sumupStage = 'create_checkout';
       const checkout = await createSumUpCheckout({
         checkout_reference: `wallet_v2:${rechargeId}`,
+        return_url: getSumUpCheckoutCallbackUrl(),
         amount: amountCents / 100,
         currency: 'BRL',
         description: `KAVIAR: Recarga saldo ${pkg.rows[0].label}`,
@@ -346,7 +347,7 @@ router.post('/recharge', async (req: Request, res: Response) => {
         `[WALLET_PIX_SUMUP_STAGE] stage=extract_pix_payload driver=${driverId} recharge=${rechargeId} checkout=${checkout.id} payment_type=${pixPaymentType} has_qr_image=${Boolean(pixPayload.qr_image_url)} has_copy_paste=${Boolean(pixPayload.copy_paste)}`
       );
       if (!pixPayload.qr_image_url && !pixPayload.copy_paste) {
-        await pool.query("UPDATE wallet_recharges SET status='expired', updated_at=NOW() WHERE id=$1", [rechargeId]);
+        await pool.query("UPDATE wallet_recharges SET status='expired', updated_at=NOW() WHERE id=$1 AND status='pending' AND external_id IS NULL", [rechargeId]);
         return res.status(502).json({
           success: false,
           error: 'QR Code Pix indisponível no momento. Tente novamente.',
@@ -374,7 +375,7 @@ router.post('/recharge', async (req: Request, res: Response) => {
         },
       });
     } catch (sumupErr) {
-      await pool.query("UPDATE wallet_recharges SET status='expired', updated_at=NOW() WHERE id=$1", [rechargeId]);
+      await pool.query("UPDATE wallet_recharges SET status='expired', updated_at=NOW() WHERE id=$1 AND status='pending' AND external_id IS NULL", [rechargeId]);
       if (sumupErr instanceof SumUpError) {
         console.error(
           `[WALLET_RECHARGE_SUMUP_FAIL] stage=${sumupStage} driver=${driverId} recharge=${rechargeId} sumup_status=${sumupErr.statusCode} method=${sumupErr.method || 'unknown'} endpoint=${sumupErr.endpoint || 'unknown'}`

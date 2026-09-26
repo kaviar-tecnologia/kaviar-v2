@@ -91,6 +91,20 @@ jobs:
       - name: Seed E2E admins
         run: cd backend && E2E_SEED=1 npx tsx prisma/seed-e2e-admins.ts
 
+      - name: Run SumUp Pix hardening tests
+        run: |
+          cd backend
+          npx vitest run \
+            tests/sumup-service.test.ts \
+            tests/webhooks-sumup.test.ts \
+            tests/sumup-recharge-reconcile.service.test.ts \
+            tests/wallet-v2-routes.test.ts \
+            tests/wallet-v2-sumup-methods.test.ts \
+            tests/family-return-characterization.test.ts
+
+      - name: Typecheck backend
+        run: cd backend && npx tsc --noEmit -p tsconfig.build.json
+
       - name: Run manager financial eligibility tests
         run: |
           cd backend

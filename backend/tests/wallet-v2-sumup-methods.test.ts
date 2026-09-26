@@ -42,6 +42,7 @@ class TestSumUpError extends Error {
 
 vi.mock('../src/services/sumup-service', () => ({
   createSumUpCheckout: (...args: any[]) => mockCreateSumUpCheckout(...args),
+  getSumUpCheckoutCallbackUrl: () => process.env.SUMUP_CHECKOUT_CALLBACK_URL || undefined,
   processSumUpCheckout: (...args: any[]) => mockProcessSumUpCheckout(...args),
   getSumUpCheckoutPaymentMethods: (...args: any[]) => mockGetSumUpCheckoutPaymentMethods(...args),
   getSumUpMerchantPaymentMethods: (...args: any[]) => mockGetSumUpMerchantPaymentMethods(...args),
@@ -63,6 +64,7 @@ describe('Wallet V2 SumUp payment method flow', () => {
   beforeEach(() => {
     mockQuery.mockReset();
     mockCreateSumUpCheckout.mockReset();
+    delete process.env.SUMUP_CHECKOUT_CALLBACK_URL;
     mockProcessSumUpCheckout.mockReset();
     mockGetSumUpCheckoutPaymentMethods.mockReset();
     mockIsSumUpEnabled.mockReset();
@@ -128,7 +130,6 @@ describe('Wallet V2 SumUp payment method flow', () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{ enabled: true }] })
       .mockResolvedValueOnce({ rows: [{ id: 'saldo-20', amount_cents: '2000', label: 'R$ 20' }] })
-      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [{ c: '0' }] })
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({});
@@ -160,7 +161,6 @@ describe('Wallet V2 SumUp payment method flow', () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{ enabled: true }] })
       .mockResolvedValueOnce({ rows: [{ id: 'saldo-20', amount_cents: '2000', label: 'R$ 20' }] })
-      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [{ c: '0' }] })
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({});
@@ -222,7 +222,6 @@ describe('Wallet V2 SumUp payment method flow', () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{ enabled: true }] })
       .mockResolvedValueOnce({ rows: [{ id: 'saldo-20', amount_cents: '2000', label: 'R$ 20' }] })
-      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [{ c: '0' }] })
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({});
@@ -252,7 +251,6 @@ describe('Wallet V2 SumUp payment method flow', () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{ enabled: true }] })
       .mockResolvedValueOnce({ rows: [{ id: 'saldo-20', amount_cents: '2000', label: 'R$ 20' }] })
-      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [{ c: '0' }] })
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({});
@@ -276,7 +274,6 @@ describe('Wallet V2 SumUp payment method flow', () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{ enabled: true }] })
       .mockResolvedValueOnce({ rows: [{ id: 'saldo-20', amount_cents: '2000', label: 'R$ 20' }] })
-      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [{ c: '0' }] })
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({});
@@ -302,7 +299,6 @@ describe('Wallet V2 SumUp payment method flow', () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{ enabled: true }] })
       .mockResolvedValueOnce({ rows: [{ id: 'saldo-20', amount_cents: '2000', label: 'R$ 20' }] })
-      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [{ c: '0' }] })
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({});
