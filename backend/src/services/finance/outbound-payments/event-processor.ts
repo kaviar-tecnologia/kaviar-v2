@@ -227,6 +227,18 @@ async function handleFailed(deps: EventProcessorDeps, payout: any, event: Normal
   const { createOutboundPaymentProvider } = await import('./providers');
   const provider = createOutboundPaymentProvider();
 
+  if (!payout.provider_payout_id) {
+    await pool.query(
+      "UPDATE financial_payouts SET status = 'BLOCKED_PROVIDER_RECONCILIATION', updated_at = NOW() WHERE id = $1",
+      [payout.id]
+    );
+    await pool.query(
+      "UPDATE financial_obligations SET status = 'BLOCKED', failure_code = 'RECONCILIATION_REQUIRED', updated_at = NOW() WHERE id = $1 AND status NOT IN ('PAID', 'FAILED', 'CANCELLED')",
+      [payout.obligation_id]
+    );
+    return;
+  }
+
   if (payout.provider_payout_id) {
     try {
       const currentStatus = payout.instrument === 'ASAAS_BILL_PAYMENT'
