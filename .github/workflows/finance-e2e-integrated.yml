@@ -102,6 +102,15 @@ jobs:
             tests/wallet-v2-sumup-methods.test.ts \
             tests/family-return-characterization.test.ts
 
+      - name: Run Asaas outbound contract and integration tests
+        run: |
+          cd backend
+          npx vitest run \
+            tests/outbound-payments/outbound-payments.test.ts \
+            tests/outbound-payments/asaas-contract-hardening.test.ts \
+            tests/outbound-payments/asaas-webhook-ingress.test.ts \
+            tests/outbound-payments/outbound-integration.test.ts
+
       - name: Typecheck backend
         run: cd backend && npx tsc --noEmit -p tsconfig.build.json
 
