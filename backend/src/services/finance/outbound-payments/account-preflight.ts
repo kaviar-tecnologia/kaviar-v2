@@ -3,7 +3,7 @@
  *
  * Before any real payment can be executed, verifies that the Asaas account:
  * - Is Pessoa Jurídica (JURIDICA)
- * - Has CNPJ 67.783.601/0001-99
+ * - Has the explicitly configured legal-entity CNPJ
  * - Has APPROVED general status
  * - Has transfer capability AVAILABLE
  *
@@ -14,7 +14,6 @@
 import { AccountOwnershipCheck, OUTBOUND_PAYMENT_ERRORS } from './types';
 
 const EXPECTED_PERSON_TYPE = 'JURIDICA';
-const EXPECTED_CNPJ = '67783601000199';
 
 export interface AccountStatusResponse {
   personType?: string;
@@ -46,7 +45,10 @@ export function validateAccountOwnership(
 
   // 2. Check expected config vars
   const expectedPersonType = process.env.ASAAS_ACCOUNT_EXPECTED_PERSON_TYPE ?? EXPECTED_PERSON_TYPE;
-  const expectedCnpj = process.env.ASAAS_ACCOUNT_EXPECTED_CNPJ ?? EXPECTED_CNPJ;
+  const expectedCnpj = (process.env.ASAAS_ACCOUNT_EXPECTED_CNPJ ?? '').replace(/\D/g, '');
+  if (!/^\d{14}$/.test(expectedCnpj)) {
+    return { passed: false, failureReason: 'ASAAS_ACCOUNT_EXPECTED_CNPJ must be explicitly configured' };
+  }
 
   // 3. Validate API response
   if (!apiResponse) {
