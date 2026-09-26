@@ -24,9 +24,9 @@ nunca é interpretada como movimento inexistente no banco/provedor: exige análi
 ```csv
 external_id,occurred_on,direction,amount_cents,currency,external_reference
 sumup_001,2026-09-26,IN,2500,BRL,wallet_v2:001
-asaas_002,2026-09-26,OUT,1500,BRL,obligation:002
 ```
-Usar um arquivo por provedor e conta. `amount_cents` é **inteiro positivo**
+Este exemplo é exclusivamente SumUp. Preparar outro arquivo, com o mesmo cabeçalho,
+para entradas Asaas. Usar um arquivo por provedor e conta. `amount_cents` é **inteiro positivo**
 em centavos, sem sinal, ponto, vírgula decimal ou separador de milhar.
 `direction` é IN/OUT; `occurred_on` é data civil ISO. `external_id` deve
 ser identificador seguro e único no arquivo. `external_reference` pode estar
