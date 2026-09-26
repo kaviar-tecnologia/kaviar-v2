@@ -19,7 +19,7 @@
 import { Router, Request, Response } from 'express';
 import { timingSafeEqual } from 'crypto';
 import { pool } from '../db';
-import { createOutboundPaymentProvider } from '../services/finance/outbound-payments/providers';
+import { AsaasOutboundPaymentProvider } from '../services/finance/outbound-payments/providers';
 
 const router = Router();
 
@@ -40,13 +40,9 @@ function verifyWebhookToken(req: Request): boolean {
   }
 }
 
-function sanitizePayload(raw: Record<string, unknown>): Record<string, unknown> {
-  const s = { ...raw };
-  delete s.pixKey; delete s.pix_key; delete s.cpf; delete s.cnpj;
-  delete s.document; delete s.apiKey; delete s.token; delete s.secret;
-  delete s.access_token;
-  return s;
-}
+// The Asaas adapter normalizes to a strict allowlist: no bank account, full
+// document, Pix key or other nested sensitive payload is persisted.
+const provider = new AsaasOutboundPaymentProvider();
 
 // POST /webhooks/asaas/transfers
 router.post('/transfers', async (req: Request, res: Response) => {
@@ -55,7 +51,6 @@ router.post('/transfers', async (req: Request, res: Response) => {
   }
 
   try {
-    const provider = createOutboundPaymentProvider();
     const event = provider.normalizeWebhook(req.body);
 
     if (event.eventCategory !== 'TRANSFER') {
@@ -68,13 +63,16 @@ router.post('/transfers', async (req: Request, res: Response) => {
        (provider_name, provider_event_id, event_category, event_type, payload_safe, processing_status)
        VALUES ($1, $2, $3, $4, $5, 'PENDING')
        ON CONFLICT (provider_name, provider_event_id) DO NOTHING`,
-      ['asaas', event.providerEventId, event.eventCategory, event.eventType, JSON.stringify(sanitizePayload(event.raw))]
+      ['asaas', event.providerEventId, event.eventCategory, event.eventType, JSON.stringify(event.raw)]
     );
 
     const duplicate = (rowCount ?? 0) === 0;
     return res.status(200).json({ ok: true, persisted: !duplicate, duplicate });
   } catch (err: any) {
-    console.error(`[ASAAS_WEBHOOK_PERSIST_ERROR] ${err.message}`);
+    if (typeof err?.message === 'string' && err.message.startsWith('INVALID_ASAAS_')) {
+      return res.status(400).json({ error: 'INVALID_PROVIDER_EVENT' });
+    }
+    console.error('[ASAAS_WEBHOOK_PERSIST_ERROR] Persistence or processing failure');
     return res.status(503).json({ error: 'PERSISTENCE_FAILURE' });
   }
 });
@@ -86,7 +84,6 @@ router.post('/bills', async (req: Request, res: Response) => {
   }
 
   try {
-    const provider = createOutboundPaymentProvider();
     const event = provider.normalizeWebhook(req.body);
 
     if (event.eventCategory !== 'BILL_PAYMENT') {
@@ -98,13 +95,16 @@ router.post('/bills', async (req: Request, res: Response) => {
        (provider_name, provider_event_id, event_category, event_type, payload_safe, processing_status)
        VALUES ($1, $2, $3, $4, $5, 'PENDING')
        ON CONFLICT (provider_name, provider_event_id) DO NOTHING`,
-      ['asaas', event.providerEventId, event.eventCategory, event.eventType, JSON.stringify(sanitizePayload(event.raw))]
+      ['asaas', event.providerEventId, event.eventCategory, event.eventType, JSON.stringify(event.raw)]
     );
 
     const duplicate = (rowCount ?? 0) === 0;
     return res.status(200).json({ ok: true, persisted: !duplicate, duplicate });
   } catch (err: any) {
-    console.error(`[ASAAS_BILL_WEBHOOK_PERSIST_ERROR] ${err.message}`);
+    if (typeof err?.message === 'string' && err.message.startsWith('INVALID_ASAAS_')) {
+      return res.status(400).json({ error: 'INVALID_PROVIDER_EVENT' });
+    }
+    console.error('[ASAAS_BILL_WEBHOOK_PERSIST_ERROR] Persistence or processing failure');
     return res.status(503).json({ error: 'PERSISTENCE_FAILURE' });
   }
 });

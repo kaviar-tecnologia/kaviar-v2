@@ -19,6 +19,7 @@ import {
   NormalizedProviderEvent,
   OUTBOUND_PAYMENT_ERRORS,
 } from './types';
+import type { AccountStatusResponse } from './account-preflight';
 
 // ─── Asaas Provider ──────────────────────────────────────────────────────────
 
@@ -26,7 +27,23 @@ export class AsaasOutboundPaymentProvider implements OutboundPaymentProvider {
   readonly providerName = 'asaas';
 
   private get baseUrl(): string {
-    return process.env.ASAAS_BASE_URL ?? 'https://sandbox.asaas.com/api';
+    // Asaas' current API roots are api-sandbox.asaas.com and api.asaas.com.
+    // Production must select the target explicitly; never silently route live
+    // payment credentials to a default sandbox (or vice versa).
+    const configured = process.env.ASAAS_BASE_URL?.trim();
+    if (!configured && process.env.NODE_ENV === 'production') {
+      throw new Error('ASAAS_BASE_URL must be explicitly configured in production');
+    }
+    const parsed = new URL(configured || 'https://api-sandbox.asaas.com');
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password ||
+        parsed.search || parsed.hash || !['/', ''].includes(parsed.pathname) ||
+        !['api.asaas.com', 'api-sandbox.asaas.com'].includes(parsed.hostname)) {
+      throw new Error('Invalid Asaas API base URL');
+    }
+    if (process.env.NODE_ENV === 'production' && parsed.hostname !== 'api.asaas.com') {
+      throw new Error('Production Asaas API origin must be api.asaas.com');
+    }
+    return parsed.origin;
   }
 
   private get apiKey(): string {
@@ -68,6 +85,27 @@ export class AsaasOutboundPaymentProvider implements OutboundPaymentProvider {
     }
   }
 
+  /** Fail-closed account preflight: both fields come from authenticated Asaas GETs.
+   * Transfer capability requires separate operator confirmation; balance availability
+   * does not establish a transfer permission.
+   */
+  async getAccountStatus(): Promise<AccountStatusResponse | null> {
+    try {
+      const [commercial, status] = await Promise.all([
+        this.request<{ personType?: string; cpfCnpj?: string }>('/v3/myAccount/commercialInfo', 'GET'),
+        this.request<{ general?: string }>('/v3/myAccount/status', 'GET'),
+      ]);
+      return {
+        personType: commercial.personType,
+        cpfCnpj: commercial.cpfCnpj,
+        generalStatus: status.general,
+        transfersEnabled: process.env.ASAAS_PAYOUT_TRANSFER_CAPABILITY_CONFIRMED === 'true',
+      };
+    } catch {
+      return null;
+    }
+  }
+
   async validateAvailability(): Promise<ProviderAvailability> {
     try {
       const balance = await this.getAvailableBalance();
@@ -83,6 +121,9 @@ export class AsaasOutboundPaymentProvider implements OutboundPaymentProvider {
   }
 
   async createTransfer(input: CreateTransferInput): Promise<CreateTransferResult> {
+    if (input.amountCents <= 0n || input.amountCents > BigInt(Number.MAX_SAFE_INTEGER)) {
+      return { success: false, errorCode: 'INVALID_AMOUNT', isDefinitiveFailure: true };
+    }
     try {
       const body: Record<string, unknown> = {
         value: Number(input.amountCents) / 100,
@@ -135,20 +176,47 @@ export class AsaasOutboundPaymentProvider implements OutboundPaymentProvider {
     }
   }
 
-  async findTransferByExternalReference(ref: string): Promise<TransferResult | null> {
+  async findTransferByExternalReference(ref: string, createdAt?: Date): Promise<TransferResult | null> {
     try {
-      const data = await this.request<{ data: Array<{ id: string; status: string; value: number; externalReference: string }> }>(
-        `/v3/transfers?externalReference=${encodeURIComponent(ref)}`, 'GET'
-      );
-      if (!data.data?.length) return null;
-      const t = data.data[0];
-      return {
-        found: true,
-        providerTransferId: t.id,
-        providerStatus: t.status,
-        amountCents: BigInt(Math.round(t.value * 100)),
-        externalReference: t.externalReference,
-      };
+      if (!ref || (createdAt && Number.isNaN(createdAt.getTime()))) return null;
+      // The documented transfer listing supports creation-date filters, not a
+      // server-side externalReference filter. Scan bounded pages and compare
+      // references locally. An incomplete scan or multiple matches is ambiguous.
+      const start = createdAt && createdAt.getTime() <= Date.now()
+        ? new Date(createdAt.getTime() - 86_400_000)
+        : new Date(Date.now() - 7 * 86_400_000);
+      const end = new Date(Date.now() + 86_400_000);
+      const date = (d: Date) => d.toISOString().slice(0, 10);
+      const matches: Array<{ id: string; status: string; value: number; externalReference: string }> = [];
+      for (let page = 0; page < 10; page++) {
+        const params = new URLSearchParams({
+          'dateCreated[ge]': date(start), 'dateCreated[le]': date(end),
+          limit: '100', offset: String(page * 100),
+        });
+        const response = await this.request<{
+          data?: Array<{ id: string; status: string; value: number; externalReference: string }>;
+          hasMore?: boolean;
+        }>(`/v3/transfers?${params.toString()}`, 'GET');
+        if (!Array.isArray(response.data)) return null;
+        matches.push(...response.data.filter(t => t.externalReference === ref));
+        if (matches.length > 1) return null;
+        if (!response.hasMore) {
+          if (matches.length !== 1) return null;
+          const t = matches[0];
+          if (typeof t.id !== 'string' || !Number.isFinite(t.value) || t.value <= 0) return null;
+          const cents = Math.round(t.value * 100);
+          if (!Number.isSafeInteger(cents) || Math.abs(cents - t.value * 100) > 0.000001) return null;
+          return {
+            found: true,
+            providerTransferId: t.id,
+            providerStatus: t.status,
+            amountCents: BigInt(cents),
+            externalReference: t.externalReference,
+          };
+        }
+      }
+      // More pages exist: do not claim a result from an incomplete history.
+      return null;
     } catch {
       return null;
     }
@@ -172,6 +240,9 @@ export class AsaasOutboundPaymentProvider implements OutboundPaymentProvider {
         amountCents: BigInt(Math.round(data.value * 100)),
       };
     } catch (err: any) {
+      if (err.name === 'AbortError') {
+        return { success: false, errorCode: 'TIMEOUT', errorMessage: 'Request timed out', isTimeout: true };
+      }
       const isDefinitive = err.status === 400 || err.status === 422;
       return {
         success: false,
@@ -200,36 +271,57 @@ export class AsaasOutboundPaymentProvider implements OutboundPaymentProvider {
   }
 
   normalizeWebhook(input: unknown): NormalizedProviderEvent {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      throw new Error('INVALID_ASAAS_EVENT');
+    }
     const data = input as Record<string, unknown>;
-    const event = data.event as Record<string, unknown> ?? data;
-    const transfer = data.transfer as Record<string, unknown> | undefined;
-    const bill = data.bill as Record<string, unknown> | undefined;
+    const eventName = typeof data.event === 'string' ? data.event.toUpperCase() : '';
+    const category = eventName.startsWith('TRANSFER_') ? 'TRANSFER'
+      : eventName.startsWith('BILL_') ? 'BILL_PAYMENT' : null;
+    if (!category || typeof data.id !== 'string' || !data.id.trim() || data.id.length > 128) {
+      throw new Error('INVALID_ASAAS_EVENT');
+    }
 
-    // Determine category
-    const eventName = (event.type ?? event.event ?? '') as string;
-    const isTransfer = eventName.startsWith('TRANSFER_') || !!transfer;
-    const isBill = eventName.startsWith('BILL_') || !!bill;
+    const entityValue = category === 'TRANSFER' ? data.transfer : data.bill;
+    if (!entityValue || typeof entityValue !== 'object' || Array.isArray(entityValue)) {
+      throw new Error('INVALID_ASAAS_EVENT_ENTITY');
+    }
+    const entity = entityValue as Record<string, unknown>;
+    if (typeof entity.id !== 'string' || !entity.id.trim()) {
+      throw new Error('INVALID_ASAAS_PAYOUT_ID');
+    }
 
-    const category = isBill ? 'BILL_PAYMENT' : 'TRANSFER';
-    const entity = transfer ?? bill ?? event;
-
-    // Map status
     let eventType: NormalizedProviderEvent['eventType'] = 'UNKNOWN';
-    const status = (entity.status as string ?? '').toUpperCase();
-    if (status === 'DONE' || status === 'CONFIRMED') eventType = 'DONE';
-    else if (status === 'PENDING' || status === 'BANK_PROCESSING') eventType = 'PENDING';
-    else if (status === 'IN_BANK_PROCESSING') eventType = 'PROCESSING';
-    else if (status === 'FAILED' || status === 'ERROR') eventType = 'FAILED';
-    else if (status === 'CANCELLED') eventType = 'CANCELLED';
+    if (eventName === 'TRANSFER_DONE' || eventName === 'BILL_PAID') eventType = 'DONE';
+    else if (eventName === 'TRANSFER_FAILED' || eventName === 'BILL_FAILED') eventType = 'FAILED';
+    else if (eventName === 'TRANSFER_CANCELLED' || eventName === 'BILL_CANCELLED') eventType = 'CANCELLED';
+    else if (eventName === 'TRANSFER_IN_BANK_PROCESSING' || eventName === 'BILL_BANK_PROCESSING') eventType = 'PROCESSING';
+    else if (eventName === 'TRANSFER_CREATED' || eventName === 'TRANSFER_PENDING' ||
+             eventName === 'BILL_CREATED' || eventName === 'BILL_PENDING') eventType = 'PENDING';
 
+    const amount = entity.value;
+    const amountNumber = typeof amount === 'number' ? amount : NaN;
+    const cents = Math.round(amountNumber * 100);
+    const hasAmount = Number.isFinite(amountNumber) && Number.isSafeInteger(cents) &&
+      Math.abs(amountNumber * 100 - cents) < 0.000001 && cents > 0;
+    if (amount !== undefined && amount !== null && !hasAmount) {
+      throw new Error('INVALID_ASAAS_AMOUNT');
+    }
+    const ref = typeof entity.externalReference === 'string' ? entity.externalReference : undefined;
+    // Persist an explicit allowlist only. The original transfer/bill payload can
+    // contain recipient CPF, Pix key, bank account or other personal data.
+    const safeEntity = {
+      id: entity.id, status: typeof entity.status === 'string' ? entity.status : undefined,
+      value: hasAmount ? amountNumber : undefined, externalReference: ref,
+    };
     return {
-      providerEventId: (event.id ?? data.id ?? `asaas_${Date.now()}`) as string,
-      providerPayoutId: (entity.id ?? '') as string,
+      providerEventId: data.id,
+      providerPayoutId: entity.id,
       eventCategory: category,
       eventType,
-      amountCents: entity.value ? BigInt(Math.round(Number(entity.value) * 100)) : undefined,
-      externalReference: entity.externalReference as string | undefined,
-      raw: data as Record<string, unknown>,
+      amountCents: hasAmount ? BigInt(cents) : undefined,
+      externalReference: ref,
+      raw: { id: data.id, event: eventName, [category === 'TRANSFER' ? 'transfer' : 'bill']: safeEntity },
     };
   }
 }

@@ -7,7 +7,7 @@
 
 import { Pool } from 'pg';
 import { OutboundPaymentProvider } from './types';
-import { processProviderEvent, EventProcessorDeps } from './event-processor';
+import { processProviderEvent, EventProcessorDeps, providerConfirmationMatchesPayout } from './event-processor';
 
 export interface ReconciliationDeps {
   pool: Pool;
@@ -49,11 +49,14 @@ async function reconcileSubmitted(deps: ReconciliationDeps, report: OutboundReco
         ? await provider.getBillPayment(payout.provider_payout_id)
         : await provider.getTransfer(payout.provider_payout_id);
 
-      if (!result.found) continue;
+      if (!providerConfirmationMatchesPayout(payout, result)) {
+        report.errors.push(`payout=${payout.id}: PROVIDER_IDENTITY_OR_AMOUNT_MISMATCH`);
+        continue;
+      }
 
       const providerStatus = result.providerStatus?.toUpperCase() ?? '';
-      if (['DONE', 'CONFIRMED'].includes(providerStatus)) {
-        await processProviderEvent(eventProcessorDeps, {
+      if (['DONE', 'CONFIRMED', 'PAID'].includes(providerStatus)) {
+        const outcome = await processProviderEvent(eventProcessorDeps, {
           providerEventId: `reconcile_done_${payout.id}_${Date.now()}`,
           providerPayoutId: payout.provider_payout_id,
           eventCategory: payout.instrument === 'ASAAS_BILL_PAYMENT' ? 'BILL_PAYMENT' : 'TRANSFER',
@@ -62,16 +65,16 @@ async function reconcileSubmitted(deps: ReconciliationDeps, report: OutboundReco
           externalReference: result.externalReference,
           raw: { source: 'reconciliation' },
         }, provider.providerName);
-        report.resolved++;
+        if (outcome.processed) report.resolved++;
       } else if (['FAILED', 'CANCELLED', 'ERROR'].includes(providerStatus)) {
-        await processProviderEvent(eventProcessorDeps, {
+        const outcome = await processProviderEvent(eventProcessorDeps, {
           providerEventId: `reconcile_fail_${payout.id}_${Date.now()}`,
           providerPayoutId: payout.provider_payout_id,
           eventCategory: payout.instrument === 'ASAAS_BILL_PAYMENT' ? 'BILL_PAYMENT' : 'TRANSFER',
           eventType: providerStatus === 'CANCELLED' ? 'CANCELLED' : 'FAILED',
           raw: { source: 'reconciliation' },
         }, provider.providerName);
-        report.resolved++;
+        if (outcome.processed) report.resolved++;
       }
     } catch (err: any) {
       report.errors.push(`payout=${payout.id}: ${err.message}`);
@@ -90,9 +93,13 @@ async function reconcileUnknown(deps: ReconciliationDeps, report: OutboundReconc
     report.checked++;
     try {
       let found = false;
-      if (provider.findTransferByExternalReference) {
-        const result = await provider.findTransferByExternalReference(payout.external_reference);
-        if (result?.found) {
+      // A bill payment must never be linked to an unrelated Pix transfer.
+      // Without a documented bill lookup by our reference, keep it blocked for review.
+      if (payout.instrument === 'ASAAS_PIX_TRANSFER' && provider.findTransferByExternalReference) {
+        const result = await provider.findTransferByExternalReference(payout.external_reference, new Date(payout.created_at));
+        if (result?.found && result.providerTransferId &&
+            result.externalReference === payout.external_reference &&
+            result.amountCents === BigInt(payout.amount_cents)) {
           found = true;
           await pool.query(
             `UPDATE financial_payouts SET provider_payout_id = $1, status = 'SUBMITTED', provider_status = $2, updated_at = NOW() WHERE id = $3`,

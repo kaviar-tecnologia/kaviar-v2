@@ -9,12 +9,27 @@
  */
 
 import { Pool } from 'pg';
-import { NormalizedProviderEvent, OUTBOUND_PAYMENT_ERRORS } from './types';
+import { NormalizedProviderEvent, OUTBOUND_PAYMENT_ERRORS, TransferResult, BillPaymentResult } from './types';
 import { AnnualIncentiveLedgerService } from '../annual-incentive-ledger.service';
 
 export interface EventProcessorDeps {
   pool: Pool;
   ledgerService?: AnnualIncentiveLedgerService;
+}
+
+/** Verify the authenticated provider GET belongs to the stored payout.
+ * A 'found' flag or a terminal status alone must never release a reservation.
+ */
+export function providerConfirmationMatchesPayout(
+  payout: { provider_payout_id: string | null; amount_cents: string | number | bigint; external_reference: string },
+  result: TransferResult | BillPaymentResult,
+): boolean {
+  const providerId = ('providerTransferId' in result ? result.providerTransferId : undefined)
+    ?? ('providerBillId' in result ? result.providerBillId : undefined);
+  if (!result.found || !providerId || !payout.provider_payout_id ||
+      providerId !== payout.provider_payout_id || result.amountCents == null ||
+      result.amountCents !== BigInt(payout.amount_cents)) return false;
+  return !result.externalReference || result.externalReference === payout.external_reference;
 }
 
 /**
@@ -32,9 +47,13 @@ export async function processProviderEvent(
     `SELECT id, processed FROM financial_provider_events WHERE provider_name = $1 AND provider_event_id = $2`,
     [providerName, event.providerEventId]
   );
-  if (existing.length > 0) return { processed: existing[0].processed, duplicate: true };
+  // Webhook ingress has already persisted PENDING events. Only a completed
+  // event is a duplicate: PENDING/PROCESSING must still be processed.
+  if (existing.length > 0 && existing[0].processed === true) {
+    return { processed: true, duplicate: true };
+  }
 
-  // Persist
+  // Persist if this is a reconciliation-generated event.
   await pool.query(
     `INSERT INTO financial_provider_events (provider_name, provider_event_id, event_category, event_type, payload_safe)
      VALUES ($1, $2, $3, $4, $5) ON CONFLICT (provider_name, provider_event_id) DO NOTHING`,
@@ -72,7 +91,17 @@ async function processMatchedEvent(
   payout: any,
   providerName: string,
 ): Promise<{ processed: boolean; duplicate: boolean }> {
-  const { pool, ledgerService } = deps;
+  const { pool } = deps;
+
+  // Never trust an external reference to override a conflicting payout id.
+  if (payout.provider_name !== providerName ||
+      (event.eventCategory === 'BILL_PAYMENT') !== (payout.instrument === 'ASAAS_BILL_PAYMENT') ||
+      (event.externalReference && event.externalReference !== payout.external_reference) ||
+      (payout.provider_payout_id && event.providerPayoutId && event.providerPayoutId !== payout.provider_payout_id)) {
+    throw Object.assign(new Error('Provider payout identity mismatch'), {
+      code: OUTBOUND_PAYMENT_ERRORS.PAYOUT_STATE_CONFLICT,
+    });
+  }
 
   // Update event with payout_id
   await pool.query(
@@ -94,9 +123,14 @@ async function processMatchedEvent(
       break;
   }
 
+  // Set processed + queue state together: if the process crashes before the
+  // worker's follow-up UPDATE, a completed event must not remain PROCESSING.
   await pool.query(
-    `UPDATE financial_provider_events SET processed = true, processed_at = NOW() WHERE provider_name = $1 AND provider_event_id = $2`,
-    [providerName, event.providerEventId]
+    `UPDATE financial_provider_events
+     SET processed = true, processed_at = NOW(), processing_status = $3
+     WHERE provider_name = $1 AND provider_event_id = $2`,
+    [providerName, event.providerEventId,
+      event.eventType === 'UNKNOWN' ? 'FAILED_REVIEW_REQUIRED' : 'PROCESSED']
   );
 
   return { processed: true, duplicate: false };
@@ -119,14 +153,16 @@ async function handleDone(deps: EventProcessorDeps, payout: any, event: Normaliz
     // Already paid — idempotent
     if (lockedObl.status === 'PAID') { await client.query('COMMIT'); return; }
     if (['FAILED', 'CANCELLED'].includes(lockedObl.status)) {
-      await client.query('COMMIT');
       throw Object.assign(new Error('DONE after terminal state'), { code: OUTBOUND_PAYMENT_ERRORS.PAYOUT_STATE_CONFLICT });
     }
+    if (!locked.provider_payout_id || event.providerPayoutId !== locked.provider_payout_id) {
+      throw Object.assign(new Error('Provider payout identity not confirmed'), { code: OUTBOUND_PAYMENT_ERRORS.PAYOUT_STATE_CONFLICT });
+    }
 
-    // Validate amount if provided
-    if (event.amountCents != null && event.amountCents !== BigInt(locked.amount_cents)) {
-      await client.query('COMMIT');
-      throw Object.assign(new Error('Amount mismatch'), { code: OUTBOUND_PAYMENT_ERRORS.AMOUNT_MISMATCH });
+    // A successful callback must carry an exact amount; absent amounts require
+    // separate provider reconciliation rather than booking an unverified payment.
+    if (event.amountCents == null || event.amountCents !== BigInt(locked.amount_cents)) {
+      throw Object.assign(new Error('Amount missing or mismatch'), { code: OUTBOUND_PAYMENT_ERRORS.AMOUNT_MISMATCH });
     }
 
     // Mark payout DONE
@@ -210,8 +246,24 @@ async function handleFailed(deps: EventProcessorDeps, payout: any, event: Normal
   // If provider is unreachable or status is ambiguous, hold reservation.
 
   // Import provider dynamically to avoid circular deps
-  const { createOutboundPaymentProvider } = await import('./providers');
-  const provider = createOutboundPaymentProvider();
+  const { AsaasOutboundPaymentProvider, createOutboundPaymentProvider } = await import('./providers');
+  // A kill switch stops NEW payment submissions, not safe reconciliation of
+  // already-submitted Asaas transfers or bills.
+  const provider = payout.provider_name === 'asaas'
+    ? new AsaasOutboundPaymentProvider()
+    : createOutboundPaymentProvider();
+
+  if (!payout.provider_payout_id) {
+    await pool.query(
+      "UPDATE financial_payouts SET status = 'BLOCKED_PROVIDER_RECONCILIATION', updated_at = NOW() WHERE id = $1 AND status NOT IN ('DONE', 'FAILED', 'CANCELLED')",
+      [payout.id]
+    );
+    await pool.query(
+      "UPDATE financial_obligations SET status = 'BLOCKED', failure_code = 'RECONCILIATION_REQUIRED', updated_at = NOW() WHERE id = $1 AND status NOT IN ('PAID', 'FAILED', 'CANCELLED')",
+      [payout.obligation_id]
+    );
+    return;
+  }
 
   if (payout.provider_payout_id) {
     try {
@@ -219,9 +271,21 @@ async function handleFailed(deps: EventProcessorDeps, payout: any, event: Normal
         ? await provider.getBillPayment(payout.provider_payout_id)
         : await provider.getTransfer(payout.provider_payout_id);
 
-      if (currentStatus.found) {
+      if (!providerConfirmationMatchesPayout(payout, currentStatus)) {
+        await pool.query(
+          "UPDATE financial_payouts SET status = 'BLOCKED_PROVIDER_RECONCILIATION', updated_at = NOW() WHERE id = $1 AND status NOT IN ('DONE', 'FAILED', 'CANCELLED')",
+          [payout.id]
+        );
+        await pool.query(
+          "UPDATE financial_obligations SET status = 'BLOCKED', failure_code = 'RECONCILIATION_REQUIRED', updated_at = NOW() WHERE id = $1 AND status NOT IN ('PAID', 'FAILED', 'CANCELLED')",
+          [payout.obligation_id]
+        );
+        return;
+      }
+      if (providerConfirmationMatchesPayout(payout, currentStatus)) {
         const provStatus = (currentStatus.providerStatus ?? '').toUpperCase();
-        if (provStatus === 'DONE' || provStatus === 'CONFIRMED') {
+        if (provStatus === 'DONE' || provStatus === 'CONFIRMED' ||
+            (payout.instrument === 'ASAAS_BILL_PAYMENT' && provStatus === 'PAID')) {
           // Provider says DONE — apply payment, NOT release
           await handleDone(deps, payout, {
             ...event,
@@ -233,11 +297,11 @@ async function handleFailed(deps: EventProcessorDeps, payout: any, event: Normal
         if (!['FAILED', 'CANCELLED', 'ERROR'].includes(provStatus)) {
           // Ambiguous status (PENDING, IN_BANK_PROCESSING, etc.) — do NOT release
           await pool.query(
-            `UPDATE financial_payouts SET status = 'BLOCKED_PROVIDER_RECONCILIATION', updated_at = NOW() WHERE id = $1`,
+            `UPDATE financial_payouts SET status = 'BLOCKED_PROVIDER_RECONCILIATION', updated_at = NOW() WHERE id = $1 AND status NOT IN ('DONE', 'FAILED', 'CANCELLED')`,
             [payout.id]
           );
           await pool.query(
-            `UPDATE financial_obligations SET status = 'BLOCKED', failure_code = 'RECONCILIATION_REQUIRED', updated_at = NOW() WHERE id = $1`,
+            `UPDATE financial_obligations SET status = 'BLOCKED', failure_code = 'RECONCILIATION_REQUIRED', updated_at = NOW() WHERE id = $1 AND status NOT IN ('PAID', 'FAILED', 'CANCELLED')`,
             [payout.obligation_id]
           );
           return;
@@ -246,11 +310,11 @@ async function handleFailed(deps: EventProcessorDeps, payout: any, event: Normal
     } catch {
       // Provider unreachable — cannot confirm, hold reservation
       await pool.query(
-        `UPDATE financial_payouts SET status = 'BLOCKED_PROVIDER_RECONCILIATION', updated_at = NOW() WHERE id = $1`,
+        `UPDATE financial_payouts SET status = 'BLOCKED_PROVIDER_RECONCILIATION', updated_at = NOW() WHERE id = $1 AND status NOT IN ('DONE', 'FAILED', 'CANCELLED')`,
         [payout.id]
       );
       await pool.query(
-        `UPDATE financial_obligations SET status = 'BLOCKED', failure_code = 'RECONCILIATION_REQUIRED', updated_at = NOW() WHERE id = $1`,
+        `UPDATE financial_obligations SET status = 'BLOCKED', failure_code = 'RECONCILIATION_REQUIRED', updated_at = NOW() WHERE id = $1 AND status NOT IN ('PAID', 'FAILED', 'CANCELLED')`,
         [payout.obligation_id]
       );
       return;
@@ -302,13 +366,30 @@ async function handleFailed(deps: EventProcessorDeps, payout: any, event: Normal
 }
 
 async function handleProcessing(pool: Pool, payout: any): Promise<void> {
-  await pool.query(`UPDATE financial_payouts SET status = 'PROCESSING', provider_status = 'PROCESSING', updated_at = NOW() WHERE id = $1`, [payout.id]);
-  await pool.query(`UPDATE financial_obligations SET status = 'PROCESSING', updated_at = NOW() WHERE id = $1`, [payout.obligation_id]);
+  await pool.query(
+    "UPDATE financial_payouts SET status = 'PROCESSING', provider_status = 'PROCESSING', updated_at = NOW() WHERE id = $1 AND status NOT IN ('DONE', 'FAILED', 'CANCELLED')",
+    [payout.id]
+  );
+  await pool.query(
+    "UPDATE financial_obligations SET status = 'PROCESSING', updated_at = NOW() WHERE id = $1 AND status NOT IN ('PAID', 'FAILED', 'CANCELLED')",
+    [payout.obligation_id]
+  );
 }
 
 function sanitize(raw: Record<string, unknown>): Record<string, unknown> {
-  const s = { ...raw };
-  delete s.pixKey; delete s.pix_key; delete s.cpf; delete s.cnpj; delete s.document;
-  delete s.apiKey; delete s.token; delete s.secret; delete s.access_token;
-  return s;
+  const entity = (raw.transfer && typeof raw.transfer === 'object' ? raw.transfer : raw.bill) as Record<string, unknown> | undefined;
+  const result: Record<string, unknown> = {};
+  if (typeof raw.source === 'string') result.source = raw.source;
+  if (typeof raw.id === 'string') result.id = raw.id;
+  if (typeof raw.event === 'string') result.event = raw.event;
+  if (entity) {
+    const safe = {
+      id: typeof entity.id === 'string' ? entity.id : undefined,
+      status: typeof entity.status === 'string' ? entity.status : undefined,
+      value: typeof entity.value === 'number' ? entity.value : undefined,
+      externalReference: typeof entity.externalReference === 'string' ? entity.externalReference : undefined,
+    };
+    result[raw.transfer ? 'transfer' : 'bill'] = safe;
+  }
+  return result;
 }

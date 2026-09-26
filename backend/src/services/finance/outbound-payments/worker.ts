@@ -13,6 +13,7 @@
 import { Pool, PoolClient } from 'pg';
 import { OutboundPaymentProvider, OUTBOUND_PAYMENT_ERRORS } from './types';
 import { isOutboundPaymentsEnabled, isPurposeEnabled, validateAccountOwnership } from './account-preflight';
+import { decryptPayoutSecret } from '../annual-incentive-payout/crypto';
 
 const MAX_ATTEMPTS = 5;
 const BASE_BACKOFF_MS = 60_000;
@@ -47,6 +48,17 @@ export async function processOutboundBatch(deps: OutboundWorkerDeps): Promise<nu
   const avail = await provider.validateAvailability();
   if (!avail.available) return 0;
 
+  // A positive balance is not proof of account ownership or transfer permission.
+  // Real Asaas must pass the authenticated account GETs and explicit approvals.
+  if (provider.providerName === 'asaas') {
+    const account = await provider.getAccountStatus?.() ?? null;
+    const check = validateAccountOwnership(account);
+    if (!check.passed) {
+      console.warn('[OUTBOUND_WORKER] Asaas account preflight failed; batch blocked');
+      return 0;
+    }
+  }
+
   // Pick items
   const client = await pool.connect();
   let items: OutboxItem[];
@@ -55,8 +67,8 @@ export async function processOutboundBatch(deps: OutboundWorkerDeps): Promise<nu
     const { rows } = await client.query(
       `SELECT id, obligation_id, payee_id, purpose, status, attempts
        FROM financial_payout_outbox
-       WHERE status IN ('PENDING', 'PROCESSING')
-         AND next_at <= NOW()
+       WHERE (status = 'PENDING' AND next_at <= NOW())
+          OR (status = 'PROCESSING' AND locked_at <= NOW() - INTERVAL '15 minutes')
        ORDER BY priority DESC, next_at ASC
        LIMIT $1
        FOR UPDATE SKIP LOCKED`,
@@ -99,6 +111,16 @@ export async function processOutboundBatch(deps: OutboundWorkerDeps): Promise<nu
 async function processOneOutboundItem(deps: OutboundWorkerDeps, item: OutboxItem): Promise<void> {
   const { pool, provider } = deps;
 
+  // Recover stale in-flight work without ever making a second submission.
+  if (item.status === 'PROCESSING') {
+    await pool.query(
+      "UPDATE financial_payouts SET status = 'UNKNOWN_SUBMISSION', updated_at = NOW() WHERE obligation_id = $1 AND status = 'SUBMITTING'",
+      [item.obligationId]
+    );
+    await markOutboxStatus(pool, item.id, 'BLOCKED');
+    return;
+  }
+
   // Check purpose enabled
   if (!isPurposeEnabled(item.purpose)) {
     await markOutboxStatus(pool, item.id, 'BLOCKED');
@@ -112,10 +134,25 @@ async function processOneOutboundItem(deps: OutboundWorkerDeps, item: OutboxItem
     await markOutboxStatus(pool, item.id, 'DONE');
     return;
   }
+  if (!['QUEUED', 'RETRYABLE_FAILURE'].includes(obl.status) || obl.payee_id !== item.payeeId) {
+    await markOutboxStatus(pool, item.id, 'BLOCKED');
+    return;
+  }
+
+  // No second provider POST if a previous attempt may have reached Asaas.
+  const { rows: previous } = await pool.query('SELECT id FROM financial_payouts WHERE obligation_id = $1 LIMIT 1', [item.obligationId]);
+  if (previous.length) {
+    await pool.query(
+      "UPDATE financial_payouts SET status = 'UNKNOWN_SUBMISSION', updated_at = NOW() WHERE obligation_id = $1 AND status = 'SUBMITTING'",
+      [item.obligationId]
+    );
+    await markOutboxStatus(pool, item.id, 'BLOCKED');
+    return;
+  }
 
   // Load payee and destination
   const { rows: [payee] } = await pool.query('SELECT * FROM financial_payees WHERE id = $1', [item.payeeId]);
-  if (!payee || payee.status !== 'ACTIVE') {
+  if (!payee || payee.status !== 'ACTIVE' || payee.verification_status !== 'VERIFIED') {
     await markOutboxStatus(pool, item.id, 'BLOCKED');
     await updateObligationStatus(pool, item.obligationId, 'BLOCKED', OUTBOUND_PAYMENT_ERRORS.PAYEE_NOT_ACTIVE);
     return;
@@ -125,9 +162,15 @@ async function processOneOutboundItem(deps: OutboundWorkerDeps, item: OutboxItem
     `SELECT * FROM financial_payee_destinations WHERE payee_id = $1 AND status = 'active' AND superseded_at IS NULL LIMIT 1`,
     [item.payeeId]
   );
-  if (!dest) {
+  if (!dest || !dest.verified_at || !['PIX_CPF', 'PIX_CNPJ', 'BILL'].includes(dest.method)) {
     await markOutboxStatus(pool, item.id, 'BLOCKED');
     await updateObligationStatus(pool, item.obligationId, 'BLOCKED', OUTBOUND_PAYMENT_ERRORS.DESTINATION_NOT_FOUND);
+    return;
+  }
+  if ((dest.method === 'PIX_CPF' && dest.key_type !== 'CPF') ||
+      (dest.method === 'PIX_CNPJ' && dest.key_type !== 'CNPJ')) {
+    await markOutboxStatus(pool, item.id, 'BLOCKED');
+    await updateObligationStatus(pool, item.obligationId, 'BLOCKED', OUTBOUND_PAYMENT_ERRORS.DESTINATION_METHOD_NOT_ALLOWED);
     return;
   }
 
@@ -145,6 +188,25 @@ async function processOneOutboundItem(deps: OutboundWorkerDeps, item: OutboxItem
     // Schedule retry — balance may be replenished
     await scheduleRetry(pool, item, item.attempts + 1);
     await updateObligationStatus(pool, item.obligationId, 'RETRYABLE_FAILURE', OUTBOUND_PAYMENT_ERRORS.INSUFFICIENT_BALANCE);
+    return;
+  }
+
+  // Never pass stored ciphertext to a real provider. Test fakes may use
+  // placeholder fixture values, but the real adapter receives plaintext only.
+  let destinationValue: string;
+  try {
+    destinationValue = provider.providerName === 'asaas'
+      ? decryptPayoutSecret(dest.key_encrypted)
+      : dest.key_encrypted;
+    if (provider.providerName === 'asaas') {
+      const valid = dest.method === 'PIX_CPF' ? /^\d{11}$/.test(destinationValue)
+        : dest.method === 'PIX_CNPJ' ? /^\d{14}$/.test(destinationValue)
+        : /^\d{40,60}$/.test(destinationValue);
+      if (!valid) throw new Error('Invalid destination');
+    }
+  } catch {
+    await markOutboxStatus(pool, item.id, 'BLOCKED');
+    await updateObligationStatus(pool, item.obligationId, 'BLOCKED', OUTBOUND_PAYMENT_ERRORS.DESTINATION_NOT_FOUND);
     return;
   }
 
@@ -177,22 +239,19 @@ async function processOneOutboundItem(deps: OutboundWorkerDeps, item: OutboxItem
   // Call provider OUTSIDE transaction
   let result;
   if (instrument === 'ASAAS_PIX_TRANSFER') {
-    // Decrypt key for provider call (using the hmac to find the right destination)
-    const pixKey = dest.key_encrypted; // Worker needs to decrypt — for now pass encrypted (adapter handles)
-    const keyType = dest.key_type ?? 'CPF';
     result = await provider.createTransfer({
       obligationId: item.obligationId,
       payeeId: item.payeeId,
       amountCents,
-      pixAddressKey: pixKey, // Will be decrypted by caller when real adapter is wired
-      pixAddressKeyType: keyType as 'CPF' | 'CNPJ',
+      pixAddressKey: destinationValue,
+      pixAddressKeyType: dest.key_type as 'CPF' | 'CNPJ',
       externalReference: externalRef,
       description: obl.description_safe?.slice(0, 100),
     });
   } else {
     result = await provider.createBillPayment({
       obligationId: item.obligationId,
-      identificationField: dest.key_encrypted, // Bill identification field
+      identificationField: destinationValue,
       externalReference: externalRef,
     });
   }
@@ -210,6 +269,12 @@ async function processOneOutboundItem(deps: OutboundWorkerDeps, item: OutboxItem
   if (result.success) {
     const providerId = ('providerTransferId' in result ? result.providerTransferId : (result as any).providerBillId) ?? null;
     const providerStatus = ('providerStatus' in result ? result.providerStatus : null) ?? null;
+    const returnedAmount = 'amountCents' in result ? result.amountCents : undefined;
+    if (!providerId || (returnedAmount != null && returnedAmount !== amountCents)) {
+      await pool.query("UPDATE financial_payouts SET status = 'UNKNOWN_SUBMISSION', updated_at = NOW() WHERE obligation_id = $1", [item.obligationId]);
+      await markOutboxStatus(pool, item.id, 'BLOCKED');
+      return;
+    }
 
     await pool.query(
       `UPDATE financial_payouts SET provider_payout_id = $1, status = 'SUBMITTED', provider_status = $2, submitted_at = NOW(), updated_at = NOW()
@@ -218,16 +283,15 @@ async function processOneOutboundItem(deps: OutboundWorkerDeps, item: OutboxItem
     );
     await pool.query(`UPDATE financial_obligations SET status = 'SUBMITTED', updated_at = NOW() WHERE id = $1`, [item.obligationId]);
     await markOutboxStatus(pool, item.id, 'DONE');
-  } else if (result.isTimeout) {
+  } else if (result.isTimeout || !result.isDefinitiveFailure) {
+    // HTTP 5xx, connection drops and timeouts are ambiguous; Asaas may have
+    // accepted the request. Reconcile by reference before any new attempt.
     await pool.query(`UPDATE financial_payouts SET status = 'UNKNOWN_SUBMISSION', updated_at = NOW() WHERE obligation_id = $1`, [item.obligationId]);
     await markOutboxStatus(pool, item.id, 'BLOCKED');
   } else if (result.isDefinitiveFailure) {
     await pool.query(`UPDATE financial_payouts SET status = 'FAILED', failed_at = NOW(), updated_at = NOW() WHERE obligation_id = $1`, [item.obligationId]);
     await updateObligationStatus(pool, item.obligationId, 'FAILED', result.errorCode ?? 'DEFINITIVE_FAILURE');
     await markOutboxStatus(pool, item.id, 'FAILED');
-  } else {
-    await scheduleRetry(pool, item, attemptNum);
-    await updateObligationStatus(pool, item.obligationId, 'RETRYABLE_FAILURE', result.errorCode ?? 'TEMPORARY_FAILURE');
   }
 }
 

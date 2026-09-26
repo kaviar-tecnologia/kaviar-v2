@@ -10,6 +10,7 @@ import { assertSafeFinanceDatabase } from '../../src/lib/assert-safe-finance-db'
 import { FakeOutboundPaymentProvider } from '../../src/services/finance/outbound-payments/providers';
 import { processOutboundBatch } from '../../src/services/finance/outbound-payments/worker';
 import { processProviderEvent } from '../../src/services/finance/outbound-payments/event-processor';
+import { processEventBatch } from '../../src/services/finance/outbound-payments/event-worker';
 import { runOutboundReconciliation } from '../../src/services/finance/outbound-payments/reconciliation';
 import { calculateTreasuryHealth } from '../../src/services/finance/outbound-payments/treasury';
 import { AnnualIncentiveLedgerService } from '../../src/services/finance/annual-incentive-ledger.service';
@@ -132,15 +133,17 @@ describe('Outbound Worker', () => {
     expect(updated.status).toBe('FAILED');
   });
 
-  it('schedules retry on temporary failure', async () => {
+  it('blocks ambiguous provider failure instead of blindly resubmitting', async () => {
     provider.behavior = 'temporary_failure';
     const obl = await createTestObligation();
     await processOutboundBatch({ pool, provider });
 
-    const { rows: [outbox] } = await pool.query('SELECT status, attempts, next_at FROM financial_payout_outbox WHERE obligation_id = $1', [obl.id]);
-    expect(outbox.status).toBe('PENDING');
-    expect(outbox.attempts).toBe(1);
-    expect(new Date(outbox.next_at).getTime()).toBeGreaterThan(Date.now());
+    const { rows: [outbox] } = await pool.query('SELECT status FROM financial_payout_outbox WHERE obligation_id = $1', [obl.id]);
+    const { rows: [payout] } = await pool.query('SELECT status FROM financial_payouts WHERE obligation_id = $1', [obl.id]);
+    expect(outbox.status).toBe('BLOCKED');
+    expect(payout.status).toBe('UNKNOWN_SUBMISSION');
+    expect(provider.createCallCount).toBe(1);
+    expect(await processOutboundBatch({ pool, provider })).toBe(0);
   });
 
   it('does not process when OUTBOUND_PAYMENTS_ENABLED is false', async () => {
@@ -179,10 +182,36 @@ describe('Event Processor', () => {
     await processProviderEvent({ pool, ledgerService }, {
       providerEventId: `done-${Date.now()}`, providerPayoutId: payout.provider_payout_id,
       eventCategory: 'TRANSFER', eventType: 'DONE', amountCents: 5000n, raw: {},
-    }, 'asaas');
+    }, provider.providerName);
 
     const { rows: [updated] } = await pool.query('SELECT status FROM financial_obligations WHERE id = $1', [obl.id]);
     expect(updated.status).toBe('PAID');
+  });
+
+  it('persists native Asaas DONE webhook, processes it once and survives replay', async () => {
+    const { obl, payout } = await setupSubmittedObligation();
+    await pool.query("UPDATE financial_payouts SET provider_name = 'asaas' WHERE id = $1", [payout.id]);
+    const eventId = `native-event-${Date.now()}`;
+    await pool.query(
+      `INSERT INTO financial_provider_events
+       (provider_name, provider_event_id, event_category, event_type, payload_safe, processing_status)
+       VALUES ('asaas', $1, 'TRANSFER', 'DONE', $2::jsonb, 'PENDING')`,
+      [eventId, JSON.stringify({
+        id: eventId, event: 'TRANSFER_DONE',
+        transfer: { id: payout.provider_payout_id, status: 'DONE', value: 50, externalReference: payout.external_reference },
+      })]
+    );
+    const count = await processEventBatch({ pool, ledgerService });
+    expect(count).toBe(1);
+    const { rows: [event] } = await pool.query(
+      'SELECT processed, processing_status FROM financial_provider_events WHERE provider_event_id = $1', [eventId]
+    );
+    const { rows: [obligation] } = await pool.query(
+      'SELECT status FROM financial_obligations WHERE id = $1', [obl.id]
+    );
+    expect(event).toMatchObject({ processed: true, processing_status: 'PROCESSED' });
+    expect(obligation.status).toBe('PAID');
+    expect(await processEventBatch({ pool, ledgerService })).toBe(0);
   });
 
   it('duplicate event is idempotent', async () => {
@@ -191,34 +220,32 @@ describe('Event Processor', () => {
     await processProviderEvent({ pool, ledgerService }, {
       providerEventId: eventId, providerPayoutId: payout.provider_payout_id,
       eventCategory: 'TRANSFER', eventType: 'DONE', amountCents: 5000n, raw: {},
-    }, 'asaas');
+    }, provider.providerName);
     const r2 = await processProviderEvent({ pool, ledgerService }, {
       providerEventId: eventId, providerPayoutId: payout.provider_payout_id,
       eventCategory: 'TRANSFER', eventType: 'DONE', amountCents: 5000n, raw: {},
-    }, 'asaas');
+    }, provider.providerName);
     expect(r2.duplicate).toBe(true);
   });
 
-  it('FAILED marks obligation FAILED', async () => {
+  it('FAILED without independent provider confirmation keeps the reservation blocked', async () => {
     const { obl, payout } = await setupSubmittedObligation();
     await processProviderEvent({ pool, ledgerService }, {
       providerEventId: `fail-${Date.now()}`, providerPayoutId: payout.provider_payout_id,
       eventCategory: 'TRANSFER', eventType: 'FAILED', raw: {},
-    }, 'asaas');
-
+    }, provider.providerName);
     const { rows: [updated] } = await pool.query('SELECT status FROM financial_obligations WHERE id = $1', [obl.id]);
-    expect(updated.status).toBe('FAILED');
+    expect(updated.status).toBe('BLOCKED');
   });
 
-  it('CANCELLED marks obligation CANCELLED', async () => {
+  it('CANCELLED without independent provider confirmation also blocks', async () => {
     const { obl, payout } = await setupSubmittedObligation();
     await processProviderEvent({ pool, ledgerService }, {
       providerEventId: `cancel-${Date.now()}`, providerPayoutId: payout.provider_payout_id,
       eventCategory: 'TRANSFER', eventType: 'CANCELLED', raw: {},
-    }, 'asaas');
-
+    }, provider.providerName);
     const { rows: [updated] } = await pool.query('SELECT status FROM financial_obligations WHERE id = $1', [obl.id]);
-    expect(updated.status).toBe('CANCELLED');
+    expect(updated.status).toBe('BLOCKED');
   });
 
   it('PROCESSING updates status without PAID', async () => {
@@ -226,7 +253,7 @@ describe('Event Processor', () => {
     await processProviderEvent({ pool, ledgerService }, {
       providerEventId: `proc-${Date.now()}`, providerPayoutId: payout.provider_payout_id,
       eventCategory: 'TRANSFER', eventType: 'PROCESSING', raw: {},
-    }, 'asaas');
+    }, provider.providerName);
 
     const { rows: [updated] } = await pool.query('SELECT status FROM financial_obligations WHERE id = $1', [obl.id]);
     expect(updated.status).toBe('PROCESSING');
@@ -237,7 +264,7 @@ describe('Event Processor', () => {
     const result = await processProviderEvent({ pool, ledgerService }, {
       providerEventId: `unknown-${Date.now()}`, providerPayoutId: payout.provider_payout_id,
       eventCategory: 'TRANSFER', eventType: 'UNKNOWN', raw: { newField: true },
-    }, 'asaas');
+    }, provider.providerName);
     expect(result.processed).toBe(true);
   });
 });
@@ -325,6 +352,13 @@ describe('Event Worker Scheduler Flag', () => {
   it('starts when flag is exactly "true"', () => {
     process.env.OUTBOUND_PROVIDER_EVENT_WORKER_ENABLED = 'true';
     process.env.OUTBOUND_PAYMENTS_ENABLED = 'true';
+    process.env.NODE_ENV = 'development';
+    expect(mod.startEventWorkerScheduler()).toBe(true);
+  });
+
+  it('settles existing events even when new outbound submissions are disabled', () => {
+    process.env.OUTBOUND_PROVIDER_EVENT_WORKER_ENABLED = 'true';
+    process.env.OUTBOUND_PAYMENTS_ENABLED = 'false';
     process.env.NODE_ENV = 'development';
     expect(mod.startEventWorkerScheduler()).toBe(true);
   });
