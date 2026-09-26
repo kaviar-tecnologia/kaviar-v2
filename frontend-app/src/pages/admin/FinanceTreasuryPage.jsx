@@ -98,7 +98,7 @@ export default function FinanceTreasuryPage() {
           ].map(([label, value], index) => (
             <Grid item xs={12} sm={6} md={3} key={label}><Card sx={{ border: '1px solid #E2E8F0', height: '100%' }}><CardContent>
               <Typography sx={{ color: '#64748B', fontSize: 12 }}>{label}</Typography>
-              <Typography sx={{ fontSize: 24, fontWeight: 800, color: index === 3 && Number(value || 0) > 0 ? '#B91C1C' : '#0F172A' }}>{treasuryAvailable ? brl(value) : 'Não disponível'}</Typography>
+              <Typography sx={{ fontSize: 24, fontWeight: 800, color: index === 3 && Number(value || 0) > 0 ? '#B91C1C' : '#0F172A' }}>{(index === 0 || index === 3 ? treasuryAvailable : value != null) ? brl(value) : 'Não disponível'}</Typography>
             </CardContent></Card></Grid>
           ))}
         </Grid>
@@ -113,8 +113,9 @@ export default function FinanceTreasuryPage() {
           <Grid item xs={12} md={6}><Card sx={{ border: '1px solid #E2E8F0', height: '100%' }}><CardContent>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}><Shield color={health?.accountOwnershipConfirmed ? 'success' : 'warning'} /><Typography sx={{ fontWeight: 700 }}>Controles de tesouraria</Typography></Box>
             <Typography sx={{ fontSize: 14 }}>Titularidade confirmada: <strong>{health?.accountOwnershipConfirmed ? 'Sim' : 'Não'}</strong></Typography>
-            <Typography sx={{ fontSize: 14 }}>Obrigações aprovadas (consolidado): <strong>{treasuryAvailable ? brl(health?.approvedObligationsCents) : 'Não disponível'}</strong></Typography>
-            <Typography sx={{ fontSize: 14 }}>Em trânsito (consolidado): <strong>{treasuryAvailable ? brl(health?.inTransitCents) : 'Não disponível'}</strong></Typography>
+            <Typography sx={{ fontSize: 14 }}>Obrigações aprovadas (consolidado): <strong>{health?.approvedObligationsCents != null ? brl(health.approvedObligationsCents) : 'Não disponível'}</strong></Typography>
+            <Typography sx={{ fontSize: 14 }}>Em trânsito (consolidado): <strong>{health?.inTransitCents != null ? brl(health.inTransitCents) : 'Não disponível'}</strong></Typography>
+            <Typography sx={{ fontSize: 14 }}>Bloqueadas / em conciliação (consolidado): <strong>{health?.blockedObligationsCents != null ? brl(health.blockedObligationsCents) : 'Não disponível'}</strong></Typography>
             <Typography sx={{ fontSize: 14 }}>Obrigações do portal contábil pendentes: <strong>{accountingSummary?.pending || 0}</strong></Typography>
           </CardContent></Card></Grid>
         </Grid>
