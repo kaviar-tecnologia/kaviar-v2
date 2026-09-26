@@ -42,6 +42,7 @@ class TestSumUpError extends Error {
 
 vi.mock('../src/services/sumup-service', () => ({
   createSumUpCheckout: (...args: any[]) => mockCreateSumUpCheckout(...args),
+  getSumUpCheckoutCallbackUrl: () => undefined,
   processSumUpCheckout: (...args: any[]) => mockProcessSumUpCheckout(...args),
   getSumUpCheckoutPaymentMethods: (...args: any[]) => mockGetSumUpCheckoutPaymentMethods(...args),
   getSumUpMerchantPaymentMethods: (...args: any[]) => mockGetSumUpMerchantPaymentMethods(...args),
