@@ -54,6 +54,7 @@ export interface SumUpCheckoutCreateResponse {
   description?: string;
   merchant_code?: string;
   status?: string;
+  transaction_id?: string;
   checkout_url?: string;
   hosted_checkout_url?: string;
   [key: string]: unknown;
@@ -138,6 +139,25 @@ async function sumupRequest<T>(path: string, method: 'GET' | 'POST' | 'PUT', bod
   }
 
   return data as T;
+}
+
+/** Backend notification endpoint, NOT a browser redirect or a shared-secret URL.
+ * SumUp POSTs the checkout id; the receiver must independently query the SumUp API.
+ * Never include credentials in a callback URL. Disabled until explicitly configured.
+ */
+export function getSumUpCheckoutCallbackUrl(): string | undefined {
+  const raw = process.env.SUMUP_CHECKOUT_CALLBACK_URL?.trim();
+  if (!raw) return undefined;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'https:' || !parsed.hostname || parsed.username || parsed.password ||
+        parsed.search || parsed.hash) {
+      throw new Error('Unsafe callback URL');
+    }
+    return parsed.toString();
+  } catch {
+    throw new SumUpError(500, 'Configuração de callback SumUp inválida.');
+  }
 }
 
 export async function createSumUpCheckout(input: SumUpCheckoutCreateRequest): Promise<SumUpCheckoutCreateResponse> {
