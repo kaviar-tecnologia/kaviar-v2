@@ -156,4 +156,27 @@ describe('Asaas authenticated lookups are fail-closed', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('rejects non-Asaas API origins before sending credentials', async () => {
+    process.env.ASAAS_BASE_URL = 'https://attacker.example';
+    const result = await new AsaasOutboundPaymentProvider().getAccountStatus();
+    expect(result).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects sandbox API origin in production', async () => {
+    process.env.NODE_ENV = 'production';
+    const result = await new AsaasOutboundPaymentProvider().getAccountStatus();
+    expect(result).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('does not submit transfers with nonrepresentable cent amounts', async () => {
+    const result = await new AsaasOutboundPaymentProvider().createTransfer({
+      obligationId: 'obl-1', payeeId: 'payee-1', amountCents: BigInt(Number.MAX_SAFE_INTEGER) + 1n,
+      pixAddressKey: '12345678901', pixAddressKeyType: 'CPF', externalReference: 'ours',
+    });
+    expect(result).toMatchObject({ success: false, errorCode: 'INVALID_AMOUNT', isDefinitiveFailure: true });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
 });
