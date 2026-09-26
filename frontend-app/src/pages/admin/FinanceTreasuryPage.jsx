@@ -59,7 +59,7 @@ export default function FinanceTreasuryPage() {
 
   useEffect(() => { load(); }, [scopedParams]);
 
-  const treasuryAvailable = Boolean(provider?.available && health?.accountOwnershipConfirmed);
+  const treasuryAvailable = Boolean(provider?.available && health?.providerAvailable && health?.accountOwnershipConfirmed && health?.providerBalanceCents != null);
   const selectedScope = filters.legal_entity_id || filters.business_unit_id;
 
   return (
