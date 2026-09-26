@@ -204,6 +204,7 @@ describe('Wallet V2 Routes (sumup-only)', () => {
   });
 
   it('POST /recharge com payment_method=pix processa qr_code_pix e retorna artefatos', async () => {
+    process.env.SUMUP_CHECKOUT_CALLBACK_URL = 'https://api.kaviar.com.br/api/webhooks/sumup/callback';
     mockQuery
       .mockResolvedValueOnce({ rows: [{ enabled: true }] })
       .mockResolvedValueOnce({ rows: [{ id: 'saldo-20', amount_cents: '2000', label: 'R$ 20' }] })
@@ -226,6 +227,9 @@ describe('Wallet V2 Routes (sumup-only)', () => {
     expect(res.body.data.pix.copy_paste).toBe('000201PIX');
     expect(mockGetSumUpMerchantPaymentMethods).toHaveBeenCalledTimes(1);
     expect(mockCreateSumUpCheckout).toHaveBeenCalledTimes(1);
+    expect(mockCreateSumUpCheckout).toHaveBeenCalledWith(expect.objectContaining({
+      return_url: 'https://api.kaviar.com.br/api/webhooks/sumup/callback',
+    }));
     expect(mockGetSumUpCheckoutPaymentMethods).toHaveBeenCalledTimes(1);
     expect(mockProcessSumUpCheckout).toHaveBeenCalledWith('sumup_checkout_1', { payment_type: 'qr_code_pix' });
   });
