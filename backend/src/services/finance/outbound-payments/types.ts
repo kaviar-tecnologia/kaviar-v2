@@ -164,7 +164,7 @@ export interface OutboundPaymentProvider {
 
   getTransfer(providerTransferId: string): Promise<TransferResult>;
 
-  findTransferByExternalReference?(externalReference: string): Promise<TransferResult | null>;
+  findTransferByExternalReference?(externalReference: string, createdAt?: Date): Promise<TransferResult | null>;
 
   createBillPayment(input: CreateBillPaymentInput): Promise<CreateBillPaymentResult>;
 
