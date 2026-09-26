@@ -27,7 +27,19 @@ export class AsaasOutboundPaymentProvider implements OutboundPaymentProvider {
   readonly providerName = 'asaas';
 
   private get baseUrl(): string {
-    return process.env.ASAAS_BASE_URL ?? 'https://sandbox.asaas.com/api';
+    // Asaas' current API roots are api-sandbox.asaas.com and api.asaas.com.
+    // Production must select the target explicitly; never silently route live
+    // payment credentials to a default sandbox (or vice versa).
+    const configured = process.env.ASAAS_BASE_URL?.trim();
+    if (!configured && process.env.NODE_ENV === 'production') {
+      throw new Error('ASAAS_BASE_URL must be explicitly configured in production');
+    }
+    const parsed = new URL(configured || 'https://api-sandbox.asaas.com');
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password ||
+        parsed.search || parsed.hash || !['/', ''].includes(parsed.pathname)) {
+      throw new Error('Invalid Asaas API base URL');
+    }
+    return parsed.origin;
   }
 
   private get apiKey(): string {
@@ -157,22 +169,47 @@ export class AsaasOutboundPaymentProvider implements OutboundPaymentProvider {
     }
   }
 
-  async findTransferByExternalReference(ref: string): Promise<TransferResult | null> {
+  async findTransferByExternalReference(ref: string, createdAt?: Date): Promise<TransferResult | null> {
     try {
-      const data = await this.request<{ data: Array<{ id: string; status: string; value: number; externalReference: string }> }>(
-        `/v3/transfers?externalReference=${encodeURIComponent(ref)}`, 'GET'
-      );
-      // Asaas transfer listing may ignore unsupported query filters. Never
-      // associate an unrelated transfer merely because it is the first result.
-      const t = data.data?.find(t => t.externalReference === ref);
-      if (!t) return null;
-      return {
-        found: true,
-        providerTransferId: t.id,
-        providerStatus: t.status,
-        amountCents: BigInt(Math.round(t.value * 100)),
-        externalReference: t.externalReference,
-      };
+      if (!ref || (createdAt && Number.isNaN(createdAt.getTime()))) return null;
+      // The documented transfer listing supports creation-date filters, not a
+      // server-side externalReference filter. Scan bounded pages and compare
+      // references locally. An incomplete scan or multiple matches is ambiguous.
+      const start = createdAt && createdAt.getTime() <= Date.now()
+        ? new Date(createdAt.getTime() - 86_400_000)
+        : new Date(Date.now() - 7 * 86_400_000);
+      const end = new Date(Date.now() + 86_400_000);
+      const date = (d: Date) => d.toISOString().slice(0, 10);
+      const matches: Array<{ id: string; status: string; value: number; externalReference: string }> = [];
+      for (let page = 0; page < 10; page++) {
+        const params = new URLSearchParams({
+          'dateCreated[ge]': date(start), 'dateCreated[le]': date(end),
+          limit: '100', offset: String(page * 100),
+        });
+        const response = await this.request<{
+          data?: Array<{ id: string; status: string; value: number; externalReference: string }>;
+          hasMore?: boolean;
+        }>(`/v3/transfers?${params.toString()}`, 'GET');
+        if (!Array.isArray(response.data)) return null;
+        matches.push(...response.data.filter(t => t.externalReference === ref));
+        if (matches.length > 1) return null;
+        if (!response.hasMore) {
+          if (matches.length !== 1) return null;
+          const t = matches[0];
+          if (typeof t.id !== 'string' || !Number.isFinite(t.value) || t.value <= 0) return null;
+          const cents = Math.round(t.value * 100);
+          if (!Number.isSafeInteger(cents) || Math.abs(cents - t.value * 100) > 0.000001) return null;
+          return {
+            found: true,
+            providerTransferId: t.id,
+            providerStatus: t.status,
+            amountCents: BigInt(cents),
+            externalReference: t.externalReference,
+          };
+        }
+      }
+      // More pages exist: do not claim a result from an incomplete history.
+      return null;
     } catch {
       return null;
     }
