@@ -9,12 +9,26 @@
  */
 
 import { Pool } from 'pg';
-import { NormalizedProviderEvent, OUTBOUND_PAYMENT_ERRORS } from './types';
+import { NormalizedProviderEvent, OUTBOUND_PAYMENT_ERRORS, TransferResult, BillPaymentResult } from './types';
 import { AnnualIncentiveLedgerService } from '../annual-incentive-ledger.service';
 
 export interface EventProcessorDeps {
   pool: Pool;
   ledgerService?: AnnualIncentiveLedgerService;
+}
+
+/** Verify the authenticated provider GET belongs to the stored payout.
+ * A 'found' flag or a terminal status alone must never release a reservation.
+ */
+export function providerConfirmationMatchesPayout(
+  payout: { provider_payout_id: string | null; amount_cents: string | number | bigint; external_reference: string },
+  result: TransferResult | BillPaymentResult,
+): boolean {
+  const providerId = 'providerTransferId' in result ? result.providerTransferId : result.providerBillId;
+  if (!result.found || !providerId || !payout.provider_payout_id ||
+      providerId !== payout.provider_payout_id || result.amountCents == null ||
+      result.amountCents !== BigInt(payout.amount_cents)) return false;
+  return !result.externalReference || result.externalReference === payout.external_reference;
 }
 
 /**
@@ -256,7 +270,7 @@ async function handleFailed(deps: EventProcessorDeps, payout: any, event: Normal
         ? await provider.getBillPayment(payout.provider_payout_id)
         : await provider.getTransfer(payout.provider_payout_id);
 
-      if (!currentStatus.found) {
+      if (!providerConfirmationMatchesPayout(payout, currentStatus)) {
         await pool.query(
           "UPDATE financial_payouts SET status = 'BLOCKED_PROVIDER_RECONCILIATION', updated_at = NOW() WHERE id = $1 AND status NOT IN ('DONE', 'FAILED', 'CANCELLED')",
           [payout.id]
@@ -267,7 +281,7 @@ async function handleFailed(deps: EventProcessorDeps, payout: any, event: Normal
         );
         return;
       }
-      if (currentStatus.found) {
+      if (providerConfirmationMatchesPayout(payout, currentStatus)) {
         const provStatus = (currentStatus.providerStatus ?? '').toUpperCase();
         if (provStatus === 'DONE' || provStatus === 'CONFIRMED' ||
             (payout.instrument === 'ASAAS_BILL_PAYMENT' && provStatus === 'PAID')) {
