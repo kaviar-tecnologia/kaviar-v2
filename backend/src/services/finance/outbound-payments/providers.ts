@@ -36,8 +36,12 @@ export class AsaasOutboundPaymentProvider implements OutboundPaymentProvider {
     }
     const parsed = new URL(configured || 'https://api-sandbox.asaas.com');
     if (parsed.protocol !== 'https:' || parsed.username || parsed.password ||
-        parsed.search || parsed.hash || !['/', ''].includes(parsed.pathname)) {
+        parsed.search || parsed.hash || !['/', ''].includes(parsed.pathname) ||
+        !['api.asaas.com', 'api-sandbox.asaas.com'].includes(parsed.hostname)) {
       throw new Error('Invalid Asaas API base URL');
+    }
+    if (process.env.NODE_ENV === 'production' && parsed.hostname !== 'api.asaas.com') {
+      throw new Error('Production Asaas API origin must be api.asaas.com');
     }
     return parsed.origin;
   }
@@ -117,6 +121,9 @@ export class AsaasOutboundPaymentProvider implements OutboundPaymentProvider {
   }
 
   async createTransfer(input: CreateTransferInput): Promise<CreateTransferResult> {
+    if (input.amountCents <= 0n || input.amountCents > BigInt(Number.MAX_SAFE_INTEGER)) {
+      return { success: false, errorCode: 'INVALID_AMOUNT', isDefinitiveFailure: true };
+    }
     try {
       const body: Record<string, unknown> = {
         value: Number(input.amountCents) / 100,
