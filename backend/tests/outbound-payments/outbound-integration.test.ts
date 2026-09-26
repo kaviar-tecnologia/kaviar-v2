@@ -132,15 +132,17 @@ describe('Outbound Worker', () => {
     expect(updated.status).toBe('FAILED');
   });
 
-  it('schedules retry on temporary failure', async () => {
+  it('blocks ambiguous provider failure instead of blindly resubmitting', async () => {
     provider.behavior = 'temporary_failure';
     const obl = await createTestObligation();
     await processOutboundBatch({ pool, provider });
 
-    const { rows: [outbox] } = await pool.query('SELECT status, attempts, next_at FROM financial_payout_outbox WHERE obligation_id = $1', [obl.id]);
-    expect(outbox.status).toBe('PENDING');
-    expect(outbox.attempts).toBe(1);
-    expect(new Date(outbox.next_at).getTime()).toBeGreaterThan(Date.now());
+    const { rows: [outbox] } = await pool.query('SELECT status FROM financial_payout_outbox WHERE obligation_id = $1', [obl.id]);
+    const { rows: [payout] } = await pool.query('SELECT status FROM financial_payouts WHERE obligation_id = $1', [obl.id]);
+    expect(outbox.status).toBe('BLOCKED');
+    expect(payout.status).toBe('UNKNOWN_SUBMISSION');
+    expect(provider.createCallCount).toBe(1);
+    expect(await processOutboundBatch({ pool, provider })).toBe(0);
   });
 
   it('does not process when OUTBOUND_PAYMENTS_ENABLED is false', async () => {
@@ -199,26 +201,24 @@ describe('Event Processor', () => {
     expect(r2.duplicate).toBe(true);
   });
 
-  it('FAILED marks obligation FAILED', async () => {
+  it('FAILED without independent provider confirmation keeps the reservation blocked', async () => {
     const { obl, payout } = await setupSubmittedObligation();
     await processProviderEvent({ pool, ledgerService }, {
       providerEventId: `fail-${Date.now()}`, providerPayoutId: payout.provider_payout_id,
       eventCategory: 'TRANSFER', eventType: 'FAILED', raw: {},
     }, 'asaas');
-
     const { rows: [updated] } = await pool.query('SELECT status FROM financial_obligations WHERE id = $1', [obl.id]);
-    expect(updated.status).toBe('FAILED');
+    expect(updated.status).toBe('BLOCKED');
   });
 
-  it('CANCELLED marks obligation CANCELLED', async () => {
+  it('CANCELLED without independent provider confirmation also blocks', async () => {
     const { obl, payout } = await setupSubmittedObligation();
     await processProviderEvent({ pool, ledgerService }, {
       providerEventId: `cancel-${Date.now()}`, providerPayoutId: payout.provider_payout_id,
       eventCategory: 'TRANSFER', eventType: 'CANCELLED', raw: {},
     }, 'asaas');
-
     const { rows: [updated] } = await pool.query('SELECT status FROM financial_obligations WHERE id = $1', [obl.id]);
-    expect(updated.status).toBe('CANCELLED');
+    expect(updated.status).toBe('BLOCKED');
   });
 
   it('PROCESSING updates status without PAID', async () => {
