@@ -115,8 +115,19 @@ describe('Outbound Payment Provider Factory', () => {
 
 describe('Account Ownership Preflight', () => {
   const original = { ...process.env };
+  beforeEach(() => { process.env.ASAAS_ACCOUNT_EXPECTED_CNPJ = '67783601000199'; });
 
   afterEach(() => { process.env = { ...original }; });
+
+  it('fails closed if expected CNPJ is not explicitly configured', () => {
+    process.env.ASAAS_PAYOUT_ACCOUNT_OWNERSHIP_CONFIRMED = 'true';
+    delete process.env.ASAAS_ACCOUNT_EXPECTED_CNPJ;
+    const result = validateAccountOwnership({
+      personType: 'JURIDICA', cpfCnpj: '67783601000199',
+      generalStatus: 'APPROVED', transfersEnabled: true,
+    });
+    expect(result.passed).toBe(false);
+  });
 
   it('fails when flag is not set', () => {
     delete process.env.ASAAS_PAYOUT_ACCOUNT_OWNERSHIP_CONFIRMED;
