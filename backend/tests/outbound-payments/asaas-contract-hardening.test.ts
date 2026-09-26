@@ -139,8 +139,10 @@ describe('Asaas authenticated lookups are fail-closed', () => {
   });
 
   it('fails closed if transfer search is incomplete', async () => {
+    // All 10 pages are valid but the source still reports hasMore=true.
+    // An incomplete history cannot establish that a reference is unique.
     fetchMock.mockResolvedValue(response({
-      data: [{ id: 'ours', status: 'DONE', value: 20, externalReference: 'ours' }],
+      data: [{ id: 'unrelated', status: 'DONE', value: 20, externalReference: 'another' }],
       hasMore: true,
     }));
     const result = await new AsaasOutboundPaymentProvider().findTransferByExternalReference('ours');
