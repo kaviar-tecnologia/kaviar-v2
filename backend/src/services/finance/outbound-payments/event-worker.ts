@@ -39,7 +39,8 @@ export async function processEventBatch(deps: EventWorkerDeps): Promise<number> 
     const { rows } = await client.query(
       `SELECT id, provider_name, provider_event_id, event_category, event_type, payload_safe, processing_attempts
        FROM financial_provider_events
-       WHERE processing_status IN ('PENDING', 'FAILED_RETRYABLE', 'PROCESSING')
+       WHERE processed = false
+         AND processing_status IN ('PENDING', 'FAILED_RETRYABLE', 'PROCESSING')
          AND next_processing_at <= NOW()
        ORDER BY created_at ASC
        LIMIT $1
@@ -88,10 +89,13 @@ export async function processEventBatch(deps: EventWorkerDeps): Promise<number> 
       // ever treating them as a successful payment.
       await pool.query(
         `UPDATE financial_provider_events
-         SET processing_status = $2, processed = true, processed_at = NOW(),
-             processing_attempts = processing_attempts + 1
+         SET processing_status = $2, processed = $3, processed_at = NOW(),
+             processing_error_safe = $4, processing_attempts = processing_attempts + 1
          WHERE id = $1`,
-        [event.id, normalized.eventType === 'UNKNOWN' ? 'IGNORED_UNKNOWN_EVENT' : 'PROCESSED']
+        [event.id,
+          normalized.eventType === 'UNKNOWN' ? 'FAILED_REVIEW_REQUIRED' : 'PROCESSED',
+          normalized.eventType !== 'UNKNOWN',
+          normalized.eventType === 'UNKNOWN' ? 'UNHANDLED_PROVIDER_EVENT' : null]
       );
       processed++;
     } catch (err: any) {
