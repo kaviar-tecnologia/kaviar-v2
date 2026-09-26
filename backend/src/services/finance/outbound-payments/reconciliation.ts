@@ -7,7 +7,7 @@
 
 import { Pool } from 'pg';
 import { OutboundPaymentProvider } from './types';
-import { processProviderEvent, EventProcessorDeps } from './event-processor';
+import { processProviderEvent, EventProcessorDeps, providerConfirmationMatchesPayout } from './event-processor';
 
 export interface ReconciliationDeps {
   pool: Pool;
@@ -49,7 +49,10 @@ async function reconcileSubmitted(deps: ReconciliationDeps, report: OutboundReco
         ? await provider.getBillPayment(payout.provider_payout_id)
         : await provider.getTransfer(payout.provider_payout_id);
 
-      if (!result.found) continue;
+      if (!providerConfirmationMatchesPayout(payout, result)) {
+        report.errors.push(`payout=${payout.id}: PROVIDER_IDENTITY_OR_AMOUNT_MISMATCH`);
+        continue;
+      }
 
       const providerStatus = result.providerStatus?.toUpperCase() ?? '';
       if (['DONE', 'CONFIRMED', 'PAID'].includes(providerStatus)) {
