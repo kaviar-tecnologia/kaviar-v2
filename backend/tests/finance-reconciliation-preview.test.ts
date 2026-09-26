@@ -84,8 +84,8 @@ describe('finance reconciliation normalized preview — no posting', () => {
   });
 
   it('blocks over 100 rows and over 64 KiB', () => {
-    expect(() => parseNormalizedStatement(csv(...Array.from({ length: 101 },
-      (_, i) => line('entry_' + String(i))))).toThrow('CSV_ROW_LIMIT_OR_EMPTY');
+    const tooManyRows = csv(...Array.from({ length: 101 }, (_, i) => line('entry_' + String(i))));
+    expect(() => parseNormalizedStatement(tooManyRows)).toThrow('CSV_ROW_LIMIT_OR_EMPTY');
     expect(() => parseNormalizedStatement('A'.repeat(65_537))).toThrow('CSV_INVALID_SIZE_OR_ENCODING');
   });
 
