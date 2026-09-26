@@ -110,6 +110,7 @@ jobs:
             tests/outbound-payments/asaas-contract-hardening.test.ts \
             tests/outbound-payments/asaas-webhook-ingress.test.ts \
             tests/outbound-payments/asaas-event-worker.test.ts \
+            tests/outbound-payments/finance-integrated-homologation.test.ts \
             tests/outbound-payments/outbound-integration.test.ts
 
       - name: Typecheck backend
