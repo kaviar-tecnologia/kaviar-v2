@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import { SumUpError } from '../services/sumup-service';
 import {
   reconcilePendingSumUpRecharges,
@@ -14,8 +15,50 @@ function readToken(req: Request): string {
   return String(req.headers['x-sumup-token'] || req.headers['x-reconcile-token'] || '');
 }
 
+// Native SumUp checkout callback. This is NOT the token-protected internal endpoint.
+// SumUp sends { event_type: 'CHECKOUT_STATUS_CHANGED', id: '<checkout-id>' }.
+// The payload is untrusted: only a fresh authenticated GET to SumUp can credit the wallet.
+// A durable pending recharge + the reconciliation scheduler recover process interruptions.
+const nativeCallbackLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+});
+
+router.post('/sumup/callback', nativeCallbackLimiter, (req: Request, res: Response) => {
+  if (!process.env.SUMUP_CHECKOUT_CALLBACK_URL?.trim()) {
+    return res.sendStatus(503);
+  }
+
+  if (req.body?.event_type !== 'CHECKOUT_STATUS_CHANGED') {
+    // Unknown events are explicitly ignored per SumUp's webhook guidance.
+    return res.status(204).end();
+  }
+
+  const checkoutId = req.body?.id;
+  if (typeof checkoutId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(checkoutId)) {
+    return res.sendStatus(400);
+  }
+
+  // Acknowledge promptly. Retryable pending recharges are also scanned by the
+  // scheduler; the POST body/status is NEVER taken as evidence of a payment.
+  res.status(204).end();
+  void reconcileSumUpRechargeByExternalId(checkoutId)
+    .then((result) => {
+      if (result.final_status === 'not_found') {
+        console.warn('[SUMUP_CALLBACK] Unrecognized checkout notification');
+      }
+    })
+    .catch((err: unknown) => {
+      console.error('[SUMUP_CALLBACK] Reconciliation deferred to scheduler:', err instanceof SumUpError
+        ? err.safeMessage : 'internal_error');
+    });
+});
+
 // POST /api/webhooks/sumup
-// Aceita eventos da SumUp e reconcilia a recarga relacionada por external_id.
+// Legacy/internal token-protected notification (not the native return_url).
 router.post('/sumup', async (req: Request, res: Response) => {
   const expected = process.env.SUMUP_WEBHOOK_TOKEN || '';
   if (!expected) {
