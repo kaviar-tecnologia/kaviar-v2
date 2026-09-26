@@ -79,7 +79,9 @@ async function processMatchedEvent(
   const { pool } = deps;
 
   // Never trust an external reference to override a conflicting payout id.
-  if ((event.externalReference && event.externalReference !== payout.external_reference) ||
+  if (payout.provider_name !== providerName ||
+      (event.eventCategory === 'BILL_PAYMENT') !== (payout.instrument === 'ASAAS_BILL_PAYMENT') ||
+      (event.externalReference && event.externalReference !== payout.external_reference) ||
       (payout.provider_payout_id && event.providerPayoutId && event.providerPayoutId !== payout.provider_payout_id)) {
     throw Object.assign(new Error('Provider payout identity mismatch'), {
       code: OUTBOUND_PAYMENT_ERRORS.PAYOUT_STATE_CONFLICT,
@@ -106,9 +108,14 @@ async function processMatchedEvent(
       break;
   }
 
+  // Set processed + queue state together: if the process crashes before the
+  // worker's follow-up UPDATE, a completed event must not remain PROCESSING.
   await pool.query(
-    `UPDATE financial_provider_events SET processed = true, processed_at = NOW() WHERE provider_name = $1 AND provider_event_id = $2`,
-    [providerName, event.providerEventId]
+    `UPDATE financial_provider_events
+     SET processed = true, processed_at = NOW(), processing_status = $3
+     WHERE provider_name = $1 AND provider_event_id = $2`,
+    [providerName, event.providerEventId,
+      event.eventType === 'UNKNOWN' ? 'FAILED_REVIEW_REQUIRED' : 'PROCESSED']
   );
 
   return { processed: true, duplicate: false };
