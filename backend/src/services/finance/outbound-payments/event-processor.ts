@@ -24,7 +24,8 @@ export function providerConfirmationMatchesPayout(
   payout: { provider_payout_id: string | null; amount_cents: string | number | bigint; external_reference: string },
   result: TransferResult | BillPaymentResult,
 ): boolean {
-  const providerId = 'providerTransferId' in result ? result.providerTransferId : result.providerBillId;
+  const providerId = ('providerTransferId' in result ? result.providerTransferId : undefined)
+    ?? ('providerBillId' in result ? result.providerBillId : undefined);
   if (!result.found || !providerId || !payout.provider_payout_id ||
       providerId !== payout.provider_payout_id || result.amountCents == null ||
       result.amountCents !== BigInt(payout.amount_cents)) return false;
