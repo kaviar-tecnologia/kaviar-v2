@@ -153,6 +153,11 @@ export interface OutboundPaymentProvider {
 
   validateAvailability(): Promise<ProviderAvailability>;
 
+  /** Optional for fakes; mandatory and independently checked for real Asaas. */
+  getAccountStatus?(): Promise<{
+    personType?: string; cpfCnpj?: string; generalStatus?: string; transfersEnabled?: boolean;
+  } | null>;
+
   getAvailableBalance(): Promise<Money>;
 
   createTransfer(input: CreateTransferInput): Promise<CreateTransferResult>;
