@@ -17,11 +17,13 @@ function fixture() {
   const sumupConfirmedRechargeCents = 500_000n;
   const driverWalletLiabilityCents = 490_000n;
   const queries: string[] = [];
+  const statusBatches: string[][] = [];
   const db = {
     query: vi.fn(async (sql: string, params: unknown[] = []) => {
       queries.push(sql);
       if (sql.includes('SUM(net_amount_cents)') && sql.includes('ANY($1)')) {
         const statuses = params[0] as string[];
+        statusBatches.push(statuses);
         if (statuses.includes('APPROVED')) return { rows: [{ total: '1000' }] };
         if (statuses.includes('RESERVED')) return { rows: [{ total: '2000' }] };
         if (statuses.includes('SUBMITTING')) return { rows: [{ total: '3000' }] };
@@ -43,7 +45,7 @@ function fixture() {
     providerName: 'asaas', getAvailableBalance, validateAvailability,
     getAccountStatus, createTransfer, createBillPayment,
   } as unknown as OutboundPaymentProvider;
-  return { db, provider, queries, getAvailableBalance, validateAvailability,
+  return { db, provider, queries, statusBatches, getAvailableBalance, validateAvailability,
     getAccountStatus, createTransfer, createBillPayment,
     sumupConfirmedRechargeCents, driverWalletLiabilityCents };
 }
@@ -66,6 +68,8 @@ describe('Integrated SumUp / KAVIAR / Asaas homologation safety', () => {
     expect(h.approvedObligationsCents).toBe(1000n);
     expect(h.reservedObligationsCents).toBe(2000n);
     expect(h.inTransitCents).toBe(3000n);
+    expect(f.statusBatches).toContainEqual(['SUBMITTING', 'SUBMITTED', 'PROCESSING', 'BLOCKED']);
+    expect(f.statusBatches).toContainEqual(['RESERVED', 'QUEUED', 'RETRYABLE_FAILURE']);
     expect(h.deficitCents).toBe(6000n);
     expect(h.bufferCents).toBe(0n);
     expect(f.queries.every(q => !/wallet_recharges|driver_wallets|wallet_ledger/i.test(q))).toBe(true);
