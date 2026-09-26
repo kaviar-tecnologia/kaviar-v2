@@ -93,7 +93,7 @@ async function reconcileUnknown(deps: ReconciliationDeps, report: OutboundReconc
       // A bill payment must never be linked to an unrelated Pix transfer.
       // Without a documented bill lookup by our reference, keep it blocked for review.
       if (payout.instrument === 'ASAAS_PIX_TRANSFER' && provider.findTransferByExternalReference) {
-        const result = await provider.findTransferByExternalReference(payout.external_reference);
+        const result = await provider.findTransferByExternalReference(payout.external_reference, new Date(payout.created_at));
         if (result?.found && result.providerTransferId &&
             result.externalReference === payout.external_reference &&
             result.amountCents === BigInt(payout.amount_cents)) {
