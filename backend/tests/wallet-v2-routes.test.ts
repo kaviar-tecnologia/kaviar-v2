@@ -44,7 +44,7 @@ class TestSumUpError extends Error {
 
 vi.mock('../src/services/sumup-service', () => ({
   createSumUpCheckout: (...args: any[]) => mockCreateSumUpCheckout(...args),
-  getSumUpCheckoutCallbackUrl: () => undefined,
+  getSumUpCheckoutCallbackUrl: () => process.env.SUMUP_CHECKOUT_CALLBACK_URL || undefined,
   processSumUpCheckout: (...args: any[]) => mockProcessSumUpCheckout(...args),
   getSumUpCheckoutPaymentMethods: (...args: any[]) => mockGetSumUpCheckoutPaymentMethods(...args),
   getSumUpCheckout: (...args: any[]) => mockGetSumUpCheckout(...args),
@@ -83,6 +83,7 @@ describe('Wallet V2 Routes (sumup-only)', () => {
   beforeEach(() => {
     mockQuery.mockReset();
     mockCreateSumUpCheckout.mockReset();
+    delete process.env.SUMUP_CHECKOUT_CALLBACK_URL;
     mockProcessSumUpCheckout.mockReset();
     mockGetSumUpCheckoutPaymentMethods.mockReset();
     mockGetSumUpCheckout.mockReset();
