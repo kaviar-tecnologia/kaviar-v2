@@ -329,6 +329,13 @@ describe('Event Worker Scheduler Flag', () => {
     expect(mod.startEventWorkerScheduler()).toBe(true);
   });
 
+  it('settles existing events even when new outbound submissions are disabled', () => {
+    process.env.OUTBOUND_PROVIDER_EVENT_WORKER_ENABLED = 'true';
+    process.env.OUTBOUND_PAYMENTS_ENABLED = 'false';
+    process.env.NODE_ENV = 'development';
+    expect(mod.startEventWorkerScheduler()).toBe(true);
+  });
+
   it('does not start in NODE_ENV=test', () => {
     process.env.OUTBOUND_PROVIDER_EVENT_WORKER_ENABLED = 'true';
     process.env.OUTBOUND_PAYMENTS_ENABLED = 'true';
