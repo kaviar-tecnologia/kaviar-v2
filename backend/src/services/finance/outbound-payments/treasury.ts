@@ -5,17 +5,19 @@
  */
 
 import { Pool } from 'pg';
-import { OutboundPaymentProvider } from './types';
+import { OutboundPaymentProvider, Money } from './types';
+import { validateAccountOwnership } from './account-preflight';
 
 export interface TreasuryHealth {
-  providerBalanceCents: bigint;
+  /** null means the provider balance could not be verified, never zero by fallback. */
+  providerBalanceCents: bigint | null;
   approvedObligationsCents: bigint;
   reservedObligationsCents: bigint;
   inTransitCents: bigint;
   dueNext7DaysCents: bigint;
   dueNext30DaysCents: bigint;
-  bufferCents: bigint;
-  deficitCents: bigint;
+  bufferCents: bigint | null;
+  deficitCents: bigint | null;
   accountOwnershipConfirmed: boolean;
   providerAvailable: boolean;
 }
@@ -25,7 +27,7 @@ export async function calculateTreasuryHealth(
   provider: OutboundPaymentProvider,
 ): Promise<TreasuryHealth> {
   const [balance, approved, reserved, inTransit, due7, due30] = await Promise.all([
-    provider.getAvailableBalance().catch(() => ({ amountCents: 0n, currency: 'BRL' })),
+    provider.getAvailableBalance().catch(() => null),
     sumObligationsByStatus(pool, ['APPROVED', 'SCHEDULED']),
     sumObligationsByStatus(pool, ['RESERVED', 'QUEUED']),
     sumObligationsByStatus(pool, ['SUBMITTING', 'SUBMITTED', 'PROCESSING']),
@@ -33,23 +35,35 @@ export async function calculateTreasuryHealth(
     sumDueWithinDays(pool, 30),
   ]);
 
-  const totalCommitted = approved + reserved + inTransit;
-  const deficit = totalCommitted > balance.amountCents ? totalCommitted - balance.amountCents : 0n;
-
+  // A SumUp recharge is a driver wallet liability, NOT available Asaas cash.
+  // Do not infer Asaas funding from wallet_recharges, driver_wallets or ledgers.
+  const validBalance = (value: Money | null): value is Money =>
+    value !== null && value.currency === 'BRL' &&
+    typeof value.amountCents === 'bigint' && value.amountCents >= 0n;
   const providerAvail = await provider.validateAvailability().catch(() => ({ available: false }));
-  const ownershipConfirmed = process.env.ASAAS_PAYOUT_ACCOUNT_OWNERSHIP_CONFIRMED === 'true';
+  const providerAvailable = validBalance(balance) && providerAvail.available === true;
+  const verifiedBalance = providerAvailable ? balance.amountCents : null;
+  const totalCommitted = approved + reserved + inTransit;
+  const deficit = verifiedBalance === null ? null :
+    totalCommitted > verifiedBalance ? totalCommitted - verifiedBalance : 0n;
+
+  let ownershipConfirmed = false;
+  if (provider.providerName === 'asaas' && provider.getAccountStatus) {
+    const account = await provider.getAccountStatus().catch(() => null);
+    ownershipConfirmed = validateAccountOwnership(account).passed;
+  }
 
   return {
-    providerBalanceCents: balance.amountCents,
+    providerBalanceCents: verifiedBalance,
     approvedObligationsCents: approved,
     reservedObligationsCents: reserved,
     inTransitCents: inTransit,
     dueNext7DaysCents: due7,
     dueNext30DaysCents: due30,
-    bufferCents: balance.amountCents > totalCommitted ? balance.amountCents - totalCommitted : 0n,
+    bufferCents: verifiedBalance === null ? null : verifiedBalance > totalCommitted ? verifiedBalance - totalCommitted : 0n,
     deficitCents: deficit,
     accountOwnershipConfirmed: ownershipConfirmed,
-    providerAvailable: providerAvail.available,
+    providerAvailable,
   };
 }
 
