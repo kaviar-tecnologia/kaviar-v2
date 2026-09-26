@@ -113,6 +113,13 @@ jobs:
             tests/outbound-payments/finance-integrated-homologation.test.ts \
             tests/outbound-payments/outbound-integration.test.ts
 
+      - name: Run read-only financial reconciliation preview tests
+        run: |
+          cd backend
+          npx vitest run \
+            tests/finance-reconciliation-preview.test.ts \
+            tests/admin-finance-reconciliation-preview.test.ts
+
       - name: Typecheck backend
         run: cd backend && npx tsc --noEmit -p tsconfig.build.json
 
