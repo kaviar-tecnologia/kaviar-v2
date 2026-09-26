@@ -50,6 +50,17 @@ describe('finance multi-entity and business-unit foundation', () => {
     expect(treasury).toContain('Não disponível');
   });
 
+  it('does not fabricate Asaas cash or hide local obligations during provider outage', () => {
+    expect(treasury).toContain("health?.providerBalanceCents != null");
+    expect(treasury).toContain("index === 0 || index === 3 ? treasuryAvailable : value != null");
+    expect(treasury).toContain('Bloqueadas / em conciliação (consolidado)');
+    expect(treasury).toContain('health?.blockedObligationsCents != null');
+    expect(treasury).toContain('health?.approvedObligationsCents != null');
+    expect(treasury).toContain('health?.inTransitCents != null');
+    expect(financeHome).toContain('treasuryHealth?.deficitCents != null');
+    expect(financeHome).not.toContain("treasuryHealth?.deficitCents || '0'");
+  });
+
   it('administers dated filial-to-territory responsibility', () => {
     expect(entityTerritories).toContain('Filiais e Territórios');
     expect(entityTerritories).toContain('effective_from');
