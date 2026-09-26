@@ -209,6 +209,7 @@ router.get('/treasury/health', async (_req: Request, res: Response) => {
         approvedObligationsCents: health.approvedObligationsCents.toString(),
         reservedObligationsCents: health.reservedObligationsCents.toString(),
         inTransitCents: health.inTransitCents.toString(),
+        blockedObligationsCents: health.blockedObligationsCents.toString(),
         dueNext7DaysCents: health.dueNext7DaysCents.toString(),
         dueNext30DaysCents: health.dueNext30DaysCents.toString(),
         bufferCents: health.bufferCents?.toString() ?? null,
