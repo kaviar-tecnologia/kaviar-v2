@@ -258,7 +258,8 @@ async function handleFailed(deps: EventProcessorDeps, payout: any, event: Normal
       }
       if (currentStatus.found) {
         const provStatus = (currentStatus.providerStatus ?? '').toUpperCase();
-        if (provStatus === 'DONE' || provStatus === 'CONFIRMED') {
+        if (provStatus === 'DONE' || provStatus === 'CONFIRMED' ||
+            (payout.instrument === 'ASAAS_BILL_PAYMENT' && provStatus === 'PAID')) {
           // Provider says DONE — apply payment, NOT release
           await handleDone(deps, payout, {
             ...event,
