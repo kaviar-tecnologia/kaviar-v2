@@ -14,6 +14,7 @@ export interface TreasuryHealth {
   approvedObligationsCents: bigint;
   reservedObligationsCents: bigint;
   inTransitCents: bigint;
+  blockedObligationsCents: bigint;
   dueNext7DaysCents: bigint;
   dueNext30DaysCents: bigint;
   bufferCents: bigint | null;
@@ -26,13 +27,14 @@ export async function calculateTreasuryHealth(
   pool: Pool,
   provider: OutboundPaymentProvider,
 ): Promise<TreasuryHealth> {
-  const [balance, approved, reserved, inTransit, due7, due30] = await Promise.all([
+  const [balance, approved, reserved, inTransit, blocked, due7, due30] = await Promise.all([
     provider.getAvailableBalance().catch(() => null),
     sumObligationsByStatus(pool, ['APPROVED', 'SCHEDULED']),
     sumObligationsByStatus(pool, ['RESERVED', 'QUEUED', 'RETRYABLE_FAILURE']),
-    // An uncertain/blocked submission still consumes the risk budget until
-    // conclusively reconciled; never show it as uncommitted cash.
-    sumObligationsByStatus(pool, ['SUBMITTING', 'SUBMITTED', 'PROCESSING', 'BLOCKED']),
+    sumObligationsByStatus(pool, ['SUBMITTING', 'SUBMITTED', 'PROCESSING']),
+    // Blocked work remains economically committed, but is not labelled
+    // 'in transit' on the dashboard; it needs independent reconciliation.
+    sumObligationsByStatus(pool, ['BLOCKED', 'BLOCKED_POLICY_REVIEW']),
     sumDueWithinDays(pool, 7),
     sumDueWithinDays(pool, 30),
   ]);
@@ -45,7 +47,7 @@ export async function calculateTreasuryHealth(
   const providerAvail = await provider.validateAvailability().catch(() => ({ available: false }));
   const providerAvailable = validBalance(balance) && providerAvail.available === true;
   const verifiedBalance = providerAvailable ? balance.amountCents : null;
-  const totalCommitted = approved + reserved + inTransit;
+  const totalCommitted = approved + reserved + inTransit + blocked;
   const deficit = verifiedBalance === null ? null :
     totalCommitted > verifiedBalance ? totalCommitted - verifiedBalance : 0n;
 
@@ -60,6 +62,7 @@ export async function calculateTreasuryHealth(
     approvedObligationsCents: approved,
     reservedObligationsCents: reserved,
     inTransitCents: inTransit,
+    blockedObligationsCents: blocked,
     dueNext7DaysCents: due7,
     dueNext30DaysCents: due30,
     bufferCents: verifiedBalance === null ? null : verifiedBalance > totalCommitted ? verifiedBalance - totalCommitted : 0n,
