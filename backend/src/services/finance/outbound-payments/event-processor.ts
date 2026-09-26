@@ -224,8 +224,12 @@ async function handleFailed(deps: EventProcessorDeps, payout: any, event: Normal
   // If provider is unreachable or status is ambiguous, hold reservation.
 
   // Import provider dynamically to avoid circular deps
-  const { createOutboundPaymentProvider } = await import('./providers');
-  const provider = createOutboundPaymentProvider();
+  const { AsaasOutboundPaymentProvider, createOutboundPaymentProvider } = await import('./providers');
+  // A kill switch stops NEW payment submissions, not safe reconciliation of
+  // already-submitted Asaas transfers or bills.
+  const provider = payout.provider_name === 'asaas'
+    ? new AsaasOutboundPaymentProvider()
+    : createOutboundPaymentProvider();
 
   if (!payout.provider_payout_id) {
     await pool.query(
