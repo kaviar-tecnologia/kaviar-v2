@@ -229,7 +229,7 @@ async function handleFailed(deps: EventProcessorDeps, payout: any, event: Normal
 
   if (!payout.provider_payout_id) {
     await pool.query(
-      "UPDATE financial_payouts SET status = 'BLOCKED_PROVIDER_RECONCILIATION', updated_at = NOW() WHERE id = $1",
+      "UPDATE financial_payouts SET status = 'BLOCKED_PROVIDER_RECONCILIATION', updated_at = NOW() WHERE id = $1 AND status NOT IN ('DONE', 'FAILED', 'CANCELLED')",
       [payout.id]
     );
     await pool.query(
@@ -247,7 +247,7 @@ async function handleFailed(deps: EventProcessorDeps, payout: any, event: Normal
 
       if (!currentStatus.found) {
         await pool.query(
-          "UPDATE financial_payouts SET status = 'BLOCKED_PROVIDER_RECONCILIATION', updated_at = NOW() WHERE id = $1",
+          "UPDATE financial_payouts SET status = 'BLOCKED_PROVIDER_RECONCILIATION', updated_at = NOW() WHERE id = $1 AND status NOT IN ('DONE', 'FAILED', 'CANCELLED')",
           [payout.id]
         );
         await pool.query(
@@ -270,11 +270,11 @@ async function handleFailed(deps: EventProcessorDeps, payout: any, event: Normal
         if (!['FAILED', 'CANCELLED', 'ERROR'].includes(provStatus)) {
           // Ambiguous status (PENDING, IN_BANK_PROCESSING, etc.) — do NOT release
           await pool.query(
-            `UPDATE financial_payouts SET status = 'BLOCKED_PROVIDER_RECONCILIATION', updated_at = NOW() WHERE id = $1`,
+            `UPDATE financial_payouts SET status = 'BLOCKED_PROVIDER_RECONCILIATION', updated_at = NOW() WHERE id = $1 AND status NOT IN ('DONE', 'FAILED', 'CANCELLED')`,
             [payout.id]
           );
           await pool.query(
-            `UPDATE financial_obligations SET status = 'BLOCKED', failure_code = 'RECONCILIATION_REQUIRED', updated_at = NOW() WHERE id = $1`,
+            `UPDATE financial_obligations SET status = 'BLOCKED', failure_code = 'RECONCILIATION_REQUIRED', updated_at = NOW() WHERE id = $1 AND status NOT IN ('PAID', 'FAILED', 'CANCELLED')`,
             [payout.obligation_id]
           );
           return;
@@ -283,11 +283,11 @@ async function handleFailed(deps: EventProcessorDeps, payout: any, event: Normal
     } catch {
       // Provider unreachable — cannot confirm, hold reservation
       await pool.query(
-        `UPDATE financial_payouts SET status = 'BLOCKED_PROVIDER_RECONCILIATION', updated_at = NOW() WHERE id = $1`,
+        `UPDATE financial_payouts SET status = 'BLOCKED_PROVIDER_RECONCILIATION', updated_at = NOW() WHERE id = $1 AND status NOT IN ('DONE', 'FAILED', 'CANCELLED')`,
         [payout.id]
       );
       await pool.query(
-        `UPDATE financial_obligations SET status = 'BLOCKED', failure_code = 'RECONCILIATION_REQUIRED', updated_at = NOW() WHERE id = $1`,
+        `UPDATE financial_obligations SET status = 'BLOCKED', failure_code = 'RECONCILIATION_REQUIRED', updated_at = NOW() WHERE id = $1 AND status NOT IN ('PAID', 'FAILED', 'CANCELLED')`,
         [payout.obligation_id]
       );
       return;
