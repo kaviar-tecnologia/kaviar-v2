@@ -12,7 +12,9 @@ liga flags nem cria migration. Não equivale a homologação externa concluída.
   carteira representa obrigação da plataforma; NÃO representa liquidez da Asaas.
 - **Asaas**: saldo para saída vem exclusivamente do GET autenticado de saldo
   do provedor com moeda BRL. A soma das obrigações financeiras é registrada
-  separadamente. Não calcular capacidade de pagamento pela soma das recargas
+  separadamente; obrigações bloqueadas, tentativas incertas e falhas recuperáveis
+  permanecem no orçamento de compromissos até conciliação definitiva.
+  Não calcular capacidade de pagamento pela soma das recargas
   confirmadas, pelo saldo das carteiras nem pelos créditos pendentes.
 - **Entre provedores**: transferência de tesouraria, liquidação bancária, taxas,
   estornos e reconhecimento de receita/obrigações exigem lançamento e
