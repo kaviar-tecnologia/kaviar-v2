@@ -173,6 +173,31 @@ describe('Asaas authenticated lookups are fail-closed', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it.each([400, 422, 500])('treats Asaas transfer POST HTTP %s as ambiguous, not definitive release', async (status) => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false, status, json: async () => ({ errors: [{ code: 'REJECTED' }] }),
+    });
+    const result = await new AsaasOutboundPaymentProvider().createTransfer({
+      obligationId: 'obligation-safe', payeeId: 'payee-safe',
+      amountCents: 2500n, pixAddressKey: '52998224725',
+      pixAddressKeyType: 'CPF', externalReference: 'kaviar-payment:test:safe',
+    });
+    expect(result.success).toBe(false);
+    expect(result.isDefinitiveFailure).toBe(false);
+    expect(result.errorCode).toBe(`HTTP_${status}`);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([400, 422, 500])('treats Asaas bill POST HTTP %s as ambiguous', async (status) => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status, json: async () => ({}) });
+    const result = await new AsaasOutboundPaymentProvider().createBillPayment({
+      obligationId: 'bill-safe', identificationField: '01234567890123456789012345678901234567890123',
+      externalReference: 'kaviar-payment:bill:safe',
+    });
+    expect(result.success).toBe(false);
+    expect(result.isDefinitiveFailure).toBe(false);
+  });
+
   it('does not submit transfers with nonrepresentable cent amounts', async () => {
     const result = await new AsaasOutboundPaymentProvider().createTransfer({
       obligationId: 'obl-1', payeeId: 'payee-1', amountCents: BigInt(Number.MAX_SAFE_INTEGER) + 1n,

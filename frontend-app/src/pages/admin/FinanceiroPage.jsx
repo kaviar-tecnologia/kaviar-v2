@@ -1104,7 +1104,7 @@ export default function FinanceiroPage() {
                 ['Resultado', executiveSummary?.summary?.realized_result_cents || '0', true],
                 ['Entradas previstas (ledger)', executiveSummary?.summary?.forecast_revenue_cents || '0', true],
                 ['Saídas previstas (ledger)', executiveSummary?.summary?.forecast_expense_cents || '0', true],
-                ['Déficit tesouraria', treasuryHealth?.deficitCents || '0', Boolean(providerHealth?.available && treasuryHealth?.accountOwnershipConfirmed)],
+                ['Déficit tesouraria', treasuryHealth?.deficitCents, Boolean(providerHealth?.available && treasuryHealth?.providerAvailable && treasuryHealth?.accountOwnershipConfirmed && treasuryHealth?.deficitCents != null)],
               ].map(([label, value, available]) => (
                 <Grid item xs={6} md={2} key={label}>
                   <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.10)', minHeight: 78 }}>

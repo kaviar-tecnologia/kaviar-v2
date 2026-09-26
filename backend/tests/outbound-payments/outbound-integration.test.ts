@@ -97,6 +97,32 @@ describe('Outbound Worker', () => {
     expect(updated.status).toBe('SUBMITTED');
   });
 
+  it('blocks when the Asaas balance lookup fails; no provider POST is issued', async () => {
+    provider.getAvailableBalance = async () => { throw new Error('PROVIDER_UNREACHABLE'); };
+    const obl = await createTestObligation();
+    await processOutboundBatch({ pool, provider });
+    const { rows: [outbox] } = await pool.query(
+      'SELECT status FROM financial_payout_outbox WHERE obligation_id = $1', [obl.id]
+    );
+    const { rows: [updated] } = await pool.query(
+      'SELECT status FROM financial_obligations WHERE id = $1', [obl.id]
+    );
+    expect(outbox.status).toBe('BLOCKED');
+    expect(updated.status).toBe('BLOCKED');
+    expect(provider.createCallCount).toBe(0);
+  });
+
+  it('refuses non-BRL provider balance even when numerically sufficient', async () => {
+    provider.getAvailableBalance = async () => ({ amountCents: 1_000_000n, currency: 'USD' });
+    const obl = await createTestObligation();
+    await processOutboundBatch({ pool, provider });
+    const { rows: [outbox] } = await pool.query(
+      'SELECT status FROM financial_payout_outbox WHERE obligation_id = $1', [obl.id]
+    );
+    expect(outbox.status).toBe('BLOCKED');
+    expect(provider.createCallCount).toBe(0);
+  });
+
   it('blocks when purpose disabled', async () => {
     process.env.DRIVER_ANNUAL_INCENTIVE_ENABLED = 'false';
     const obl = await createTestObligation();

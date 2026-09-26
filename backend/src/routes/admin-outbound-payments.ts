@@ -205,14 +205,15 @@ router.get('/treasury/health', async (_req: Request, res: Response) => {
     const health = await calculateTreasuryHealth(pool, provider);
     res.json({
       success: true, data: {
-        providerBalanceCents: health.providerBalanceCents.toString(),
+        providerBalanceCents: health.providerBalanceCents?.toString() ?? null,
         approvedObligationsCents: health.approvedObligationsCents.toString(),
         reservedObligationsCents: health.reservedObligationsCents.toString(),
         inTransitCents: health.inTransitCents.toString(),
+        blockedObligationsCents: health.blockedObligationsCents.toString(),
         dueNext7DaysCents: health.dueNext7DaysCents.toString(),
         dueNext30DaysCents: health.dueNext30DaysCents.toString(),
-        bufferCents: health.bufferCents.toString(),
-        deficitCents: health.deficitCents.toString(),
+        bufferCents: health.bufferCents?.toString() ?? null,
+        deficitCents: health.deficitCents?.toString() ?? null,
         accountOwnershipConfirmed: health.accountOwnershipConfirmed,
         providerAvailable: health.providerAvailable,
       },
