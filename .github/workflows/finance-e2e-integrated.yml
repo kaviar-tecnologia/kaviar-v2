@@ -118,7 +118,8 @@ jobs:
           cd backend
           npx vitest run \
             tests/finance-reconciliation-preview.test.ts \
-            tests/admin-finance-reconciliation-preview.test.ts
+            tests/admin-finance-reconciliation-preview.test.ts \
+            tests/admin-finance-reconciliation-preview.integration.test.ts
 
       - name: Typecheck backend
         run: cd backend && npx tsc --noEmit -p tsconfig.build.json
