@@ -33,6 +33,13 @@ https://docs.asaas.com/docs/webhook-para-pague-contas
 - Real outgoing destination must be verified and AES-GCM decrypted at the worker boundary.
   Never send ciphertext or log a full Pix key/barcode.
 - Only Pix CPF/CNPJ and validated bill destinations are currently allowed.
+- Unknown transfer lookup uses the documented `dateCreated[ge]/[le]`, `limit`
+  and `offset` filters, then compares `externalReference` locally. An incomplete
+  scan, multiple matching transfers or amount discrepancy means **manual review**.
+  Bills remain blocked without a verified provider id; never join them to Pix transfers.
+- `ASAAS_BASE_URL` must be an explicit HTTPS API origin in production
+  (e.g. `https://api.asaas.com`). Nonproduction fallback is the official
+  `https://api-sandbox.asaas.com`.
 - A stale PROCESSING outbox item or existing payout **must not be resubmitted**.
   An HTTP 5xx/timeout/ambiguous response becomes UNKNOWN_SUBMISSION and BLOCKED;
   reconcile the external reference before any retry.
