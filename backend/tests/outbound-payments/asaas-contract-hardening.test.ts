@@ -104,4 +104,56 @@ describe('Asaas authenticated lookups are fail-closed', () => {
     expect(result.isTimeout).toBe(true);
     expect(result.isDefinitiveFailure).toBeUndefined();
   });
+  it('paginates documented date-filtered transfer listing and matches exact reference', async () => {
+    fetchMock.mockResolvedValueOnce(response({
+      data: [{ id: 'not-ours', status: 'DONE', value: 10, externalReference: 'someone-else' }],
+      hasMore: true,
+    }));
+    fetchMock.mockResolvedValueOnce(response({
+      data: [{ id: 'ours-1', status: 'PENDING', value: 20, externalReference: 'ours' }],
+      hasMore: false,
+    }));
+    const result = await new AsaasOutboundPaymentProvider()
+      .findTransferByExternalReference('ours', new Date('2026-09-25T12:00:00Z'));
+    expect(result?.providerTransferId).toBe('ours-1');
+    expect(result?.amountCents).toBe(2000n);
+    const urls = fetchMock.mock.calls.map(c => new URL(c[0]));
+    expect(urls).toHaveLength(2);
+    expect(urls[0].pathname).toBe('/v3/transfers');
+    expect(urls[0].searchParams.has('externalReference')).toBe(false);
+    expect(urls[0].searchParams.get('dateCreated[ge]')).toBe('2026-09-24');
+    expect(urls[0].searchParams.get('limit')).toBe('100');
+    expect(urls[1].searchParams.get('offset')).toBe('100');
+  });
+
+  it('does not return a payout when two transfers have same reference', async () => {
+    fetchMock.mockResolvedValueOnce(response({
+      data: [
+        { id: 'first', status: 'DONE', value: 20, externalReference: 'ours' },
+        { id: 'second', status: 'DONE', value: 20, externalReference: 'ours' },
+      ],
+      hasMore: false,
+    }));
+    const result = await new AsaasOutboundPaymentProvider().findTransferByExternalReference('ours');
+    expect(result).toBeNull();
+  });
+
+  it('fails closed if transfer search is incomplete', async () => {
+    fetchMock.mockResolvedValue(response({
+      data: [{ id: 'ours', status: 'DONE', value: 20, externalReference: 'ours' }],
+      hasMore: true,
+    }));
+    const result = await new AsaasOutboundPaymentProvider().findTransferByExternalReference('ours');
+    expect(result).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(10);
+  });
+
+  it('production requires explicitly configured Asaas API origin', async () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.ASAAS_BASE_URL;
+    const result = await new AsaasOutboundPaymentProvider().getAccountStatus();
+    expect(result).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
 });
