@@ -115,7 +115,7 @@ jobs:
       - name: Run finance dashboard contract tests
         run: |
           cd frontend-app
-          npx vitest run src/__tests__/finance-multientity.test.js
+          npx vitest run src/__tests__/finance-multientity.test.js src/__tests__/finance-payables-ui.test.js
 
       - name: Run E2E integrated tests
         run: |

@@ -503,8 +503,18 @@ export default function FinanceiroPage() {
   }, [costCentersQuery]);
 
   const renderAccountsTab = () => {
+    const unassignedPaymentAccounts = accountsState.data.filter(
+      (account) => account.is_active && account.type === 'PIX_WALLET' && !account.legal_entity_id
+    );
     return (
       <>
+        {unassignedPaymentAccounts.length > 0 && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            {unassignedPaymentAccounts.length} conta(s) de pagamento ativa(s) sem CNPJ responsável.
+            Confirme a titularidade com o provedor antes de editar o vínculo ou habilitar repasses.
+            Este aviso não confirma titularidade nem altera pagamentos.
+          </Alert>
+        )}
         <Grid container spacing={1.5} sx={{ mb: 2 }}>
           <Grid item xs={12} md={4}>
             <TextField
@@ -645,7 +655,11 @@ export default function FinanceiroPage() {
                     <TableRow hover key={item.id}>
                       <TableCell>{item.code || '-'}</TableCell>
                       <TableCell>{item.name || '-'}</TableCell>
-                      <TableCell>{item.legal_entity?.nome_fantasia || item.legal_entity?.razao_social || '-'}</TableCell>
+                      <TableCell>
+                        {item.legal_entity
+                          ? (item.legal_entity.nome_fantasia || item.legal_entity.razao_social)
+                          : <Chip size="small" label="Sem CNPJ vinculado" sx={{ bgcolor: '#FEF3C7', color: '#92400E', fontWeight: 700 }} />}
+                      </TableCell>
                         <TableCell>{item.institution_name || '-'}</TableCell>
                       <TableCell>{item.type || '-'}</TableCell>
                       <TableCell>{item.currency || '-'}</TableCell>
