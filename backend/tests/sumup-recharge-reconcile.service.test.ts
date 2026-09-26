@@ -40,6 +40,17 @@ function seedRecharge(partial: Partial<RechargeRow> & Pick<RechargeRow, 'id'>) {
   };
 }
 
+function paidCheckout(checkoutId: string, rechargeId: string, amount = 25) {
+  return {
+    id: checkoutId,
+    status: 'PAID',
+    checkout_reference: `wallet_v2:${rechargeId}`,
+    amount,
+    currency: 'BRL',
+    merchant_code: 'TEST_MERCHANT',
+  };
+}
+
 function installDbMock() {
   mockQuery.mockImplementation(async (sql: string, params: any[] = []) => {
     if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') {
@@ -149,6 +160,11 @@ vi.mock('../src/db', () => ({
 
 vi.mock('../src/services/sumup-service', () => ({
   getSumUpCheckout: (...args: any[]) => mockGetSumUpCheckout(...args),
+  SumUpError: class extends Error {
+    constructor(readonly statusCode: number, readonly safeMessage: string) {
+      super(safeMessage);
+    }
+  },
 }));
 
 vi.mock('../src/services/wallet-v2/wallet.service', () => ({
@@ -208,12 +224,13 @@ describe('sumup-recharge.service', () => {
     state.familyReturnExists = false;
     installDbMock();
     process.env.FAMILY_RETURN_PERCENT = '0';
+    process.env.SUMUP_MERCHANT_CODE = 'TEST_MERCHANT';
     await vi.resetModules();
   });
 
   it('1) PAID confirma e credita saldo uma única vez', async () => {
     seedRecharge({ id: 'rch-paid-1', status: 'pending', external_id: 'checkout-paid-1' });
-    mockGetSumUpCheckout.mockResolvedValueOnce({ id: 'checkout-paid-1', status: 'PAID' });
+    mockGetSumUpCheckout.mockResolvedValueOnce(paidCheckout('checkout-paid-1', 'rch-paid-1'));
 
     const { reconcileSumUpRechargeById } = await import('../src/services/wallet-v2/sumup-recharge.service');
     const result = await reconcileSumUpRechargeById('rch-paid-1');
@@ -227,7 +244,7 @@ describe('sumup-recharge.service', () => {
 
   it('2) PAID repetido é idempotente e não duplica crédito', async () => {
     seedRecharge({ id: 'rch-idem-1', status: 'pending', external_id: 'checkout-idem-1' });
-    mockGetSumUpCheckout.mockResolvedValue({ id: 'checkout-idem-1', status: 'PAID' });
+    mockGetSumUpCheckout.mockResolvedValue(paidCheckout('checkout-idem-1', 'rch-idem-1'));
 
     const { reconcileSumUpRechargeById } = await import('../src/services/wallet-v2/sumup-recharge.service');
 
@@ -283,7 +300,7 @@ describe('sumup-recharge.service', () => {
 
   it('6) reconcile por external_id respeita idempotência quando repetido', async () => {
     seedRecharge({ id: 'rch-ext-1', status: 'pending', external_id: 'checkout-ext-1' });
-    mockGetSumUpCheckout.mockResolvedValue({ id: 'checkout-ext-1', status: 'PAID' });
+    mockGetSumUpCheckout.mockResolvedValue(paidCheckout('checkout-ext-1', 'rch-ext-1'));
 
     const { reconcileSumUpRechargeByExternalId } = await import('../src/services/wallet-v2/sumup-recharge.service');
     const first = await reconcileSumUpRechargeByExternalId('checkout-ext-1');
@@ -296,7 +313,7 @@ describe('sumup-recharge.service', () => {
 
   it('7) erro durante crédito não deve deixar recarga falsamente concluída', async () => {
     seedRecharge({ id: 'rch-credit-error-1', status: 'pending', external_id: 'checkout-credit-error-1' });
-    mockGetSumUpCheckout.mockResolvedValueOnce({ id: 'checkout-credit-error-1', status: 'PAID' });
+    mockGetSumUpCheckout.mockResolvedValueOnce(paidCheckout('checkout-credit-error-1', 'rch-credit-error-1'));
     walletCreditShouldThrow = true;
 
     const { reconcileSumUpRechargeById } = await import('../src/services/wallet-v2/sumup-recharge.service');
@@ -304,4 +321,34 @@ describe('sumup-recharge.service', () => {
     await expect(reconcileSumUpRechargeById('rch-credit-error-1')).rejects.toThrow('CREDIT_RECHARGE_FAILED');
     expect(state.recharges['rch-credit-error-1'].status).toBe('pending');
   });
+  it.each([
+    ['checkout desconhecido', { id: 'checkout-other' }],
+    ['referência divergente', { checkout_reference: 'wallet_v2:another' }],
+    ['valor diferente', { amount: 26 }],
+    ['moeda diferente', { currency: 'USD' }],
+    ['merchant diferente', { merchant_code: 'OTHER_MERCHANT' }],
+    ['sem montante', { amount: undefined }],
+    ['fração de centavo', { amount: 25.001 }],
+  ])('8) PAID com %s é bloqueado sem crédito', async (_reason, mismatch) => {
+    seedRecharge({ id: 'rch-mismatch-1', external_id: 'checkout-mismatch-1' });
+    mockGetSumUpCheckout.mockResolvedValueOnce({
+      ...paidCheckout('checkout-mismatch-1', 'rch-mismatch-1'),
+      ...mismatch,
+    });
+
+    const { reconcileSumUpRechargeById } = await import('../src/services/wallet-v2/sumup-recharge.service');
+    await expect(reconcileSumUpRechargeById('rch-mismatch-1')).rejects.toMatchObject({ statusCode: 502 });
+    expect(walletCreditCalls).toBe(0);
+    expect(state.recharges['rch-mismatch-1'].status).toBe('pending');
+  });
+
+  it('9) sem merchant configurado falha fechado', async () => {
+    seedRecharge({ id: 'rch-no-merchant', external_id: 'checkout-no-merchant' });
+    mockGetSumUpCheckout.mockResolvedValueOnce(paidCheckout('checkout-no-merchant', 'rch-no-merchant'));
+    delete process.env.SUMUP_MERCHANT_CODE;
+    const { reconcileSumUpRechargeById } = await import('../src/services/wallet-v2/sumup-recharge.service');
+    await expect(reconcileSumUpRechargeById('rch-no-merchant')).rejects.toMatchObject({ statusCode: 502 });
+    expect(walletCreditCalls).toBe(0);
+  });
+
 });
