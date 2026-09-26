@@ -27,6 +27,7 @@ function fixture() {
         if (statuses.includes('APPROVED')) return { rows: [{ total: '1000' }] };
         if (statuses.includes('RESERVED')) return { rows: [{ total: '2000' }] };
         if (statuses.includes('SUBMITTING')) return { rows: [{ total: '3000' }] };
+        if (statuses.includes('BLOCKED')) return { rows: [{ total: '4000' }] };
       }
       if (sql.includes('due_date')) return { rows: [{ total: '6000' }] };
       throw new Error('Unexpected treasury database query');
@@ -68,9 +69,11 @@ describe('Integrated SumUp / KAVIAR / Asaas homologation safety', () => {
     expect(h.approvedObligationsCents).toBe(1000n);
     expect(h.reservedObligationsCents).toBe(2000n);
     expect(h.inTransitCents).toBe(3000n);
-    expect(f.statusBatches).toContainEqual(['SUBMITTING', 'SUBMITTED', 'PROCESSING', 'BLOCKED']);
+    expect(h.blockedObligationsCents).toBe(4000n);
+    expect(f.statusBatches).toContainEqual(['SUBMITTING', 'SUBMITTED', 'PROCESSING']);
+    expect(f.statusBatches).toContainEqual(['BLOCKED', 'BLOCKED_POLICY_REVIEW']);
     expect(f.statusBatches).toContainEqual(['RESERVED', 'QUEUED', 'RETRYABLE_FAILURE']);
-    expect(h.deficitCents).toBe(6000n);
+    expect(h.deficitCents).toBe(10000n);
     expect(h.bufferCents).toBe(0n);
     expect(f.queries.every(q => !/wallet_recharges|driver_wallets|wallet_ledger/i.test(q))).toBe(true);
     expect(f.createTransfer).not.toHaveBeenCalled();
