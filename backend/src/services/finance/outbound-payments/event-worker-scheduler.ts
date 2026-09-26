@@ -20,7 +20,8 @@ let currentRunPromise: Promise<void> | null = null;
 export function startEventWorkerScheduler(): boolean {
   if (process.env.NODE_ENV === 'test') return false;
   if (process.env.OUTBOUND_PROVIDER_EVENT_WORKER_ENABLED !== 'true') return false;
-  if (process.env.OUTBOUND_PAYMENTS_ENABLED !== 'true') return false;
+  // Settlement of already-submitted payments must continue even after new
+  // outbound submissions are disabled by an operational kill switch.
   if (intervalHandle !== null) return false;
 
   const intervalMs = parseInt(process.env.OUTBOUND_EVENT_WORKER_INTERVAL_MS ?? '') || DEFAULT_INTERVAL_MS;
