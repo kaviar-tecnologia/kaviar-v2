@@ -54,6 +54,11 @@ function seedRecharge(partial: Partial<RechargeRow> & Pick<RechargeRow, 'id'>) {
   };
 }
 
+function paidCheckout(checkoutId: string, rechargeId: string, amount = 20) {
+  return { id: checkoutId, status: 'PAID', checkout_reference: `wallet_v2:${rechargeId}`,
+    amount, currency: 'BRL', merchant_code: 'TEST_MERCHANT' };
+}
+
 function installDbMock() {
   mockQuery.mockImplementation(async (sql: string, params: any[] = []) => {
     if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') {
@@ -133,6 +138,9 @@ vi.mock('../src/db', () => ({
 
 vi.mock('../src/services/sumup-service', () => ({
   getSumUpCheckout: (...args: any[]) => mockGetSumUpCheckout(...args),
+  SumUpError: class extends Error {
+    constructor(readonly statusCode: number, readonly safeMessage: string) { super(safeMessage); }
+  },
 }));
 
 vi.mock('../src/services/wallet-v2/wallet.service', () => ({
@@ -168,6 +176,7 @@ describe('Characterization: confirmed recharge generates family_return_accruals'
     state.accruals = [];
     state.nextAccrualId = 1;
     process.env.FAMILY_RETURN_PERCENT = '10';
+    process.env.SUMUP_MERCHANT_CODE = 'TEST_MERCHANT';
     installDbMock();
   });
 
@@ -182,7 +191,7 @@ describe('Characterization: confirmed recharge generates family_return_accruals'
     });
 
     // 2. SumUp returns PAID
-    mockGetSumUpCheckout.mockResolvedValueOnce({ id: 'checkout-fr-test-1', status: 'PAID' });
+    mockGetSumUpCheckout.mockResolvedValueOnce(paidCheckout('checkout-fr-test-1', 'rch-fr-test-1', 20));
 
     // 3. Execute the real post-confirmation flow
     const { reconcileSumUpRechargeById } = await import('../src/services/wallet-v2/sumup-recharge.service');
@@ -215,7 +224,7 @@ describe('Characterization: confirmed recharge generates family_return_accruals'
       external_id: 'checkout-fr-idem-1',
       status: 'pending',
     });
-    mockGetSumUpCheckout.mockResolvedValue({ id: 'checkout-fr-idem-1', status: 'PAID' });
+    mockGetSumUpCheckout.mockResolvedValue(paidCheckout('checkout-fr-idem-1', 'rch-fr-idem-1', 20));
 
     const { reconcileSumUpRechargeById } = await import('../src/services/wallet-v2/sumup-recharge.service');
 
@@ -245,7 +254,7 @@ describe('Characterization: confirmed recharge generates family_return_accruals'
       external_id: 'checkout-fr-retry-1',
       status: 'pending',
     });
-    mockGetSumUpCheckout.mockResolvedValue({ id: 'checkout-fr-retry-1', status: 'PAID' });
+    mockGetSumUpCheckout.mockResolvedValue(paidCheckout('checkout-fr-retry-1', 'rch-fr-retry-1', 20));
 
     const { reconcileSumUpRechargeById } = await import('../src/services/wallet-v2/sumup-recharge.service');
 
@@ -271,7 +280,7 @@ describe('Characterization: confirmed recharge generates family_return_accruals'
       external_id: 'checkout-fr-disabled-1',
       status: 'pending',
     });
-    mockGetSumUpCheckout.mockResolvedValueOnce({ id: 'checkout-fr-disabled-1', status: 'PAID' });
+    mockGetSumUpCheckout.mockResolvedValueOnce(paidCheckout('checkout-fr-disabled-1', 'rch-fr-disabled-1', 20));
 
     const { reconcileSumUpRechargeById } = await import('../src/services/wallet-v2/sumup-recharge.service');
     const result = await reconcileSumUpRechargeById('rch-fr-disabled-1');
@@ -291,7 +300,7 @@ describe('Characterization: confirmed recharge generates family_return_accruals'
       external_id: 'checkout-fr-zero-1',
       status: 'pending',
     });
-    mockGetSumUpCheckout.mockResolvedValueOnce({ id: 'checkout-fr-zero-1', status: 'PAID' });
+    mockGetSumUpCheckout.mockResolvedValueOnce(paidCheckout('checkout-fr-zero-1', 'rch-fr-zero-1', 20));
 
     const { reconcileSumUpRechargeById } = await import('../src/services/wallet-v2/sumup-recharge.service');
     const result = await reconcileSumUpRechargeById('rch-fr-zero-1');
@@ -310,7 +319,7 @@ describe('Characterization: confirmed recharge generates family_return_accruals'
       external_id: 'checkout-fr-floor-1',
       status: 'pending',
     });
-    mockGetSumUpCheckout.mockResolvedValueOnce({ id: 'checkout-fr-floor-1', status: 'PAID' });
+    mockGetSumUpCheckout.mockResolvedValueOnce(paidCheckout('checkout-fr-floor-1', 'rch-fr-floor-1', 33.33));
 
     const { reconcileSumUpRechargeById } = await import('../src/services/wallet-v2/sumup-recharge.service');
     await reconcileSumUpRechargeById('rch-fr-floor-1');
