@@ -45,6 +45,9 @@ export function validateAccountOwnership(
 
   // 2. Check expected config vars
   const expectedPersonType = process.env.ASAAS_ACCOUNT_EXPECTED_PERSON_TYPE ?? EXPECTED_PERSON_TYPE;
+  if (expectedPersonType !== EXPECTED_PERSON_TYPE) {
+    return { passed: false, failureReason: 'Asaas payout account must be JURIDICA' };
+  }
   const expectedCnpj = (process.env.ASAAS_ACCOUNT_EXPECTED_CNPJ ?? '').replace(/\D/g, '');
   if (!/^\d{14}$/.test(expectedCnpj)) {
     return { passed: false, failureReason: 'ASAAS_ACCOUNT_EXPECTED_CNPJ must be explicitly configured' };
