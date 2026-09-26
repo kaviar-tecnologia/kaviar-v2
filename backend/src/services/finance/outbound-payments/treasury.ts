@@ -29,8 +29,10 @@ export async function calculateTreasuryHealth(
   const [balance, approved, reserved, inTransit, due7, due30] = await Promise.all([
     provider.getAvailableBalance().catch(() => null),
     sumObligationsByStatus(pool, ['APPROVED', 'SCHEDULED']),
-    sumObligationsByStatus(pool, ['RESERVED', 'QUEUED']),
-    sumObligationsByStatus(pool, ['SUBMITTING', 'SUBMITTED', 'PROCESSING']),
+    sumObligationsByStatus(pool, ['RESERVED', 'QUEUED', 'RETRYABLE_FAILURE']),
+    // An uncertain/blocked submission still consumes the risk budget until
+    // conclusively reconciled; never show it as uncommitted cash.
+    sumObligationsByStatus(pool, ['SUBMITTING', 'SUBMITTED', 'PROCESSING', 'BLOCKED']),
     sumDueWithinDays(pool, 7),
     sumDueWithinDays(pool, 30),
   ]);
