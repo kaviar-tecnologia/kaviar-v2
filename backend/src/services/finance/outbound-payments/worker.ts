@@ -181,9 +181,21 @@ async function processOneOutboundItem(deps: OutboundWorkerDeps, item: OutboxItem
     return;
   }
 
-  // Check balance
-  const balance = await provider.getAvailableBalance();
+  // Asaas balance is independent of SumUp receipts and wallet credit.
+  // Fail closed on unavailable, non-BRL or malformed provider balance.
   const amountCents = BigInt(obl.net_amount_cents);
+  if (amountCents <= 0n || amountCents > BigInt(Number.MAX_SAFE_INTEGER)) {
+    await markOutboxStatus(pool, item.id, 'BLOCKED');
+    await updateObligationStatus(pool, item.obligationId, 'BLOCKED', OUTBOUND_PAYMENT_ERRORS.OBLIGATION_INVALID);
+    return;
+  }
+  const balance = await provider.getAvailableBalance().catch(() => null);
+  if (!balance || balance.currency !== 'BRL' ||
+      typeof balance.amountCents !== 'bigint' || balance.amountCents < 0n) {
+    await markOutboxStatus(pool, item.id, 'BLOCKED');
+    await updateObligationStatus(pool, item.obligationId, 'BLOCKED', OUTBOUND_PAYMENT_ERRORS.PROVIDER_UNAVAILABLE);
+    return;
+  }
   if (balance.amountCents < amountCents) {
     // Schedule retry — balance may be replenished
     await scheduleRetry(pool, item, item.attempts + 1);
@@ -222,12 +234,19 @@ async function processOneOutboundItem(deps: OutboundWorkerDeps, item: OutboxItem
       `UPDATE financial_obligations SET status = 'SUBMITTING', updated_at = NOW() WHERE id = $1`,
       [item.obligationId]
     );
-    await client.query(
+    const inserted = await client.query(
       `INSERT INTO financial_payouts (obligation_id, payee_id, amount_cents, instrument, provider_name, external_reference, status)
        VALUES ($1, $2, $3, $4, $5, $6, 'SUBMITTING')
-       ON CONFLICT (external_reference) DO NOTHING`,
+       ON CONFLICT (external_reference) DO NOTHING RETURNING id`,
       [item.obligationId, item.payeeId, amountCents.toString(), instrument, provider.providerName, externalRef]
     );
+    if (inserted.rowCount !== 1) {
+      // Another attempt has already claimed the external reference; never
+      // issue a second external POST after an idempotency collision.
+      await client.query('ROLLBACK');
+      await markOutboxStatus(pool, item.id, 'BLOCKED');
+      return;
+    }
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');
@@ -276,13 +295,44 @@ async function processOneOutboundItem(deps: OutboundWorkerDeps, item: OutboxItem
       return;
     }
 
-    await pool.query(
-      `UPDATE financial_payouts SET provider_payout_id = $1, status = 'SUBMITTED', provider_status = $2, submitted_at = NOW(), updated_at = NOW()
-       WHERE obligation_id = $3`,
-      [providerId, providerStatus, item.obligationId]
-    );
-    await pool.query(`UPDATE financial_obligations SET status = 'SUBMITTED', updated_at = NOW() WHERE id = $1`, [item.obligationId]);
-    await markOutboxStatus(pool, item.id, 'DONE');
+    // A fast webhook can finalize the payment while POST is returning. Commit
+    // both status transitions together and never overwrite a terminal state.
+    const updateClient = await pool.connect();
+    try {
+      await updateClient.query('BEGIN');
+      const updated = await updateClient.query(
+        `UPDATE financial_payouts
+         SET provider_payout_id = $1, status = 'SUBMITTED', provider_status = $2,
+             submitted_at = NOW(), updated_at = NOW()
+         WHERE obligation_id = $3 AND status = 'SUBMITTING' RETURNING id`,
+        [providerId, providerStatus, item.obligationId]
+      );
+      if (updated.rowCount !== 1) {
+        await updateClient.query('ROLLBACK');
+        await markOutboxStatus(pool, item.id, 'BLOCKED');
+        return;
+      }
+      const obligation = await updateClient.query(
+        `UPDATE financial_obligations SET status = 'SUBMITTED', updated_at = NOW()
+         WHERE id = $1 AND status = 'SUBMITTING' RETURNING id`,
+        [item.obligationId]
+      );
+      if (obligation.rowCount !== 1) {
+        await updateClient.query('ROLLBACK');
+        await markOutboxStatus(pool, item.id, 'BLOCKED');
+        return;
+      }
+      await updateClient.query(
+        `UPDATE financial_payout_outbox SET status = 'DONE', updated_at = NOW() WHERE id = $1`,
+        [item.id]
+      );
+      await updateClient.query('COMMIT');
+    } catch (err) {
+      await updateClient.query('ROLLBACK');
+      throw err;
+    } finally {
+      updateClient.release();
+    }
   } else if (result.isTimeout || !result.isDefinitiveFailure) {
     // HTTP 5xx, connection drops and timeouts are ambiguous; Asaas may have
     // accepted the request. Reconcile by reference before any new attempt.
