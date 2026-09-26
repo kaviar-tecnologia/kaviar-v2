@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AsaasOutboundPaymentProvider } from '../../src/services/finance/outbound-payments/providers';
+import { providerConfirmationMatchesPayout } from '../../src/services/finance/outbound-payments/event-processor';
 
 describe('Asaas native transfer/bill webhook contract', () => {
   const provider = new AsaasOutboundPaymentProvider();
@@ -181,4 +182,40 @@ describe('Asaas authenticated lookups are fail-closed', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+});
+
+describe('Provider confirmation identity before settlement or release', () => {
+  const payout = {
+    provider_payout_id: 'tr-expected',
+    external_reference: 'kaviar-payment:test:obl-1',
+    amount_cents: '2500',
+  };
+  const result = {
+    found: true,
+    providerTransferId: 'tr-expected',
+    providerStatus: 'FAILED',
+    amountCents: 2500n,
+    externalReference: 'kaviar-payment:test:obl-1',
+  };
+
+  it('accepts the exact transfer identity, amount and reference', () => {
+    expect(providerConfirmationMatchesPayout(payout, result)).toBe(true);
+  });
+
+  it('rejects a different provider transfer id even if FAILED', () => {
+    expect(providerConfirmationMatchesPayout(payout, { ...result, providerTransferId: 'other' })).toBe(false);
+  });
+
+  it('rejects amount mismatch, missing amount and wrong reference', () => {
+    expect(providerConfirmationMatchesPayout(payout, { ...result, amountCents: 2600n })).toBe(false);
+    expect(providerConfirmationMatchesPayout(payout, { ...result, amountCents: undefined })).toBe(false);
+    expect(providerConfirmationMatchesPayout(payout, { ...result, externalReference: 'another-obligation' })).toBe(false);
+  });
+
+  it('supports verified bill identity, without relying on Pix transfer id', () => {
+    expect(providerConfirmationMatchesPayout(
+      { ...payout, provider_payout_id: 'bill-expected' },
+      { found: true, providerBillId: 'bill-expected', providerStatus: 'PAID', amountCents: 2500n },
+    )).toBe(true);
+  });
 });
