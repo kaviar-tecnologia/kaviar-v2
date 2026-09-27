@@ -33,7 +33,11 @@ export function assembleArchiveRecovery(
   const entries = rows.map(row => {
     // Unexpected states must fail closed; never silently report a record as safe.
     if (!['RESERVED', 'STORED_UNVERIFIED'].includes(row.status) ||
-        row.source_verification !== 'UNVERIFIED')
+        !['SUMUP', 'ASAAS'].includes(row.provider) ||
+        row.source_verification !== 'UNVERIFIED' ||
+        !(row.recorded_at instanceof Date) ||
+        (row.status === 'STORED_UNVERIFIED' && !(row.stored_at instanceof Date)) ||
+        (row.status === 'RESERVED' && row.stored_at !== null))
       throw new OfficialArchiveError(409, 'ARCHIVE_UNEXPECTED_TRUST_STATE');
     const ageMinutes = Math.floor((now.getTime() - row.recorded_at.getTime()) / 60_000);
     let action: RecoveryAction;
