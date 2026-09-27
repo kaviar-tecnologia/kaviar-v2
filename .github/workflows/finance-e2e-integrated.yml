@@ -132,6 +132,13 @@ jobs:
           cd backend
           NODE_ENV=test npx vitest run tests/finance-synthetic-staging.integration.test.ts
 
+      - name: Run monthly close preview and zero-income integration tests
+        run: |
+          cd backend
+          NODE_ENV=test npx vitest run \
+            tests/finance-monthly-close-preview.test.ts \
+            tests/finance-monthly-close-preview.integration.test.ts
+
       - name: Typecheck backend
         run: cd backend && npx tsc --noEmit -p tsconfig.build.json
 
