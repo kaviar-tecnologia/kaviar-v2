@@ -127,6 +127,11 @@ jobs:
           NODE_ENV=test npx vitest run tests/finance-synthetic-statement-import.test.ts
           NODE_ENV=test npx tsx scripts/finance/synthetic-statement-demo.ts
 
+      - name: Run persistent synthetic staging against disposable PostgreSQL
+        run: |
+          cd backend
+          NODE_ENV=test npx vitest run tests/finance-synthetic-staging.integration.test.ts
+
       - name: Typecheck backend
         run: cd backend && npx tsc --noEmit -p tsconfig.build.json
 
