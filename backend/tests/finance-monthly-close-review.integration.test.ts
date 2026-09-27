@@ -25,8 +25,8 @@ const entityA = id(), entityB = id(), accountA = id(), accountB = id();
 const suffix = randomUUID().slice(0, 10);
 const scope = (entity: string, month = 7) => ({ legal_entity_id: entity, year: 2026, month });
 const base = '/api/admin/finance/monthly-close';
-async function prepare(entity: string, month = 7) {
-  return request(app).post(base + '/reviews/prepare').send(scope(entity, month));
+async function prepare(entity: string, month = 7, year = 2026) {
+  return request(app).post(base + '/reviews/prepare').send({ legal_entity_id: entity, year, month });
 }
 async function versions(entity: string) {
   return request(app).get(base + '/reviews').query(scope(entity));
@@ -132,7 +132,10 @@ describe('versioned and audited internal review', () => {
     expect(JSON.stringify(rows.body)).not.toContain(entityA);
   });
   it('rejects an open calendar month and documentary/internal mismatches for approval', async () => {
-    const p = await prepare(entityB, 9);
+    const local = new Intl.DateTimeFormat('en-US', {timeZone: 'America/Sao_Paulo', year: 'numeric', month: 'numeric'}).formatToParts(new Date());
+    const year = Number(local.find(x => x.type === 'year')?.value);
+    const month = Number(local.find(x => x.type === 'month')?.value);
+    const p = await prepare(entityB, month, year);
     expect(p.status).toBe(201);
     expect(p.body.data.snapshot.periodEnded).toBe(false);
     await request(app).post(base + '/reviews/' + p.body.data.id + '/submit');
