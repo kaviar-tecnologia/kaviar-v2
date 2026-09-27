@@ -153,6 +153,13 @@ jobs:
             tests/finance-statement-evidence.test.ts \
             tests/finance-statement-evidence.integration.test.ts
 
+      - name: Run private official archive foundation tests (disposable only)
+        run: |
+          cd backend
+          NODE_ENV=test npx vitest run \
+            tests/finance-official-archive.test.ts \
+            tests/finance-official-archive.integration.test.ts
+
       - name: Typecheck backend
         run: cd backend && npx tsc --noEmit -p tsconfig.build.json
 
