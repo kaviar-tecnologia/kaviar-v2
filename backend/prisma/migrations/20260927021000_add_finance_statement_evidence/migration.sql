@@ -25,9 +25,9 @@ CREATE TABLE "finance_statement_evidence" (
   CONSTRAINT "finance_statement_evidence_events_check" CHECK ("event_count" BETWEEN 0 AND 100),
   CONSTRAINT "finance_statement_evidence_source_check" CHECK ("source_kind" = 'SYNTHETIC_FIXTURE'),
   CONSTRAINT "finance_statement_evidence_status_check" CHECK ("status" = 'SYNTHETIC_RECORDED_UNVERIFIED'),
-  CONSTRAINT "finance_statement_evidence_entity_fkey" FOREIGN KEY ("legal_entity_id")
+  CONSTRAINT "finance_statement_evidence_legal_entity_id_fkey" FOREIGN KEY ("legal_entity_id")
     REFERENCES "legal_entities"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
-  CONSTRAINT "finance_statement_evidence_account_fkey" FOREIGN KEY ("account_id")
+  CONSTRAINT "finance_statement_evidence_account_id_fkey" FOREIGN KEY ("account_id")
     REFERENCES "financial_accounts"("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 CREATE UNIQUE INDEX "uq_fin_evidence_scope_hash"
