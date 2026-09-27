@@ -29,6 +29,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # A standalone workflow_dispatch must never run a production migration.
+      # Only deploy-backend.yml can set this typed workflow_call input.
+      - name: Require backend-orchestrated migration invocation
+        env:
+          ORCHESTRATED_BY_BACKEND: ${{ inputs.orchestrated_by_backend }}
+        run: |
+          set -euo pipefail
+          if [ "$ORCHESTRATED_BY_BACKEND" != "true" ]; then
+            echo "ABORT: PRISMA_MIGRATION_REQUIRES_BACKEND_ORCHESTRATION" >&2
+            exit 1
+          fi
+          echo "✓ Migration called by backend deploy gate"
+
       - uses: actions/checkout@v5
 
       - name: Configure AWS
@@ -37,6 +50,58 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
+
+      # Database restore is NOT automatic. This verified snapshot is the
+      # mandatory recovery point before prisma migrate deploy starts.
+      - name: Create and verify RDS pre-migration snapshot
+        id: pre_migration_snapshot
+        run: |
+          set -euo pipefail
+          RDS_STATUS="$(aws rds describe-db-instances \
+            --db-instance-identifier "$RDS_INSTANCE_ID" \
+            --region "$AWS_REGION" \
+            --query 'DBInstances[0].DBInstanceStatus' --output text)"
+          if [ "$RDS_STATUS" != "available" ]; then
+            echo "ABORT: RDS_NOT_AVAILABLE_FOR_SNAPSHOT (status=$RDS_STATUS)" >&2
+            exit 1
+          fi
+
+          SNAPSHOT_ID="kaviar-finance-predeploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "Creating private RDS snapshot: $SNAPSHOT_ID"
+          aws rds create-db-snapshot \
+            --db-instance-identifier "$RDS_INSTANCE_ID" \
+            --db-snapshot-identifier "$SNAPSHOT_ID" \
+            --region "$AWS_REGION" \
+            --tags Key=Application,Value=KAVIAR Key=Purpose,Value=pre-finance-migration Key=GitHubRun,Value="$GITHUB_RUN_ID" \
+            --output json > /dev/null
+
+          aws rds wait db-snapshot-available \
+            --db-snapshot-identifier "$SNAPSHOT_ID" \
+            --region "$AWS_REGION"
+
+          DETAILS="$(aws rds describe-db-snapshots \
+            --db-snapshot-identifier "$SNAPSHOT_ID" \
+            --region "$AWS_REGION" \
+            --query 'DBSnapshots[0].{Status:Status,DBInstanceIdentifier:DBInstanceIdentifier,SnapshotArn:DBSnapshotArn}' \
+            --output json)"
+          STATUS="$(jq -r '.Status // empty' <<< "$DETAILS")"
+          DB_IDENTIFIER="$(jq -r '.DBInstanceIdentifier // empty' <<< "$DETAILS")"
+          SNAPSHOT_ARN="$(jq -r '.SnapshotArn // empty' <<< "$DETAILS")"
+          if [ "$STATUS" != "available" ] || [ "$DB_IDENTIFIER" != "$RDS_INSTANCE_ID" ] || [ -z "$SNAPSHOT_ARN" ]; then
+            echo "ABORT: RDS_SNAPSHOT_NOT_VERIFIED" >&2
+            exit 1
+          fi
+
+          echo "snapshot_id=$SNAPSHOT_ID" >> "$GITHUB_OUTPUT"
+          echo "snapshot_arn=$SNAPSHOT_ARN" >> "$GITHUB_OUTPUT"
+          echo "✓ RECOVERY_SNAPSHOT_AVAILABLE: $SNAPSHOT_ID"
+          {
+            echo "### Pre-migration RDS recovery point"
+            echo "- Snapshot: \`$SNAPSHOT_ID\`"
+            echo "- Status: available"
+            echo "- Database instance: \`$RDS_INSTANCE_ID\`"
+            echo "- IMPORTANT: RDS recovery is a separate manual procedure; backend rollback does not undo migrations."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Login to ECR
         run: |

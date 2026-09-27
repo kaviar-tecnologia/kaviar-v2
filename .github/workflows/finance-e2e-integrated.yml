@@ -69,13 +69,21 @@ jobs:
       - name: Push schema to test DB
         run: cd backend && npx prisma db push --accept-data-loss --skip-generate
 
-      - name: Validate official archive migration SQL in an isolated test schema
+      - name: Validate all three finance migrations in one isolated test schema
         run: |
           set -euo pipefail
           export PGPASSWORD=e2e_password
-          psql -U kaviar_e2e -h localhost -d kaviar_e2e_test -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA finance_archive_pr409_test;'
-          trap 'psql -U kaviar_e2e -h localhost -d kaviar_e2e_test -v ON_ERROR_STOP=1 -c "DROP SCHEMA IF EXISTS finance_archive_pr409_test CASCADE;"' EXIT
-          PGOPTIONS='-c search_path=finance_archive_pr409_test,public' psql -U kaviar_e2e -h localhost -d kaviar_e2e_test -v ON_ERROR_STOP=1 -f backend/prisma/migrations/20260927023500_add_finance_official_statement_archives/migration.sql
+          psql -U kaviar_e2e -h localhost -d kaviar_e2e_test -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA finance_migrations_pr411_test;'
+          trap 'psql -U kaviar_e2e -h localhost -d kaviar_e2e_test -v ON_ERROR_STOP=1 -c "DROP SCHEMA IF EXISTS finance_migrations_pr411_test CASCADE;"' EXIT
+          for migration in \
+            backend/prisma/migrations/20260927013000_add_finance_monthly_close_reviews/migration.sql \
+            backend/prisma/migrations/20260927021000_add_finance_statement_evidence/migration.sql \
+            backend/prisma/migrations/20260927023500_add_finance_official_statement_archives/migration.sql
+          do
+            echo "Validating migration: ${migration}"
+            PGOPTIONS='-c search_path=finance_migrations_pr411_test,public' psql \
+              -U kaviar_e2e -h localhost -d kaviar_e2e_test -v ON_ERROR_STOP=1 -f "${migration}"
+          done
 
       - name: Create legacy tables
         run: |
