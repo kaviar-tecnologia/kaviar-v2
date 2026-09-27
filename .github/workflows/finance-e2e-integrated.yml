@@ -121,6 +121,12 @@ jobs:
             tests/admin-finance-reconciliation-preview.test.ts \
             tests/admin-finance-reconciliation-preview.integration.test.ts
 
+      - name: Run synthetic financial import and zero-movement scenarios
+        run: |
+          cd backend
+          NODE_ENV=test npx vitest run tests/finance-synthetic-statement-import.test.ts
+          NODE_ENV=test npx tsx scripts/finance/synthetic-statement-demo.ts
+
       - name: Typecheck backend
         run: cd backend && npx tsc --noEmit -p tsconfig.build.json
 

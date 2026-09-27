@@ -1,0 +1,4 @@
+event_id,occurred_on,event_type,direction,amount_cents,currency,external_reference
+as_payout_001,2026-09-26,PAYOUT,OUT,7000,BRL,sim:as:payout:001
+as_fee_001,2026-09-26,FEE,OUT,150,BRL,sim:as:fee:001
+as_reversal_001,2026-09-26,REVERSAL,IN,7000,BRL,sim:as:reversal:001

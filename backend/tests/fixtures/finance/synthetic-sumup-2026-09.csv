@@ -1,0 +1,5 @@
+event_id,occurred_on,event_type,direction,amount_cents,currency,external_reference
+su_credit_001,2026-09-26,CREDIT,IN,10000,BRL,sim:su:credit:001
+su_fee_001,2026-09-26,FEE,OUT,300,BRL,sim:su:fee:001
+su_refund_001,2026-09-26,REFUND,OUT,2000,BRL,sim:su:refund:001
+su_wrong_001,2026-09-26,CREDIT,IN,6100,BRL,sim:su:credit:002
