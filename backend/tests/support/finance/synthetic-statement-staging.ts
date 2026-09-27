@@ -71,6 +71,7 @@ async function previousReceipts(
 
 export async function stageSyntheticStatement(
   databaseUrl: string, context: SyntheticContext, csv: string,
+  options: { failAfterAuditLine?: number } = {},
 ) {
   // Fail before a connection or any database work.
   assertLocalTestDatabase(databaseUrl);
@@ -166,6 +167,11 @@ export async function stageSyntheticStatement(
         'VALUES ($1,$2,$3,$4,$5)',
         [batchId, index + 2, row.eventId, fingerprint, outcome],
       );
+      // Test-only fault injection: exercise atomic rollback after a staged row
+      // and its audit event, without mutating any financial ledger.
+      if (options.failAfterAuditLine === index + 2) {
+        throw new StatementPreviewError('SYNTHETIC_INJECTED_FAILURE');
+      }
       results.push({
         ...row,
         // Only a newly staged candidate can retain a preview suggestion.
