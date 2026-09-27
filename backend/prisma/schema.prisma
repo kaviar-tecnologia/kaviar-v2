@@ -4683,6 +4683,7 @@ model legal_entities {
   financial_transactions financial_transactions[]         @relation("financial_transactions_legal_entity")
   financial_recognition_policies financial_recognition_policies[] @relation("financial_recognition_policies_legal_entity")
   financial_obligations financial_obligations[]           @relation("financial_obligations_legal_entity")
+  finance_monthly_close_reviews finance_monthly_close_reviews[] @relation("finance_monthly_close_review_entity")
   financial_entity_assignments financial_entity_territory_assignments[]
   @@map("legal_entities")
 }
@@ -5549,4 +5550,35 @@ model territorial_dataset_versions {
   @@index([territory_id])
   @@index([uf, city, created_at(sort: Desc)])
   @@map("territorial_dataset_versions")
+}
+
+ 
+// PR #407: a REVIEW of a month, not evidence of bank/fiscal closure.
+// Each version is immutable after approval/reopening; no posting or payment.
+model finance_monthly_close_reviews {
+  id                   String   @id @default(uuid())
+  legal_entity_id      String
+  year                 Int
+  month                Int
+  version              Int
+  status               String   @default("DRAFT")
+  snapshot             Json
+  snapshot_hash        String
+  review_reasons       Json
+  prepared_by_admin_id String
+  submitted_by_admin_id String?
+  approved_by_admin_id String?
+  reopened_by_admin_id String?
+  reopen_reason        String?
+  created_at           DateTime @default(now()) @db.Timestamptz
+  submitted_at         DateTime? @db.Timestamptz
+  approved_at          DateTime? @db.Timestamptz
+  reopened_at          DateTime? @db.Timestamptz
+
+  legal_entity         legal_entities @relation("finance_monthly_close_review_entity", fields: [legal_entity_id], references: [id], onDelete: Restrict)
+
+  @@unique([legal_entity_id, year, month, version])
+  @@index([legal_entity_id, year, month, created_at])
+  @@index([status])
+  @@map("finance_monthly_close_reviews")
 }
