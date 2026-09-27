@@ -24,7 +24,7 @@ CREATE TABLE "finance_monthly_close_reviews" (
      CHECK ("status" IN ('DRAFT', 'IN_REVIEW', 'INTERNAL_REVIEW_APPROVED', 'REOPENED')),
   CONSTRAINT "finance_monthly_close_reviews_month_check" CHECK ("month" BETWEEN 1 AND 12),
   CONSTRAINT "finance_monthly_close_reviews_version_check" CHECK ("version" >= 1),
-  CONSTRAINT "finance_monthly_close_reviews_entity_fkey" FOREIGN KEY ("legal_entity_id")
+  CONSTRAINT "finance_monthly_close_reviews_legal_entity_id_fkey" FOREIGN KEY ("legal_entity_id")
      REFERENCES "legal_entities" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 CREATE UNIQUE INDEX "uq_fin_month_close_entity_period_version"
