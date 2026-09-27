@@ -17,7 +17,7 @@ import {
 import { StatementPreviewError } from '../services/finance/reconciliation-preview.service';
 import multer from 'multer';
 import {
-  OfficialArchiveError,archiveUserDeclaredStatement,listOfficialArchives,
+  OfficialArchiveError,archiveUserDeclaredStatement,listOfficialArchives,checkOfficialArchiveMalware,
 } from '../services/finance/official-statement-archive.service';
 import { loadArchiveRecovery } from '../services/finance/official-archive-recovery.service';
 
@@ -258,6 +258,20 @@ router.post('/evidence/official-archive',
   },
 );
 
+
+/** Manual scan check; SUPER_ADMIN only, no caller-controlled S3 identity. */
+router.post('/evidence/official-archive/:id/check-malware',async(req:Request,res:Response)=>{
+  if(process.env.FINANCE_OFFICIAL_ARCHIVE_ENABLED!=='true')
+    return res.status(404).json({success:false,error:'OFFICIAL_ARCHIVE_DISABLED'});
+  try {
+    const actor=actorFrom(req);
+    if(actor.role!=='SUPER_ADMIN') throw new OfficialArchiveError(403,'SUPER_ADMIN_REQUIRED');
+    const id=z.string().uuid().parse(req.params.id);
+    const result=await checkOfficialArchiveMalware(id,{...actor,role:'SUPER_ADMIN'});
+    res.setHeader('Cache-Control','no-store');
+    return res.json({success:true,data:result});
+  } catch(error) {return archiveError(res,error);}
+});
 
 /**
  * PR #410: strictly read-only inventory, not a provider validation or S3 retry.

@@ -15,12 +15,16 @@ export type RecoveryRow = {
   source_verification: string;
   recorded_at: Date;
   stored_at: Date | null;
+  storage_version_id?: string | null;
+  malware_scan_status?: string;
 };
 type RecoveryAction =
   | 'RESERVATION_RECENT_CHECK_LATER'
   | 'CHECK_S3_OBJECT_AND_AUDIT_MANUALLY'
   | 'REVIEW_RECORD_CLOCK_SKEW'
-  | 'STORAGE_BYTES_CONFIRMED_ORIGIN_UNVERIFIED';
+  | 'STORAGE_BYTES_CONFIRMED_ORIGIN_UNVERIFIED'
+  | 'AWAIT_GUARDDUTY_RESULT'
+  | 'REVIEW_UNCLEAN_OR_FAILED_SCAN';
 
 export function assembleArchiveRecovery(
   rows: RecoveryRow[], entity: string, year: number, month: number,
@@ -32,11 +36,14 @@ export function assembleArchiveRecovery(
     throw new OfficialArchiveError(400, 'ARCHIVE_RECOVERY_WINDOW_INVALID');
   const entries = rows.map(row => {
     // Unexpected states must fail closed; never silently report a record as safe.
-    if (!['RESERVED', 'STORED_UNVERIFIED'].includes(row.status) ||
+    if (!['RESERVED', 'STORED_PENDING_SCAN', 'STORED_UNVERIFIED'].includes(row.status) ||
         !['SUMUP', 'ASAAS'].includes(row.provider) ||
         row.source_verification !== 'UNVERIFIED' ||
         !(row.recorded_at instanceof Date) ||
-        (row.status === 'STORED_UNVERIFIED' && !(row.stored_at instanceof Date)) ||
+        (row.status !== 'RESERVED' && !(row.stored_at instanceof Date)) ||
+        (row.status === 'STORED_PENDING_SCAN' && (!row.storage_version_id ||
+          !['PENDING','THREATS_FOUND','UNSUPPORTED','ACCESS_DENIED','FAILED']
+            .includes(row.malware_scan_status ?? ''))) ||
         (row.status === 'RESERVED' && row.stored_at !== null))
       throw new OfficialArchiveError(409, 'ARCHIVE_UNEXPECTED_TRUST_STATE');
     const ageMinutes = Math.floor((now.getTime() - row.recorded_at.getTime()) / 60_000);
@@ -45,6 +52,9 @@ export function assembleArchiveRecovery(
       action = 'REVIEW_RECORD_CLOCK_SKEW';
     else if (row.status === 'STORED_UNVERIFIED')
       action = 'STORAGE_BYTES_CONFIRMED_ORIGIN_UNVERIFIED';
+    else if (row.status === 'STORED_PENDING_SCAN')
+      action = row.malware_scan_status === 'PENDING'
+        ? 'AWAIT_GUARDDUTY_RESULT' : 'REVIEW_UNCLEAN_OR_FAILED_SCAN';
     else if (ageMinutes >= thresholdMinutes)
       action = 'CHECK_S3_OBJECT_AND_AUDIT_MANUALLY';
     else
@@ -68,6 +78,8 @@ export function assembleArchiveRecovery(
     storedOriginUnverified: entries.filter(
       e => e.action === 'STORAGE_BYTES_CONFIRMED_ORIGIN_UNVERIFIED',
     ).length,
+    awaitingScan:entries.filter(e=>e.action === 'AWAIT_GUARDDUTY_RESULT').length,
+    scanNeedsReview:entries.filter(e=>e.action === 'REVIEW_UNCLEAN_OR_FAILED_SCAN').length,
   };
   return {
     mode: 'READ_ONLY_ARCHIVE_RECOVERY' as const,
@@ -99,6 +111,7 @@ export async function loadArchiveRecovery(
     select: {
       id: true, account_id: true, provider: true, status: true,
       source_verification: true, recorded_at: true, stored_at: true,
+      storage_version_id:true,malware_scan_status:true,
     },
     orderBy: [{ recorded_at: 'desc' }, { id: 'desc' }], take: 101,
   });

@@ -5628,6 +5628,10 @@ model finance_official_statement_archives {
   declared_source_channel String
   storage_bucket          String
   storage_key             String   @unique
+  storage_version_id      String?
+  malware_scan_status     String   @default("PENDING")
+  malware_scanned_at      DateTime? @db.Timestamptz
+  integrity_verified_at   DateTime? @db.Timestamptz
   status                  String   @default("RESERVED")
   source_verification     String   @default("UNVERIFIED")
   stored_at               DateTime? @db.Timestamptz
