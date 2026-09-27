@@ -27,9 +27,9 @@ CREATE TABLE "finance_monthly_close_reviews" (
   CONSTRAINT "finance_monthly_close_reviews_entity_fkey" FOREIGN KEY ("legal_entity_id")
      REFERENCES "legal_entities" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
-CREATE UNIQUE INDEX "finance_monthly_close_reviews_legal_entity_id_year_month_version_key"
+CREATE UNIQUE INDEX "uq_fin_month_close_entity_period_version"
   ON "finance_monthly_close_reviews" ("legal_entity_id", "year", "month", "version");
-CREATE INDEX "finance_monthly_close_reviews_legal_entity_id_year_month_created_at_idx"
+CREATE INDEX "idx_fin_month_close_entity_period_created"
   ON "finance_monthly_close_reviews" ("legal_entity_id", "year", "month", "created_at");
-CREATE INDEX "finance_monthly_close_reviews_status_idx"
+CREATE INDEX "idx_fin_month_close_status"
   ON "finance_monthly_close_reviews" ("status");
