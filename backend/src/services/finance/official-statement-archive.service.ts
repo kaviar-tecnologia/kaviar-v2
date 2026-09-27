@@ -44,7 +44,9 @@ export function requireOfficialArchiveConfig(): ArchiveConfig {
 export function inspectArchiveBytes(filename: string, content: Buffer) {
   if (!Buffer.isBuffer(content) || content.length < 6 || content.length > MAX_FILE_BYTES)
     throw new OfficialArchiveError(400, 'ARCHIVE_INVALID_SIZE');
-  if (!/^[^\\/\x00-\x1f]{1,120}\.(pdf|csv)$/i.test(filename))
+  if (typeof filename !== 'string' || filename.length < 5 || filename.length > 120 ||
+      filename.includes('/') || filename.includes('\\') ||
+      /[\x00-\x1f\x7f]/.test(filename) || !/\.(pdf|csv)$/i.test(filename))
     throw new OfficialArchiveError(400, 'ARCHIVE_EXTENSION_NOT_ALLOWED');
   const extension = filename.toLowerCase().endsWith('.pdf') ? 'pdf' : 'csv';
   let contentType: 'application/pdf' | 'text/csv';
