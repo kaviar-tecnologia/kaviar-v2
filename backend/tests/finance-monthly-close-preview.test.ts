@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  assembleMonthlyClosePreview, monthWindow,
+  assembleMonthlyClosePreview, monthWindow, periodEndedInSaoPaulo,
 } from '../src/services/finance/monthly-close-preview.service';
 
 const base = () => ({
   legalEntityId: 'synthetic-company',
   year: 2026, month: 8,
-  now: new Date('2026-09-01T00:00:00.000Z'),
+  now: new Date('2026-09-01T03:00:00.000Z'),
   accountCount: 1,
   txGroups: [] as any[],
   financeGroups: [] as any[],
@@ -22,6 +22,15 @@ describe('Monthly closing preview: truthful zero-movement evidence', () => {
     expect(monthWindow(2024, 2).until.toISOString()).toBe('2024-03-01T00:00:00.000Z');
     expect(() => monthWindow(2026, 13)).toThrow('INVALID_COMPETENCE');
     expect(() => monthWindow(2026.2, 2)).toThrow('INVALID_COMPETENCE');
+  });
+
+  it('waits until Sao Paulo midnight, not UTC midnight, before ending August', () => {
+    expect(periodEndedInSaoPaulo(2026, 8, new Date('2026-09-01T00:00:00.000Z')))
+      .toBe(false); // 31/08 at 21h in Sao Paulo
+    expect(periodEndedInSaoPaulo(2026, 8, new Date('2026-09-01T02:59:59.999Z')))
+      .toBe(false);
+    expect(periodEndedInSaoPaulo(2026, 8, new Date('2026-09-01T03:00:00.000Z')))
+      .toBe(true);
   });
 
   it('reports no posted income, NOT verified zero revenue and NOT closed', () => {
