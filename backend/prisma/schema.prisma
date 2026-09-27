@@ -2554,6 +2554,7 @@ model financial_accounts {
   created_by_admin admins? @relation("financial_accounts_created_by", fields: [created_by_admin_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
   updated_by_admin admins? @relation("financial_accounts_updated_by", fields: [updated_by_admin_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
   transactions_as_account financial_transactions[] @relation("FinancialTransactionAccount")
+  finance_statement_evidence finance_statement_evidence[] @relation("finance_evidence_account")
   transactions_as_counterparty financial_transactions[] @relation("FinancialTransactionCounterpartyAccount")
 
   @@unique([code])
@@ -4683,6 +4684,7 @@ model legal_entities {
   financial_transactions financial_transactions[]         @relation("financial_transactions_legal_entity")
   financial_recognition_policies financial_recognition_policies[] @relation("financial_recognition_policies_legal_entity")
   financial_obligations financial_obligations[]           @relation("financial_obligations_legal_entity")
+  finance_statement_evidence finance_statement_evidence[] @relation("finance_evidence_entity")
   finance_monthly_close_reviews finance_monthly_close_reviews[] @relation("finance_monthly_close_review_entity")
   financial_entity_assignments financial_entity_territory_assignments[]
   @@map("legal_entities")
@@ -5581,4 +5583,31 @@ model finance_monthly_close_reviews {
   @@index([legal_entity_id, year, month, created_at], map: "idx_fin_month_close_entity_period_created")
   @@index([status], map: "idx_fin_month_close_status")
   @@map("finance_monthly_close_reviews")
+}
+
+
+// PR #408: SYNTHETIC TEST ONLY manifest. It does NOT archive actual provider
+// statements, verify official source documents, or certify zero revenue.
+model finance_statement_evidence {
+  id                     String   @id @default(uuid())
+  legal_entity_id        String
+  account_id             String
+  provider               String
+  year                   Int
+  month                  Int
+  content_sha256         String   @db.VarChar(64)
+  byte_count             Int
+  event_count            Int
+  preview_summary        Json
+  source_kind            String   @default("SYNTHETIC_FIXTURE")
+  status                 String   @default("SYNTHETIC_RECORDED_UNVERIFIED")
+  recorded_by_admin_id   String
+  recorded_at            DateTime @default(now()) @db.Timestamptz
+
+  legal_entity           legal_entities @relation("finance_evidence_entity", fields: [legal_entity_id], references: [id], onDelete: Restrict)
+  account                financial_accounts @relation("finance_evidence_account", fields: [account_id], references: [id], onDelete: Restrict)
+
+  @@unique([legal_entity_id, account_id, provider, year, month, content_sha256], map: "uq_fin_evidence_scope_hash")
+  @@index([legal_entity_id, year, month, provider], map: "idx_fin_evidence_period_provider")
+  @@map("finance_statement_evidence")
 }

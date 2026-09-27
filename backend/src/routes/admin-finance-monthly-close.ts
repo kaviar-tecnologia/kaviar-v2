@@ -11,6 +11,10 @@ import {
   approveInternalMonthlyCloseReview, reopenMonthlyCloseReview, listMonthlyCloseReviews,
 } from '../services/finance/monthly-close-review.service';
 import { auditCtx } from '../utils/audit';
+import {
+  EvidenceError, evidenceRequirements, listEvidence, recordSyntheticEvidence,
+} from '../services/finance/statement-evidence.service';
+import { StatementPreviewError } from '../services/finance/reconciliation-preview.service';
 
 const router = Router();
 router.use(authenticateAdmin, allowFinanceAccess);
@@ -119,6 +123,64 @@ router.post('/reviews/:id/reopen', async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     return res.json({ success: true, data: result });
   } catch (err) { return handleReviewError(res, err); }
+});
+
+
+/**
+ * PR #408. No real statement upload here. SYNTHETIC registration is physically
+ * blocked outside NODE_ENV=test; reads NEVER assert official verification.
+ */
+const evidenceBody = z.object({
+  legal_entity_id: z.string().uuid(),
+  account_id: z.string().uuid(),
+  provider: z.enum(['SUMUP','ASAAS']),
+  year: z.number().int().min(2000).max(2100),
+  month: z.number().int().min(1).max(12),
+  content_base64: z.string().min(8).max(88_000),
+}).strict();
+function evidenceError(res: Response, err: unknown) {
+  if (err instanceof EvidenceError)
+    return res.status(err.status).json({ success: false, error: err.code });
+  if (err instanceof StatementPreviewError)
+    return res.status(400).json({ success: false, error: err.code });
+  if (err instanceof z.ZodError)
+    return res.status(400).json({ success: false, error: 'INVALID_EVIDENCE_INPUT' });
+  if ((err as any)?.code === 'P2002')
+    return res.status(409).json({ success: false, error: 'DUPLICATE_EVIDENCE_MANIFEST' });
+  console.error('[FINANCE_EVIDENCE]', err instanceof Error ? err.name : 'error');
+  return res.status(500).json({ success: false, error: 'EVIDENCE_UNAVAILABLE' });
+}
+router.get('/evidence/requirements', async (req: Request, res: Response) => {
+  try {
+    actorFrom(req);
+    const q = querySchema.parse(req.query);
+    res.setHeader('Cache-Control','no-store');
+    return res.json({ success: true, data: await evidenceRequirements(q.legal_entity_id, q.year, q.month) });
+  } catch (err) { return evidenceError(res, err); }
+});
+router.get('/evidence', async (req: Request, res: Response) => {
+  try {
+    actorFrom(req);
+    const q = querySchema.parse(req.query);
+    res.setHeader('Cache-Control','no-store');
+    return res.json({ success: true, data: await listEvidence(q.legal_entity_id, q.year, q.month) });
+  } catch (err) { return evidenceError(res, err); }
+});
+router.post('/evidence/synthetic', async (req: Request, res: Response) => {
+  // Fail BEFORE reading or touching the database in production.
+  if (process.env.NODE_ENV !== 'test')
+    return res.status(404).json({ success: false, error: 'SYNTHETIC_ONLY' });
+  try {
+    const actor = actorFrom(req);
+    const body = evidenceBody.parse(req.body);
+    const result = await recordSyntheticEvidence({
+      legalEntityId: body.legal_entity_id, accountId: body.account_id,
+      provider: body.provider, year: body.year, month: body.month,
+      contentBase64: body.content_base64,
+    }, actor);
+    res.setHeader('Cache-Control','no-store');
+    return res.status(201).json({ success: true, data: result });
+  } catch (err) { return evidenceError(res, err); }
 });
 
 export default router;
