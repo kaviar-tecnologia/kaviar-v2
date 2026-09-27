@@ -23,8 +23,9 @@ saldo zero nem situação tributária. A conta pode ter saldo de abertura,
 despesas ou contas a pagar mesmo sem receita registrada.
 
 Até o encerramento do mês de calendário, `PERIOD_NOT_ENDED` é
-impedimento explícito; o horário usado é UTC como limite exclusivo da
-competência civil. O teste de agosto de 2026 já está encerrado e
+impedimento explícito; os filtros das datas de competência usam intervalo
+UTC [primeiro dia, primeiro dia seguinte), mas a conclusão do mês no
+calendário usa **meia-noite de America/Sao_Paulo**, não meia-noite UTC. O teste de agosto de 2026 já está encerrado e
 setembro de 2026 ainda não estava encerrado em 26/09/2026.
 
 ## Dados separados por origem
