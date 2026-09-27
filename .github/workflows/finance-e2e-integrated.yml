@@ -146,6 +146,13 @@ jobs:
             tests/finance-monthly-close-review.test.ts \
             tests/finance-monthly-close-review.integration.test.ts
 
+      - name: Run synthetic-only documentary evidence tests
+        run: |
+          cd backend
+          NODE_ENV=test npx vitest run \
+            tests/finance-statement-evidence.test.ts \
+            tests/finance-statement-evidence.integration.test.ts
+
       - name: Typecheck backend
         run: cd backend && npx tsc --noEmit -p tsconfig.build.json
 
