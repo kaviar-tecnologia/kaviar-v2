@@ -5577,8 +5577,8 @@ model finance_monthly_close_reviews {
 
   legal_entity         legal_entities @relation("finance_monthly_close_review_entity", fields: [legal_entity_id], references: [id], onDelete: Restrict)
 
-  @@unique([legal_entity_id, year, month, version])
-  @@index([legal_entity_id, year, month, created_at])
-  @@index([status])
+  @@unique([legal_entity_id, year, month, version], map: "uq_fin_month_close_entity_period_version")
+  @@index([legal_entity_id, year, month, created_at], map: "idx_fin_month_close_entity_period_created")
+  @@index([status], map: "idx_fin_month_close_status")
   @@map("finance_monthly_close_reviews")
 }
