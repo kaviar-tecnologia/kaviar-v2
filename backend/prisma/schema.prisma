@@ -2555,6 +2555,7 @@ model financial_accounts {
   updated_by_admin admins? @relation("financial_accounts_updated_by", fields: [updated_by_admin_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
   transactions_as_account financial_transactions[] @relation("FinancialTransactionAccount")
   finance_statement_evidence finance_statement_evidence[] @relation("finance_evidence_account")
+  finance_official_statement_archives finance_official_statement_archives[] @relation("finance_official_archive_account")
   transactions_as_counterparty financial_transactions[] @relation("FinancialTransactionCounterpartyAccount")
 
   @@unique([code])
@@ -4685,6 +4686,7 @@ model legal_entities {
   financial_recognition_policies financial_recognition_policies[] @relation("financial_recognition_policies_legal_entity")
   financial_obligations financial_obligations[]           @relation("financial_obligations_legal_entity")
   finance_statement_evidence finance_statement_evidence[] @relation("finance_evidence_entity")
+  finance_official_statement_archives finance_official_statement_archives[] @relation("finance_official_archive_entity")
   finance_monthly_close_reviews finance_monthly_close_reviews[] @relation("finance_monthly_close_review_entity")
   financial_entity_assignments financial_entity_territory_assignments[]
   @@map("legal_entities")
@@ -5610,4 +5612,32 @@ model finance_statement_evidence {
   @@unique([legal_entity_id, account_id, provider, year, month, content_sha256], map: "uq_fin_evidence_scope_hash")
   @@index([legal_entity_id, year, month, provider], map: "idx_fin_evidence_period_provider")
   @@map("finance_statement_evidence")
+}
+
+// PR #409: source verification NEVER follows merely from storage integrity.
+model finance_official_statement_archives {
+  id                      String   @id @default(uuid())
+  legal_entity_id         String
+  account_id              String
+  provider                String
+  year                    Int
+  month                   Int
+  content_sha256          String   @db.VarChar(64)
+  byte_count              Int
+  media_type              String
+  declared_source_channel String
+  storage_bucket          String
+  storage_key             String   @unique
+  status                  String   @default("RESERVED")
+  source_verification     String   @default("UNVERIFIED")
+  stored_at               DateTime? @db.Timestamptz
+  recorded_by_admin_id    String
+  recorded_at             DateTime @default(now()) @db.Timestamptz
+
+  legal_entity            legal_entities @relation("finance_official_archive_entity", fields: [legal_entity_id], references: [id], onDelete: Restrict)
+  account                 financial_accounts @relation("finance_official_archive_account", fields: [account_id], references: [id], onDelete: Restrict)
+
+  @@unique([legal_entity_id, account_id, provider, year, month, content_sha256], map: "uq_fin_official_scope_hash")
+  @@index([legal_entity_id, year, month, provider], map: "idx_fin_official_period_provider")
+  @@map("finance_official_statement_archives")
 }
