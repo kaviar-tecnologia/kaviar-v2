@@ -19,6 +19,7 @@ import multer from 'multer';
 import {
   OfficialArchiveError,archiveUserDeclaredStatement,listOfficialArchives,
 } from '../services/finance/official-statement-archive.service';
+import { loadArchiveRecovery } from '../services/finance/official-archive-recovery.service';
 
 const router = Router();
 router.use(authenticateAdmin, allowFinanceAccess);
@@ -256,5 +257,23 @@ router.post('/evidence/official-archive',
     } catch(error) {return archiveError(res,error);}
   },
 );
+
+
+/**
+ * PR #410: strictly read-only inventory, not a provider validation or S3 retry.
+ * The feature stays disabled until the separate archive infrastructure is approved.
+ */
+router.get('/evidence/official-archive/recovery',async(req:Request,res:Response)=>{
+  if(process.env.FINANCE_OFFICIAL_ARCHIVE_ENABLED!=='true')
+    return res.status(404).json({success:false,error:'OFFICIAL_ARCHIVE_DISABLED'});
+  try {
+    if(actorFrom(req).role!=='SUPER_ADMIN')
+      throw new OfficialArchiveError(403,'SUPER_ADMIN_REQUIRED');
+    const q=querySchema.parse(req.query);
+    const report=await loadArchiveRecovery(q.legal_entity_id,q.year,q.month);
+    res.setHeader('Cache-Control','no-store');
+    return res.json({success:true,data:report});
+  } catch(error) {return archiveError(res,error);}
+});
 
 export default router;

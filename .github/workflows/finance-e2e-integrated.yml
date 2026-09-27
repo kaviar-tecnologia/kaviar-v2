@@ -169,6 +169,13 @@ jobs:
             tests/finance-official-archive.integration.test.ts \
             tests/finance-official-vault.test.ts
 
+      - name: Run archive reservation recovery tests (read only)
+        run: |
+          cd backend
+          NODE_ENV=test npx vitest run \
+            tests/finance-official-archive-recovery.test.ts \
+            tests/finance-official-archive-recovery.integration.test.ts
+
       - name: Typecheck backend
         run: cd backend && npx tsc --noEmit -p tsconfig.build.json
 
