@@ -78,7 +78,8 @@ jobs:
           for migration in \
             backend/prisma/migrations/20260927013000_add_finance_monthly_close_reviews/migration.sql \
             backend/prisma/migrations/20260927021000_add_finance_statement_evidence/migration.sql \
-            backend/prisma/migrations/20260927023500_add_finance_official_statement_archives/migration.sql             backend/prisma/migrations/20260927234000_finance_guardduty_version_gate/migration.sql
+            backend/prisma/migrations/20260927023500_add_finance_official_statement_archives/migration.sql \
+            backend/prisma/migrations/20260927234000_finance_guardduty_version_gate/migration.sql
           do
             echo "Validating migration: ${migration}"
             PGOPTIONS='-c search_path=finance_migrations_pr411_test,public' psql \
