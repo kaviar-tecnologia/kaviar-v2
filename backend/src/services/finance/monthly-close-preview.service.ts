@@ -45,14 +45,19 @@ function totals(count: number, cents: bigint | number | null): Totals {
 }
 
 const UNFINALIZED = new Set(['DRAFT', 'PENDING', 'BLOCKED']);
-const ACCOUNTANT_OPEN = new Set([
-  'SENT_TO_COMPANY', 'VIEWED', 'SCHEDULED', 'PAID',
-  'PROOF_UPLOADED', 'UNDER_VERIFICATION', 'REJECTED',
-]);
-const FINANCE_OPEN = new Set([
-  'DRAFT', 'PENDING', 'APPROVED', 'READY', 'QUEUED',
-  'PROCESSING', 'SENT', 'UNKNOWN', 'FAILED', 'BLOCKED',
-]);
+// Unknown and draft statuses require review rather than being silently closed.
+const ACCOUNTANT_FINAL = new Set(['VERIFIED', 'RECONCILED', 'CANCELED']);
+const FINANCE_FINAL = new Set(['SETTLED', 'RECONCILED', 'CANCELED', 'REVERSED']);
+
+/** Calendar period ends at midnight in the KAVIAR operating timezone, not UTC. */
+export function periodEndedInSaoPaulo(year: number, month: number, now: Date): boolean {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo', year: 'numeric', month: 'numeric',
+  }).formatToParts(now);
+  const localYear = Number(parts.find((p) => p.type === 'year')?.value);
+  const localMonth = Number(parts.find((p) => p.type === 'month')?.value);
+  return localYear * 12 + localMonth > year * 12 + month;
+}
 
 export function assembleMonthlyClosePreview(input: {
   legalEntityId: string;
@@ -68,7 +73,7 @@ export function assembleMonthlyClosePreview(input: {
   unallocatedBusinessUnitCount: number;
 }) {
   const window = monthWindow(input.year, input.month);
-  const periodEnded = input.now.getTime() >= window.until.getTime();
+  const periodEnded = periodEndedInSaoPaulo(input.year, input.month, input.now);
   let postedIncomeCents = 0n;
   let postedIncomeCount = 0;
   let nonFinalTransactionCount = 0;
@@ -96,9 +101,9 @@ export function assembleMonthlyClosePreview(input: {
     ...totals(group._count._all, group._sum.amount_cents),
   }));
   const financeOpenCount = financeObligations.filter((x) =>
-    FINANCE_OPEN.has(x.status)).reduce((sum, x) => sum + x.count, 0);
+    !FINANCE_FINAL.has(x.status)).reduce((sum, x) => sum + x.count, 0);
   const accountantOpenCount = accountantObligations.filter((x) =>
-    ACCOUNTANT_OPEN.has(x.status)).reduce((sum, x) => sum + x.count, 0);
+    !ACCOUNTANT_FINAL.has(x.status)).reduce((sum, x) => sum + x.count, 0);
 
   const reviewReasons: string[] = [];
   if (!periodEnded) reviewReasons.push('PERIOD_NOT_ENDED');
