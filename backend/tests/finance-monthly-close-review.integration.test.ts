@@ -143,5 +143,12 @@ describe('versioned and audited internal review', () => {
     const blocked = await request(app).post(base + '/reviews/' + p.body.data.id + '/approve-internal');
     expect(blocked.status).toBe(409);
     expect(blocked.body.error).toBe('INTERNAL_REVIEW_PENDING_ITEMS');
+    const returned = await request(app).post(base + '/reviews/' + p.body.data.id + '/reopen')
+      .send({ reason: 'Competencia ainda aberta; retornar para conferencia' });
+    expect(returned.status).toBe(200);
+    expect(returned.body.data.status).toBe('REOPENED');
+    const next = await prepare(entityB, month, year);
+    expect(next.status).toBe(201);
+    expect(next.body.data.version).toBe(2);
   });
 });
