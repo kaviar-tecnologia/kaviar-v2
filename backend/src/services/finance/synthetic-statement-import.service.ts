@@ -97,7 +97,8 @@ export function parseSyntheticStatement(csv: string): SyntheticRow[] {
     }
     return {
       externalId: id, occurredOn: date, eventType: kind as SyntheticEventType,
-      direction, amountCents: BigInt(amount), externalReference: reference || null,
+      direction: direction as 'IN' | 'OUT',
+      amountCents: BigInt(amount), externalReference: reference || null,
     };
   });
 
