@@ -20,11 +20,38 @@ export class CloseReviewError extends Error {
 export const INTERNAL_REVIEW_APPROVED = 'INTERNAL_REVIEW_APPROVED';
 const EXTERNAL_MISSING = 'EXTERNAL_STATEMENT_AND_ACCOUNTANT_EVIDENCE_MISSING';
 
+/**
+ * Database groupBy result order is not guaranteed. Canonicalize object keys
+ * and unordered preview collections BEFORE hashing, but keep the original
+ * snapshot for readable audit evidence.
+ */
+function canonicalizeSnapshot(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(canonicalizeSnapshot).sort((a, b) => {
+      const aa = JSON.stringify(a);
+      const bb = JSON.stringify(b);
+      return aa < bb ? -1 : aa > bb ? 1 : 0;
+    });
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+        .map(([key, item]) => [key, canonicalizeSnapshot(item)])
+    );
+  }
+  return value;
+}
+
+export function stableReviewSnapshotHash(value: unknown): string {
+  const safe = safeSerializeForAudit(value);
+  const json = JSON.stringify(canonicalizeSnapshot(safe));
+  return createHash('sha256').update(json).digest('hex');
+}
+
 function snapshotOf(preview: NonNullable<Awaited<ReturnType<typeof loadMonthlyClosePreview>>>) {
-  // JSON-compatible, no Date or BigInt objects.
-  const value = safeSerializeForAudit(preview) as Record<string, unknown>;
-  const json = JSON.stringify(value);
-  return { snapshot: value as Prisma.InputJsonValue, hash: createHash('sha256').update(json).digest('hex') };
+  const snapshot = safeSerializeForAudit(preview) as Record<string, unknown>;
+  return { snapshot: snapshot as Prisma.InputJsonValue, hash: stableReviewSnapshotHash(snapshot) };
 }
 function internalIssues(preview: NonNullable<Awaited<ReturnType<typeof loadMonthlyClosePreview>>>) {
   return preview.reviewReasons.filter((reason) => reason !== EXTERNAL_MISSING);
