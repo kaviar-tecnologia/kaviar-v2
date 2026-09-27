@@ -135,17 +135,21 @@ export async function reopenMonthlyCloseReview(id: string, reason: string, actor
   if (!reason.trim() || reason.trim().length < 10 || reason.length > 500)
     throw new CloseReviewError(400, 'REOPEN_REASON_REQUIRED');
   const current = await currentReview(id);
-  if (current.status !== INTERNAL_REVIEW_APPROVED)
+  // A submitted review with unresolved items must not become stuck forever.
+  // Return it for correction with a reason, preserving the old snapshot/version.
+  if (current.status !== 'IN_REVIEW' && current.status !== INTERNAL_REVIEW_APPROVED)
     throw new CloseReviewError(409, 'INVALID_REVIEW_STATE');
   return prisma.$transaction(async (tx) => {
     const result = await tx.finance_monthly_close_reviews.updateMany({
-      where: { id, status: INTERNAL_REVIEW_APPROVED },
+      where: { id, status: current.status },
       data: { status: 'REOPENED', reopened_by_admin_id: actor.adminId,
         reopened_at: new Date(), reopen_reason: reason.trim() },
     });
     if (result.count !== 1) throw new CloseReviewError(409, 'CONCURRENT_REVIEW_CONFLICT');
     const row = await tx.finance_monthly_close_reviews.findUniqueOrThrow({ where: { id } });
-    await writeAudit(tx, actor, 'FINANCE_MONTHLY_INTERNAL_REVIEW_REOPEN', id,
+    await writeAudit(tx, actor, current.status === 'IN_REVIEW'
+      ? 'FINANCE_MONTHLY_INTERNAL_REVIEW_RETURN_FOR_CORRECTION'
+      : 'FINANCE_MONTHLY_INTERNAL_REVIEW_REOPEN', id,
       { status: current.status }, { status: row.status, version: row.version }, reason);
     return view(row);
   });
