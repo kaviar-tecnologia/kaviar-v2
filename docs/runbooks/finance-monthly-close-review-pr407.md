@@ -15,6 +15,7 @@ explicitamente `EXTERNAL_STATEMENT_AND_ACCOUNTANT_EVIDENCE_MISSING`.
 - `DRAFT` → `IN_REVIEW`: FINANCE ou SUPER_ADMIN.
 - `IN_REVIEW` → `INTERNAL_REVIEW_APPROVED`: apenas SUPER_ADMIN, período encerrado
   e sem outras pendências internas, fotografia ainda igual à prévia atual.
+- `IN_REVIEW` → `REOPENED`: apenas SUPER_ADMIN, devolução justificada para correção.
 - `INTERNAL_REVIEW_APPROVED` → `REOPENED`: apenas SUPER_ADMIN, motivo (10–500 chars).
 - `REOPENED` permite nova preparação da mesma competência, **versão +1**.
 - Versões anteriores permanecem consultáveis; não são editadas nem apagadas.
@@ -37,7 +38,7 @@ As respostas expõem `finalClosing=false`, `externalStatementsVerified=false`,
 Unique por CNPJ/competência/versão, transições condicionais CAS (conflitos 409),
 trilha `admin_audit_logs` gravada na MESMA transação. Erro na auditoria aciona
 rollback da transição. Revisão de outra empresa ou versão histórica não pode ser
-alterada. Hash SHA-256 da fotografia exige reconferência antes da aprovação.
+alterada. Hash SHA-256 canônico da fotografia exige reconferência antes da aprovação; a ordem de agrupamentos retornada pelo banco não muda o hash.
 Não há pagamentos, baixa, alterações no livro, integração externa, flags ou saldos.
 A fotografia verifica alterações antes da aprovação; ela **não** impede alterações
 posteriores no livro, por isso este PR não implementa fechamento definitivo.
