@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  hasApprovedOnboardingDecision,
   planManagerCandidatePrefill,
   selectApprovedManagerCandidate,
   type ManagerCrmCandidate,
@@ -11,6 +12,7 @@ const candidate: ManagerCrmCandidate = {
   email: 'candidata@example.com',
   phone: '(21) 99999-0000',
   status: 'WAITING_DOCUMENTS',
+  approvalDecisionVerified: true,
 };
 
 const admin = {
@@ -27,11 +29,27 @@ describe('manager CRM application prefill', () => {
     if (result.kind === 'matched') expect(result.lead.id).toBe(candidate.id);
     expect(selectApprovedManagerCandidate([candidate], 'Outra Pessoa', candidate.email!)).toEqual({ kind: 'none' });
     expect(selectApprovedManagerCandidate([candidate], candidate.name, 'alternativo@example.com')).toEqual({ kind: 'none' });
+    expect(selectApprovedManagerCandidate([{ ...candidate, approvalDecisionVerified: false }], candidate.name, candidate.email!)).toEqual({ kind: 'none' });
   });
 
   it('refuses ambiguous and non-approved matches', () => {
     expect(selectApprovedManagerCandidate([candidate, { ...candidate, id: 'lead-duplicate' }], candidate.name, candidate.email!)).toEqual({ kind: 'ambiguous' });
     expect(selectApprovedManagerCandidate([{ ...candidate, status: 'INTERESTED' }], candidate.name, candidate.email!)).toEqual({ kind: 'none' });
+    expect(selectApprovedManagerCandidate([candidate, { ...candidate, id: 'pending-duplicate', status: 'INTERESTED' }], candidate.name, candidate.email!)).toEqual({ kind: 'ambiguous' });
+  });
+
+  it('requires the exact latest audited approval event, not a manually changed CRM status', () => {
+    expect(hasApprovedOnboardingDecision(JSON.stringify({
+      schema: 'manager_application_decision_v1', outcome: 'APPROVE_ONBOARDING',
+    }))).toBe(true);
+    expect(hasApprovedOnboardingDecision(JSON.stringify({
+      schema: 'manager_application_decision_v1', outcome: 'ADVANCE',
+    }))).toBe(false);
+    expect(hasApprovedOnboardingDecision(JSON.stringify({
+      schema: 'unrelated', outcome: 'APPROVE_ONBOARDING',
+    }))).toBe(false);
+    expect(hasApprovedOnboardingDecision('{invalid json')).toBe(false);
+    expect(hasApprovedOnboardingDecision(null)).toBe(false);
   });
 
   it('copies only empty identity/contact fields without changing activation or contract', () => {
