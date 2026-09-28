@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert, Badge, Box, Button, Checkbox, Chip, CircularProgress, Dialog,
   DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel,
-  FormControl, InputLabel, MenuItem, Select, TextField, Typography,
+  TextField, Typography,
 } from '@mui/material';
 import { AssignmentTurnedIn, ContentCopy, Forum, Refresh } from '@mui/icons-material';
 import { API_BASE_URL } from '../../config/api';
@@ -227,33 +227,73 @@ export default function ManagerApplicationsPanel({ open, onClose, onUpdated }) {
       </DialogContent>
 
       <Dialog open={Boolean(selected)} onClose={() => !submitting && setSelected(null)} fullWidth maxWidth="sm"
-        PaperProps={{ sx: { bgcolor: BG, color: TEXT } }}>
-        <DialogTitle>Registrar decisão — {selected?.lead.name}</DialogTitle>
+        PaperProps={{ sx: { bgcolor: BG, color: TEXT, border: '1px solid #536577' } }}>
+        <DialogTitle sx={{ color: TEXT, fontWeight: 700 }}>Registrar decisão — {selected?.lead.name}</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '12px !important' }}>
           <Alert severity="info">A decisão registra a etapa de seleção. Não ativa Gestor, contrato, pagamentos nem território.</Alert>
-          <FormControl fullWidth size="small">
-            <InputLabel id="manager-decision-label" sx={{ color: MUTED }}>Decisão</InputLabel>
-            <Select labelId="manager-decision-label" value={outcome} label="Decisão" onChange={event => setOutcome(event.target.value)} sx={{ color: TEXT }}>
-              {OUTCOMES.map(option => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
-            </Select>
-          </FormControl>
-          <TextField label="Justificativa obrigatória" multiline minRows={3} value={justification}
+          <Typography id="manager-decision-options-label" sx={{ color: TEXT, fontWeight: 700, fontSize: 15 }}>
+            Escolha uma decisão:
+          </Typography>
+          <Box role="group" aria-labelledby="manager-decision-options-label"
+            sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 1 }}>
+            {OUTCOMES.map(option => {
+              const chosen = outcome === option.value;
+              return <Button key={option.value} type="button" variant="outlined" fullWidth
+                aria-pressed={chosen} disabled={submitting} onClick={() => setOutcome(option.value)}
+                sx={{
+                  minHeight: 56, px: 2, py: 1.25, justifyContent: 'space-between', gap: 1,
+                  textTransform: 'none', fontSize: 14, fontWeight: 700, textAlign: 'left',
+                  color: chosen ? '#111' : TEXT, bgcolor: chosen ? GOLD : '#182432',
+                  border: `2px solid ${chosen ? GOLD : '#8195AB'}`,
+                  '&:hover': {
+                    bgcolor: chosen ? '#E6C453' : '#273A4E',
+                    borderColor: chosen ? GOLD : TEXT,
+                  },
+                  '&.Mui-focusVisible': { outline: '3px solid #F5D76E', outlineOffset: 2 },
+                  '&.Mui-disabled': { color: TEXT, bgcolor: '#283542', borderColor: '#8195AB' },
+                }}>
+                <Box component="span" sx={{ textAlign: 'left', flex: 1 }}>{option.label}</Box>
+                <Box component="span" sx={{ fontSize: 12, fontWeight: 600, textAlign: 'right' }}>
+                  {option.status}
+                </Box>
+              </Button>;
+            })}
+          </Box>
+          <TextField label="Justificativa obrigatória" multiline minRows={3} fullWidth value={justification}
             onChange={event => setJustification(event.target.value)} inputProps={{ maxLength: 2000 }}
             helperText={`${justification.trim().length}/2000 · mínimo 10 caracteres`}
-            InputLabelProps={{ sx: { color: MUTED } }} InputProps={{ sx: { color: TEXT } }} />
+            sx={{
+              bgcolor: '#182432', borderRadius: 1,
+              '& .MuiOutlinedInput-root': {
+                '& fieldset': { borderColor: '#8195AB', borderWidth: 2 },
+                '&:hover fieldset': { borderColor: TEXT },
+                '&.Mui-focused fieldset': { borderColor: GOLD },
+              },
+              '& .MuiInputLabel-root.Mui-focused': { color: GOLD },
+              '& .MuiFormHelperText-root': { color: MUTED, fontSize: 12, fontWeight: 600, mx: 0, mt: 1 },
+            }}
+            InputLabelProps={{ sx: { color: TEXT } }} InputProps={{ sx: { color: TEXT } }} />
           <FormControlLabel
-            control={<Checkbox checked={communicationRequested} onChange={event => setCommunicationRequested(event.target.checked)} />}
+            control={<Checkbox checked={communicationRequested} onChange={event => setCommunicationRequested(event.target.checked)}
+              sx={{ color: MUTED, '&.Mui-checked': { color: GOLD } }} />}
             label="Preparar comunicação opcional pelo WhatsApp oficial"
+            sx={{ color: TEXT }}
           />
           {communicationRequested && outcome && <Alert severity="warning">
             A comunicação será apenas preparada. O envio depende de abrir a Central, revisar o texto e confirmar manualmente; mensagens livres exigem janela válida do WhatsApp.
           </Alert>}
           {decisionError && <Alert severity="error">{decisionError}</Alert>}
         </DialogContent>
-        <DialogActions>
-          <Button disabled={submitting} onClick={() => setSelected(null)}>Cancelar</Button>
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1, flexWrap: 'wrap' }}>
+          <Button variant="outlined" disabled={submitting} onClick={() => setSelected(null)}
+            sx={{ color: TEXT, borderColor: '#8195AB', fontWeight: 700,
+              '&.Mui-disabled': { color: MUTED, borderColor: '#536577' } }}>Cancelar</Button>
           <Button variant="contained" disabled={submitting || !outcome || justification.trim().length < 10}
-            onClick={saveDecision} sx={{ bgcolor: GOLD, color: '#111' }}>
+            onClick={saveDecision} sx={{
+              bgcolor: GOLD, color: '#111', fontWeight: 800, px: 2,
+              '&:hover': { bgcolor: '#E6C453' },
+              '&.Mui-disabled': { bgcolor: '#283542', color: '#CBD5E1', border: '1px solid #8195AB' },
+            }}>
             {submitting ? 'Registrando...' : 'Confirmar decisão'}
           </Button>
         </DialogActions>
