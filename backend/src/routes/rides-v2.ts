@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { dispatcherService } from '../services/dispatcher.service';
+import { isUnsupportedCareIntent, CARE_UNAVAILABLE_CODE } from '../services/care/care-readiness-policy';
 import { resolveTerritory } from '../services/territory-resolver.service';
 import { Decimal } from '@prisma/client/runtime/library';
 import { realTimeService } from '../services/realtime.service';
@@ -82,6 +83,10 @@ const router = Router();
 // 5.0 Estimativa de preço (sem criar corrida)
 router.post('/estimate', authenticatePassenger, async (req: Request, res: Response) => {
   try {
+    // Same central CARE gate as ride creation: no pseudo-CAR_NORMAL estimate.
+    if (isUnsupportedCareIntent(req.body)) {
+      return res.status(403).json({ success: false, error: CARE_UNAVAILABLE_CODE });
+    }
     const { origin, destination, post_wait_destination, wait_estimated_min, service_category } = req.body;
     if (!origin?.lat || !origin?.lng || !destination?.lat || !destination?.lng) {
       return res.status(400).json({ error: 'Origem ou destino inválido' });
@@ -207,6 +212,11 @@ router.get('/active', authenticatePassenger, async (req: Request, res: Response)
 // 5.1 Passageiro solicita corrida
 router.post('/', authenticatePassenger, async (req: Request, res: Response) => {
   try {
+    // Reject before idempotency lookup, pricing, persistence or async dispatch.
+    // Frontend-hidden CARE is not equivalent to backend-disabled CARE.
+    if (isUnsupportedCareIntent(req.body)) {
+      return res.status(403).json({ success: false, error: CARE_UNAVAILABLE_CODE });
+    }
     const passengerId = (req as any).passengerId;
     const { origin, destination, type = 'normal', trip_details, scheduled_for, wait_requested = false, wait_estimated_min, post_wait_destination, service_category, passenger_moto_consent } = req.body;
     const idempotencyKey = req.headers['idempotency-key'] as string;
