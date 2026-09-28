@@ -9,6 +9,7 @@ router.use(authenticateAdmin, requireRole(['SUPER_ADMIN']));
 
 const DECISION_STATUS: Record<string, string | null> = {
   ADVANCE: 'INTERESTED',
+  APPROVE_ONBOARDING: 'WAITING_DOCUMENTS',
   REQUEST_INFO: 'CONTACTED',
   KEEP_REVIEW: null,
   DO_NOT_PROCEED: 'REJECTED',
@@ -16,6 +17,7 @@ const DECISION_STATUS: Record<string, string | null> = {
 
 const DECISION_LABEL: Record<string, string> = {
   ADVANCE: 'Avançar para a próxima etapa',
+  APPROVE_ONBOARDING: 'Candidatura aprovada — cadastro em preparação',
   REQUEST_INFO: 'Solicitar informações adicionais',
   KEEP_REVIEW: 'Manter em análise',
   DO_NOT_PROCEED: 'Não prosseguir',
@@ -182,10 +184,26 @@ router.post('/:id/decisions', async (req: Request, res: Response) => {
       if (!lead) throw new Error('CANDIDATE_NOT_FOUND');
       if (lead.status === 'ACTIVE') throw new Error('ALREADY_ACTIVE');
       if (lead.updated_at.getTime() !== new Date(expectedUpdatedAt).getTime()) throw new Error('STALE_CANDIDATE');
+      // Starting an approved candidature is a separate explicit decision, not
+      // an implication of ADVANCE or of a generic INTERESTED CRM status.
+      if (outcome === 'APPROVE_ONBOARDING') {
+        if (lead.status !== 'INTERESTED' || communicationRequested !== true) throw new Error('ONBOARDING_NOT_READY');
+        const previous = await tx.crm_interactions.findFirst({
+          where: { lead_id: lead.id, event_type: 'DECISION' },
+          orderBy: { created_at: 'desc' },
+          select: { description: true },
+        });
+        if (decisionData(previous)?.outcome !== 'ADVANCE') throw new Error('ONBOARDING_NOT_READY');
+      }
       const nextStatus = DECISION_STATUS[outcome] || lead.status;
       const change = await tx.crm_leads.updateMany({
         where: { id: lead.id, updated_at: lead.updated_at, status: lead.status },
-        data: { status: nextStatus },
+        data: {
+          status: nextStatus,
+          ...(outcome === 'APPROVE_ONBOARDING'
+            ? { next_action: 'Conferir dados, território, documentos e contrato territorial v1.2 antes de ativar o Gestor.' }
+            : {}),
+        },
       });
       if (change.count !== 1) throw new Error('STALE_CANDIDATE');
       const interaction = await tx.crm_interactions.create({
@@ -229,6 +247,7 @@ router.post('/:id/decisions', async (req: Request, res: Response) => {
   } catch (error: any) {
     if (error?.message === 'CANDIDATE_NOT_FOUND') return res.status(404).json({ success: false, error: 'Candidatura não encontrada.' });
     if (error?.message === 'ALREADY_ACTIVE') return res.status(409).json({ success: false, error: 'Gestor ativo: decisões de candidatura não alteram a operação.' });
+    if (error?.message === 'ONBOARDING_NOT_READY') return res.status(409).json({ success: false, code: 'ONBOARDING_NOT_READY', error: 'O cadastro só pode ser iniciado após uma decisão atual de avanço, com preparo da comunicação oficial.' });
     if (error?.message === 'STALE_CANDIDATE') return res.status(409).json({ success: false, code: 'STALE_CANDIDATE', error: 'Cadastro alterado por outra operação. Atualize antes de decidir.' });
     console.error('[MANAGER_APPLICATIONS] decision failed', error);
     return res.status(500).json({ success: false, error: 'Erro ao registrar decisão.' });
