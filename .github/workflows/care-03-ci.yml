@@ -1,0 +1,35 @@
+name: CARE-03 Eligibility
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/services/care/**'
+      - 'backend/tests/care-03-eligibility.test.ts'
+      - 'docs/care/CARE-03-eligibility-engine.md'
+      - '.github/workflows/care-03-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  care-eligibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+      - name: Unit-test fail-closed eligibility
+        working-directory: backend
+        # Vitest's global guard requires an explicitly local-only URL. This
+        # pure unit test does not open a DB connection or use production data.
+        env:
+          DATABASE_URL: postgresql://care03_ci:ci_password@127.0.0.1:5432/care03_disposable
+        run: npx vitest run tests/care-03-eligibility.test.ts
+      - name: Typecheck backend
+        working-directory: backend
+        run: npx tsc --noEmit -p tsconfig.build.json
