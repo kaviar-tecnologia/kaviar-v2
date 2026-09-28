@@ -40,7 +40,7 @@ describe('WhatsApp CRM-01 manager application UI contracts', () => {
   });
 
   it('keeps borders, justification and confirmation readable on the dark dialog', () => {
-    expect(page).toContain("border: \`2px solid \${chosen ? GOLD : '#8195AB'}\`");
+    expect(page).toContain("border: `2px solid ${chosen ? GOLD : '#8195AB'}`");
     expect(page).toContain("'&.Mui-focusVisible': { outline: '3px solid #F5D76E'");
     expect(page).toContain("'& .MuiOutlinedInput-root'");
     expect(page).toContain("'& .MuiFormHelperText-root': { color: MUTED");
