@@ -456,7 +456,7 @@ router.post('/send', authenticateAdmin, requireRole(SEND_ROLES), applyTerritoryS
       orderBy: { created_at: 'desc' },
     });
 
-    if (duplicate && (!force || admin.role !== 'SUPER_ADMIN')) {
+    if (duplicate && (type === 'manager_application' || !force || admin.role !== 'SUPER_ADMIN')) {
       return res.status(409).json({
         success: false,
         code: 'DUPLICATE_INVITE',
