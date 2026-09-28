@@ -6,7 +6,9 @@ const now = new Date('2026-09-27T12:00:00.000Z');
 const row=(id:string,status:string,minutes:number,provider='SUMUP'):RecoveryRow=>({
   id, account_id:'synthetic-account',provider,status,source_verification:'UNVERIFIED',
   recorded_at:new Date(now.getTime()-minutes*60000),
-  stored_at:status==='STORED_UNVERIFIED'?new Date(now.getTime()-1000):null,
+  stored_at:status==='RESERVED'?null:new Date(now.getTime()-1000),
+  storage_version_id:status==='STORED_PENDING_SCAN'?'fictional-version-1':null,
+  malware_scan_status:'PENDING',
 });
 const report=(rows:RecoveryRow[])=>assembleArchiveRecovery(rows,'synthetic-entity',2026,8,now);
 
@@ -30,6 +32,17 @@ describe('PR410 manual archive recovery report is read-only and never certifies 
     });
     expect(out.reviewReasons).toContain('ARCHIVE_RESERVATIONS_REQUIRE_REVIEW');
     expect(JSON.stringify(out)).not.toContain('storage_key');
+  });
+  it('distinguishes pending scans and rejected results without certifying them',()=>{
+    const pending=row('pending','STORED_PENDING_SCAN',25);
+    const rejected={...row('rejected','STORED_PENDING_SCAN',50),malware_scan_status:'THREATS_FOUND'};
+    const out=report([pending,rejected]);
+    expect(out.entries.map(x=>x.action)).toEqual([
+      'AWAIT_GUARDDUTY_RESULT','REVIEW_UNCLEAN_OR_FAILED_SCAN',
+    ]);
+    expect(out.counts).toMatchObject({awaitingScan:1,scanNeedsReview:1});
+    expect(out.finalClosing).toBe(false);
+    expect(()=>report([{...pending,storage_version_id:null}])).toThrow(OfficialArchiveError);
   });
   it('does not confuse no archive rows with verified zero activity',()=>{
     const out=report([]);

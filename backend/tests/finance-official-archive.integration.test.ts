@@ -5,8 +5,8 @@ import request from 'supertest';
 import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest';
 import { prisma } from '../src/lib/prisma';
 import { assertSafeFinanceDatabase } from '../src/lib/assert-safe-finance-db';
-import { archiveUserDeclaredStatement, listOfficialArchives } from '../src/services/finance/official-statement-archive.service';
-import type { ArchiveStorage, ArchiveWrite } from '../src/services/finance/official-statement-vault.service';
+import { archiveUserDeclaredStatement, listOfficialArchives, checkOfficialArchiveMalware } from '../src/services/finance/official-statement-archive.service';
+import type { ArchiveStorage, ArchiveWrite, ArchiveScanInput, ArchiveScanResult } from '../src/services/finance/official-statement-vault.service';
 
 const auth=vi.hoisted(()=>({role:'SUPER_ADMIN',id:'test-archive-admin'}));
 vi.mock('../src/middlewares/auth',()=>({
@@ -27,13 +27,22 @@ const record=(content:Buffer=pdf,filename='fictional.pdf')=>({
 });
 const actor={role:'SUPER_ADMIN' as const,adminId:'test-archive-admin'};
 const writes:ArchiveWrite[]=[];
+const checks:ArchiveScanInput[]=[];
+let scanResult:ArchiveScanResult={scanStatus:'NO_THREATS_FOUND',integrityVerified:true};
 const fakeVault:ArchiveStorage={
-  putAndVerify:async(input)=>{
+  putAndInspect:async(input)=>{
     expect(createHash('sha256').update(input.content).digest('hex')).toBe(input.contentSha256);
     expect(input.kmsKeyArn).toContain('arn:aws:kms:');
     expect(input.key).toMatch(/^finance-evidence\/2026\/07\/[0-9a-f-]+\/source\.(pdf|csv)$/);
     expect(input.bucket).toBe('kaviar-finance-evidence-test-private');
     writes.push(input);
+    return {versionId:'fictional-version-1'};
+  },
+  verifyCleanVersion:async(input)=>{
+    expect(input.versionId).toBe('fictional-version-1');
+    expect(input.bucket).toBe('kaviar-finance-evidence-test-private');
+    checks.push(input);
+    return scanResult;
   },
 };
 beforeAll(async()=>{
@@ -85,7 +94,8 @@ describe('private archive foundation: storage integrity is not provider proof',(
     });
     const saved=await archiveUserDeclaredStatement(record(),actor,fakeVault);
     expect(saved).toMatchObject({
-      provider:'SUMUP',status:'STORED_UNVERIFIED',storageIntegrityVerified:true,
+      provider:'SUMUP',status:'STORED_PENDING_SCAN',storageIntegrityVerified:false,
+      s3MetadataVerified:true,malwareScanStatus:'PENDING',malwareScanApproved:false,
       officialSourceVerified:false,reconciliationVerified:false,
       zeroRevenueVerified:false,readyForFinalClosing:false,finalClosing:false,
       rawContentExposed:false,
@@ -96,7 +106,8 @@ describe('private archive foundation: storage integrity is not provider proof',(
     expect(writes).toHaveLength(1);
     const db=await prisma.finance_official_statement_archives.findUnique({where:{id:saved.id}});
     expect(db?.source_verification).toBe('UNVERIFIED');
-    expect(db?.status).toBe('STORED_UNVERIFIED');
+    expect(db?.status).toBe('STORED_PENDING_SCAN');
+    expect(db?.storage_version_id).toBe('fictional-version-1');
     expect(db?.storage_key).toContain(saved.id);
     const audit=await prisma.$queryRawUnsafe<Array<{action:string}>>(
       "SELECT action FROM admin_audit_logs WHERE entity_type='finance_official_statement_archives' AND entity_id=$1 ORDER BY id",
@@ -104,7 +115,23 @@ describe('private archive foundation: storage integrity is not provider proof',(
     );
     expect(audit.map(x=>x.action)).toEqual([
       'FINANCE_OFFICIAL_ARCHIVE_RESERVE',
-      'FINANCE_OFFICIAL_ARCHIVE_STORAGE_INTEGRITY_CONFIRMED',
+      'FINANCE_OFFICIAL_ARCHIVE_S3_METADATA_CONFIRMED',
+    ]);
+    const clean=await checkOfficialArchiveMalware(saved.id,actor,fakeVault);
+    expect(clean).toMatchObject({
+      status:'STORED_UNVERIFIED',malwareScanStatus:'NO_THREATS_FOUND',
+      malwareScanApproved:true,storageIntegrityVerified:true,
+      officialSourceVerified:false,zeroRevenueVerified:false,finalClosing:false,
+    });
+    expect(checks).toHaveLength(1);
+    const auditAfter=await prisma.$queryRawUnsafe<Array<{action:string}>>(
+      "SELECT action FROM admin_audit_logs WHERE entity_type='finance_official_statement_archives' AND entity_id=$1 ORDER BY id",
+      saved.id,
+    );
+    expect(auditAfter.map(x=>x.action)).toEqual([
+      'FINANCE_OFFICIAL_ARCHIVE_RESERVE',
+      'FINANCE_OFFICIAL_ARCHIVE_S3_METADATA_CONFIRMED',
+      'FINANCE_OFFICIAL_ARCHIVE_GUARDDUTY_RESULT_RECORDED',
     ]);
     const after=await prisma.financial_accounts.findUnique({
       where:{id:accountA},select:{opening_balance_cents:true,updated_at:true},
@@ -115,7 +142,10 @@ describe('private archive foundation: storage integrity is not provider proof',(
       .rejects.toMatchObject({code:'P2002'});
   });
   it('a failed vault leaves an audited reservation, not a confirmed object',async()=>{
-    const failing:ArchiveStorage={putAndVerify:async()=>{throw new Error('FAKE_S3_UNAVAILABLE');}};
+    const failing:ArchiveStorage={
+      putAndInspect:async()=>{throw new Error('FAKE_S3_UNAVAILABLE');},
+      verifyCleanVersion:async()=>{throw new Error('SHOULD_NOT_SCAN');},
+    };
     await expect(archiveUserDeclaredStatement(record(csv,'fictional.csv'),actor,failing))
       .rejects.toMatchObject({status:503,code:'ARCHIVE_STORAGE_UNCONFIRMED'});
     const pending=await prisma.finance_official_statement_archives.findFirst({
@@ -142,6 +172,26 @@ describe('private archive foundation: storage integrity is not provider proof',(
     expect(JSON.stringify(rows)).not.toContain(entityB);
     expect(rows.every(x=>x.officialSourceVerified===false&&x.finalClosing===false)).toBe(true);
     expect(await listOfficialArchives(entityB,2026,7)).toEqual([]);
+  });
+  it('keeps a pending scan blocked, and records a threat without reading or changing financial data',async()=>{
+    const another=Buffer.from('synthetic_reference,synthetic_value\nblocked,0\n');
+    const saved=await archiveUserDeclaredStatement({
+      ...record(another,'blocked.csv'),provider:'ASAAS',
+    },actor,fakeVault);
+    scanResult={scanStatus:'PENDING',integrityVerified:false};
+    expect(await checkOfficialArchiveMalware(saved.id,actor,fakeVault))
+      .toMatchObject({status:'STORED_PENDING_SCAN',malwareScanApproved:false});
+    scanResult={scanStatus:'THREATS_FOUND',integrityVerified:false};
+    expect(await checkOfficialArchiveMalware(saved.id,actor,fakeVault))
+      .toMatchObject({status:'STORED_PENDING_SCAN',malwareScanStatus:'THREATS_FOUND',
+        malwareScanApproved:false,storageIntegrityVerified:false});
+    const row=await prisma.finance_official_statement_archives.findUnique({where:{id:saved.id}});
+    expect(row?.source_verification).toBe('UNVERIFIED');
+    expect(row?.integrity_verified_at).toBeNull();
+    expect(await prisma.financial_transactions.count({where:{legal_entity_id:entityA}})).toBe(0);
+    scanResult={scanStatus:'NO_THREATS_FOUND',integrityVerified:true};
+    expect(await checkOfficialArchiveMalware(saved.id,actor,fakeVault))
+      .toMatchObject({malwareScanStatus:'THREATS_FOUND',malwareScanApproved:false});
   });
   it('fails before DB or storage when feature gate is off',async()=>{
     vi.stubEnv('FINANCE_OFFICIAL_ARCHIVE_ENABLED','false');

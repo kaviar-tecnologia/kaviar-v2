@@ -11,7 +11,7 @@ import { prisma } from '../../lib/prisma';
 import { assertSafeFinanceDatabase } from '../../lib/assert-safe-finance-db';
 import { monthWindow } from './monthly-close-preview.service';
 import { FinanceTransactionAuditContext, writeFinanceTransactionAuditTx } from './finance-transaction-audit';
-import { ArchiveStorage, S3FinanceEvidenceVault } from './official-statement-vault.service';
+import { ArchiveStorage, S3FinanceEvidenceVault, type ArchiveScanInput, type ArchiveScanResult } from './official-statement-vault.service';
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const UTF8 = new TextDecoder('utf-8', { fatal: true });
@@ -74,8 +74,13 @@ function view(row: any) {
     declaredSourceChannel: row.declared_source_channel, status: row.status,
     storedAt: row.stored_at, recordedAt: row.recorded_at,
     recordedByAdminId: row.recorded_by_admin_id,
-    rawContentExposed: false, storageIntegrityVerified: row.status === 'STORED_UNVERIFIED',
-    officialSourceVerified: false, reconciliationVerified: false,
+    rawContentExposed:false,s3MetadataVerified:row.status !== 'RESERVED',
+    storageIntegrityVerified:row.status === 'STORED_UNVERIFIED',
+    malwareScanStatus:row.malware_scan_status ?? 'PENDING',
+    malwareScanApproved:row.status === 'STORED_UNVERIFIED' &&
+      row.malware_scan_status === 'NO_THREATS_FOUND' &&
+      !!row.integrity_verified_at && !!row.storage_version_id,
+    officialSourceVerified:false,reconciliationVerified:false,
     zeroRevenueVerified: false, readyForFinalClosing: false, finalClosing: false,
   };
 }
@@ -136,29 +141,94 @@ export async function archiveUserDeclaredStatement(
     return row;
   });
   const vault = storage || new S3FinanceEvidenceVault(config.region);
+  let receipt:{versionId:string};
   try {
-    await vault.putAndVerify({
+    receipt = await vault.putAndInspect({
       bucket:config.bucket,key,content:input.content,contentSha256:checked.sha256,
       contentType:checked.contentType,kmsKeyArn:config.kmsKeyArn,
     });
+    if (!receipt.versionId || receipt.versionId === 'null')
+      throw new Error('ARCHIVE_VERSION_ID_REQUIRED');
   } catch {
     throw new OfficialArchiveError(503,'ARCHIVE_STORAGE_UNCONFIRMED');
   }
   return prisma.$transaction(async tx => {
     const changed = await tx.finance_official_statement_archives.updateMany({
       where:{id:reserved.id,status:'RESERVED',content_sha256:checked.sha256},
-      data:{status:'STORED_UNVERIFIED',stored_at:new Date()},
+      data:{status:'STORED_PENDING_SCAN',stored_at:new Date(),
+        storage_version_id:receipt.versionId},
     });
     if (changed.count !== 1) throw new OfficialArchiveError(409,'ARCHIVE_RESERVATION_CONFLICT');
     const row = await tx.finance_official_statement_archives.findUniqueOrThrow({where:{id}});
     await writeFinanceTransactionAuditTx(tx,actor,{
-      action:'FINANCE_OFFICIAL_ARCHIVE_STORAGE_INTEGRITY_CONFIRMED',
+      action:'FINANCE_OFFICIAL_ARCHIVE_S3_METADATA_CONFIRMED',
       entityType:'finance_official_statement_archives',entityId:id,
       oldValue:{status:'RESERVED'},newValue:{
         status:row.status,hash:row.content_sha256,bytes:row.byte_count,
+        s3VersionRecorded:true,malwareScanStatus:'PENDING',storageIntegrityVerified:false,
         officialSourceVerified:false,zeroRevenueVerified:false,
       },
     });
     return view(row);
+  });
+}
+
+/** Manual, authenticated scan check: callers never supply bucket, key or version. */
+export async function checkOfficialArchiveMalware(
+  id:string, actor:OfficialArchiveActor, storage?:ArchiveStorage,
+) {
+  const config = requireOfficialArchiveConfig();
+  if (actor.role !== 'SUPER_ADMIN' || !actor.adminId)
+    throw new OfficialArchiveError(403,'SUPER_ADMIN_REQUIRED');
+  const row = await prisma.finance_official_statement_archives.findUnique({where:{id}});
+  if (!row) throw new OfficialArchiveError(404,'ARCHIVE_NOT_FOUND');
+  if (row.storage_bucket !== config.bucket || row.source_verification !== 'UNVERIFIED')
+    throw new OfficialArchiveError(409,'ARCHIVE_UNEXPECTED_TRUST_STATE');
+  if (row.status === 'STORED_UNVERIFIED' &&
+      row.malware_scan_status === 'NO_THREATS_FOUND' && row.integrity_verified_at)
+    return view(row);
+  if (row.status !== 'STORED_PENDING_SCAN' || !row.storage_version_id)
+    throw new OfficialArchiveError(409,'ARCHIVE_SCAN_NOT_AVAILABLE');
+  if (row.malware_scan_status !== 'PENDING') return view(row);
+  const vault = storage || new S3FinanceEvidenceVault(config.region);
+  const input:ArchiveScanInput = {
+    bucket:row.storage_bucket,key:row.storage_key,versionId:row.storage_version_id,
+    contentSha256:row.content_sha256,byteCount:row.byte_count,
+    contentType:row.media_type as ArchiveScanInput['contentType'],kmsKeyArn:config.kmsKeyArn,
+  };
+  let result:ArchiveScanResult;
+  try {
+    result = await vault.verifyCleanVersion(input);
+    if (result.scanStatus === 'NO_THREATS_FOUND' && !result.integrityVerified)
+      throw new Error('ARCHIVE_INTEGRITY_REQUIRED');
+    if (result.scanStatus !== 'NO_THREATS_FOUND' && result.integrityVerified)
+      throw new Error('ARCHIVE_UNEXPECTED_SCAN_RESULT');
+  } catch {
+    throw new OfficialArchiveError(503,'ARCHIVE_SCAN_OR_READBACK_UNCONFIRMED');
+  }
+  if (result.scanStatus === 'PENDING') return view(row);
+  return prisma.$transaction(async tx => {
+    const changed = await tx.finance_official_statement_archives.updateMany({
+      where:{id:row.id,status:'STORED_PENDING_SCAN',
+        storage_version_id:row.storage_version_id,malware_scan_status:'PENDING',
+        source_verification:'UNVERIFIED'},
+      data:{
+        malware_scan_status:result.scanStatus,malware_scanned_at:new Date(),
+        ...(result.integrityVerified
+          ? {status:'STORED_UNVERIFIED',integrity_verified_at:new Date()} : {}),
+      },
+    });
+    if (changed.count !== 1) throw new OfficialArchiveError(409,'ARCHIVE_SCAN_STATE_CONFLICT');
+    const updated = await tx.finance_official_statement_archives.findUniqueOrThrow({where:{id}});
+    await writeFinanceTransactionAuditTx(tx,actor,{
+      action:'FINANCE_OFFICIAL_ARCHIVE_GUARDDUTY_RESULT_RECORDED',
+      entityType:'finance_official_statement_archives',entityId:id,
+      oldValue:{status:row.status,malwareScanStatus:'PENDING'},newValue:{
+        status:updated.status,malwareScanStatus:updated.malware_scan_status,
+        storageIntegrityVerified:!!updated.integrity_verified_at,
+        officialSourceVerified:false,reconciliationVerified:false,zeroRevenueVerified:false,
+      },
+    });
+    return view(updated);
   });
 }
