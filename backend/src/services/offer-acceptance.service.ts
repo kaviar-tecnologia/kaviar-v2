@@ -12,6 +12,7 @@ import { PendingDebitService } from './wallet-v2/pending-debit.service';
 import { pool } from '../db';
 import { estimateFeeCentsFromPrice } from './wallet-v2/fee-helper';
 import { isUnsupportedCareIntent, CARE_UNAVAILABLE_CODE } from './care/care-readiness-policy';
+import { evaluateCareEligibilityFromDb } from './care/care-runtime-eligibility';
 
 const ADJUSTMENT_MIN_PASSENGER_VERSION = '1.4.0';
 
@@ -45,6 +46,25 @@ export async function acceptOfferInternal(offerId: string, driverId: string, adj
       ride_type: offer.ride.ride_type,
       trip_details: offer.ride.trip_details,
     })) {
+      throw new Error(CARE_UNAVAILABLE_CODE);
+    }
+
+    // CARE-04D: additional transactional gate for a future explicitly
+    // reviewed rollout. Re-read current evidence inside the SAME transaction,
+    // before offer mutation, driver assignment, wallet or notifications.
+    // Null means trusted CARE-specific municipality/territory/insurance
+    // evidence is not yet connected. The CARE-04A unconditional guard above
+    // remains authoritative and rejects CARE before this branch today.
+    if (isUnsupportedCareIntent({
+      service_category: offer.ride.service_category,
+      ride_type: offer.ride.ride_type,
+      trip_details: offer.ride.trip_details,
+    })) {
+      const careDecision = await evaluateCareEligibilityFromDb(
+        tx, offer.ride_id, driverId, null, new Date(),
+      );
+      if (!careDecision.eligible) throw new Error(CARE_UNAVAILABLE_CODE);
+      // An eligible snapshot cannot independently unlock a real CARE ride.
       throw new Error(CARE_UNAVAILABLE_CODE);
     }
 
