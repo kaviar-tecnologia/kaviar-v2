@@ -8,6 +8,8 @@ O serviço `backend/src/services/care/care-ride-create.ts` é **uma fronteira co
 
 Uma futura integração CARE fornecerá, no **mesmo método**, um segundo argumento tipado com requisitos funcionais. Nesse caso, o método insere `rides_v2` e `care_trip_requirements` numa única `prisma.$transaction`. Falha do filho desfaz o pai; sucesso cria o filho em `DRAFT` e sem `reviewed_by_admin_id`/`reviewed_at`. Não existem "corridas sem requisito" no caminho CARE.
 
+O método também recusa uma categoria CARE quando o segundo argumento estiver ausente, impedindo que uma chamada interna futura grave corrida sem requisitos. Rejeita preço, settlement, motorista pré-atribuído e detalhes livres em rascunhos CARE.
+
 **Nenhum endpoint público fornece esse segundo argumento neste PR.** A barreira de disponibilidade do CARE-04A permanece incondicional e bloqueia estimativas/solicitações CARE. O próprio dispatcher e ambos os caminhos de aceite continuam bloqueados para corridas CARE importadas. Nenhuma migração foi executada em produção.
 
 ## Validação de dados mínimos
