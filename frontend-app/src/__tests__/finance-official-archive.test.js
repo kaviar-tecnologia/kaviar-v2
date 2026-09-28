@@ -114,7 +114,7 @@ describe('premium official archive workspace safety', () => {
     expect(page).toContain('Nenhum documento listado');
     expect(page).toContain('faturamento zero');
     expect(page).toContain('Somente consulta');
-    expect(page).toContain('Esta operação');
+    expect(page).toContain('exclusivo de SUPER_ADMIN');
     expect(page).not.toContain('createFinanceTransaction');
     expect(page).not.toContain('postFinanceTransaction');
     expect(page).not.toContain('window.open(');
