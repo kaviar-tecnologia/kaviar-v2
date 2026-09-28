@@ -1,9 +1,11 @@
 import express from 'express';
 import request from 'supertest';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import twilio from 'twilio';
 
 const { prismaMock, resolveApplicant, alertMock } = vi.hoisted(() => ({
   prismaMock: {
+    $transaction: vi.fn(),
     wa_messages: { findFirst: vi.fn(), create: vi.fn() },
     wa_conversations: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
     drivers: { findFirst: vi.fn() },
@@ -26,8 +28,12 @@ const endpoint = '/webhooks/twilio/whatsapp';
 const body = { From: 'whatsapp:+5521994542978', Body: 'Olá, seguem minhas respostas', MessageSid: 'SM-real-unique-id', ProfileName: 'Ana' };
 
 describe('official WhatsApp inbound manager association', () => {
+  const savedEnv = { ...process.env };
+  afterEach(() => { process.env = { ...savedEnv }; });
   beforeEach(() => {
+    process.env.NODE_ENV = 'test';
     vi.clearAllMocks();
+    prismaMock.$transaction.mockImplementation(async (callback: any) => callback(prismaMock));
     prismaMock.wa_messages.findFirst.mockResolvedValue(null);
     prismaMock.wa_conversations.findUnique.mockResolvedValue(null);
     prismaMock.wa_conversations.create.mockImplementation(async ({ data }: any) => ({ id: 'conversation-1', ...data }));
@@ -35,6 +41,27 @@ describe('official WhatsApp inbound manager association', () => {
     prismaMock.wa_messages.create.mockResolvedValue({ id: 'message-1' });
     resolveApplicant.mockResolvedValue({ id: 'original-website-application', name: 'Ana Julia' });
     alertMock.mockResolvedValue(undefined);
+  });
+
+  it('rejects missing or invalid signature in production before writing anything', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.TWILIO_AUTH_TOKEN = 'test-secret';
+    process.env.PUBLIC_API_BASE_URL = 'https://api.kaviar.com.br';
+    const unsigned = await request(app).post(endpoint).type('form').send(body);
+    const bad = await request(app).post(endpoint).type('form').set('X-Twilio-Signature', 'bad').send(body);
+    expect(unsigned.status).toBe(403);
+    expect(bad.status).toBe(403);
+    expect(prismaMock.wa_messages.create).not.toHaveBeenCalled();
+  });
+
+  it('accepts a correct Twilio signature for the configured exact public URL', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.TWILIO_AUTH_TOKEN = 'test-secret';
+    process.env.PUBLIC_API_BASE_URL = 'https://api.kaviar.com.br';
+    const sig = twilio.getExpectedTwilioSignature('test-secret', 'https://api.kaviar.com.br' + endpoint, body);
+    const result = await request(app).post(endpoint).type('form').set('X-Twilio-Signature', sig).send(body);
+    expect(result.status).toBe(200);
+    expect(prismaMock.wa_messages.create).toHaveBeenCalledOnce();
   });
 
   it('links inbound reply to original website Gestor application and stores exactly one message', async () => {
