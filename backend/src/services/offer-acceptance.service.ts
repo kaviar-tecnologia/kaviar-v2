@@ -11,6 +11,7 @@ import { TerritoryLedgerService } from './wallet-v2/territory-ledger.service';
 import { PendingDebitService } from './wallet-v2/pending-debit.service';
 import { pool } from '../db';
 import { estimateFeeCentsFromPrice } from './wallet-v2/fee-helper';
+import { isUnsupportedCareIntent, CARE_UNAVAILABLE_CODE } from './care/care-readiness-policy';
 
 const ADJUSTMENT_MIN_PASSENGER_VERSION = '1.4.0';
 
@@ -36,6 +37,16 @@ export async function acceptOfferInternal(offerId: string, driverId: string, adj
     if (offer.driver_id !== driverId) throw new Error('Forbidden');
     if (offer.status !== 'pending') throw new Error('Offer not pending');
     if (offer.expires_at < new Date()) throw new Error('Offer expired');
+
+    // Defence in depth for pre-existing/imported offers: no assignment,
+    // wallet reservation, notification or pricing on unsupported CARE.
+    if (isUnsupportedCareIntent({
+      service_category: offer.ride.service_category,
+      ride_type: offer.ride.ride_type,
+      trip_details: offer.ride.trip_details,
+    })) {
+      throw new Error(CARE_UNAVAILABLE_CODE);
+    }
 
     // Determine adjustment flow
     let adjustmentStatus: string | null = null;
