@@ -463,6 +463,8 @@ model drivers {
   updated_at                  DateTime
   driver_compliance_documents driver_compliance_documents[]
   insurance_enrollments       driver_insurance_enrollments[]
+  care_qualification          care_driver_qualifications?
+  care_vehicle                care_vehicle_capabilities?
   badge_events              driver_badge_events[]
   driver_consents             driver_consents?
   driver_modalities           driver_modalities[]
@@ -1237,6 +1239,7 @@ model rides_v2 {
   settlement             ride_settlements?
   emergency_events       ride_emergency_events[]
   messages               ride_messages[]
+  care_requirements      care_trip_requirements?
   shadow_result          wallet_shadow_results[]
 
   @@map("rides_v2")
@@ -5644,4 +5647,99 @@ model finance_official_statement_archives {
   @@unique([legal_entity_id, account_id, provider, year, month, content_sha256], map: "uq_fin_official_scope_hash")
   @@index([legal_entity_id, year, month, provider], map: "idx_fin_official_period_provider")
   @@map("finance_official_statement_archives")
+}
+
+// CARE-02: Additive, fail-closed foundation. No endpoint, matcher or feature
+// activation is introduced by these models. All records start unverified.
+enum CareRideMode {
+  ASSISTED
+  FOLDING_WHEELCHAIR
+  ADAPTED_WHEELCHAIR
+}
+
+enum CareQualificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  SUSPENDED
+  EXPIRED
+}
+
+enum CareTripStatus {
+  DRAFT
+  READY
+  BLOCKED
+}
+
+// Functional needs for ONE ride. No diagnoses, medical notes or documents.
+model care_trip_requirements {
+  id                        String         @id @default(uuid())
+  ride_id                   String         @unique
+  mode                      CareRideMode
+  status                    CareTripStatus @default(DRAFT)
+  needs_extra_boarding_time Boolean        @default(false)
+  uses_walking_aid          Boolean        @default(false)
+  folding_wheelchair        Boolean        @default(false)
+  remain_in_wheelchair      Boolean        @default(false)
+  can_self_transfer         Boolean?
+  needs_pickup_guidance     Boolean        @default(false)
+  guide_dog                 Boolean        @default(false)
+  companion_seats           Int            @default(0)
+  reviewed_at               DateTime?      @db.Timestamptz(6)
+  reviewed_by_admin_id      String?
+  created_at                DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
+
+  ride                      rides_v2       @relation(fields: [ride_id], references: [id], onDelete: Cascade)
+
+  @@index([mode, status])
+  @@map("care_trip_requirements")
+}
+
+// Qualifications are independent of the legacy driver status. The future
+// dispatcher must require both existing eligibility and this VERIFIED gate.
+model care_driver_qualifications {
+  id                        String                  @id @default(uuid())
+  driver_id                 String                  @unique
+  status                    CareQualificationStatus @default(PENDING)
+  assisted_training_verified Boolean                @default(false)
+  folding_training_verified  Boolean                @default(false)
+  adapted_training_verified  Boolean                @default(false)
+  valid_until               DateTime?               @db.Timestamptz(6)
+  verified_at               DateTime?               @db.Timestamptz(6)
+  verified_by_admin_id      String?
+  created_at                DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
+
+  driver                    drivers                 @relation(fields: [driver_id], references: [id], onDelete: Cascade)
+
+  @@index([status, valid_until])
+  @@map("care_driver_qualifications")
+}
+
+// Captures verified resources on the currently registered driver vehicle.
+// The future matcher must compare plate_snapshot with drivers.vehicle_plate:
+// a vehicle swap must NOT inherit the former vehicle's approval.
+model care_vehicle_capabilities {
+  id                          String                  @id @default(uuid())
+  driver_id                   String                  @unique
+  plate_snapshot              String?                 @db.VarChar(16)
+  status                      CareQualificationStatus @default(PENDING)
+  folding_storage_verified    Boolean                 @default(false)
+  ramp_or_lift_verified       Boolean                 @default(false)
+  wheelchair_restraint_verified Boolean               @default(false)
+  occupant_restraint_verified Boolean                 @default(false)
+  adaptation_document_verified Boolean               @default(false)
+  wheelchair_capacity         Int                     @default(0)
+  companion_seats             Int                     @default(0)
+  inspection_valid_until      DateTime?               @db.Timestamptz(6)
+  verified_at                 DateTime?               @db.Timestamptz(6)
+  verified_by_admin_id        String?
+  created_at                  DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at                  DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
+
+  driver                      drivers                 @relation(fields: [driver_id], references: [id], onDelete: Cascade)
+
+  @@index([status, inspection_valid_until])
+  @@map("care_vehicle_capabilities")
 }
