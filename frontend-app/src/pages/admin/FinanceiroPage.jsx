@@ -223,6 +223,7 @@ export default function FinanceiroPage() {
     { label: 'Contas a receber', description: 'Recebíveis, vencimentos e liquidações.', path: '/admin/financeiro/contas-a-receber', icon: <ReceiptLong /> },
     { label: 'Contas a pagar', description: 'Obrigações, boletos, notas e comprovantes.', path: '/admin/financeiro/contas-a-pagar', icon: <Payments /> },
     { label: 'Tesouraria', description: 'Saldo, compromissos, provider e payouts.', path: '/admin/financeiro/tesouraria', icon: <AccountBalanceWallet /> },
+    ...(isSuperAdmin ? [{ label: 'Extratos oficiais', description: 'Cofre privado, GuardDuty e trilha de auditoria.', path: '/admin/financeiro/extratos-oficiais', icon: <Policy /> }] : []),
     { label: 'Políticas', description: 'Regras de reconhecimento financeiro.', path: '/admin/financeiro/politicas', icon: <Policy /> },
     { label: 'Contador', description: 'Relatórios financeiros e conciliação contábil.', path: '/admin/financeiro/contador', icon: <AccountBalance /> },
   ];
