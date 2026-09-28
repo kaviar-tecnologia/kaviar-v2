@@ -31,6 +31,8 @@ function officialMessage(lead, outcome) {
   switch (outcome) {
     case 'ADVANCE':
       return `Olá, ${name}! Sua candidatura de Gestor Territorial avançou para a próxima etapa de análise. Nossa equipe informará as orientações. Equipe KAVIAR.`;
+    case 'APPROVE_ONBOARDING':
+      return `Olá, ${name}! Sua candidatura à função de Gestor Territorial KAVIAR foi aprovada para a etapa de cadastro. Estamos preparando seu cadastro e entraremos em contato para conferir os dados, a documentação e o contrato. O acesso e a atuação dependem da conclusão dessas etapas. Equipe KAVIAR.`;
     case 'REQUEST_INFO':
       return `Olá, ${name}! Para continuar a análise da sua candidatura de Gestor Territorial, precisamos de informações adicionais. Você pode responder por esta conversa? Equipe KAVIAR.`;
     case 'KEEP_REVIEW':
@@ -115,6 +117,26 @@ export default function ManagerApplicationsPanel({ open, onClose, onUpdated }) {
     setDecisionError('');
   };
 
+  // Separate administrative approval for starting registration; ADVANCE alone
+  // means interest in continuing and must never activate a manager.
+  const startOnboarding = (item) => {
+    if (item.lastDecision?.outcome !== 'ADVANCE' || item.lead.status !== 'INTERESTED') return;
+    setSelected(item);
+    setOutcome('APPROVE_ONBOARDING');
+    setJustification('');
+    setCommunicationRequested(true);
+    setDecisionError('');
+  };
+
+  const prepareOnboardingNotice = (item) => {
+    setCommunication({
+      lead: item.lead,
+      conversation: item.conversation,
+      message: officialMessage(item.lead, 'APPROVE_ONBOARDING'),
+      linkStatus: item.linkStatus,
+    });
+  };
+
   const saveDecision = async () => {
     if (!selected || submitting) return;
     setSubmitting(true);
@@ -128,7 +150,9 @@ export default function ManagerApplicationsPanel({ open, onClose, onUpdated }) {
       });
       const json = await response.json();
       if (!response.ok || !json.success) throw new Error(json.error || 'Erro ao registrar decisão');
-      setFeedback('Decisão registrada e preservada no histórico. Nenhuma mensagem foi enviada.');
+      setFeedback(outcome === 'APPROVE_ONBOARDING'
+        ? 'Candidatura aprovada para cadastro. O aviso está preparado; nenhum WhatsApp foi enviado.'
+        : 'Decisão registrada e preservada no histórico. Nenhuma mensagem foi enviada.');
       if (communicationRequested) {
         setCommunication({
           lead: selected.lead,
