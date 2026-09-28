@@ -1,5 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { prismaMock } = vi.hoisted(() => ({
+  prismaMock: {
+    crm_leads: { findMany: vi.fn() },
+    crm_interactions: { findFirst: vi.fn() },
+  },
+}));
+vi.mock('../src/lib/prisma', () => ({ prisma: prismaMock }));
 import {
+  findApprovedManagerCandidate,
   hasApprovedOnboardingDecision,
   planManagerCandidatePrefill,
   selectApprovedManagerCandidate,
@@ -23,6 +32,47 @@ const admin = {
 const emptyProfile = { full_name: null, email: null, phone: null };
 
 describe('manager CRM application prefill', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prismaMock.crm_leads.findMany.mockResolvedValue([candidate]);
+    prismaMock.crm_interactions.findFirst.mockResolvedValue({
+      description: JSON.stringify({ schema: 'manager_application_decision_v1', outcome: 'APPROVE_ONBOARDING' }),
+    });
+  });
+
+  it('queries one original WEBSITE application and verifies its latest CRM decision', async () => {
+    const result = await findApprovedManagerCandidate(candidate.name, candidate.email!);
+    expect(result).toMatchObject({ kind: 'matched', lead: { id: candidate.id } });
+    expect(prismaMock.crm_leads.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        lead_type: 'TERRITORIAL_MANAGER', source: 'WEBSITE', deleted_at: null,
+        email: { equals: candidate.email, mode: 'insensitive' },
+      }),
+    }));
+    expect(prismaMock.crm_interactions.findFirst).toHaveBeenCalledWith({
+      where: { lead_id: candidate.id, event_type: 'DECISION' },
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+      select: { description: true },
+    });
+  });
+
+  it('rejects an approval status without an audited decision', async () => {
+    prismaMock.crm_interactions.findFirst.mockResolvedValue(null);
+    expect(await findApprovedManagerCandidate(candidate.name, candidate.email!)).toEqual({ kind: 'none' });
+    prismaMock.crm_interactions.findFirst.mockResolvedValue({
+      description: JSON.stringify({ schema: 'manager_application_decision_v1', outcome: 'KEEP_REVIEW' }),
+    });
+    expect(await findApprovedManagerCandidate(candidate.name, candidate.email!)).toEqual({ kind: 'none' });
+  });
+
+  it('rejects duplicates before reading a decision, even if one is not approved', async () => {
+    prismaMock.crm_leads.findMany.mockResolvedValue([
+      candidate, { ...candidate, id: 'duplicate', status: 'INTERESTED' },
+    ]);
+    expect(await findApprovedManagerCandidate(candidate.name, candidate.email!)).toEqual({ kind: 'ambiguous' });
+    expect(prismaMock.crm_interactions.findFirst).not.toHaveBeenCalled();
+  });
+
   it('matches only one approved website application by exact name and primary email', () => {
     const result = selectApprovedManagerCandidate([candidate], ' Candidata  Exemplo ', 'CANDIDATA@example.com');
     expect(result.kind).toBe('matched');
