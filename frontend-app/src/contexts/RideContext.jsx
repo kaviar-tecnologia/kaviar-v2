@@ -1,6 +1,9 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState } from 'react';
+import { canRunLegacyRideDemo } from './legacyRideDemoPolicy';
 
 const RideContext = createContext();
+
+const demoEnabled = canRunLegacyRideDemo(import.meta.env.DEV, import.meta.env.VITE_LEGACY_RIDE_DEMO_ENABLED);
 
 export const useRide = () => {
   const context = useContext(RideContext);
@@ -37,10 +40,13 @@ export const RideProvider = ({ children }) => {
   ];
 
   const requestRide = (rideData) => {
+    // This context uses fictional drivers, prices and timers. Never dispatch in production.
+    if (!demoEnabled) return false;
     setRideStatus('requesting');
     
     const mockRide = {
       id: Date.now(),
+      isDemo: true,
       origin: rideData.origin || 'Origem selecionada',
       destination: rideData.destination || 'Destino selecionado',
       serviceType: rideData.serviceType || 'STANDARD_RIDE',
@@ -68,9 +74,11 @@ export const RideProvider = ({ children }) => {
         }, 10000);
       }, 5000);
     }, 3000);
+    return true;
   };
 
   const rateRide = (rating, comment) => {
+    if (!demoEnabled) return false;
     setCurrentRide(prev => ({ 
       ...prev, 
       rating, 
@@ -96,6 +104,7 @@ export const RideProvider = ({ children }) => {
     currentRide,
     requestRide,
     rateRide,
+    demoEnabled,
     cancelRide
   };
 
