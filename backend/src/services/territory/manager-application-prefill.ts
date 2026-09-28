@@ -8,6 +8,7 @@ export interface ManagerCrmCandidate {
   email: string | null;
   phone: string | null;
   status: string;
+  approvalDecisionVerified?: boolean;
 }
 
 type CandidateMatch =
@@ -35,19 +36,33 @@ export function normalizedManagerPhone(value: string): string {
   return (digits.length === 10 || digits.length === 11) ? '55' + digits : digits;
 }
 
+export function hasApprovedOnboardingDecision(description: string | null | undefined): boolean {
+  if (!description) return false;
+  try {
+    const event = JSON.parse(description);
+    return event?.schema === 'manager_application_decision_v1' &&
+      event.outcome === 'APPROVE_ONBOARDING';
+  } catch {
+    return false;
+  }
+}
+
 export function selectApprovedManagerCandidate(
   candidates: ManagerCrmCandidate[],
   name: string,
   email: string,
 ): CandidateMatch {
+  // An unapproved duplicate is still an identity ambiguity: never pick the
+  // approved record arbitrarily from multiple WEBSITE applications.
   const matches = candidates.filter(candidate =>
     candidate.email &&
     normalizedManagerEmail(candidate.email) === normalizedManagerEmail(email) &&
-    normalizedManagerName(candidate.name) === normalizedManagerName(name) &&
-    REGISTRATION_APPROVED_STATUSES.has(candidate.status),
+    normalizedManagerName(candidate.name) === normalizedManagerName(name),
   );
   if (matches.length > 1) return { kind: 'ambiguous' };
   if (matches.length === 0) return { kind: 'none' };
+  if (!REGISTRATION_APPROVED_STATUSES.has(matches[0].status) ||
+      matches[0].approvalDecisionVerified !== true) return { kind: 'none' };
   return { kind: 'matched', lead: matches[0] };
 }
 
@@ -55,17 +70,36 @@ export async function findApprovedManagerCandidate(
   name: string,
   email: string,
 ): Promise<CandidateMatch> {
+  // Status alone is not an approval: require the latest audited CRM decision.
   const candidates = await prisma.crm_leads.findMany({
     where: {
       email: { equals: normalizedManagerEmail(email), mode: 'insensitive' },
       lead_type: 'TERRITORIAL_MANAGER',
       source: 'WEBSITE',
       deleted_at: null,
-      status: { in: [...REGISTRATION_APPROVED_STATUSES] },
     },
     select: { id: true, name: true, email: true, phone: true, status: true },
   });
-  return selectApprovedManagerCandidate(candidates, name, email);
+  const matchingIdentity = candidates.filter(candidate =>
+    candidate.email &&
+    normalizedManagerEmail(candidate.email) === normalizedManagerEmail(email) &&
+    normalizedManagerName(candidate.name) === normalizedManagerName(name),
+  );
+  if (matchingIdentity.length > 1) return { kind: 'ambiguous' };
+  if (!matchingIdentity.length) return { kind: 'none' };
+  const candidate = matchingIdentity[0];
+  if (!REGISTRATION_APPROVED_STATUSES.has(candidate.status)) return { kind: 'none' };
+
+  const lastDecision = await prisma.crm_interactions.findFirst({
+    where: { lead_id: candidate.id, event_type: 'DECISION' },
+    orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+    select: { description: true },
+  });
+  return selectApprovedManagerCandidate(
+    [{ ...candidate, approvalDecisionVerified: hasApprovedOnboardingDecision(lastDecision?.description) }],
+    name,
+    email,
+  );
 }
 
 export interface ManagerAccessIdentity {
