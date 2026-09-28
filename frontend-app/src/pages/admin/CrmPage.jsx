@@ -8,6 +8,7 @@ import {
 import { Add, Download, Close, Phone, Email, Business, AccessTime, FilterList, Warning, LocationOn, WhatsApp, Assignment, Storefront, AccountBalance } from '@mui/icons-material';
 import { API_BASE_URL } from '../../config/api';
 import { formatDate } from '../../utils/formatDate';
+import ManagerApplicationsPanel from './ManagerApplicationsPanel';
 import { openDriverWhatsAppInvite, openPassengerWhatsAppInvite, openManagerWhatsAppInvite, openWhatsAppContact } from '../../utils/whatsappInvite';
 
 const GOLD = '#D4AF37';
@@ -148,6 +149,7 @@ export default function CrmPage() {
   const [applicationInviteOpen, setApplicationInviteOpen] = useState(false);
   const [applicationInviteSending, setApplicationInviteSending] = useState(false);
   const [applicationInviteError, setApplicationInviteError] = useState('');
+  const [managerPanelOpen, setManagerPanelOpen] = useState(false);
 
   const adminData = localStorage.getItem('kaviar_admin_data');
   const admin = adminData ? JSON.parse(adminData) : null;
@@ -354,6 +356,10 @@ export default function CrmPage() {
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          {isSuperAdmin && <Button size="small" variant="contained" onClick={() => setManagerPanelOpen(true)}
+            sx={{ bgcolor: GOLD, color: '#101010', textTransform: 'none', '&:hover': { bgcolor: '#e0bf50' } }}>
+            Candidaturas de Gestores
+          </Button>}
           <Button size="small" variant="outlined" onClick={() => { window.location.href = '/admin/regulatory-consultation'; }} sx={{ borderColor: '#2563EB', color: '#2563EB', textTransform: 'none' }}>
             Consulta Regulatória
           </Button>
@@ -722,6 +728,9 @@ export default function CrmPage() {
           </Box>
         )}
       </Drawer>
+
+      {isSuperAdmin && <ManagerApplicationsPanel open={managerPanelOpen} onClose={() => setManagerPanelOpen(false)}
+        onUpdated={() => { fetchLeads(); fetchStats(); }} />}
 
       {/* Confirmação de candidatura: ação explícita, sem disparo automático. */}
       <Dialog open={applicationInviteOpen} onClose={() => !applicationInviteSending && setApplicationInviteOpen(false)} maxWidth="sm" fullWidth PaperProps={darkDialogPaper}>
