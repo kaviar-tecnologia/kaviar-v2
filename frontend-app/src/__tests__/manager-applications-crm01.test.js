@@ -48,6 +48,26 @@ describe('WhatsApp CRM-01 manager application UI contracts', () => {
     expect(page).toContain('disabled={submitting || !outcome || justification.trim().length < 10}');
   });
 
+  it('only starts approved onboarding after the last explicit ADVANCE decision', () => {
+    expect(page).toContain("item.lastDecision?.outcome === 'ADVANCE' && lead.status === 'INTERESTED'");
+    expect(page).toContain('Iniciar cadastro da gestora aprovada');
+    expect(page).toContain("setOutcome('APPROVE_ONBOARDING')");
+    expect(page).toContain("setCommunicationRequested(true)");
+    expect(page).toContain("outcome === 'APPROVE_ONBOARDING'");
+    expect(page).toContain('Confirmar início do cadastro');
+    expect(page).toContain('Não cria conta, não ativa Gestor, contrato, pagamentos nem território.');
+  });
+
+  it('prepares approval notice for human review, never dispatches by itself', () => {
+    expect(page).toContain('Revisar aviso de aprovação para WhatsApp');
+    expect(page).toContain("officialMessage(item.lead, 'APPROVE_ONBOARDING')");
+    expect(page).toContain('O aviso de aprovação ainda depende de envio manual na Central');
+    expect(page).toContain('Estamos preparando seu cadastro');
+    expect(page).toContain('O acesso e a atuação dependem da conclusão dessas etapas');
+    expect(page).toContain('Nenhuma mensagem foi enviada automaticamente');
+    expect(page).not.toContain('/api/admin/whatsapp/conversations/send');
+  });
+
   it('makes official communication optional and never sends from the decision action', () => {
     expect(page).toContain('communicationRequested');
     expect(page).toContain('Nenhuma mensagem foi enviada automaticamente');

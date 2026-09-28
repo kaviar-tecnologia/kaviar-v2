@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { prismaMock, authState, auditMock } = vi.hoisted(() => ({
   prismaMock: {
     crm_leads: { findMany: vi.fn(), count: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn(), findUnique: vi.fn() },
-    crm_interactions: { findMany: vi.fn(), create: vi.fn() },
+    crm_interactions: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn() },
     wa_conversations: { findMany: vi.fn() },
     whatsapp_invite_logs: { findMany: vi.fn() },
     $transaction: vi.fn(),
@@ -53,6 +53,10 @@ describe('manager applications triage', () => {
     prismaMock.crm_leads.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.crm_leads.findUnique.mockResolvedValue({ id: lead.id, status: 'INTERESTED', updated_at: new Date() });
     prismaMock.crm_interactions.findMany.mockResolvedValue([]);
+    prismaMock.crm_interactions.findFirst.mockResolvedValue({
+      event_type: 'DECISION',
+      description: JSON.stringify({ schema: 'manager_application_decision_v1', outcome: 'ADVANCE' }),
+    });
     prismaMock.crm_interactions.create.mockImplementation(async ({ data }: any) => ({
       id: 'decision-1', ...data, created_at: new Date('2026-09-28T12:00:00Z'),
     }));
@@ -155,6 +159,65 @@ describe('manager applications triage', () => {
   it('refuses to change an active manager', async () => {
     prismaMock.crm_leads.findFirst.mockResolvedValue({ ...lead, status: 'ACTIVE' });
     const response = await request(app).post(base + '/' + lead.id + '/decisions').send(input);
+    expect(response.status).toBe(409);
+    expect(prismaMock.crm_leads.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('requires an explicit prior ADVANCE decision before approving for cadastro', async () => {
+    const applicant = { ...lead, status: 'INTERESTED' };
+    prismaMock.crm_leads.findFirst.mockResolvedValue(applicant);
+    prismaMock.crm_interactions.findFirst.mockResolvedValue({
+      event_type: 'DECISION',
+      description: JSON.stringify({ schema: 'manager_application_decision_v1', outcome: 'KEEP_REVIEW' }),
+    });
+    const response = await request(app).post(base + '/' + lead.id + '/decisions').send({
+      ...input, outcome: 'APPROVE_ONBOARDING',
+    });
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('ONBOARDING_NOT_READY');
+    expect(prismaMock.crm_leads.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('requires communication preparation without sending any WhatsApp', async () => {
+    prismaMock.crm_leads.findFirst.mockResolvedValue({ ...lead, status: 'INTERESTED' });
+    const response = await request(app).post(base + '/' + lead.id + '/decisions').send({
+      ...input, outcome: 'APPROVE_ONBOARDING', communicationRequested: false,
+    });
+    expect(response.status).toBe(409);
+    expect(prismaMock.crm_interactions.create).not.toHaveBeenCalled();
+  });
+
+  it('records approved onboarding with pending documents and a manual notification draft', async () => {
+    prismaMock.crm_leads.findFirst.mockResolvedValue({ ...lead, status: 'INTERESTED' });
+    prismaMock.crm_leads.findUnique.mockResolvedValue({ id: lead.id, status: 'WAITING_DOCUMENTS', updated_at: new Date() });
+    const response = await request(app).post(base + '/' + lead.id + '/decisions').send({
+      ...input, outcome: 'APPROVE_ONBOARDING',
+      justification: 'Aprovação administrativa registrada após análise das respostas.',
+    });
+    expect(response.status).toBe(201);
+    expect(prismaMock.crm_leads.updateMany).toHaveBeenCalledWith({
+      where: { id: lead.id, updated_at: lead.updated_at, status: 'INTERESTED' },
+      data: {
+        status: 'WAITING_DOCUMENTS',
+        next_action: expect.stringContaining('contrato territorial v1.2'),
+      },
+    });
+    const saved = prismaMock.crm_interactions.create.mock.calls[0][0].data;
+    expect(saved.event_type).toBe('DECISION');
+    expect(saved.old_status).toBe('INTERESTED');
+    expect(saved.new_status).toBe('WAITING_DOCUMENTS');
+    expect(JSON.parse(saved.description)).toMatchObject({
+      outcome: 'APPROVE_ONBOARDING', communicationRequested: true,
+    });
+    expect(response.body.data.decision.communicationStatus).toBe('pending_manual');
+    expect(response.body.communication).toContain('nenhuma mensagem foi enviada');
+  });
+
+  it('cannot reapprove an onboarding already in progress', async () => {
+    prismaMock.crm_leads.findFirst.mockResolvedValue({ ...lead, status: 'WAITING_DOCUMENTS' });
+    const response = await request(app).post(base + '/' + lead.id + '/decisions').send({
+      ...input, outcome: 'APPROVE_ONBOARDING',
+    });
     expect(response.status).toBe(409);
     expect(prismaMock.crm_leads.updateMany).not.toHaveBeenCalled();
   });
