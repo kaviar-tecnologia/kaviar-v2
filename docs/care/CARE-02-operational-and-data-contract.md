@@ -41,6 +41,9 @@ Modo é requisito para a viagem, não classificação pessoal permanente. Não i
 8. Não registrar notas clínicas, não compartilhar mais informação com motorista do que o estritamente necessário, nem preencher terceiros automaticamente via WhatsApp.
 9. Preço e remuneração CARE dependem de política própria revisada; nenhum adicional por condição pessoal ou tarifa fictícia é criado por esta alteração.
 10. Não publicar novas rotas ou chaves `service_category` até que o fluxo real, os controles de segurança, seguros e validação operacional estejam concluídos.
+11. **Atomicidade obrigatória para o futuro fluxo CARE:** criar `rides_v2` e `care_trip_requirements` na mesma transação, validar os requisitos e só então liberar despacho. Nenhum `setImmediate` do dispatcher pode executar enquanto a necessidade CARE estiver ausente ou em `DRAFT/BLOCKED`. A modalidade enviada pelo cliente não é prova de aprovação.
+12. Uma tentativa CARE sem registro de requisitos válido deve falhar **fechada**, jamais virar `CAR_NORMAL` silenciosamente. Corrida convencional alternativa requer escolha expressa do passageiro. Em cancelamento e redispatch, preservar e revalidar os mesmos requisitos.
+13. A revisão de placa, capacidade, treinamento e expiração deve ocorrer **no aceite também**, não apenas quando o candidato é listado. O futuro dispatcher precisa associar os dados à corrida antes de emitir a oferta.
 
 ## Transições de revisão dos cadastros
 
