@@ -127,6 +127,12 @@ integrationsRoutes.post('/twilio/whatsapp', async (req, res) => {
     const twilioSid = MessageSid || null;
     const preview = body.substring(0, 200);
     const isUrgent = detectUrgent(body);
+    // Resolve contact outside the write transaction; do not consume another
+    // Prisma connection inside an interactive transaction on small pools.
+    const preexisting = await prisma.wa_conversations.findUnique({ where: { phone } });
+    const resolved = !preexisting || preexisting.contact_type === 'unknown' || (preexisting.contact_type === 'lead' && !preexisting.linked_entity_id)
+      ? await resolveContact(phone)
+      : null;
 
     // One transaction: a failed message insert never leaves orphaned counters
     // or a phantom unread conversation. Twilio may retry a 503 response.
@@ -136,9 +142,6 @@ integrationsRoutes.post('/twilio/whatsapp', async (req, res) => {
         if (duplicate) return { duplicate: true as const, conversation: null, wasNew: false, resolvedName: null };
       }
       const existing = await tx.wa_conversations.findUnique({ where: { phone } });
-      const resolved = !existing || existing.contact_type === 'unknown' || (existing.contact_type === 'lead' && !existing.linked_entity_id)
-        ? await resolveContact(phone)
-        : null;
       const wasNew = !existing;
       let conversation = existing;
 
