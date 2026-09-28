@@ -61,6 +61,7 @@ async function buildTerritorialConversationWhere(admin: any, scope: TerritorySco
   if (guideIds.length) or.push({ linked_entity_type: "guide", linked_entity_id: { in: guideIds } });
   if (crmLeadIds.length) or.push({ linked_entity_type: "consultant_lead", linked_entity_id: { in: crmLeadIds } });
   if (crmLeadIds.length) or.push({ linked_entity_type: "lead", linked_entity_id: { in: crmLeadIds } });
+  if (crmLeadIds.length) or.push({ linked_entity_type: "crm_lead", linked_entity_id: { in: crmLeadIds } });
   if (petIds.length) or.push({ linked_entity_type: "pet_homologation", linked_entity_id: { in: petIds } });
 
   return or.length ? { OR: or } : noRowsWhere();
@@ -538,6 +539,12 @@ async function resolveLinkedEntity(type: string, id: string, includeCredit = tru
         where: { id },
         select: { id: true, name: true, email: true, phone: true, status: true, community_id: true },
       }).then(g => g ? { ...g, type: 'guide' } : null);
+    }
+    case 'crm_lead': {
+      return prisma.crm_leads.findFirst({
+        where: { id, deleted_at: null },
+        select: { id: true, name: true, email: true, phone: true, status: true, lead_type: true, source: true },
+      }).then(l => l ? { ...l, type: 'crm_lead' } : null);
     }
     case 'consultant_lead': {
       return prisma.consultant_leads.findUnique({
