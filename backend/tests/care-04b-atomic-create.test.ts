@@ -57,6 +57,32 @@ describe('CARE-04B common atomic creation boundary', () => {
       }));
   });
 
+  it('denies CARE even if requirements argument is accidentally omitted', async () => {
+    await expect(createRideWithRequirements(args() as any))
+      .rejects.toThrow('CARE_REQUIREMENTS_MISSING');
+    const disguised: any = args();
+    disguised.data.service_category = 'CAR_NORMAL';
+    disguised.data.trip_details = { care_mode: 'ASSISTED' };
+    await expect(createRideWithRequirements(disguised))
+      .rejects.toThrow('CARE_REQUIREMENTS_MISSING');
+    expect(mocks.createRide).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects unpriced CARE draft carrying unreviewed price or free-text details', async () => {
+    for (const extra of [
+      { quoted_price: '35.00' },
+      { platform_fee: '5.00' },
+      { trip_details: { medical_notes: 'do not persist' } },
+    ]) {
+      const input: any = args();
+      Object.assign(input.data, extra);
+      await expect(createRideWithRequirements(input, baseDraft()))
+        .rejects.toThrow('CARE_DRAFT_MUST_BE_UNPRICED');
+    }
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
   it('leaves normal ride creation delegated verbatim to existing Prisma, without transaction', async () => {
     const input: any = { data: { ...args().data, service_category: 'CAR_NORMAL', ride_type: 'normal' } };
     const ride = await createRideWithRequirements(input);
