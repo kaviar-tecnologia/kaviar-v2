@@ -191,7 +191,7 @@ router.post('/:id/decisions', async (req: Request, res: Response) => {
         const previous = await tx.crm_interactions.findFirst({
           where: { lead_id: lead.id, event_type: 'DECISION' },
           orderBy: { created_at: 'desc' },
-          select: { description: true },
+          select: { event_type: true, description: true },
         });
         if (decisionData(previous)?.outcome !== 'ADVANCE') throw new Error('ONBOARDING_NOT_READY');
       }
