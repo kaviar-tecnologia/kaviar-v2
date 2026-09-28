@@ -130,7 +130,7 @@ integrationsRoutes.post('/twilio/whatsapp', async (req, res) => {
     // Resolve contact outside the write transaction; do not consume another
     // Prisma connection inside an interactive transaction on small pools.
     const preexisting = await prisma.wa_conversations.findUnique({ where: { phone } });
-    const resolved = !preexisting || preexisting.contact_type === 'unknown' || (preexisting.contact_type === 'lead' && !preexisting.linked_entity_id)
+    const resolved = !preexisting || (preexisting.contact_type === 'unknown' && !preexisting.linked_entity_id) || (preexisting.contact_type === 'lead' && !preexisting.linked_entity_id)
       ? await resolveContact(phone)
       : null;
 
@@ -175,7 +175,7 @@ integrationsRoutes.post('/twilio/whatsapp', async (req, res) => {
       if (conversation.status === 'resolved') updates.status = 'new';
       // Preserve explicit driver/passenger/other entity bindings. Only enrich
       // an unknown or unbound lead with a verified unique candidate.
-      if (resolved && (conversation.contact_type === 'unknown' || (conversation.contact_type === 'lead' && !conversation.linked_entity_id))) {
+      if (resolved && ((conversation.contact_type === 'unknown' && !conversation.linked_entity_id) || (conversation.contact_type === 'lead' && !conversation.linked_entity_id))) {
         if (resolved.contact_type !== 'unknown') {
           updates.contact_type = resolved.contact_type;
           updates.contact_name = resolved.contact_name;
