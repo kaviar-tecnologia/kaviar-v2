@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { dispatcherService } from '../services/dispatcher.service';
 import { isUnsupportedCareIntent, CARE_UNAVAILABLE_CODE } from '../services/care/care-readiness-policy';
+import { createRideWithRequirements } from '../services/care/care-ride-create';
 import { resolveTerritory } from '../services/territory-resolver.service';
 import { Decimal } from '@prisma/client/runtime/library';
 import { realTimeService } from '../services/realtime.service';
@@ -273,7 +274,9 @@ router.post('/', authenticatePassenger, async (req: Request, res: Response) => {
 
     // Criar corrida
     const passengerAppVersion = req.headers['x-app-version'] as string || null;
-    const ride = await prisma.rides_v2.create({
+    // Unified ride creation boundary. CARE remains rejected above; the normal
+    // path delegates to the exact same Prisma create without changing pricing.
+    const ride = await createRideWithRequirements({
       data: {
         passenger_id: passengerId,
         passenger_app_version: passengerAppVersion,
