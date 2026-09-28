@@ -1,0 +1,58 @@
+name: CARE-04B Atomic Ride
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/services/care/care-ride-create.ts'
+      - 'backend/src/routes/rides-v2.ts'
+      - 'backend/tests/care-04b-atomic-create.test.ts'
+      - 'backend/tests/care-04b-atomic-postgres.test.ts'
+      - 'docs/care/CARE-04B-atomic-ride.md'
+      - '.github/workflows/care-04b-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  care-atomic-create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://care04b_ci:ci_password@127.0.0.1:5432/care04b_disposable
+      PGPASSWORD: ci_password
+    services:
+      postgres:
+        image: postgis/postgis:15-3.4
+        env:
+          POSTGRES_DB: care04b_disposable
+          POSTGRES_USER: care04b_ci
+          POSTGRES_PASSWORD: ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U care04b_ci -d care04b_disposable"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend dependencies and generate Prisma client
+        working-directory: backend
+        run: npm ci
+      - name: Validate schema and typecheck
+        working-directory: backend
+        run: |
+          npx prisma validate
+          npx tsc --noEmit -p tsconfig.build.json
+      - name: Test shared creation contract and safety gates
+        working-directory: backend
+        run: npx vitest run tests/care-04b-atomic-create.test.ts tests/care-04-readiness-policy.test.ts tests/care-03-eligibility.test.ts
+      - name: Prepare only disposable CI schema
+        working-directory: backend
+        run: npx prisma db push --accept-data-loss --skip-generate
+      - name: Test atomic commit and DB rollback
+        working-directory: backend
+        run: npx vitest run tests/care-04b-atomic-postgres.test.ts
