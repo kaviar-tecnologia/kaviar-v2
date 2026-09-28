@@ -73,7 +73,14 @@ describe('official WhatsApp inbound manager association', () => {
         contact_type: 'manager',
         linked_entity_type: 'crm_lead',
         linked_entity_id: 'original-website-application',
-        unread_count: 1,
+        unread_count: 0,
+      }),
+    });
+    expect(prismaMock.wa_conversations.update).toHaveBeenCalledWith({
+      where: { id: 'conversation-1' },
+      data: expect.objectContaining({
+        unread_count: { increment: 1 },
+        message_count: { increment: 1 },
         last_message_preview: body.Body,
       }),
     });
