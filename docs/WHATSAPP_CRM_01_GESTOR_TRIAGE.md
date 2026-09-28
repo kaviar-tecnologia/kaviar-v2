@@ -19,7 +19,8 @@ Data: 28/09/2026. Este PR é uma melhoria do CRM; NÃO é liberação automátic
 
 ## Validação pré-deploy
 - Workflow `WhatsApp CRM-01 CI`: TypeScript, testes de decisão e matching, regressão do envio oficial, UI e build.
-- Validar URL exata do webhook de entrada configurada na Twilio e assinatura da requisição antes de produção.
+- **Gate de segurança:** o webhook de entrada agora valida a assinatura Twilio em produção. Verificar na Twilio a URL pública EXATA do inbound; se diferente de `https://api.kaviar.com.br/webhooks/twilio/whatsapp`, definir `TWILIO_WHATSAPP_INBOUND_WEBHOOK_URL` com o endereço completo. Ausência de token, URL HTTPS ou assinatura válida causa 403; não publicar sem confirmação dessa configuração.
+- A persistência de mensagem e os contadores ocorrem numa transação. Falha retorna 503 para retry; `MessageSid` previamente armazenado retorna 200 sem duplicar a mensagem. Testar com payload assinado em ambiente controlado, nunca com o número real de uma candidata.
 - Testar em ambiente controlado um `MessageSid` de entrada duplicado, erro temporário de persistência e atualização de não lidas.
 - Não usar o número de Anna Julia para testes nem enviar mensagem sem nova autorização.
 - Após deploy, inspecionar um card e histórico reais em modo leitura antes de registrar qualquer nova decisão.
