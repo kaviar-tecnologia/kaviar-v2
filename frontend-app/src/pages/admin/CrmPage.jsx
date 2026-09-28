@@ -145,6 +145,9 @@ export default function CrmPage() {
   // Status change dialog
   const [statusOpen, setStatusOpen] = useState(false);
   const [newStatus, setNewStatus] = useState('');
+  const [applicationInviteOpen, setApplicationInviteOpen] = useState(false);
+  const [applicationInviteSending, setApplicationInviteSending] = useState(false);
+  const [applicationInviteError, setApplicationInviteError] = useState('');
 
   const adminData = localStorage.getItem('kaviar_admin_data');
   const admin = adminData ? JSON.parse(adminData) : null;
@@ -228,6 +231,50 @@ export default function CrmPage() {
       if (data.success) { setStatusOpen(false); setSelectedLead({ ...selectedLead, status: newStatus }); fetchLeads(); fetchStats(); setSnack('Status atualizado!'); }
       else setSnack(data.error || 'Erro');
     } catch { setSnack('Erro'); }
+  };
+
+  const handleApplicationInvite = async () => {
+    if (!selectedLead || applicationInviteSending) return;
+    setApplicationInviteSending(true);
+    setApplicationInviteError('');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/whatsapp-invites/send`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ type: 'manager_application', leadId: selectedLead.id, phone: selectedLead.phone, force: false }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        const message = data.code === 'DUPLICATE_INVITE'
+          ? 'A confirmação já foi enviada para este número nos últimos 7 dias. Consulte o relatório na Central WhatsApp.'
+          : (data.error || data.message || 'Falha no envio oficial.');
+        setApplicationInviteError(message);
+        return;
+      }
+      // O log de convite no backend é a fonte oficial, mesmo se o registro CRM falhar.
+      setApplicationInviteOpen(false);
+      setSnack('Confirmação de candidatura enviada via Twilio. Confira a entrega na Central WhatsApp.');
+      try {
+        const noteRes = await fetch(`${API_BASE_URL}/api/admin/crm/leads/${selectedLead.id}/interactions`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ event_type: 'WHATSAPP', description: 'Confirmação de candidatura enviada pelo WhatsApp oficial (Twilio). Status inicial: ' + (data.data?.twilioStatus || 'queued') + '. Aguardando resposta.' }),
+        });
+        const note = await noteRes.json();
+        if (note.success) {
+          setInteractions(previous => [note.data, ...previous]);
+        } else {
+          setSnack('Envio oficial registrado na Twilio, mas falhou a anotação no CRM. Não reenvie; registre a observação manualmente.');
+        }
+      } catch {
+        setSnack('Envio oficial registrado na Twilio, mas falhou a anotação no CRM. Não reenvie; registre a observação manualmente.');
+      }
+      fetchLeads();
+    } catch {
+      setApplicationInviteError('Falha na conexão. Consulte o relatório da Central antes de tentar novamente para evitar duplicidade.');
+    } finally {
+      setApplicationInviteSending(false);
+    }
   };
 
   const handleAddInteraction = async () => {
@@ -635,6 +682,11 @@ export default function CrmPage() {
               >
                 {getWhatsAppLabel(getLeadWhatsAppType(selectedLead))}
               </Button>
+              {isSuperAdmin && selectedLead.lead_type === 'TERRITORIAL_MANAGER' && selectedLead.source === 'WEBSITE' && !['ACTIVE', 'LOST', 'REJECTED'].includes(selectedLead.status) && selectedLead.phone && (
+                <Button size="small" variant="contained" startIcon={<WhatsApp />} onClick={() => { setApplicationInviteError(''); setApplicationInviteOpen(true); }} sx={{ bgcolor: GOLD, color: '#090909', textTransform: 'none', '&:hover': { bgcolor: '#e0bf50' } }}>
+                  Enviar confirmação oficial
+                </Button>
+              )}
               {(isSuperAdmin || admin?.role === 'TERRITORIAL_MANAGER') && ['ACTIVE','INTERESTED','WAITING_DOCUMENTS','WAITING_CONTRACT','WAITING_APPROVAL'].includes(selectedLead.status) && ['LOCAL_BUSINESS','RESTAURANT','BAKERY','PIZZERIA','SNACK_BAR','MARKET','PHARMACY','PET_SHOP','BEAUTY_SALON','WORKSHOP'].includes(selectedLead.lead_type) && (
                 <Button size="small" variant="contained" startIcon={<Storefront />} sx={{ bgcolor: '#059669', textTransform: 'none', '&:hover': { bgcolor: '#047857' } }}
                   onClick={async () => {
@@ -670,6 +722,26 @@ export default function CrmPage() {
           </Box>
         )}
       </Drawer>
+
+      {/* Confirmação de candidatura: ação explícita, sem disparo automático. */}
+      <Dialog open={applicationInviteOpen} onClose={() => !applicationInviteSending && setApplicationInviteOpen(false)} maxWidth="sm" fullWidth PaperProps={darkDialogPaper}>
+        <DialogTitle sx={{ color: TEXT_PRIMARY, fontWeight: 700 }}>Confirmação oficial de candidatura</DialogTitle>
+        <DialogContent sx={{ ...darkInputSx }}>
+          <Typography sx={{ color: TEXT_SECONDARY, mb: 1.5 }}>
+            Enviar pelo WhatsApp oficial da KAVIAR, via Twilio, o modelo aprovado kaviar_gestor_candidatura_v1?
+          </Typography>
+          <Typography sx={{ color: TEXT_PRIMARY, fontWeight: 700 }}>{selectedLead?.name}</Typography>
+          <Typography sx={{ color: TEXT_SECONDARY, mb: 1 }}>WhatsApp: {selectedLead?.phone}</Typography>
+          <Alert severity="info">O nome será preenchido automaticamente. O envio não aprova, contrata nem atribui território. O convite genérico permanece disponível na Central WhatsApp.</Alert>
+          {applicationInviteError && <Alert severity="error" sx={{ mt: 1.5 }}>{applicationInviteError}</Alert>}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button disabled={applicationInviteSending} onClick={() => setApplicationInviteOpen(false)}>Cancelar</Button>
+          <Button disabled={applicationInviteSending} variant="contained" onClick={handleApplicationInvite} sx={{ bgcolor: GOLD, color: '#090909' }}>
+            {applicationInviteSending ? 'Enviando...' : 'Confirmar e enviar via Twilio'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Create Dialog */}
       <Dialog open={createOpen} onClose={() => setCreateOpen(false)} maxWidth="sm" fullWidth PaperProps={darkDialogPaper}>
