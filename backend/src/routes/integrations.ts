@@ -1,6 +1,8 @@
 import { Router } from 'express';
+import twilio from 'twilio';
 import { prisma } from '../lib/prisma';
 import { notifyAdminNewContact } from '../services/admin-alert.service';
+import { resolveInvitedManagerApplicant } from '../services/whatsapp/manager-applicant-link';
 
 export const integrationsRoutes = Router();
 
@@ -40,6 +42,14 @@ async function resolveContact(phone: string): Promise<{
   if (clean.startsWith('+55')) variants.push(clean.slice(3), clean.slice(1));
   if (clean.startsWith('55') && !clean.startsWith('+')) variants.push('+' + clean, clean.slice(2));
   if (!clean.startsWith('+') && !clean.startsWith('55')) variants.push('+55' + clean, '55' + clean);
+
+  // Prefer a unique WEBSITE application after its official Twilio confirmation.
+  // Never select a manual SUPPORT_POINT lead by matching only a phone suffix.
+  const managerCandidate = await resolveInvitedManagerApplicant(phone);
+  if (managerCandidate) return {
+    contact_type: 'manager', contact_name: managerCandidate.name,
+    linked_entity_type: 'crm_lead', linked_entity_id: managerCandidate.id,
+  };
 
   // Driver
   const driver = await prisma.drivers.findFirst({
@@ -84,70 +94,75 @@ async function resolveContact(phone: string): Promise<{
   return { contact_type: 'unknown', contact_name: null, linked_entity_type: null, linked_entity_id: null };
 }
 
-// Twilio WhatsApp Inbound Webhook
-integrationsRoutes.post('/twilio/whatsapp', async (req, res) => {
-  // Responder TwiML vazio imediatamente (Twilio espera resposta rápida)
-  res.set('Content-Type', 'text/xml');
-  res.status(200).send(EMPTY_TWIML);
-
-  // Persistir async (não bloqueia resposta ao Twilio)
+/**
+ * Twilio signs the exact public URL (including path and query) and form fields.
+ * Explicit override is available for nonstandard proxy/public-domain routing.
+ * Never log the auth token or signed payload.
+ */
+function validInboundSignature(req: any): boolean {
+  if (process.env.NODE_ENV !== 'production') return true;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  const signature = String(req.headers['x-twilio-signature'] || '');
+  const publicBase = process.env.PUBLIC_API_BASE_URL || process.env.API_PUBLIC_BASE_URL || process.env.BACKEND_PUBLIC_URL;
+  const configured = process.env.TWILIO_WHATSAPP_INBOUND_WEBHOOK_URL;
+  const url = configured?.trim() || (publicBase ? publicBase.replace(/\/$/, '') + req.originalUrl : '');
+  if (!token || !signature || !url.startsWith('https://')) return false;
   try {
-    const { From, Body, MessageSid, ProfileName, MediaUrl0, MediaContentType0 } = req.body;
-    if (!From || !Body) return;
+    return twilio.validateRequest(token, signature, url, req.body || {});
+  } catch {
+    return false;
+  }
+}
 
-    const phone = From.replace('whatsapp:', '').trim();
+// Twilio WhatsApp Inbound Webhook — one persistent copy in the Central.
+// No automated outgoing message, CRM status change, or business activation.
+integrationsRoutes.post('/twilio/whatsapp', async (req, res) => {
+  if (!validInboundSignature(req)) return res.status(403).send('Invalid Twilio signature');
+  try {
+    const { From, Body, MessageSid, ProfileName, MediaUrl0, MediaContentType0 } = req.body || {};
+    if (!From || (!Body && !MediaUrl0)) return res.type('text/xml').status(200).send(EMPTY_TWIML);
+
+    const body = String(Body || (MediaUrl0 ? '[Mídia recebida]' : ''));
+    const phone = String(From).replace('whatsapp:', '').trim();
     const twilioSid = MessageSid || null;
-    const preview = (Body || '').substring(0, 200);
+    const preview = body.substring(0, 200);
+    const isUrgent = detectUrgent(body);
+    // Resolve contact outside the write transaction; do not consume another
+    // Prisma connection inside an interactive transaction on small pools.
+    const preexisting = await prisma.wa_conversations.findUnique({ where: { phone } });
+    const resolved = !preexisting || (preexisting.contact_type === 'unknown' && !preexisting.linked_entity_id) || (preexisting.contact_type === 'lead' && !preexisting.linked_entity_id)
+      ? await resolveContact(phone)
+      : null;
 
-    // Dedup: se já existe mensagem com esse twilio_sid, ignorar
-    if (twilioSid) {
-      const existing = await prisma.wa_messages.findFirst({ where: { twilio_sid: twilioSid } });
-      if (existing) {
-        console.log(`[WA_INBOUND] Duplicate SID ${twilioSid}, skipping`);
-        return;
+    // One transaction: a failed message insert never leaves orphaned counters
+    // or a phantom unread conversation. Twilio may retry a 503 response.
+    const saved = await prisma.$transaction(async (tx) => {
+      if (twilioSid) {
+        const duplicate = await tx.wa_messages.findFirst({ where: { twilio_sid: twilioSid } });
+        if (duplicate) return { duplicate: true as const, conversation: null, wasNew: false, resolvedName: null };
       }
-    }
+      const existing = await tx.wa_conversations.findUnique({ where: { phone } });
+      const wasNew = !existing;
+      let conversation = existing;
 
-    const isUrgent = detectUrgent(Body);
+      if (!conversation) {
+        conversation = await tx.wa_conversations.create({
+          data: {
+            phone,
+            whatsapp_name: ProfileName || null,
+            contact_name: resolved?.contact_name || null,
+            contact_type: resolved?.contact_type || 'unknown',
+            linked_entity_type: resolved?.linked_entity_type || null,
+            linked_entity_id: resolved?.linked_entity_id || null,
+            assignee_id: resolved?.assignee_id || null,
+            status: 'new',
+            priority: isUrgent ? 'urgent' : 'normal',
+            unread_count: 0,
+            message_count: 0,
+          },
+        });
+      }
 
-    // Buscar ou criar conversa
-    let conversation = await prisma.wa_conversations.findUnique({ where: { phone } });
-
-    if (!conversation) {
-      // Resolver contato
-      const resolved = await resolveContact(phone);
-
-      conversation = await prisma.wa_conversations.create({
-        data: {
-          phone,
-          whatsapp_name: ProfileName || null,
-          contact_name: resolved.contact_name,
-          contact_type: resolved.contact_type,
-          linked_entity_type: resolved.linked_entity_type,
-          linked_entity_id: resolved.linked_entity_id,
-          assignee_id: resolved.assignee_id || null,
-          status: 'new',
-          priority: isUrgent ? 'urgent' : 'normal',
-          unread_count: 1,
-          message_count: 1,
-          last_message_at: new Date(),
-          last_message_preview: preview,
-          last_inbound_at: new Date(),
-        },
-      });
-
-      console.log(`[WA_INBOUND] New conversation id=${conversation.id} phone=${phone.substring(0, 7)}*** type=${resolved.contact_type}${isUrgent ? ' URGENT' : ''}`);
-
-      // Admin alert: notify via SMS on new conversation
-      notifyAdminNewContact({
-        phone,
-        name: resolved.contact_name || ProfileName || null,
-        message: Body,
-        type: resolved.contact_type,
-        conversationId: conversation.id,
-      }).catch(err => console.error('[ADMIN_ALERT] error:', err.message));
-    } else {
-      // Atualizar conversa existente
       const updates: any = {
         unread_count: { increment: 1 },
         message_count: { increment: 1 },
@@ -155,25 +170,12 @@ integrationsRoutes.post('/twilio/whatsapp', async (req, res) => {
         last_message_preview: preview,
         last_inbound_at: new Date(),
       };
-
-      // Atualizar whatsapp_name se veio e ainda não tinha
-      if (ProfileName && !conversation.whatsapp_name) {
-        updates.whatsapp_name = ProfileName;
-      }
-
-      // Escalar para urgent se mensagem de emergência (nunca desescalar)
-      if (isUrgent && conversation.priority !== 'urgent') {
-        updates.priority = 'urgent';
-      }
-
-      // Se estava resolvida, reabrir
-      if (conversation.status === 'resolved') {
-        updates.status = 'new';
-      }
-
-      // Re-resolver contato se ainda é unknown
-      if (conversation.contact_type === 'unknown') {
-        const resolved = await resolveContact(phone);
+      if (ProfileName && !conversation.whatsapp_name) updates.whatsapp_name = ProfileName;
+      if (isUrgent && conversation.priority !== 'urgent') updates.priority = 'urgent';
+      if (conversation.status === 'resolved') updates.status = 'new';
+      // Preserve explicit driver/passenger/other entity bindings. Only enrich
+      // an unknown or unbound lead with a verified unique candidate.
+      if (resolved && ((conversation.contact_type === 'unknown' && !conversation.linked_entity_id) || (conversation.contact_type === 'lead' && !conversation.linked_entity_id))) {
         if (resolved.contact_type !== 'unknown') {
           updates.contact_type = resolved.contact_type;
           updates.contact_name = resolved.contact_name;
@@ -182,26 +184,37 @@ integrationsRoutes.post('/twilio/whatsapp', async (req, res) => {
         }
       }
 
-      conversation = await prisma.wa_conversations.update({
-        where: { id: conversation.id },
-        data: updates,
+      await tx.wa_messages.create({
+        data: {
+          conversation_id: conversation.id,
+          direction: 'inbound',
+          body,
+          twilio_sid: twilioSid,
+          media_url: MediaUrl0 || null,
+          media_type: MediaContentType0 || null,
+        },
       });
-    }
-
-    // Persistir mensagem
-    await prisma.wa_messages.create({
-      data: {
-        conversation_id: conversation.id,
-        direction: 'inbound',
-        body: Body,
-        twilio_sid: twilioSid,
-        media_url: MediaUrl0 || null,
-        media_type: MediaContentType0 || null,
-      },
+      conversation = await tx.wa_conversations.update({ where: { id: conversation.id }, data: updates });
+      return { duplicate: false as const, conversation, wasNew, resolvedName: resolved?.contact_name || null };
     });
 
-    console.log(`[WA_INBOUND] msg conv=${conversation.id} type=${conversation.contact_type} preview="${preview.substring(0, 40)}..."`);
+    if (saved.duplicate) {
+      console.log('[WA_INBOUND] Duplicate SID ignored');
+      return res.type('text/xml').status(200).send(EMPTY_TWIML);
+    }
+    if (saved.wasNew && saved.conversation) {
+      notifyAdminNewContact({
+        phone,
+        name: saved.resolvedName || ProfileName || null,
+        message: body,
+        type: saved.conversation.contact_type,
+        conversationId: saved.conversation.id,
+      }).catch(err => console.error('[ADMIN_ALERT] error:', err.message));
+    }
+    console.log(`[WA_INBOUND] stored conv=${saved.conversation?.id} type=${saved.conversation?.contact_type}`);
+    return res.type('text/xml').status(200).send(EMPTY_TWIML);
   } catch (err) {
     console.error('[WA_INBOUND] Error persisting message:', err);
+    return res.status(503).send('Temporarily unavailable');
   }
 });

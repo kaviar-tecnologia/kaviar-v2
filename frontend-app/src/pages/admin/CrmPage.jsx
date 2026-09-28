@@ -8,6 +8,7 @@ import {
 import { Add, Download, Close, Phone, Email, Business, AccessTime, FilterList, Warning, LocationOn, WhatsApp, Assignment, Storefront, AccountBalance } from '@mui/icons-material';
 import { API_BASE_URL } from '../../config/api';
 import { formatDate } from '../../utils/formatDate';
+import ManagerApplicationsPanel from './ManagerApplicationsPanel';
 import { openDriverWhatsAppInvite, openPassengerWhatsAppInvite, openManagerWhatsAppInvite, openWhatsAppContact } from '../../utils/whatsappInvite';
 
 const GOLD = '#D4AF37';
@@ -79,6 +80,7 @@ const ROLES_SHORT = { captador_motorista: 'Mot.', captador_passageiro: 'Pass.', 
 
 const EVENT_TYPES = [
   { value: 'NOTE', label: 'Observação' },
+  { value: 'DECISION', label: 'Decisão da candidatura' },
   { value: 'CALL', label: 'Ligação' },
   { value: 'WHATSAPP', label: 'WhatsApp' },
   { value: 'EMAIL', label: 'E-mail' },
@@ -90,6 +92,23 @@ const EVENT_TYPES = [
   { value: 'SHOWCASE_DISCUSSION', label: 'Discussão Vitrine' },
   { value: 'OTHER', label: 'Outro' },
 ];
+
+function readableCrmInteraction(interaction) {
+  if (interaction.event_type !== 'DECISION') return interaction.description;
+  try {
+    const item = JSON.parse(interaction.description || '{}');
+    if (item.schema !== 'manager_application_decision_v1') return interaction.description;
+    const labels = {
+      ADVANCE: 'Avançar para próxima etapa',
+      REQUEST_INFO: 'Solicitar informações',
+      KEEP_REVIEW: 'Manter em análise',
+      DO_NOT_PROCEED: 'Não prosseguir',
+    };
+    return `${labels[item.outcome] || item.outcome}: ${item.justification} · ${item.actorName || 'Administração'}${item.communicationRequested ? ' · Comunicação solicitada (envio manual)' : ''}`;
+  } catch {
+    return interaction.description;
+  }
+}
 
 function isOverdue(d) { return d && new Date(d) < new Date(); }
 function isMissing(v) { return !v || v.trim() === ''; }
@@ -148,6 +167,7 @@ export default function CrmPage() {
   const [applicationInviteOpen, setApplicationInviteOpen] = useState(false);
   const [applicationInviteSending, setApplicationInviteSending] = useState(false);
   const [applicationInviteError, setApplicationInviteError] = useState('');
+  const [managerPanelOpen, setManagerPanelOpen] = useState(false);
 
   const adminData = localStorage.getItem('kaviar_admin_data');
   const admin = adminData ? JSON.parse(adminData) : null;
@@ -354,6 +374,10 @@ export default function CrmPage() {
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          {isSuperAdmin && <Button size="small" variant="contained" onClick={() => setManagerPanelOpen(true)}
+            sx={{ bgcolor: GOLD, color: '#101010', textTransform: 'none', '&:hover': { bgcolor: '#e0bf50' } }}>
+            Candidaturas de Gestores
+          </Button>}
           <Button size="small" variant="outlined" onClick={() => { window.location.href = '/admin/regulatory-consultation'; }} sx={{ borderColor: '#2563EB', color: '#2563EB', textTransform: 'none' }}>
             Consulta Regulatória
           </Button>
@@ -712,7 +736,7 @@ export default function CrmPage() {
                       <Chip label={EVENT_TYPES.find(e => e.value === i.event_type)?.label || i.event_type} size="small" sx={{ fontSize: 10, bgcolor: 'rgba(255,255,255,0.08)', color: TEXT_SECONDARY }} />
                       <Typography sx={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>{formatDate(i.created_at, { showTime: true })}</Typography>
                     </Box>
-                    {i.description && <Typography sx={{ fontSize: 12, mt: 0.5, color: TEXT_SECONDARY }}>{i.description}</Typography>}
+                    {i.description && <Typography sx={{ fontSize: 12, mt: 0.5, color: TEXT_SECONDARY }}>{readableCrmInteraction(i)}</Typography>}
                     {i.old_status && i.new_status && <Typography sx={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', mt: 0.3 }}>{STATUS_MAP[i.old_status]?.label || i.old_status} → {STATUS_MAP[i.new_status]?.label || i.new_status}</Typography>}
                   </Box>
                 ))}
@@ -722,6 +746,9 @@ export default function CrmPage() {
           </Box>
         )}
       </Drawer>
+
+      {isSuperAdmin && <ManagerApplicationsPanel open={managerPanelOpen} onClose={() => setManagerPanelOpen(false)}
+        onUpdated={() => { fetchLeads(); fetchStats(); }} />}
 
       {/* Confirmação de candidatura: ação explícita, sem disparo automático. */}
       <Dialog open={applicationInviteOpen} onClose={() => !applicationInviteSending && setApplicationInviteOpen(false)} maxWidth="sm" fullWidth PaperProps={darkDialogPaper}>

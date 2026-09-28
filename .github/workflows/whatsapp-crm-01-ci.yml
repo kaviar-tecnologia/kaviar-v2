@@ -1,0 +1,68 @@
+name: WhatsApp CRM-01 CI
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/routes/admin-manager-applications.ts'
+      - 'backend/src/routes/integrations.ts'
+      - 'backend/src/routes/admin-whatsapp.ts'
+      - 'backend/src/services/whatsapp/manager-applicant-link.ts'
+      - 'backend/src/app.ts'
+      - 'backend/tests/admin-manager-applications.test.ts'
+      - 'backend/tests/manager-applicant-link.test.ts'
+      - 'backend/tests/manager-applicant-inbound-webhook.test.ts'
+      - 'frontend-app/src/pages/admin/CrmPage.jsx'
+      - 'frontend-app/src/pages/admin/ManagerApplicationsPanel.jsx'
+      - 'frontend-app/src/pages/admin/WhatsAppCentral.jsx'
+      - 'frontend-app/src/__tests__/manager-applications-crm01.test.js'
+      - '.github/workflows/whatsapp-crm-01-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/src/routes/admin-manager-applications.ts'
+      - 'backend/src/routes/integrations.ts'
+      - 'backend/src/routes/admin-whatsapp.ts'
+      - 'backend/src/services/whatsapp/manager-applicant-link.ts'
+      - 'frontend-app/src/pages/admin/**'
+      - '.github/workflows/whatsapp-crm-01-ci.yml'
+
+jobs:
+  manager-triage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://kaviar_test:test@127.0.0.1:5432/kaviar_test
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend-app/package-lock.json
+      - name: Install backend
+        run: cd backend && npm ci
+      - name: Typecheck backend
+        run: cd backend && npx tsc --noEmit -p tsconfig.build.json
+      - name: Test manager decisions, applicant matching and previous invite regression
+        run: |
+          cd backend
+          npx vitest run \
+            tests/admin-manager-applications.test.ts \
+            tests/manager-applicant-link.test.ts \
+            tests/manager-applicant-inbound-webhook.test.ts \
+            tests/admin-whatsapp-manager-application.test.ts \
+            tests/admin-whatsapp-invites-report.test.ts
+      - name: Install frontend
+        run: cd frontend-app && npm ci
+      - name: Test CRM candidate view and existing CRM regression
+        run: |
+          cd frontend-app
+          npx vitest run \
+            src/__tests__/manager-applications-crm01.test.js \
+            src/__tests__/manager-application-confirmation.test.js \
+            src/__tests__/crm-premium.test.js
+      - name: Build frontend
+        run: cd frontend-app && npm run build
