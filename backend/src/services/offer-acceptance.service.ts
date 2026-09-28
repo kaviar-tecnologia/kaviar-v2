@@ -102,7 +102,14 @@ export async function acceptOfferInternal(offerId: string, driverId: string, adj
     }
 
     const updatedRide = await tx.rides_v2.updateMany({
-      where: { id: offer.ride_id, status: { in: ['requested', 'offered'] } },
+      // Compare-and-set against the identity loaded inside this transaction:
+      // a concurrent change to CARE cannot inherit a regular offer/driver.
+      where: {
+        id: offer.ride_id,
+        status: { in: ['requested', 'offered'] },
+        service_category: offer.ride.service_category,
+        ride_type: offer.ride.ride_type,
+      },
       data: {
         driver_id: driverId,
         status: rideStatus,
