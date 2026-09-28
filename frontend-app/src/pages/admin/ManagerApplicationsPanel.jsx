@@ -233,6 +233,20 @@ export default function ManagerApplicationsPanel({ open, onClose, onUpdated }) {
                 {item.lastDecision && <Alert severity="info" sx={{ mb: 1, py: 0 }}>
                   Última decisão: {item.lastDecision.label} — {dateTime(item.lastDecision.createdAt)}
                 </Alert>}
+                {item.lastDecision?.outcome === 'APPROVE_ONBOARDING' && <Alert severity="warning" sx={{ mb: 1 }}>
+                  Cadastro em preparação. O aviso de aprovação ainda depende de envio manual na Central. Conta, contrato e território não foram ativados.
+                </Alert>}
+                {item.lastDecision?.outcome === 'ADVANCE' && lead.status === 'INTERESTED' &&
+                  <Button size="small" variant="contained" fullWidth onClick={() => startOnboarding(item)}
+                    sx={{ mb: 1, minHeight: 48, bgcolor: '#25D366', color: '#102014', fontWeight: 800, textTransform: 'none',
+                      '&:hover': { bgcolor: '#48E38B' } }}>
+                    Iniciar cadastro da gestora aprovada
+                  </Button>}
+                {item.lastDecision?.outcome === 'APPROVE_ONBOARDING' &&
+                  <Button size="small" variant="outlined" fullWidth onClick={() => prepareOnboardingNotice(item)}
+                    sx={{ mb: 1, color: TEXT, borderColor: '#8195AB', textTransform: 'none', fontWeight: 700 }}>
+                    Revisar aviso de aprovação para WhatsApp
+                  </Button>}
                 <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                   <Button size="small" variant="contained" disabled={lead.status === 'ACTIVE'} onClick={() => openDecision(item)} sx={{ bgcolor: GOLD, color: '#111' }}>
                     Registrar decisão
