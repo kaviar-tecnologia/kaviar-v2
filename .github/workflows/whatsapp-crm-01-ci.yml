@@ -10,6 +10,7 @@ on:
       - 'backend/src/app.ts'
       - 'backend/tests/admin-manager-applications.test.ts'
       - 'backend/tests/manager-applicant-link.test.ts'
+      - 'backend/tests/manager-applicant-inbound-webhook.test.ts'
       - 'frontend-app/src/pages/admin/CrmPage.jsx'
       - 'frontend-app/src/pages/admin/ManagerApplicationsPanel.jsx'
       - 'frontend-app/src/pages/admin/WhatsAppCentral.jsx'
@@ -51,6 +52,7 @@ jobs:
           npx vitest run \
             tests/admin-manager-applications.test.ts \
             tests/manager-applicant-link.test.ts \
+            tests/manager-applicant-inbound-webhook.test.ts \
             tests/admin-whatsapp-manager-application.test.ts \
             tests/admin-whatsapp-invites-report.test.ts
       - name: Install frontend
