@@ -224,21 +224,33 @@ export class DispatcherService {
     const expiresAt = new Date(Date.now() + this.OFFER_TIMEOUT_SECONDS * 1000);
     
     const offer = await prisma.$transaction(async (tx) => {
-      // CARE-04D: re-evaluate in the SAME official offer transaction, never
-      // trust an earlier candidate result. No verified CARE insurance/municipal
-      // evidence provider is connected, so null is fail-closed. CARE-04A's
-      // unconditional guard above still prevents reaching this branch.
+      // Re-read in the existing offer transaction; an initial regular ride
+      // must not become CARE (or leave the dispatchable state) mid-dispatch.
+      // The conditional update below also checks identity/state at write time.
+      const latestRide = await tx.rides_v2.findUnique({
+        where: { id: rideId },
+        select: { status: true, service_category: true, ride_type: true, trip_details: true },
+      });
+      if (!latestRide || !['requested', 'offered'].includes(latestRide.status)) {
+        throw new Error('Ride no longer dispatchable');
+      }
       if (isUnsupportedCareIntent({
-        service_category: ride.service_category,
-        ride_type: ride.ride_type,
-        trip_details: ride.trip_details,
+        service_category: latestRide.service_category,
+        ride_type: latestRide.ride_type,
+        trip_details: latestRide.trip_details,
       })) {
+        // CARE-04D: only the official transaction may recheck current evidence.
+        // External municipal/territorial/insurance evidence remains absent.
         const careDecision = await evaluateCareEligibilityFromDb(
           tx, rideId, bestCandidate.driver_id, null, new Date(),
         );
         if (!careDecision.eligible) throw new Error(CARE_UNAVAILABLE_CODE);
-        // A positive adapter result alone is not an operational release.
+        // An eligible snapshot alone is NEVER an operational release.
         throw new Error(CARE_UNAVAILABLE_CODE);
+      }
+      if (latestRide.service_category !== ride.service_category ||
+          latestRide.ride_type !== ride.ride_type) {
+        throw new Error('Ride identity changed during dispatch');
       }
 
       const o = await tx.ride_offers.create({
@@ -251,10 +263,16 @@ export class DispatcherService {
           rank_score: new Decimal(bestCandidate.score)
         }
       });
-      await tx.rides_v2.update({
-        where: { id: rideId },
+      const updatedRide = await tx.rides_v2.updateMany({
+        where: {
+          id: rideId,
+          status: { in: ['requested', 'offered'] },
+          service_category: ride.service_category,
+          ride_type: ride.ride_type,
+        },
         data: { status: 'offered', offered_at: new Date() }
       });
+      if (updatedRide.count !== 1) throw new Error('Ride offer state changed');
       return o;
     });
 
