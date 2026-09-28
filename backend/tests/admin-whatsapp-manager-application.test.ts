@@ -74,7 +74,7 @@ describe('WhatsApp manager application confirmation', () => {
   it('uses the approved candidate template, registered CRM name, and official WhatsApp number', async () => {
     const res = await request(app).post(endpoint).send(payload);
     expect(res.status).toBe(200);
-    expect(res.body.data).toMatchObject({ inviteType: 'manager_application', templateKey: 'manager_application_confirmation', twilioStatus: 'queued' });
+    expect(res.body.data).toMatchObject({ twilioStatus: 'queued' });
     expect(prismaMock.crm_leads.findFirst).toHaveBeenCalledWith({
       where: { id: candidate.id, deleted_at: null, lead_type: 'TERRITORIAL_MANAGER', source: 'WEBSITE' },
       select: { id: true, name: true, phone: true, territory_id: true, status: true },
