@@ -61,7 +61,8 @@ describe('CARE-04B common atomic creation boundary', () => {
     const input: any = { data: { ...args().data, service_category: 'CAR_NORMAL', ride_type: 'normal' } };
     const ride = await createRideWithRequirements(input);
     expect(ride).toEqual({ id: 'normal-ride' });
-    expect(mocks.createRide).toHaveBeenCalledExactlyOnceWith(input);
+    expect(mocks.createRide).toHaveBeenCalledTimes(1);
+    expect(mocks.createRide).toHaveBeenCalledWith(input);
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
@@ -70,7 +71,8 @@ describe('CARE-04B common atomic creation boundary', () => {
     const ride = await createRideWithRequirements(input, baseDraft());
     expect(ride).toEqual({ id: 'care-ride-1' });
     expect(mocks.transaction).toHaveBeenCalledTimes(1);
-    expect(mocks.txCreateRide).toHaveBeenCalledExactlyOnceWith(input);
+    expect(mocks.txCreateRide).toHaveBeenCalledTimes(1);
+    expect(mocks.txCreateRide).toHaveBeenCalledWith(input);
     expect(mocks.txCreateRequirements).toHaveBeenCalledWith({
       data: expect.objectContaining({
         ride_id: 'care-ride-1',
@@ -78,8 +80,6 @@ describe('CARE-04B common atomic creation boundary', () => {
         status: 'DRAFT',
         guide_dog: true,
         companion_seats: 1,
-        reviewed_at: undefined,
-        reviewed_by_admin_id: undefined,
       }),
     });
     // These are intentionally omitted, not sent as undefined.
