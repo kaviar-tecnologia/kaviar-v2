@@ -9,19 +9,23 @@ import { audit, auditCtx } from '../utils/audit';
 
 const router = Router();
 
-const INVITE_TYPES = ['driver', 'passenger', 'manager', 'pet', 'guide', 'lead'] as const;
+const INVITE_TYPES = ['driver', 'passenger', 'manager', 'manager_application', 'pet', 'guide', 'lead'] as const;
 type InviteType = typeof INVITE_TYPES[number];
 
-const TEMPLATE_ENV_BY_TYPE: Record<'driver' | 'passenger' | 'manager', string> = {
+const MANAGER_APPLICATION_TEMPLATE_SID = 'HX93d53081930b106c8e5b266174c7611e';
+
+const TEMPLATE_ENV_BY_TYPE: Record<'driver' | 'passenger' | 'manager' | 'manager_application', string> = {
   driver: 'TWILIO_WHATSAPP_TEMPLATE_DRIVER_SID',
   passenger: 'TWILIO_WHATSAPP_TEMPLATE_PASSENGER_SID',
   manager: 'TWILIO_WHATSAPP_TEMPLATE_MANAGER_SID',
+  manager_application: 'TWILIO_WHATSAPP_TEMPLATE_MANAGER_APPLICATION_SID',
 };
 
-const TEMPLATE_KEY_BY_TYPE: Record<'driver' | 'passenger' | 'manager', string> = {
+const TEMPLATE_KEY_BY_TYPE: Record<'driver' | 'passenger' | 'manager' | 'manager_application', string> = {
   driver: 'official_invite_driver',
   passenger: 'official_invite_passenger',
   manager: 'official_invite_manager',
+  manager_application: 'manager_application_confirmation',
 };
 
 const SEND_ROLES = ['SUPER_ADMIN', 'TERRITORIAL_MANAGER', 'TERRITORIAL_OPERATOR'];
@@ -71,9 +75,10 @@ function phoneVariants(e164: string): string[] {
 }
 
 function getTemplateSid(type: InviteType): { sid: string; key: string; envName: string } | null {
-  if (type !== 'driver' && type !== 'passenger' && type !== 'manager') return null;
+  if (type !== 'driver' && type !== 'passenger' && type !== 'manager' && type !== 'manager_application') return null;
   const envName = TEMPLATE_ENV_BY_TYPE[type];
-  return { sid: (process.env[envName] || '').trim(), key: TEMPLATE_KEY_BY_TYPE[type], envName };
+  const fallback = type === 'manager_application' ? MANAGER_APPLICATION_TEMPLATE_SID : '';
+  return { sid: (process.env[envName] || fallback).trim(), key: TEMPLATE_KEY_BY_TYPE[type], envName };
 }
 
 function requireTwilioConfig(type: InviteType) {
@@ -380,7 +385,7 @@ router.post('/send', authenticateAdmin, requireRole(SEND_ROLES), applyTerritoryS
   try {
     const admin = (req as any).admin;
     const scope = (req as any).territoryScope;
-    const { phone, targetName, force = false } = req.body || {};
+    const { phone, targetName, leadId, force = false } = req.body || {};
 
     const rawType = req.body?.type;
     const normalized = normalizeInviteType(rawType);
@@ -390,13 +395,35 @@ router.post('/send', authenticateAdmin, requireRole(SEND_ROLES), applyTerritoryS
       return res.status(400).json({ success: false, error: 'phone e type válido são obrigatórios.' });
     }
 
-    if (type === 'manager' && admin.role !== 'SUPER_ADMIN') {
-      return res.status(403).json({ success: false, error: 'Convite de Gestor é permitido apenas para SUPER_ADMIN.' });
+    if ((type === 'manager' || type === 'manager_application') && admin.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ success: false, error: 'Comunicação de Gestor permitida apenas para SUPER_ADMIN.' });
     }
 
     normalizedPhone = normalizeBrazilPhone(phone);
-    const resolved = await resolveKnownTargetTerritories(normalizedPhone, type);
-    const finalTargetName = String(targetName || resolved.targetName || '').trim() || null;
+    let candidate: { id: string; name: string; phone: string | null; territory_id: string | null; status: string } | null = null;
+    if (type === 'manager_application') {
+      if (typeof leadId !== 'string' || !leadId.trim()) {
+        return res.status(400).json({ success: false, error: 'leadId do candidato é obrigatório.' });
+      }
+      candidate = await prisma.crm_leads.findFirst({
+        where: { id: leadId, deleted_at: null, lead_type: 'TERRITORIAL_MANAGER', source: 'WEBSITE' },
+        select: { id: true, name: true, phone: true, territory_id: true, status: true },
+      });
+      if (!candidate || !candidate.phone) {
+        return res.status(404).json({ success: false, error: 'Candidatura de Gestor não encontrada no CRM.' });
+      }
+      if (['ACTIVE', 'LOST', 'REJECTED'].includes(candidate.status)) {
+        return res.status(409).json({ success: false, error: 'Candidatura não está em acompanhamento.' });
+      }
+      if (normalizeBrazilPhone(candidate.phone) !== normalizedPhone) {
+        return res.status(409).json({ success: false, error: 'Telefone informado difere do cadastro do candidato.' });
+      }
+    }
+    const resolved = type === 'manager_application'
+      ? { territoryIds: candidate?.territory_id ? [candidate.territory_id] : [], exactTerritoryIds: [], targetName: candidate?.name || null }
+      : await resolveKnownTargetTerritories(normalizedPhone, type);
+    // Para candidatura, o nome e território vêm exclusivamente do CRM, não do corpo da requisição.
+    const finalTargetName = String(type === 'manager_application' ? candidate?.name : (targetName || resolved.targetName || '')).trim() || null;
     let logTerritoryId = resolved.territoryIds[0] || null;
 
     if (isTerritorialRole(admin.role)) {
@@ -476,7 +503,7 @@ router.post('/send', authenticateAdmin, requireRole(SEND_ROLES), applyTerritoryS
         channel: 'twilio_whatsapp',
         template_key: templateConfig.template.key,
         duplicate_of_log_id: duplicateLogId,
-        source_screen: 'whatsapp_central',
+        source_screen: type === 'manager_application' ? 'crm_manager_application' : 'whatsapp_central',
         twilio_status: 'queued',
       },
     });
