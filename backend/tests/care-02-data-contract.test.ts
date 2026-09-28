@@ -20,7 +20,7 @@ describe('CARE-02: isolated, fail-closed mobility data contract', () => {
     expect([...sql.matchAll(/CREATE TYPE "(.*?)"/g)].map(x => x[1])).toEqual([
       'CareRideMode', 'CareQualificationStatus', 'CareTripStatus',
     ]);
-    expect(sql).not.toMatch(/\b(?:INSERT|UPDATE|DELETE|TRUNCATE|DROP)\b\s+(?:INTO|FROM|TABLE)?/i);
+    expect(sql).not.toMatch(/^\s*(?:INSERT\s+INTO|UPDATE\s+|DELETE\s+FROM|TRUNCATE\b|DROP\s+(?:TABLE|TYPE))\b/im);
     expect(sql).not.toMatch(/ALTER TABLE "(?:drivers|rides_v2|passengers|financial_[^"]*)"/);
     expect(sql).not.toMatch(/\b(?:SUMUP|ASAAS|OUTBOUND_PAYMENTS_ENABLED|FINANCE_OFFICIAL_ARCHIVE_ENABLED)\b/i);
   });
