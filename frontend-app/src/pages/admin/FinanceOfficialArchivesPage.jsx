@@ -304,10 +304,10 @@ export default function FinanceOfficialArchivesPage() {
       <Container maxWidth="xl" sx={{ mt: -6, position: 'relative' }}>
         <Grid container spacing={1.6} sx={{ mb: 2.5 }}>
           {[
-            { title: 'Arquivos registrados', value: listError ? '—' : metrics.total, subtitle: 'No período e empresa', icon: <FilePresentOutlined />, accent: COLORS.blue },
-            { title: 'Íntegros · sem ameaças', value: listError ? '—' : metrics.approved, subtitle: 'Origem ainda não verificada', icon: <FactCheckOutlined />, accent: '#059669' },
-            { title: 'Aguardando análise', value: listError ? '—' : metrics.pending, subtitle: 'Consulta manual disponível', icon: <SecurityOutlined />, accent: '#0E7490' },
-            { title: 'Requerem atenção', value: listError ? '—' : metrics.attention, subtitle: 'Bloqueios ou reservas', icon: <WarningAmberOutlined />, accent: '#C17B18' },
+            { title: 'Arquivos registrados', value: listError || !loaded ? '—' : metrics.total, subtitle: 'No período e empresa', icon: <FilePresentOutlined />, accent: COLORS.blue },
+            { title: 'Íntegros · sem ameaças', value: listError || !loaded ? '—' : metrics.approved, subtitle: 'Origem ainda não verificada', icon: <FactCheckOutlined />, accent: '#059669' },
+            { title: 'Aguardando análise', value: listError || !loaded ? '—' : metrics.pending, subtitle: 'Consulta manual disponível', icon: <SecurityOutlined />, accent: '#0E7490' },
+            { title: 'Requerem atenção', value: listError || !loaded ? '—' : metrics.attention, subtitle: 'Bloqueios ou reservas', icon: <WarningAmberOutlined />, accent: '#C17B18' },
           ].map(metric => <Grid item xs={6} lg={3} key={metric.title}><Metric {...metric} /></Grid>)}
         </Grid>
 
@@ -480,6 +480,7 @@ export default function FinanceOfficialArchivesPage() {
             {selectedEntity?.nome_fantasia || selectedEntity?.razao_social || 'Empresa'} · {MONTHS[scope.month - 1]} de {scope.year}.
             O envio registra o documento como declarado; não valida sua origem oficial.
           </Typography>
+          {feedback && <Alert severity={feedback.severity} sx={{ mb: 2 }}>{feedback.message}</Alert>}
           <Stack spacing={2}>
             <TextField select required size="small" label="Conta financeira" value={form.account_id} disabled={uploading || accountsLoading}
               onChange={e => setForm(prev => ({ ...prev, account_id: e.target.value }))} sx={fieldSx}>
