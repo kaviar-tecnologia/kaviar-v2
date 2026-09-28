@@ -25,6 +25,10 @@ jobs:
         run: npm ci
       - name: Unit-test fail-closed eligibility
         working-directory: backend
+        # Vitest's global guard requires an explicitly local-only URL. This
+        # pure unit test does not open a DB connection or use production data.
+        env:
+          DATABASE_URL: postgresql://care03_ci:ci_password@127.0.0.1:5432/care03_disposable
         run: npx vitest run tests/care-03-eligibility.test.ts
       - name: Typecheck backend
         working-directory: backend
