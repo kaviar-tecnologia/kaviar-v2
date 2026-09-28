@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { notifyAdminNewContact } from '../services/admin-alert.service';
+import { resolveInvitedManagerApplicant } from '../services/whatsapp/manager-applicant-link';
 
 export const integrationsRoutes = Router();
 
@@ -40,6 +41,14 @@ async function resolveContact(phone: string): Promise<{
   if (clean.startsWith('+55')) variants.push(clean.slice(3), clean.slice(1));
   if (clean.startsWith('55') && !clean.startsWith('+')) variants.push('+' + clean, clean.slice(2));
   if (!clean.startsWith('+') && !clean.startsWith('55')) variants.push('+55' + clean, '55' + clean);
+
+  // Prefer a unique WEBSITE application after its official Twilio confirmation.
+  // Never select a manual SUPPORT_POINT lead by matching only a phone suffix.
+  const managerCandidate = await resolveInvitedManagerApplicant(phone);
+  if (managerCandidate) return {
+    contact_type: 'manager', contact_name: managerCandidate.name,
+    linked_entity_type: 'crm_lead', linked_entity_id: managerCandidate.id,
+  };
 
   // Driver
   const driver = await prisma.drivers.findFirst({
@@ -86,29 +95,31 @@ async function resolveContact(phone: string): Promise<{
 
 // Twilio WhatsApp Inbound Webhook
 integrationsRoutes.post('/twilio/whatsapp', async (req, res) => {
-  // Responder TwiML vazio imediatamente (Twilio espera resposta rápida)
-  res.set('Content-Type', 'text/xml');
-  res.status(200).send(EMPTY_TWIML);
-
-  // Persistir async (não bloqueia resposta ao Twilio)
+  // Acknowledge only after durable persistence, so Twilio can retry on storage failure.
+  // No outbound reply is generated here.
   try {
-    const { From, Body, MessageSid, ProfileName, MediaUrl0, MediaContentType0 } = req.body;
-    if (!From || !Body) return;
+    const { From, Body, MessageSid, ProfileName, MediaUrl0, MediaContentType0 } = req.body || {};
+    if (!From || (!Body && !MediaUrl0)) {
+      res.type('text/xml').status(200).send(EMPTY_TWIML);
+      return;
+    }
 
-    const phone = From.replace('whatsapp:', '').trim();
+    const body = String(Body || (MediaUrl0 ? '[Mídia recebida]' : ''));
+    const phone = String(From).replace('whatsapp:', '').trim();
     const twilioSid = MessageSid || null;
-    const preview = (Body || '').substring(0, 200);
+    const preview = body.substring(0, 200);
 
     // Dedup: se já existe mensagem com esse twilio_sid, ignorar
     if (twilioSid) {
       const existing = await prisma.wa_messages.findFirst({ where: { twilio_sid: twilioSid } });
       if (existing) {
         console.log(`[WA_INBOUND] Duplicate SID ${twilioSid}, skipping`);
+        res.type('text/xml').status(200).send(EMPTY_TWIML);
         return;
       }
     }
 
-    const isUrgent = detectUrgent(Body);
+    const isUrgent = detectUrgent(body);
 
     // Buscar ou criar conversa
     let conversation = await prisma.wa_conversations.findUnique({ where: { phone } });
@@ -142,7 +153,7 @@ integrationsRoutes.post('/twilio/whatsapp', async (req, res) => {
       notifyAdminNewContact({
         phone,
         name: resolved.contact_name || ProfileName || null,
-        message: Body,
+        message: body,
         type: resolved.contact_type,
         conversationId: conversation.id,
       }).catch(err => console.error('[ADMIN_ALERT] error:', err.message));
@@ -172,7 +183,7 @@ integrationsRoutes.post('/twilio/whatsapp', async (req, res) => {
       }
 
       // Re-resolver contato se ainda é unknown
-      if (conversation.contact_type === 'unknown') {
+      if (conversation.contact_type === 'unknown' || (conversation.contact_type === 'lead' && !conversation.linked_entity_id)) {
         const resolved = await resolveContact(phone);
         if (resolved.contact_type !== 'unknown') {
           updates.contact_type = resolved.contact_type;
@@ -193,7 +204,7 @@ integrationsRoutes.post('/twilio/whatsapp', async (req, res) => {
       data: {
         conversation_id: conversation.id,
         direction: 'inbound',
-        body: Body,
+        body,
         twilio_sid: twilioSid,
         media_url: MediaUrl0 || null,
         media_type: MediaContentType0 || null,
@@ -201,7 +212,9 @@ integrationsRoutes.post('/twilio/whatsapp', async (req, res) => {
     });
 
     console.log(`[WA_INBOUND] msg conv=${conversation.id} type=${conversation.contact_type} preview="${preview.substring(0, 40)}..."`);
+    res.type('text/xml').status(200).send(EMPTY_TWIML);
   } catch (err) {
     console.error('[WA_INBOUND] Error persisting message:', err);
+    if (!res.headersSent) res.status(503).send('Temporarily unavailable');
   }
 });
