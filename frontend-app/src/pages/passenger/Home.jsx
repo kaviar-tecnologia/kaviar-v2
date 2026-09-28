@@ -20,7 +20,6 @@ import {
 import MyLocation from '@mui/icons-material/MyLocation';
 import LocationOn from '@mui/icons-material/LocationOn';
 import DirectionsCar from '@mui/icons-material/DirectionsCar';
-import WarningAmber from '@mui/icons-material/WarningAmber';
 import Layout from '../../components/common/Layout';
 import AddressAutocomplete from '../../components/common/AddressAutocomplete';
 import MapComponent from '../../components/common/MapComponent';
@@ -42,21 +41,15 @@ const PassengerHome = () => {
   const SUPPORT_WHATSAPP = import.meta.env.VITE_SUPPORT_WHATSAPP || '5521968648777';
 
   const openCareWhatsApp = () => {
-    const msg = [
-      '🧓 *KAVIAR CARE / Acompanhamento*',
-      '',
-      `📍 Origem: ${pickup || '(não informado)'}`,
-      `🎯 Destino: ${destination || '(não informado)'}`,
-      `👥 Precisa de acompanhante: ${careNeedsEscort ? 'SIM' : 'NÃO'}`,
-      careNotes ? `📝 Observações: ${careNotes}` : ''
-    ].filter(Boolean).join('\n');
+    // Opening a third-party channel is not a booking; do not prefill health notes or addresses.
+    const msg = 'Olá! Gostaria de informações sobre o KAVIAR CARE. Entendo que esta conversa não solicita nem confirma uma corrida.';
 
     const url = `https://wa.me/${SUPPORT_WHATSAPP}?text=${encodeURIComponent(msg)}`;
-    window.open(url, '_blank');
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
   const [error, setError] = useState('');
   const navigate = useNavigate();
-  const { rideStatus, requestRide } = useRide();
+  const { rideStatus, requestRide, demoEnabled } = useRide();
 
   const serviceOptions = [
     { value: 'STANDARD_RIDE', label: 'Corrida Normal', description: 'Transporte padrão', icon: '🚗' },
@@ -71,7 +64,7 @@ const PassengerHome = () => {
     }
 
     setError('');
-    requestRide({
+    const demoStarted = requestRide({
       origin: pickup,
       destination: destination,
       serviceType: serviceType,
@@ -79,14 +72,15 @@ const PassengerHome = () => {
       destinationCoords
     });
 
-    // Navegar para status da corrida
+    if (!demoStarted) {
+      setError('Este painel não realiza solicitações reais. Utilize o aplicativo KAVIAR Passageiro.');
+      return;
+    }
+
+    // Navegar somente quando a demonstração local for iniciada
     setTimeout(() => {
       navigate('/passageiro/status');
     }, 1000);
-  };
-
-  const handlePanicButton = () => {
-    alert('Alerta de emergência enviado! Ajuda está a caminho.');
   };
 
   const getCurrentLocation = () => {
@@ -109,10 +103,41 @@ const PassengerHome = () => {
 
   const selectedService = serviceOptions.find(s => s.value === serviceType);
 
+  // Legacy view uses fictitious drivers, prices and timers. Fail closed in production.
+  if (!demoEnabled) {
+    return (
+      <Layout title="Área do passageiro">
+        <Alert severity="info" sx={{ mb: 3 }}>
+          Esta área web de corridas está em preparação e não solicita viagens reais.
+          Para solicitar uma corrida, utilize o aplicativo oficial KAVIAR Passageiro.
+        </Alert>
+        <Card>
+          <CardContent>
+            <Typography variant="h5" gutterBottom>KAVIAR CARE — em implantação</Typography>
+            <Typography variant="body1" sx={{ mb: 2 }}>
+              A mobilidade assistida ainda não está disponível para solicitação automática.
+              É possível consultar informações pelo canal de atendimento, sem reserva ou disponibilidade garantida.
+            </Typography>
+            <Button variant="outlined" onClick={openCareWhatsApp}>
+              Consultar informações CARE (WhatsApp)
+            </Button>
+            <Typography variant="caption" display="block" sx={{ mt: 2 }}>
+              Nenhuma informação sobre saúde ou mobilidade é preenchida automaticamente na mensagem.
+            </Typography>
+          </CardContent>
+        </Card>
+      </Layout>
+    );
+  }
+
   return (
-    <Layout title="Passageiro - Solicitar Corrida">
+    <Layout title="Demonstração de corridas">
+      <Alert severity="warning" sx={{ mb: 3 }}>
+        DEMONSTRAÇÃO LOCAL: motoristas, preços, status e avaliações são fictícios.
+        Nenhuma corrida é solicitada, nenhum pagamento é realizado e nenhum alerta é enviado.
+      </Alert>
       <Typography variant="h4" gutterBottom sx={{ fontWeight: 600 }}>
-        Solicitar Corrida
+        Simular corrida (sem solicitação real)
       </Typography>
 
       {/* Atalhos rápidos de serviço */}
@@ -365,31 +390,6 @@ const PassengerHome = () => {
         </Card>
       </FadeInCard>
 
-      {/* Botão de Pânico */}
-      <FadeInCard delay={200}>
-        <Card>
-          <CardContent>
-            <Button
-              variant="contained"
-              color="error"
-              fullWidth
-              size="large"
-              startIcon={<WarningAmber />}
-              onClick={handlePanicButton}
-              sx={{ 
-                py: 2,
-                fontWeight: 600,
-                background: 'linear-gradient(135deg, #d32f2f 0%, #c62828 100%)'
-              }}
-            >
-              BOTÃO DE EMERGÊNCIA
-            </Button>
-            <Typography variant="caption" display="block" textAlign="center" mt={1} color="text.secondary">
-              Use apenas em situações de emergência real
-            </Typography>
-          </CardContent>
-        </Card>
-      </FadeInCard>
     </Layout>
   );
 };

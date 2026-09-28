@@ -1,0 +1,30 @@
+name: CARE-01 Frontend Safety
+
+on:
+  pull_request:
+    paths:
+      - 'frontend-app/**'
+      - 'src/components/passenger/ServiceSelector.tsx'
+      - '.github/workflows/care-01-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  frontend-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend-app/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend-app
+        run: npm ci
+      - name: CARE-01 regression tests
+        working-directory: frontend-app
+        run: npx vitest run src/__tests__/care-01-legacy-mock-guard.test.js
+      - name: Production frontend build (mock disabled)
+        working-directory: frontend-app
+        run: npm run build
