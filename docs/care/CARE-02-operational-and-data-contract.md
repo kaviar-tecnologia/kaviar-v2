@@ -61,7 +61,7 @@ Antes de executar migrations em produção: revisar drift, backup e reversibilid
 ## Critérios de aceite
 
 - `prisma validate` e geração de cliente passam.
-- SQL cria apenas os três modelos e dois enums; não faz INSERT, UPDATE, DELETE nem alteração de tabela financeira.
+- SQL cria apenas os três modelos e três enums; não faz INSERT, UPDATE, DELETE nem alteração de tabela financeira.
 - Invariantes SQL previnem confirmação sem verificação, adaptação marcada sem itens essenciais e cadeira dobrável sem declaração de transferência.
 - Sem seed ou flag de habilitação; o mobile CARE segue “Em implantação.”
 - Nenhum deploy/migração ativado pelo PR.
