@@ -26,6 +26,28 @@ describe('WhatsApp CRM-01 manager application UI contracts', () => {
     expect(page).toContain('Histórico de decisões');
   });
 
+  it('renders all four decisions directly as accessible, visible buttons', () => {
+    expect(page).toContain('Escolha uma decisão:');
+    expect(page).toContain('role="group" aria-labelledby="manager-decision-options-label"');
+    expect(page).toContain('OUTCOMES.map(option => {');
+    expect(page).toContain('aria-pressed={chosen}');
+    expect(page).toContain('onClick={() => setOutcome(option.value)}');
+    expect(page).toContain('Avançar para a próxima etapa');
+    expect(page).toContain('Solicitar informações adicionais');
+    expect(page).toContain('Manter em análise');
+    expect(page).toContain('Não prosseguir');
+    expect(page).not.toContain('<Select labelId="manager-decision-label"');
+  });
+
+  it('keeps borders, justification and confirmation readable on the dark dialog', () => {
+    expect(page).toContain("border: `2px solid ${chosen ? GOLD : '#8195AB'}`");
+    expect(page).toContain("'&.Mui-focusVisible': { outline: '3px solid #F5D76E'");
+    expect(page).toContain("'& .MuiOutlinedInput-root'");
+    expect(page).toContain("'& .MuiFormHelperText-root': { color: MUTED");
+    expect(page).toContain("'&.Mui-disabled': { bgcolor: '#283542', color: '#CBD5E1'");
+    expect(page).toContain('disabled={submitting || !outcome || justification.trim().length < 10}');
+  });
+
   it('makes official communication optional and never sends from the decision action', () => {
     expect(page).toContain('communicationRequested');
     expect(page).toContain('Nenhuma mensagem foi enviada automaticamente');
