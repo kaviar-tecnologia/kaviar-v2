@@ -68,6 +68,7 @@ import FinanceTransactionsPage from "../../pages/admin/FinanceTransactionsPage";
 import FinancePayablesPage from "../../pages/admin/FinancePayablesPage";
 import FinanceReceivablesPage from "../../pages/admin/FinanceReceivablesPage";
 import FinanceTreasuryPage from "../../pages/admin/FinanceTreasuryPage";
+import FinanceOfficialArchivesPage from "../../pages/admin/FinanceOfficialArchivesPage";
 import FinanceEntityTerritoriesPage from "../../pages/admin/FinanceEntityTerritoriesPage";
 import TerritoriesPage from "../../pages/admin/TerritoriesPage";
 import TerritoryDetailPage from "../../pages/admin/TerritoryDetailPage";
@@ -498,6 +499,7 @@ function AdminHome() {
               ] : []),
               ...(isSuperAdmin ? [
                 { Icon: Business, title: 'Portal do Contador', desc: 'Empresas, escritórios, contadores e vínculos.', to: '/admin/portal-contador' },
+                 { Icon: Description, title: 'Extratos oficiais', desc: 'Cofre privado, análise GuardDuty e auditoria de evidências.', to: '/admin/financeiro/extratos-oficiais' },
                 { Icon: Paid, title: 'Preços e Taxas', desc: 'Ajuste preços, taxas e adicionais', to: '/admin/pricing' },
                 { Icon: Paid, title: 'Tabela Territorial', desc: 'Pisos mínimos por rota e território', to: '/admin/territory-floors' },
                 { Icon: Paid, title: 'Pacotes de Saldo', desc: 'Gerenciar pacotes de recarga do motorista', to: '/admin/credit-packages' },
@@ -769,6 +771,11 @@ export default function AdminApp() {
           <Route path="/financeiro/contas-a-receber" element={
             <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
               <FinanceReceivablesPage />
+            </ProtectedAdminRoute>
+          } />
+          <Route path="/financeiro/extratos-oficiais" element={
+            <ProtectedAdminRoute requireSuperAdmin>
+              <FinanceOfficialArchivesPage />
             </ProtectedAdminRoute>
           } />
           <Route path="/financeiro/tesouraria" element={
