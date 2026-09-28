@@ -37,11 +37,11 @@ BEGIN
   EXCEPTION WHEN check_violation THEN NULL;
   END;
   BEGIN
-    INSERT INTO care_trip_requirements (id,ride_id,mode,folding_wheelchair)
-    VALUES ('invalid-foldable','care02-synthetic-ride','FOLDING_WHEELCHAIR',true);
+    UPDATE care_trip_requirements
+      SET mode='FOLDING_WHEELCHAIR', folding_wheelchair=true, can_self_transfer=NULL
+      WHERE id='care02-requirements';
     RAISE EXCEPTION 'folding chair without self-transfer was accepted';
   EXCEPTION WHEN check_violation THEN NULL;
-  WHEN unique_violation THEN RAISE EXCEPTION 'Invalid test did not reach check constraint';
   END;
   BEGIN
     UPDATE care_trip_requirements
