@@ -859,8 +859,8 @@ router.post('/operators/:id/sync-manager-candidate', async (req: Request, res: R
       include: { admin: { select: { id: true, name: true, email: true, phone: true } } },
     });
     if (!operator) return res.status(404).json({ success: false, error: 'Perfil não encontrado.' });
-    if (operator.relationship_type !== 'territorial_manager') {
-      return res.status(409).json({ success: false, error: 'Disponível apenas para Gestor Territorial.' });
+    if (operator.relationship_type !== 'territorial_manager' || operator.recipient_type !== 'individual') {
+      return res.status(409).json({ success: false, error: 'Disponível apenas para Gestor Territorial pessoa física.' });
     }
     if (operator.is_active || operator.document_status !== 'pending' || operator.contract_status !== 'pending') {
       return res.status(409).json({ success: false, error: 'A importação automática exige perfil inativo e documentação/contrato pendentes.' });
@@ -888,11 +888,43 @@ router.post('/operators/:id/sync-manager-candidate', async (req: Request, res: R
     if (plan.adminPhone) updatedFields.push('admin_phone');
     if (updatedFields.length) {
       await prisma.$transaction(async tx => {
+        // Compare against the exact snapshot that was reviewed, so concurrent
+        // manual edits and any activation cannot be silently overwritten.
+        const profileGuard = {
+          id: operator.id,
+          relationship_type: 'territorial_manager',
+          recipient_type: 'individual',
+          is_active: false,
+          document_status: 'pending',
+          contract_status: 'pending',
+          full_name: operator.full_name,
+          email: operator.email,
+          phone: operator.phone,
+        };
         if (Object.keys(plan.profileChanges).length) {
-          await tx.operator_profiles.update({ where: { id: operator.id }, data: plan.profileChanges });
+          const changed = await tx.operator_profiles.updateMany({
+            where: profileGuard,
+            data: plan.profileChanges,
+          });
+          if (changed.count !== 1) throw new Error('MANAGER_PREFILL_STALE');
+        } else {
+          const current = await tx.operator_profiles.findFirst({
+            where: profileGuard,
+            select: { id: true },
+          });
+          if (!current) throw new Error('MANAGER_PREFILL_STALE');
         }
         if (plan.adminPhone) {
-          await tx.admins.update({ where: { id: operator.admin_id }, data: { phone: plan.adminPhone } });
+          const changed = await tx.admins.updateMany({
+            where: {
+              id: operator.admin_id,
+              name: operator.admin.name,
+              email: operator.admin.email,
+              phone: operator.admin.phone,
+            },
+            data: { phone: plan.adminPhone },
+          });
+          if (changed.count !== 1) throw new Error('MANAGER_PREFILL_STALE');
         }
       });
     }
@@ -908,6 +940,11 @@ router.post('/operators/:id/sync-manager-candidate', async (req: Request, res: R
     });
     return res.json({ success: true, data: { updatedFields, crmLeadMatched: true } });
   } catch (error) {
+    if (error instanceof Error && error.message === 'MANAGER_PREFILL_STALE') {
+      return res.status(409).json({
+        success: false, error: 'Cadastro alterado durante a conferência. Atualize os dados antes de importar.',
+      });
+    }
     console.error('[admin-payouts] sync manager candidate error:', error);
     return res.status(500).json({ success: false, error: 'Erro ao reutilizar dados da candidatura.' });
   }
