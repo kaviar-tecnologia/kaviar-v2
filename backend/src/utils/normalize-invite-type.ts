@@ -1,4 +1,4 @@
-export type CanonicalInviteType = 'driver' | 'passenger' | 'manager' | 'pet' | 'guide' | 'lead';
+export type CanonicalInviteType = 'driver' | 'passenger' | 'manager' | 'manager_application' | 'pet' | 'guide' | 'lead';
 
 const MAP: Record<string, CanonicalInviteType | undefined> = {
   driver: 'driver',
@@ -7,6 +7,7 @@ const MAP: Record<string, CanonicalInviteType | undefined> = {
   passageiro: 'passenger',
   manager: 'manager',
   gestor: 'manager',
+  manager_application: 'manager_application',
   pet: 'pet',
   guide: 'guide',
   guia: 'guide',
@@ -20,4 +21,4 @@ export function normalizeInviteType(input: unknown): CanonicalInviteType | null 
   return MAP[s] ?? null;
 }
 
-export const KNOWN_INVITE_TYPES: CanonicalInviteType[] = ['driver', 'passenger', 'manager', 'pet', 'guide', 'lead'];
+export const KNOWN_INVITE_TYPES: CanonicalInviteType[] = ['driver', 'passenger', 'manager', 'manager_application', 'pet', 'guide', 'lead'];

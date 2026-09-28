@@ -1,0 +1,49 @@
+name: Manager Application WhatsApp CI
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/routes/admin-whatsapp-invites.ts'
+      - 'backend/src/utils/normalize-invite-type.ts'
+      - 'backend/tests/admin-whatsapp-manager-application.test.ts'
+      - 'frontend-app/src/pages/admin/CrmPage.jsx'
+      - 'frontend-app/src/__tests__/manager-application-confirmation.test.js'
+      - '.github/workflows/manager-application-whatsapp-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/src/routes/admin-whatsapp-invites.ts'
+      - 'backend/src/utils/normalize-invite-type.ts'
+      - 'backend/tests/admin-whatsapp-manager-application.test.ts'
+      - 'frontend-app/src/pages/admin/CrmPage.jsx'
+      - 'frontend-app/src/__tests__/manager-application-confirmation.test.js'
+      - '.github/workflows/manager-application-whatsapp-ci.yml'
+
+jobs:
+  candidate-confirmation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://kaviar_test:test@127.0.0.1:5432/kaviar_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend-app/package-lock.json
+      - name: Install backend dependencies
+        run: cd backend && npm ci
+      - name: Typecheck backend
+        run: cd backend && npx tsc --noEmit -p tsconfig.build.json
+      - name: Test candidate confirmation and invite reporting
+        run: cd backend && npx vitest run tests/admin-whatsapp-manager-application.test.ts tests/admin-whatsapp-invites-report.test.ts
+      - name: Install frontend dependencies
+        run: cd frontend-app && npm ci
+      - name: Test CRM and manager application UI
+        run: cd frontend-app && npx vitest run src/__tests__/manager-application-confirmation.test.js src/__tests__/manager-lead.test.js src/__tests__/crm-premium.test.js
+      - name: Build frontend
+        run: cd frontend-app && npm run build
