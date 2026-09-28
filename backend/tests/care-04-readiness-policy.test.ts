@@ -70,7 +70,13 @@ describe('CARE-04 central backend readiness gate', () => {
     expect(estimate.indexOf('if (isUnsupportedCareIntent(req.body))')).toBeGreaterThan(-1);
     expect(estimate.indexOf('if (isUnsupportedCareIntent(req.body))')).toBeLessThan(estimate.indexOf('getRouteDistance('));
     expect(create.indexOf('if (isUnsupportedCareIntent(req.body))')).toBeGreaterThan(-1);
-    expect(create.indexOf('if (isUnsupportedCareIntent(req.body))')).toBeLessThan(create.indexOf('rides_v2.create('));
+    // CARE-04B delegates the existing create call to one shared creation boundary.
+    // Guard must still execute before the boundary, not just before the old literal.
+    const creationBoundary = create.indexOf('createRideWithRequirements(') >= 0
+      ? create.indexOf('createRideWithRequirements(')
+      : create.indexOf('rides_v2.create(');
+    expect(creationBoundary).toBeGreaterThan(-1);
+    expect(create.indexOf('if (isUnsupportedCareIntent(req.body))')).toBeLessThan(creationBoundary);
     expect(create.indexOf('if (isUnsupportedCareIntent(req.body))')).toBeLessThan(create.indexOf('idempotencyKey'));
     expect(estimate).toContain("res.status(403).json({ success: false, error: CARE_UNAVAILABLE_CODE })");
     expect(create).toContain("res.status(403).json({ success: false, error: CARE_UNAVAILABLE_CODE })");
