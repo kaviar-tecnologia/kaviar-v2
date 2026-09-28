@@ -516,6 +516,14 @@ router.post('/:ride_id/adjustment-response', authenticatePassenger, async (req: 
     if (!ride || ride.passenger_id !== passengerId) {
       return res.status(404).json({ error: 'Corrida não encontrada' });
     }
+    // Pending adjustment is another acceptance path; keep the same CARE gate.
+    if (isUnsupportedCareIntent({
+      service_category: ride.service_category,
+      ride_type: ride.ride_type,
+      trip_details: ride.trip_details,
+    })) {
+      return res.status(403).json({ success: false, error: CARE_UNAVAILABLE_CODE });
+    }
     if (ride.status !== 'pending_adjustment') {
       return res.status(400).json({ error: 'Corrida não está aguardando resposta de ajuste' });
     }
