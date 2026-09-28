@@ -35,6 +35,7 @@ const lead = {
   phone: '21994542978',
   status: 'NEW',
   priority: 'HIGH',
+  source: 'WEBSITE',
   updated_at: new Date('2026-09-28T11:35:00.000Z'),
   created_at: new Date('2026-09-27T12:00:00.000Z'),
 };
@@ -66,14 +67,14 @@ describe('manager applications triage', () => {
     expect(prismaMock.crm_leads.findMany).not.toHaveBeenCalled();
   });
 
-  it('shows original candidature without confusing it with manual support lead', async () => {
+  it('shows Gestor prospects without confusing them with manual support-point leads', async () => {
     const result = await request(app).get(base);
     expect(result.status).toBe(200);
     expect(result.body.data).toHaveLength(1);
     expect(result.body.data[0].lead.name).toBe(lead.name);
     expect(result.body.data[0].conversation).toBeNull();
     expect(prismaMock.crm_leads.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { lead_type: 'TERRITORIAL_MANAGER', source: 'WEBSITE', deleted_at: null },
+      where: { lead_type: 'TERRITORIAL_MANAGER', deleted_at: null },
     }));
   });
 
