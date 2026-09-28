@@ -1,0 +1,60 @@
+name: CARE-02 Mobility Schema
+
+on:
+  pull_request:
+    paths:
+      - 'backend/prisma/schema.prisma'
+      - 'backend/prisma/migrations/20260928144000_care_mobility_foundation/**'
+      - 'backend/tests/care-02-data-contract.test.ts'
+      - 'backend/tests/fixtures/care-02-migration-smoke.sql'
+      - 'docs/care/**'
+      - '.github/workflows/care-02-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  care-schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DATABASE_URL: postgresql://care02_ci:ci_password@localhost:5432/care02_ci
+      PGPASSWORD: ci_password
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: care02_ci
+          POSTGRES_USER: care02_ci
+          POSTGRES_PASSWORD: ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U care02_ci -d care02_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+      - name: Validate Prisma schema
+        working-directory: backend
+        run: npx prisma validate
+      - name: CARE-02 contract tests
+        working-directory: backend
+        run: npx vitest run tests/care-02-data-contract.test.ts
+      - name: Create disposable existing-table stubs
+        working-directory: backend
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE TABLE "drivers" ("id" TEXT PRIMARY KEY); CREATE TABLE "rides_v2" ("id" TEXT PRIMARY KEY);'
+      - name: Apply CARE-02 migration to disposable database
+        working-directory: backend
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f prisma/migrations/20260928144000_care_mobility_foundation/migration.sql
+      - name: Exercise SQL safety constraints
+        working-directory: backend
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/fixtures/care-02-migration-smoke.sql
