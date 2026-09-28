@@ -266,9 +266,12 @@ export default function ManagerApplicationsPanel({ open, onClose, onUpdated }) {
 
       <Dialog open={Boolean(selected)} onClose={() => !submitting && setSelected(null)} fullWidth maxWidth="sm"
         PaperProps={{ sx: { bgcolor: BG, color: TEXT, border: '1px solid #536577' } }}>
-        <DialogTitle sx={{ color: TEXT, fontWeight: 700 }}>Registrar decisão — {selected?.lead.name}</DialogTitle>
+        <DialogTitle sx={{ color: TEXT, fontWeight: 700 }}>{outcome === 'APPROVE_ONBOARDING' ? 'Iniciar cadastro da gestora aprovada' : 'Registrar decisão'} — {selected?.lead.name}</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '12px !important' }}>
-          <Alert severity="info">A decisão registra a etapa de seleção. Não ativa Gestor, contrato, pagamentos nem território.</Alert>
+          <Alert severity="info">{outcome === 'APPROVE_ONBOARDING'
+            ? 'Esta confirmação aprova a candidatura para preparação do cadastro. Não cria conta, não ativa Gestor, contrato, pagamentos nem território.'
+            : 'A decisão registra a etapa de seleção. Não ativa Gestor, contrato, pagamentos nem território.'}</Alert>
+          {outcome !== 'APPROVE_ONBOARDING' && <>
           <Typography id="manager-decision-options-label" sx={{ color: TEXT, fontWeight: 700, fontSize: 15 }}>
             Escolha uma decisão:
           </Typography>
@@ -297,6 +300,7 @@ export default function ManagerApplicationsPanel({ open, onClose, onUpdated }) {
               </Button>;
             })}
           </Box>
+          </>}
           <TextField label="Justificativa obrigatória" multiline minRows={3} fullWidth value={justification}
             onChange={event => setJustification(event.target.value)} inputProps={{ maxLength: 2000 }}
             helperText={`${justification.trim().length}/2000 · mínimo 10 caracteres`}
@@ -311,12 +315,15 @@ export default function ManagerApplicationsPanel({ open, onClose, onUpdated }) {
               '& .MuiFormHelperText-root': { color: MUTED, fontSize: 12, fontWeight: 600, mx: 0, mt: 1 },
             }}
             InputLabelProps={{ sx: { color: TEXT } }} InputProps={{ sx: { color: TEXT } }} />
-          <FormControlLabel
+          {outcome === 'APPROVE_ONBOARDING' ? <Alert severity="success">
+            O aviso de aprovação será preparado para revisão. Você deverá enviá-lo manualmente pela Central WhatsApp. O sistema não comunica a candidata automaticamente.
+          </Alert> : <FormControlLabel
             control={<Checkbox checked={communicationRequested} onChange={event => setCommunicationRequested(event.target.checked)}
               sx={{ color: MUTED, '&.Mui-checked': { color: GOLD } }} />}
             label="Preparar comunicação opcional pelo WhatsApp oficial"
             sx={{ color: TEXT }}
-          />
+          />}
+
           {communicationRequested && outcome && <Alert severity="warning">
             A comunicação será apenas preparada. O envio depende de abrir a Central, revisar o texto e confirmar manualmente; mensagens livres exigem janela válida do WhatsApp.
           </Alert>}
@@ -332,7 +339,7 @@ export default function ManagerApplicationsPanel({ open, onClose, onUpdated }) {
               '&:hover': { bgcolor: '#E6C453' },
               '&.Mui-disabled': { bgcolor: '#283542', color: '#CBD5E1', border: '1px solid #8195AB' },
             }}>
-            {submitting ? 'Registrando...' : 'Confirmar decisão'}
+            {submitting ? 'Registrando...' : outcome === 'APPROVE_ONBOARDING' ? 'Confirmar início do cadastro' : 'Confirmar decisão'}
           </Button>
         </DialogActions>
       </Dialog>
