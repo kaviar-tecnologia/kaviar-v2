@@ -20,7 +20,7 @@ jobs:
       PGPASSWORD: ci_password
     services:
       postgres:
-        image: postgres:15
+        image: postgis/postgis:15-3.4
         env:
           POSTGRES_DB: care04b_disposable
           POSTGRES_USER: care04b_ci
