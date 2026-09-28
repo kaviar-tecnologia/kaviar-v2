@@ -233,10 +233,14 @@ describe('CARE-04C read-only evidence adapter (synthetic objects only)', () => {
     expect(route).toContain('if (isUnsupportedCareIntent(req.body))');
     expect(dispatch).toContain('if (isUnsupportedCareIntent({');
     expect(acceptance).toContain('if (isUnsupportedCareIntent({');
-    // The adapter is deliberately not yet wired into the HTTP routes or the
-    // dispatcher: production schema state is unconfirmed after the cancelled run.
+    // CARE-04D stages the read-only adapter behind the unconditional gate
+    // in the existing dispatch/acceptance services. No HTTP CARE route opens.
     expect(route).not.toContain('evaluateCareEligibilityFromDb');
-    expect(dispatch).not.toContain('evaluateCareEligibilityFromDb');
-    expect(acceptance).not.toContain('evaluateCareEligibilityFromDb');
+    expect(dispatch).toContain('evaluateCareEligibilityFromDb');
+    expect(acceptance).toContain('evaluateCareEligibilityFromDb');
+    expect(dispatch.indexOf('if (isUnsupportedCareIntent({'))
+      .toBeLessThan(dispatch.indexOf('evaluateCareEligibilityFromDb(\n          tx,'));
+    expect(acceptance.indexOf('if (isUnsupportedCareIntent({'))
+      .toBeLessThan(acceptance.indexOf('evaluateCareEligibilityFromDb(\n        tx,'));
   });
 });

@@ -1,0 +1,35 @@
+name: CARE-04D Official Lifecycle Boundaries
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/services/dispatcher.service.ts'
+      - 'backend/src/services/offer-acceptance.service.ts'
+      - 'backend/tests/care-04c-runtime-eligibility.test.ts'
+      - 'backend/tests/care-04d-lifecycle-boundaries.test.ts'
+      - 'docs/care/CARE-04D-offer-acceptance-boundaries.md'
+      - '.github/workflows/care-04d-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  care-lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DATABASE_URL: postgresql://care04d_ci:ci_password@127.0.0.1:5432/care04d_disposable
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install dependencies and generate Prisma client
+        working-directory: backend
+        run: npm ci
+      - name: Typecheck backend
+        working-directory: backend
+        run: npx tsc --noEmit -p tsconfig.build.json
+      - name: Run CARE lifecycle and regression unit tests
+        working-directory: backend
+        run: npx vitest run tests/care-04d-lifecycle-boundaries.test.ts tests/care-04c-runtime-eligibility.test.ts tests/care-04b-atomic-create.test.ts tests/care-04-readiness-policy.test.ts tests/care-03-eligibility.test.ts

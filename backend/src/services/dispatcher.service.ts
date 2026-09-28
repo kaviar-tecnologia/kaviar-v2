@@ -7,6 +7,7 @@ import { canDriverOperateInMunicipality, mapServiceCategoryToMunicipalModality }
 import { resolveTerritory } from './territory-resolver.service';
 import { config } from '../config';
 import { isUnsupportedCareIntent, CARE_UNAVAILABLE_CODE } from './care/care-readiness-policy';
+import { evaluateCareEligibilityFromDb } from './care/care-runtime-eligibility';
 
 interface DriverCandidate {
   driver_id: string;
@@ -223,6 +224,35 @@ export class DispatcherService {
     const expiresAt = new Date(Date.now() + this.OFFER_TIMEOUT_SECONDS * 1000);
     
     const offer = await prisma.$transaction(async (tx) => {
+      // Re-read in the existing offer transaction; an initial regular ride
+      // must not become CARE (or leave the dispatchable state) mid-dispatch.
+      // The conditional update below also checks identity/state at write time.
+      const latestRide = await tx.rides_v2.findUnique({
+        where: { id: rideId },
+        select: { status: true, service_category: true, ride_type: true, trip_details: true },
+      });
+      if (!latestRide || !['requested', 'offered'].includes(latestRide.status)) {
+        throw new Error('Ride no longer dispatchable');
+      }
+      if (isUnsupportedCareIntent({
+        service_category: latestRide.service_category,
+        ride_type: latestRide.ride_type,
+        trip_details: latestRide.trip_details,
+      })) {
+        // CARE-04D: only the official transaction may recheck current evidence.
+        // External municipal/territorial/insurance evidence remains absent.
+        const careDecision = await evaluateCareEligibilityFromDb(
+          tx, rideId, bestCandidate.driver_id, null, new Date(),
+        );
+        if (!careDecision.eligible) throw new Error(CARE_UNAVAILABLE_CODE);
+        // An eligible snapshot alone is NEVER an operational release.
+        throw new Error(CARE_UNAVAILABLE_CODE);
+      }
+      if (latestRide.service_category !== ride.service_category ||
+          latestRide.ride_type !== ride.ride_type) {
+        throw new Error('Ride identity changed during dispatch');
+      }
+
       const o = await tx.ride_offers.create({
         data: {
           ride_id: rideId,
@@ -233,10 +263,16 @@ export class DispatcherService {
           rank_score: new Decimal(bestCandidate.score)
         }
       });
-      await tx.rides_v2.update({
-        where: { id: rideId },
+      const updatedRide = await tx.rides_v2.updateMany({
+        where: {
+          id: rideId,
+          status: { in: ['requested', 'offered'] },
+          service_category: ride.service_category,
+          ride_type: ride.ride_type,
+        },
         data: { status: 'offered', offered_at: new Date() }
       });
+      if (updatedRide.count !== 1) throw new Error('Ride offer state changed');
       return o;
     });
 
@@ -332,6 +368,11 @@ export class DispatcherService {
     const cutoffTime = new Date(Date.now() - this.LOCATION_FRESHNESS_SECONDS * 1000);
     const municipalGateEnabled = config.driverEnforcement.municipalRegulatoryGateEnabled;
     const requiredMunicipalModality = mapServiceCategoryToMunicipalModality(ride.service_category);
+    const careIntent = isUnsupportedCareIntent({
+      service_category: ride.service_category,
+      ride_type: ride.ride_type,
+      trip_details: ride.trip_details,
+    });
 
     let municipalityCity: string | null = null;
     let municipalityState: string | null = null;
@@ -386,6 +427,7 @@ export class DispatcherService {
       wrong_vehicle: 0,
       municipal_block: 0,
       outside_territory: 0,
+      care_ineligible: 0,
     };
 
     const candidates: DriverCandidate[] = [];
@@ -486,6 +528,19 @@ export class DispatcherService {
       if (!sameCommunity && !sameNeighborhood && !allowOutsideFallback) {
         droppedReasons.outside_territory++;
         continue;
+      }
+
+      // CARE-04D: evaluate the same current CARE-03/04C snapshot before
+      // ranking. No request-provided booleans can satisfy external evidence.
+      // The unconditional dispatch guard still rejects CARE before this loop.
+      if (careIntent) {
+        const decision = await evaluateCareEligibilityFromDb(
+          prisma, ride.id, ds.driver_id, null, new Date(),
+        );
+        if (!decision.eligible) {
+          droppedReasons.care_ineligible++;
+          continue;
+        }
       }
 
       // Score = distância GPS pura (desempate operacional dentro de cada tier)
