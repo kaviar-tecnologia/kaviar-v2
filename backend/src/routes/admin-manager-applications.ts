@@ -111,7 +111,8 @@ router.get('/', async (_req: Request, res: Response) => {
       const conversation = linked || phoneConversation || null;
       const requiresReview = Boolean(phone && (
         candidatesWithPhone.length > 1 ||
-        (phoneConversation && phoneConversation.linked_entity_id && phoneConversation.linked_entity_type !== 'crm_lead')
+        (phoneConversation && phoneConversation.linked_entity_id &&
+          (phoneConversation.linked_entity_type !== 'crm_lead' || phoneConversation.linked_entity_id !== lead.id))
       ));
       return {
         lead,
