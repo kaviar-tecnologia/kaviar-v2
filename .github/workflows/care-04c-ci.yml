@@ -1,0 +1,35 @@
+name: CARE-04C Runtime Eligibility
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/services/care/care-runtime-eligibility.ts'
+      - 'backend/tests/care-04c-runtime-eligibility.test.ts'
+      - 'docs/care/CARE-04C-trusted-runtime-snapshot.md'
+      - '.github/workflows/care-04c-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  care-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      # Only the local-only URL required by the repository's Vitest guard.
+      # This unit suite uses mocked, synthetic DB records; no DB is started.
+      DATABASE_URL: postgresql://care04c_ci:ci_password@127.0.0.1:5432/care04c_disposable
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install dependencies and generate Prisma client
+        working-directory: backend
+        run: npm ci
+      - name: Typecheck backend
+        working-directory: backend
+        run: npx tsc --noEmit -p tsconfig.build.json
+      - name: Run CARE runtime and regression tests
+        working-directory: backend
+        run: npx vitest run tests/care-04c-runtime-eligibility.test.ts tests/care-04b-atomic-create.test.ts tests/care-04-readiness-policy.test.ts tests/care-03-eligibility.test.ts
