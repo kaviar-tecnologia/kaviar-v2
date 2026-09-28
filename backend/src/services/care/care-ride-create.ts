@@ -1,5 +1,6 @@
 import { Prisma, CareRideMode } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
+import { isUnsupportedCareIntent } from './care-readiness-policy';
 
 /**
  * CARE-04B: one shared rides_v2 creation boundary, NOT a second ride service.
@@ -106,6 +107,15 @@ export async function createRideWithRequirements(
   careDraft?: CareDraftRequirements,
 ) {
   if (!careDraft) {
+    // This guard is also mandatory at the shared persistence boundary:
+    // a forgotten/missing CARE payload cannot create an orphan CARE ride.
+    if (isUnsupportedCareIntent({
+      service_category: args.data.service_category,
+      ride_type: args.data.ride_type,
+      trip_details: args.data.trip_details,
+    })) {
+      throw new CareDraftValidationError('CARE_REQUIREMENTS_MISSING');
+    }
     return prisma.rides_v2.create(args);
   }
 
@@ -117,9 +127,21 @@ export async function createRideWithRequirements(
   if (args.data.status !== 'requested' || args.data.ride_type !== 'care') {
     throw new CareDraftValidationError('CARE_RIDE_STATE_INVALID');
   }
-  // No accidental signed-off trip, monetary status or pre-assigned driver.
-  if (args.data.driver_id != null) {
+  // This stage prepares an unpriced, unassigned draft only. A later reviewed
+  // pricing integration must explicitly manage approved amounts in one place.
+  const submitted = args.data as Prisma.rides_v2UncheckedCreateInput & {
+    driver?: unknown;
+    settlement?: unknown;
+  };
+  if (submitted.driver_id != null || submitted.driver != null) {
     throw new CareDraftValidationError('CARE_DRIVER_PREASSIGNMENT_FORBIDDEN');
+  }
+  if (submitted.trip_details != null || submitted.settlement != null || [
+    submitted.quoted_price, submitted.locked_price, submitted.final_price,
+    submitted.platform_fee, submitted.driver_earnings,
+    submitted.pricing_profile_id, submitted.driver_adjustment, submitted.adjusted_price,
+  ].some(value => value != null)) {
+    throw new CareDraftValidationError('CARE_DRAFT_MUST_BE_UNPRICED');
   }
 
   return prisma.$transaction(async tx => {
