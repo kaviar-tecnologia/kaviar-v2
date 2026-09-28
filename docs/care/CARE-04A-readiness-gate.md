@@ -15,6 +15,7 @@ Uma política central e puramente determinística `isUnsupportedCareIntent`, usa
 - `POST /`: rejeita intenção CARE antes de idempotência, persistência e despacho, com HTTP 403 e código `CARE_SERVICE_NOT_AVAILABLE`.
 - `DispatcherService.dispatchRide`: protege contra corridas legadas/importadas, cancela ofertas pendentes e encerra despacho com o status já existente `no_driver`; o log registra `CARE_DISPATCH_BLOCKED`. Não cria um novo dispatcher.
 - `acceptOfferInternal`: impede aceitar uma oferta legada CARE antes de qualquer alteração de transação, reserva na carteira, preço ou notificação.
+- `POST /:ride_id/adjustment-response`: protege a aceitação alternativa de ajuste de preço, que não passa por `acceptOfferInternal`, antes de gravar status ou settlement.
 
 Reconhece nomes de categoria CARE legados/novos e **campos estruturados** de necessidades de mobilidade mesmo quando o cliente envia `CAR_NORMAL`. Não usa interpretação de texto livre: observações comuns não são fonte confiável de elegibilidade. O aplicativo real, posteriormente, terá formulário tipado que exige modalidade e necessidades explícitas.
 
@@ -42,7 +43,7 @@ O status `no_driver` é uma medida conservadora de encerramento de possível cor
 
 ## Critérios de revisão deste PR
 
-- Um único detector usado nos quatro pontos; nenhum middleware paralelo.
+- Um único detector usado nos pontos de entrada, despacho e nos dois caminhos de aceite; nenhum middleware paralelo.
 - Testes cobrem categoria CARE, alias legado, intenção estruturada sob CAR_NORMAL e corridas normais/moto preservadas.
 - Testes verificam ordem: bloquear antes de precificar/persistir/ofertar/aceitar.
 - `npx tsc --noEmit -p tsconfig.build.json` e CI integrado aprovados.
