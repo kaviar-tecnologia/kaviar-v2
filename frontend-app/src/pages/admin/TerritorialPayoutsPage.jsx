@@ -29,6 +29,31 @@ function ContractDataDiagnostic({ operatorId, token, headers }) {
   const [genConfirm, setGenConfirm] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [genResult, setGenResult] = useState(null);
+  const [syncingCandidate, setSyncingCandidate] = useState(false);
+  const [candidateFeedback, setCandidateFeedback] = useState(null);
+
+  const syncCandidateData = async () => {
+    setSyncingCandidate(true);
+    setCandidateFeedback(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/territorial-payouts/operators/${operatorId}/sync-manager-candidate`, {
+        method: 'POST', headers,
+      });
+      const result = await res.json();
+      if (!res.ok || !result.success) throw new Error(result.error || 'Não foi possível importar os dados.');
+      setCandidateFeedback({
+        severity: 'success',
+        message: result.data.updatedFields.length
+          ? 'Dados existentes da candidatura reaproveitados. Confira os campos que ainda faltam.'
+          : 'Os dados da candidatura já estão sincronizados.',
+      });
+      fetchData();
+    } catch (error) {
+      setCandidateFeedback({ severity: 'warning', message: error.message || 'Não foi possível importar os dados.' });
+    } finally {
+      setSyncingCandidate(false);
+    }
+  };
 
   const fetchData = () => {
     if (!operatorId) return;
@@ -126,6 +151,18 @@ function ContractDataDiagnostic({ operatorId, token, headers }) {
           <Typography sx={{ fontSize: 11, color: '#9CA3AF' }}>{availableFields[f.key] || 'não cadastrado'}</Typography>
         </Box>
       ))}
+      {isIndividual && availableFields.relationshipType === 'territorial_manager' &&
+        (missingFields.includes('full_name') || missingFields.includes('telefone')) && (
+        <Box sx={{ py: 1 }}>
+          <Button size="small" variant="outlined" disabled={syncingCandidate} onClick={syncCandidateData}>
+            {syncingCandidate ? 'Importando...' : 'Reaproveitar dados da candidatura CRM'}
+          </Button>
+          <Typography sx={{ color: '#9CA3AF', mt: 0.5, fontSize: 11 }}>
+            Preenche apenas campos vazios, com candidatura aprovada e identidade coincidente; nunca altera contrato ou repasses.
+          </Typography>
+        </Box>
+      )}
+      {candidateFeedback && <Alert severity={candidateFeedback.severity} sx={{ mt: 1 }}>{candidateFeedback.message}</Alert>}
       {warnings?.pixMissing && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.3 }}>
           <Typography sx={{ fontSize: 11, width: 14 }}>⚠️</Typography>

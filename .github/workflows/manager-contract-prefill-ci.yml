@@ -1,0 +1,47 @@
+name: Manager CRM Contract Prefill CI
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/services/territory/manager-application-prefill.ts'
+      - 'backend/src/routes/admin-territories.ts'
+      - 'backend/src/routes/admin-payouts.ts'
+      - 'backend/tests/manager-application-prefill.test.ts'
+      - 'frontend-app/src/pages/admin/TerritorialPayoutsPage.jsx'
+      - '.github/workflows/manager-contract-prefill-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/src/services/territory/manager-application-prefill.ts'
+      - 'backend/src/routes/admin-territories.ts'
+      - 'backend/src/routes/admin-payouts.ts'
+      - 'backend/tests/manager-application-prefill.test.ts'
+      - 'frontend-app/src/pages/admin/TerritorialPayoutsPage.jsx'
+      - '.github/workflows/manager-contract-prefill-ci.yml'
+
+jobs:
+  safe-manager-prefill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://kaviar_test:test@127.0.0.1:5432/kaviar_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend-app/package-lock.json
+      - name: Install backend dependencies
+        run: cd backend && npm ci
+      - name: Typecheck backend
+        run: cd backend && npx tsc --noEmit -p tsconfig.build.json
+      - name: Test identity matching, conflict guards and idempotency
+        run: cd backend && npx vitest run tests/manager-application-prefill.test.ts
+      - name: Install frontend dependencies
+        run: cd frontend-app && npm ci
+      - name: Build frontend
+        run: cd frontend-app && npm run build
