@@ -64,7 +64,7 @@ const PassengerHome = () => {
     }
 
     setError('');
-    requestRide({
+    const demoStarted = requestRide({
       origin: pickup,
       destination: destination,
       serviceType: serviceType,
@@ -72,7 +72,12 @@ const PassengerHome = () => {
       destinationCoords
     });
 
-    // Navegar para status da corrida
+    if (!demoStarted) {
+      setError('Este painel não realiza solicitações reais. Utilize o aplicativo KAVIAR Passageiro.');
+      return;
+    }
+
+    // Navegar somente quando a demonstração local for iniciada
     setTimeout(() => {
       navigate('/passageiro/status');
     }, 1000);
