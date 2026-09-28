@@ -7,6 +7,7 @@ import { canDriverOperateInMunicipality, mapServiceCategoryToMunicipalModality }
 import { resolveTerritory } from './territory-resolver.service';
 import { config } from '../config';
 import { isUnsupportedCareIntent, CARE_UNAVAILABLE_CODE } from './care/care-readiness-policy';
+import { evaluateCareEligibilityFromDb } from './care/care-runtime-eligibility';
 
 interface DriverCandidate {
   driver_id: string;
@@ -223,6 +224,23 @@ export class DispatcherService {
     const expiresAt = new Date(Date.now() + this.OFFER_TIMEOUT_SECONDS * 1000);
     
     const offer = await prisma.$transaction(async (tx) => {
+      // CARE-04D: re-evaluate in the SAME official offer transaction, never
+      // trust an earlier candidate result. No verified CARE insurance/municipal
+      // evidence provider is connected, so null is fail-closed. CARE-04A's
+      // unconditional guard above still prevents reaching this branch.
+      if (isUnsupportedCareIntent({
+        service_category: ride.service_category,
+        ride_type: ride.ride_type,
+        trip_details: ride.trip_details,
+      })) {
+        const careDecision = await evaluateCareEligibilityFromDb(
+          tx, rideId, bestCandidate.driver_id, null, new Date(),
+        );
+        if (!careDecision.eligible) throw new Error(CARE_UNAVAILABLE_CODE);
+        // A positive adapter result alone is not an operational release.
+        throw new Error(CARE_UNAVAILABLE_CODE);
+      }
+
       const o = await tx.ride_offers.create({
         data: {
           ride_id: rideId,
@@ -332,6 +350,11 @@ export class DispatcherService {
     const cutoffTime = new Date(Date.now() - this.LOCATION_FRESHNESS_SECONDS * 1000);
     const municipalGateEnabled = config.driverEnforcement.municipalRegulatoryGateEnabled;
     const requiredMunicipalModality = mapServiceCategoryToMunicipalModality(ride.service_category);
+    const careIntent = isUnsupportedCareIntent({
+      service_category: ride.service_category,
+      ride_type: ride.ride_type,
+      trip_details: ride.trip_details,
+    });
 
     let municipalityCity: string | null = null;
     let municipalityState: string | null = null;
@@ -386,6 +409,7 @@ export class DispatcherService {
       wrong_vehicle: 0,
       municipal_block: 0,
       outside_territory: 0,
+      care_ineligible: 0,
     };
 
     const candidates: DriverCandidate[] = [];
@@ -486,6 +510,19 @@ export class DispatcherService {
       if (!sameCommunity && !sameNeighborhood && !allowOutsideFallback) {
         droppedReasons.outside_territory++;
         continue;
+      }
+
+      // CARE-04D: evaluate the same current CARE-03/04C snapshot before
+      // ranking. No request-provided booleans can satisfy external evidence.
+      // The unconditional dispatch guard still rejects CARE before this loop.
+      if (careIntent) {
+        const decision = await evaluateCareEligibilityFromDb(
+          prisma, ride.id, ds.driver_id, null, new Date(),
+        );
+        if (!decision.eligible) {
+          droppedReasons.care_ineligible++;
+          continue;
+        }
       }
 
       // Score = distância GPS pura (desempate operacional dentro de cada tier)
