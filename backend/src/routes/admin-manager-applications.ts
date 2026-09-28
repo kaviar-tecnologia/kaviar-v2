@@ -47,14 +47,14 @@ function decisionData(record: any) {
 // GET /api/admin/crm/manager-applications - read-only summary, without clearing WhatsApp unread counters.
 router.get('/', async (_req: Request, res: Response) => {
   try {
-    const where = { lead_type: 'TERRITORIAL_MANAGER', source: 'WEBSITE', deleted_at: null };
+    const where = { lead_type: 'TERRITORIAL_MANAGER', deleted_at: null };
     const [leads, total] = await Promise.all([
       prisma.crm_leads.findMany({
         where,
         orderBy: { created_at: 'desc' },
         take: 200,
         select: {
-          id: true, name: true, phone: true, email: true, status: true,
+          id: true, name: true, phone: true, email: true, status: true, source: true,
           priority: true, notes: true, territory_id: true, next_action: true,
           created_at: true, updated_at: true, last_contact_at: true,
         },
@@ -105,7 +105,7 @@ router.get('/', async (_req: Request, res: Response) => {
       const candidatesWithPhone = phone ? (byPhone.get(phone) || []) : [];
       const linked = conversations.find(c => c.linked_entity_type === 'crm_lead' && c.linked_entity_id === lead.id);
       // Phone fallback only after an official candidature template and unique full-phone match.
-      const phoneConversation = !linked && phone && candidatesWithPhone.length === 1 && invited.has(phone)
+      const phoneConversation = !linked && phone && lead.source === 'WEBSITE' && candidatesWithPhone.length === 1 && invited.has(phone)
         ? conversations.find(c => normalizeManagerPhone(c.phone) === phone)
         : null;
       const conversation = linked || phoneConversation || null;
@@ -140,7 +140,7 @@ router.get('/', async (_req: Request, res: Response) => {
 router.get('/:id/decisions', async (req: Request, res: Response) => {
   try {
     const lead = await prisma.crm_leads.findFirst({
-      where: { id: req.params.id, deleted_at: null, source: 'WEBSITE', lead_type: 'TERRITORIAL_MANAGER' },
+      where: { id: req.params.id, deleted_at: null, lead_type: 'TERRITORIAL_MANAGER' },
       select: { id: true },
     });
     if (!lead) return res.status(404).json({ success: false, error: 'Candidatura não encontrada.' });
@@ -176,7 +176,7 @@ router.post('/:id/decisions', async (req: Request, res: Response) => {
     const admin = (req as any).admin;
     const result = await prisma.$transaction(async (tx) => {
       const lead = await tx.crm_leads.findFirst({
-        where: { id: req.params.id, deleted_at: null, source: 'WEBSITE', lead_type: 'TERRITORIAL_MANAGER' },
+        where: { id: req.params.id, deleted_at: null, lead_type: 'TERRITORIAL_MANAGER' },
         select: { id: true, status: true, updated_at: true },
       });
       if (!lead) throw new Error('CANDIDATE_NOT_FOUND');
