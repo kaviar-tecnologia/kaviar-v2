@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma';
 import { authenticateAdmin, requireSuperAdmin } from '../middlewares/auth';
 import { audit, auditCtx } from '../utils/audit';
+import { findApprovedManagerCandidate } from '../services/territory/manager-application-prefill';
 import {
   dryRunPrepareCity,
   executePrepareCity,
@@ -533,8 +534,14 @@ router.post('/regional-admins', async (req: Request, res: Response) => {
     const territory = await prisma.operational_territories.findUnique({ where: { id: data.territory_id } });
     if (!territory) return res.status(400).json({ success: false, error: 'Território não encontrado' });
 
-    const password = await bcrypt.hash(data.password, 12);
     const isManager = data.role_type === 'manager';
+    const candidate = isManager ? await findApprovedManagerCandidate(data.name, data.email) : null;
+    if (candidate?.kind === 'ambiguous') {
+      return res.status(409).json({ success: false, error: 'Mais de uma candidatura aprovada corresponde ao nome e e-mail; revise antes de criar o acesso.' });
+    }
+    const crmLead = candidate?.kind === 'matched' ? candidate.lead : null;
+    const crmPhone = crmLead?.phone?.trim() || null;
+    const password = await bcrypt.hash(data.password, 12);
     const adminRole = isManager ? 'TERRITORIAL_MANAGER' : ALLOWED_REGIONAL_ROLE;
     const relationshipType = isManager ? 'territorial_manager' : 'territorial_operator';
 
@@ -543,6 +550,7 @@ router.post('/regional-admins', async (req: Request, res: Response) => {
         data: {
           name: data.name,
           email: data.email.toLowerCase(),
+          ...(isManager ? { phone: crmPhone } : {}),
           password,
           role: adminRole,
           is_active: true,
@@ -559,6 +567,11 @@ router.post('/regional-admins', async (req: Request, res: Response) => {
           display_name: data.name,
           relationship_type: relationshipType,
           recipient_type: 'individual',
+          ...(isManager ? {
+            full_name: crmLead?.name?.trim() || data.name.trim(),
+            email: data.email.trim().toLowerCase(),
+            phone: crmPhone,
+          } : {}),
           contract_status: 'pending',
           document_status: 'pending',
           is_active: false,

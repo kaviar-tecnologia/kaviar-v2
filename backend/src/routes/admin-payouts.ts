@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { authenticateAdmin, requireSuperAdmin } from '../middlewares/auth';
 import { audit, auditCtx } from '../utils/audit';
+import { findApprovedManagerCandidate, planManagerCandidatePrefill } from '../services/territory/manager-application-prefill';
 import { COMPANY } from '../config/company';
 import { isLegacyPayAllowed, isMonthLegacy, isValidReferenceMonth } from '../services/finance/territory/engine-selection';
 import crypto from 'crypto';
@@ -846,6 +847,69 @@ router.patch('/submissions/:id/review', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('[admin-payouts] review error:', error);
     res.status(500).json({ success: false, error: 'Erro ao revisar contrato' });
+  }
+});
+
+// POST /operators/:id/sync-manager-candidate — explicit, idempotent reuse of approved CRM data.
+// Never changes document/contract status, operational activation, territory or financial assignment.
+router.post('/operators/:id/sync-manager-candidate', async (req: Request, res: Response) => {
+  try {
+    const operator = await prisma.operator_profiles.findUnique({
+      where: { id: req.params.id },
+      include: { admin: { select: { id: true, name: true, email: true, phone: true } } },
+    });
+    if (!operator) return res.status(404).json({ success: false, error: 'Perfil não encontrado.' });
+    if (operator.relationship_type !== 'territorial_manager') {
+      return res.status(409).json({ success: false, error: 'Disponível apenas para Gestor Territorial.' });
+    }
+    if (operator.is_active || operator.document_status !== 'pending' || operator.contract_status !== 'pending') {
+      return res.status(409).json({ success: false, error: 'A importação automática exige perfil inativo e documentação/contrato pendentes.' });
+    }
+
+    const candidate = await findApprovedManagerCandidate(operator.admin.name, operator.admin.email);
+    if (candidate.kind !== 'matched') {
+      return res.status(409).json({
+        success: false,
+        error: candidate.kind === 'ambiguous'
+          ? 'Há candidaturas duplicadas; revise a identidade antes de importar.'
+          : 'Não foi encontrada candidatura aprovada com o mesmo nome e e-mail principal.',
+      });
+    }
+    const plan = planManagerCandidatePrefill(candidate.lead, operator.admin, operator);
+    if (plan.conflicts.length) {
+      return res.status(409).json({
+        success: false,
+        error: 'Dados divergentes; revise manualmente antes de importar.',
+        conflictFields: plan.conflicts,
+      });
+    }
+
+    const updatedFields = Object.keys(plan.profileChanges);
+    if (plan.adminPhone) updatedFields.push('admin_phone');
+    if (updatedFields.length) {
+      await prisma.$transaction(async tx => {
+        if (Object.keys(plan.profileChanges).length) {
+          await tx.operator_profiles.update({ where: { id: operator.id }, data: plan.profileChanges });
+        }
+        if (plan.adminPhone) {
+          await tx.admins.update({ where: { id: operator.admin_id }, data: { phone: plan.adminPhone } });
+        }
+      });
+    }
+    const ctx = auditCtx(req);
+    audit({
+      adminId: ctx.adminId,
+      adminEmail: ctx.adminEmail,
+      action: 'sync_manager_candidate_identity',
+      entityType: 'operator_profile',
+      entityId: operator.id,
+      newValue: { crm_lead_id: candidate.lead.id, updated_fields: updatedFields },
+      ipAddress: ctx.ip,
+    });
+    return res.json({ success: true, data: { updatedFields, crmLeadMatched: true } });
+  } catch (error) {
+    console.error('[admin-payouts] sync manager candidate error:', error);
+    return res.status(500).json({ success: false, error: 'Erro ao reutilizar dados da candidatura.' });
   }
 });
 
