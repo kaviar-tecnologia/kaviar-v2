@@ -80,6 +80,7 @@ const ROLES_SHORT = { captador_motorista: 'Mot.', captador_passageiro: 'Pass.', 
 
 const EVENT_TYPES = [
   { value: 'NOTE', label: 'Observação' },
+  { value: 'DECISION', label: 'Decisão da candidatura' },
   { value: 'CALL', label: 'Ligação' },
   { value: 'WHATSAPP', label: 'WhatsApp' },
   { value: 'EMAIL', label: 'E-mail' },
@@ -91,6 +92,23 @@ const EVENT_TYPES = [
   { value: 'SHOWCASE_DISCUSSION', label: 'Discussão Vitrine' },
   { value: 'OTHER', label: 'Outro' },
 ];
+
+function readableCrmInteraction(interaction) {
+  if (interaction.event_type !== 'DECISION') return interaction.description;
+  try {
+    const item = JSON.parse(interaction.description || '{}');
+    if (item.schema !== 'manager_application_decision_v1') return interaction.description;
+    const labels = {
+      ADVANCE: 'Avançar para próxima etapa',
+      REQUEST_INFO: 'Solicitar informações',
+      KEEP_REVIEW: 'Manter em análise',
+      DO_NOT_PROCEED: 'Não prosseguir',
+    };
+    return `${labels[item.outcome] || item.outcome}: ${item.justification} · ${item.actorName || 'Administração'}${item.communicationRequested ? ' · Comunicação solicitada (envio manual)' : ''}`;
+  } catch {
+    return interaction.description;
+  }
+}
 
 function isOverdue(d) { return d && new Date(d) < new Date(); }
 function isMissing(v) { return !v || v.trim() === ''; }
@@ -718,7 +736,7 @@ export default function CrmPage() {
                       <Chip label={EVENT_TYPES.find(e => e.value === i.event_type)?.label || i.event_type} size="small" sx={{ fontSize: 10, bgcolor: 'rgba(255,255,255,0.08)', color: TEXT_SECONDARY }} />
                       <Typography sx={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>{formatDate(i.created_at, { showTime: true })}</Typography>
                     </Box>
-                    {i.description && <Typography sx={{ fontSize: 12, mt: 0.5, color: TEXT_SECONDARY }}>{i.description}</Typography>}
+                    {i.description && <Typography sx={{ fontSize: 12, mt: 0.5, color: TEXT_SECONDARY }}>{readableCrmInteraction(i)}</Typography>}
                     {i.old_status && i.new_status && <Typography sx={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', mt: 0.3 }}>{STATUS_MAP[i.old_status]?.label || i.old_status} → {STATUS_MAP[i.new_status]?.label || i.new_status}</Typography>}
                   </Box>
                 ))}
