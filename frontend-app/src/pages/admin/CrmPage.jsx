@@ -320,7 +320,7 @@ export default function CrmPage() {
   };
 
   const getWhatsAppLabel = (type) => {
-    if (type === 'manager') return 'WhatsApp Gestor';
+    if (type === 'manager') return 'WhatsApp Gestor (manual)';
     if (type === 'driver') return 'WhatsApp Motorista';
     if (type === 'passenger') return 'WhatsApp Passageiro';
     return 'WhatsApp Contato';
