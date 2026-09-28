@@ -84,7 +84,7 @@ describe('official WhatsApp inbound manager association', () => {
   });
 
   it('reclassifies an unknown existing conversation but never overwrites a linked driver', async () => {
-    prismaMock.wa_conversations.findUnique.mockResolvedValueOnce({ id: 'existing', phone: '+5521994542978', contact_type: 'unknown', linked_entity_id: null, unread_count: 0 });
+    prismaMock.wa_conversations.findUnique.mockResolvedValueOnce({ id: 'existing', phone: '+5521994542978', contact_type: 'unknown', linked_entity_id: null, unread_count: 0 }).mockResolvedValueOnce({ id: 'existing', phone: '+5521994542978', contact_type: 'unknown', linked_entity_id: null, unread_count: 0 });
     let result = await request(app).post(endpoint).type('form').send(body);
     expect(result.status).toBe(200);
     expect(prismaMock.wa_conversations.update).toHaveBeenCalledWith(expect.objectContaining({
@@ -92,7 +92,7 @@ describe('official WhatsApp inbound manager association', () => {
     }));
 
     prismaMock.wa_conversations.update.mockClear();
-    prismaMock.wa_conversations.findUnique.mockResolvedValueOnce({ id: 'existing', phone: '+5521994542978', contact_type: 'driver', linked_entity_id: 'driver-1', unread_count: 0 });
+    prismaMock.wa_conversations.findUnique.mockResolvedValueOnce({ id: 'existing', phone: '+5521994542978', contact_type: 'driver', linked_entity_id: 'driver-1', unread_count: 0 }).mockResolvedValueOnce({ id: 'existing', phone: '+5521994542978', contact_type: 'driver', linked_entity_id: 'driver-1', unread_count: 0 });
     result = await request(app).post(endpoint).type('form').send({ ...body, MessageSid: 'SM-other' });
     expect(result.status).toBe(200);
     expect(prismaMock.wa_conversations.update).toHaveBeenCalledWith(expect.objectContaining({
