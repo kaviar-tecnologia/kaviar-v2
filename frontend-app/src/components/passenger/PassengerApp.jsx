@@ -1,5 +1,6 @@
 import { Routes, Route } from "react-router-dom";
-import { Container, Typography, Box, Card, CardContent, Button } from "@mui/material";
+import { Container, Typography, Box, Card, CardContent, Button, Alert } from "@mui/material";
+import { useRide } from "../../contexts/RideContext";
 import { Person, DirectionsCar, Star, Timeline } from "@mui/icons-material";
 import DomainHeader from "../common/DomainHeader";
 import PassengerHome from "../../pages/passenger/Home";
@@ -7,6 +8,7 @@ import RideStatus from "../../pages/passenger/RideStatus";
 import RideRating from "../../pages/passenger/RideRating";
 
 function PassengerDashboard() {
+  const { demoEnabled } = useRide();
   return (
     <Container maxWidth="md" sx={{ mt: 4 }}>
       <DomainHeader 
@@ -19,10 +21,15 @@ function PassengerDashboard() {
       <Box sx={{ textAlign: 'center', mb: 4 }}>
         <Person sx={{ fontSize: 48, color: 'success.main', mb: 2 }} />
         <Typography variant="body1" color="text.secondary">
-          Solicite corridas e serviços especializados
+          {demoEnabled ? 'Demonstração local de corridas (sem solicitação real)' : 'Informações sobre os serviços KAVIAR'}
         </Typography>
       </Box>
       
+      <Alert severity={demoEnabled ? 'warning' : 'info'} sx={{ mb: 3 }}>
+        {demoEnabled
+          ? 'Ambiente de demonstração: não aciona motoristas e não registra corridas reais.'
+          : 'Este painel web de corridas está em preparação. Para solicitar corridas reais, utilize o aplicativo oficial KAVIAR Passageiro. O CARE permanece em implantação.'}
+      </Alert>
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, gap: 3 }}>
         <Card>
           <CardContent sx={{ textAlign: 'center', py: 3 }}>
@@ -31,10 +38,10 @@ function PassengerDashboard() {
               Solicitar Corrida
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Corridas normais e guia turístico
+              {demoEnabled ? 'Fluxo ilustrativo com motoristas fictícios' : 'Informações sobre corridas e CARE'}
             </Typography>
             <Button variant="contained" color="success" href="/passageiro/home">
-              Acessar
+              {demoEnabled ? 'Abrir demonstração' : 'Ver informações'}
             </Button>
           </CardContent>
         </Card>
@@ -46,9 +53,9 @@ function PassengerDashboard() {
               Status da Corrida
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Acompanhe sua corrida em tempo real
+              {demoEnabled ? 'Status simulado de uma corrida fictícia' : 'Disponível no aplicativo oficial KAVIAR Passageiro'}
             </Typography>
-            <Button variant="contained" href="/passageiro/status">
+            <Button variant="contained" href="/passageiro/status" disabled={!demoEnabled}>
               Acessar
             </Button>
           </CardContent>
@@ -61,9 +68,9 @@ function PassengerDashboard() {
               Avaliar Corrida
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Avalie sua experiência
+              {demoEnabled ? 'Avaliação apenas demonstrativa' : 'Disponível no aplicativo oficial KAVIAR Passageiro'}
             </Typography>
-            <Button variant="contained" color="warning" href="/passageiro/rating">
+            <Button variant="contained" color="warning" href="/passageiro/rating" disabled={!demoEnabled}>
               Acessar
             </Button>
           </CardContent>
