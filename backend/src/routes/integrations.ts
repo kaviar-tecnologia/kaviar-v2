@@ -105,7 +105,7 @@ function validInboundSignature(req: any): boolean {
   const signature = String(req.headers['x-twilio-signature'] || '');
   const publicBase = process.env.PUBLIC_API_BASE_URL || process.env.API_PUBLIC_BASE_URL || process.env.BACKEND_PUBLIC_URL;
   const configured = process.env.TWILIO_WHATSAPP_INBOUND_WEBHOOK_URL;
-  const url = configured?.trim() || (publicBase ? publicBase.replace(/\\/$/, '') + req.originalUrl : '');
+  const url = configured?.trim() || (publicBase ? publicBase.replace(/\/$/, '') + req.originalUrl : '');
   if (!token || !signature || !url.startsWith('https://')) return false;
   try {
     return twilio.validateRequest(token, signature, url, req.body || {});
