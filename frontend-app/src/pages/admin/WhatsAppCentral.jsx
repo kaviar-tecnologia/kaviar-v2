@@ -11,6 +11,7 @@ const CONTACT_BADGES = {
   guide:      { emoji: '🏖️', label: 'Guia', color: '#FF9800' },
   consultant: { emoji: '💼', label: 'Consultor', color: '#9C27B0' },
   lead:       { emoji: '✨', label: 'Lead', color: '#FFD700' },
+  manager:    { emoji: '📋', label: 'Candidato a Gestor', color: '#D4AF37' },
   support:    { emoji: '🛟', label: 'Suporte', color: '#607D8B' },
   unknown:    { emoji: '❓', label: 'Desconhecido', color: '#9E9E9E' },
 };
@@ -138,6 +139,10 @@ function ContextPanel({ chatData, badge, token, onUpdate }) {
                 <Chip label="Abrir passageiro →" size="small" component="a" href={`/admin/passengers/${le.id}`} clickable
                   sx={{ height: 24, fontSize: 10, bgcolor: '#4CAF5022', color: '#4CAF50', border: '1px solid #4CAF5044', cursor: 'pointer' }} />
               )}
+              {chatData.linked_entity_type === 'crm_lead' && le.lead_type === 'TERRITORIAL_MANAGER' && (
+                <Chip label="Candidatura de Gestor vinculada ao CRM" size="small"
+                  sx={{ height: 24, fontSize: 10, bgcolor: '#D4AF3722', color: '#D4AF37' }} />
+              )}
               {chatData.linked_entity_type === 'pet_homologation' && (
                 <Chip label="Abrir homologação Pet →" size="small" component="a" href={`/admin/pet/homologations/${le.id}`} clickable
                   sx={{ height: 24, fontSize: 10, bgcolor: '#D4AF3722', color: '#D4AF37', border: '1px solid #D4AF3744', cursor: 'pointer' }} />
@@ -242,7 +247,10 @@ export default function WhatsAppCentral() {
   const selectedInvitePeriodLabel = invitePeriodCards.find(card => card.period === selectedInvitePeriod)?.label || 'Últimos 30 dias';
 
   // Chat state
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedId, setSelectedId] = useState(() => {
+    const requested = new URLSearchParams(window.location.search).get('conversation');
+    return requested && /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(requested) ? requested : null;
+  });
   const [chatData, setChatData] = useState(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [replyText, setReplyText] = useState('');
