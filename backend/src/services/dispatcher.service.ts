@@ -6,6 +6,7 @@ import { isFlatFeeEnabled } from './pricing-engine';
 import { canDriverOperateInMunicipality, mapServiceCategoryToMunicipalModality } from './municipal-regulation.service';
 import { resolveTerritory } from './territory-resolver.service';
 import { config } from '../config';
+import { isUnsupportedCareIntent, CARE_UNAVAILABLE_CODE } from './care/care-readiness-policy';
 
 interface DriverCandidate {
   driver_id: string;
@@ -110,6 +111,27 @@ export class DispatcherService {
 
     if (!ride) {
       console.error(`[DISPATCHER] Ride ${rideId} not found`);
+      return;
+    }
+
+    // Last-line containment for legacy/imported CARE rides. Never generate
+    // an offer from this dispatcher before atomic CARE integration exists.
+    if (isUnsupportedCareIntent({
+      service_category: ride.service_category,
+      ride_type: ride.ride_type,
+      trip_details: ride.trip_details,
+    })) {
+      console.warn(`[CARE_DISPATCH_BLOCKED] ride_id=${rideId} reason=${CARE_UNAVAILABLE_CODE}`);
+      await prisma.$transaction(async tx => {
+        await tx.ride_offers.updateMany({
+          where: { ride_id: rideId, status: 'pending' },
+          data: { status: 'canceled' },
+        });
+        await tx.rides_v2.updateMany({
+          where: { id: rideId, status: { in: ['requested', 'offered'] } },
+          data: { status: 'no_driver' },
+        });
+      });
       return;
     }
 
