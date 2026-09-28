@@ -1,0 +1,36 @@
+name: CARE-04 Readiness Gate
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/services/care/care-readiness-policy.ts'
+      - 'backend/src/services/dispatcher.service.ts'
+      - 'backend/src/services/offer-acceptance.service.ts'
+      - 'backend/src/routes/rides-v2.ts'
+      - 'backend/tests/care-04-readiness-policy.test.ts'
+      - 'docs/care/CARE-04A-readiness-gate.md'
+      - '.github/workflows/care-04-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+      - name: Test the centralized CARE gate
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://care04_ci:ci_password@127.0.0.1:5432/care04_disposable
+        run: npx vitest run tests/care-04-readiness-policy.test.ts tests/care-03-eligibility.test.ts
+      - name: Typecheck backend
+        working-directory: backend
+        run: npx tsc --noEmit -p tsconfig.build.json
