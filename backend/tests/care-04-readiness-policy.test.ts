@@ -74,6 +74,12 @@ describe('CARE-04 central backend readiness gate', () => {
     expect(create.indexOf('if (isUnsupportedCareIntent(req.body))')).toBeLessThan(create.indexOf('idempotencyKey'));
     expect(estimate).toContain("res.status(403).json({ success: false, error: CARE_UNAVAILABLE_CODE })");
     expect(create).toContain("res.status(403).json({ success: false, error: CARE_UNAVAILABLE_CODE })");
+    // Price-adjustment acceptance bypasses acceptOfferInternal; explicitly
+    // guard this second acceptance path before settlement/status changes.
+    const adjustment = code.slice(code.indexOf("router.post('/:ride_id/adjustment-response'"), code.indexOf("router.get('/history'"));
+    expect(adjustment.indexOf('if (isUnsupportedCareIntent({')).toBeGreaterThan(-1);
+    expect(adjustment.indexOf('if (isUnsupportedCareIntent({')).toBeLessThan(adjustment.indexOf('const adjustedPrice ='));
+    expect(adjustment).toContain("res.status(403).json({ success: false, error: CARE_UNAVAILABLE_CODE })");
   });
 
   it('blocks central dispatch and acceptance before making any offer or assignment', () => {
