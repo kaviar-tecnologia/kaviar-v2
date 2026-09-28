@@ -34,5 +34,6 @@ Uma futura integração CARE fornecerá, no **mesmo método**, um segundo argume
 4. Antes de oferta e aceite, reavaliar compatibilidade no dispatcher/acceptOfferInternal atuais.
 5. Sem preço CARE inventado, sem duplicar serviço, sem ligar pagamentos nem adicionar comunicações externas.
 6. Revisar o estado operacional de pré-despacho antes de expor criação CARE; `DRAFT` na tabela de requisitos **nunca** equivale a corrida confirmada.
+7. Antes de expor o caminho CARE, definir proteção de idempotência concorrente: a busca atual de `idempotency_key` no fluxo comum não equivale a constraint única por passageiro no banco; rejeitar duplicatas de modo transacional e testar duas requisições simultâneas. Nenhuma chave idempotente externa é aceita como autorização de modalidade.
 
 CARE continua em implantação até todas as portas de segurança e operação ficarem prontas.
