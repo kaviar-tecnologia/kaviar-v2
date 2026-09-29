@@ -49,7 +49,8 @@ describe.skipIf(!disposable)('CARE-445 quote: official table names on disposable
         trip_details JSONB, pricing_profile_id UUID, quoted_price NUMERIC,
         locked_price NUMERIC, final_price NUMERIC, platform_fee NUMERIC,
         driver_earnings NUMERIC, territory_match TEXT, is_homebound BOOLEAN DEFAULT false,
-        status TEXT NOT NULL DEFAULT 'requested'
+        status TEXT NOT NULL DEFAULT 'requested', wait_requested BOOLEAN DEFAULT false,
+        wait_started_at TIMESTAMPTZ, wait_ended_at TIMESTAMPTZ
       );
       CREATE TABLE ride_settlements (
         ride_id TEXT PRIMARY KEY, pricing_profile_id UUID NOT NULL, pricing_profile_slug TEXT NOT NULL,
@@ -199,6 +200,44 @@ describe.skipIf(!disposable)('CARE-445 quote: official table names on disposable
     expect(r.rows[0].refined_at).toBeNull();
     expect(r.rows[0].driver_territory).toBeNull();
     expect(r.rows[0].territory_match).toBe('local');
+  });
+
+  it('settles actual wait once, with unchanged platform fee and 100% driver wait revenue', async () => {
+    const id = await ride();
+    await run(id);
+    await pool.query(`
+      UPDATE rides_v2 SET status = 'completed', wait_requested = true,
+        wait_started_at = '2026-09-29T12:00:00Z',
+        wait_ended_at = '2026-09-29T12:02:30Z'
+      WHERE id = $1`, [id]);
+    const result = await settle(id, { waitRatePerMinute: 0.50 });
+    expect(result).toMatchObject({
+      final_price: 24, fee_amount: 4.14, driver_earnings: 19.86,
+      credit_cost: 0, credit_match_type: 'FLAT_FEE', wait_charge_cents: 100,
+    });
+    const { rows } = await pool.query(`
+      SELECT s.locked_price, s.final_price, s.fee_amount, s.driver_earnings,
+             s.credit_cost, r.final_price AS cache_final, r.driver_earnings AS cache_earnings,
+             r.platform_fee AS cache_fee
+      FROM ride_settlements s JOIN rides_v2 r ON r.id = s.ride_id WHERE s.ride_id = $1`, [id]);
+    expect(Object.values(rows[0]).map(Number)).toEqual([23, 24, 4.14, 19.86, 0, 24, 19.86, 4.14]);
+    expect(await settle(id, { waitRatePerMinute: 0.50 })).toEqual(result);
+    const still = await pool.query('SELECT final_price, credit_cost FROM ride_settlements WHERE ride_id=$1', [id]);
+    expect(Number(still.rows[0].final_price)).toBe(24);
+    expect(Number(still.rows[0].credit_cost)).toBe(0);
+  });
+
+  it('refuses negative elapsed wait before any official economic mutation', async () => {
+    const id = await ride();
+    await run(id);
+    await pool.query(`
+      UPDATE rides_v2 SET status='completed', wait_requested=true,
+        wait_started_at='2026-09-29T12:04:00Z', wait_ended_at='2026-09-29T12:02:00Z'
+      WHERE id=$1`, [id]);
+    await expect(settle(id, { waitRatePerMinute: 0.50 }))
+      .rejects.toThrow('PRICING_WAIT_SNAPSHOT_INVALID');
+    const r = await pool.query('SELECT settled_at, final_price FROM ride_settlements WHERE ride_id=$1', [id]);
+    expect(r.rows[0]).toMatchObject({ settled_at: null, final_price: null });
   });
 
   it('rolls back settle when final cache update fails', async () => {
