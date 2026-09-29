@@ -11,6 +11,7 @@ import { applyCreditDelta } from '../services/credit.service';
 import { shadowCalculate } from '../services/wallet-shadow.service';
 import { whatsappEvents } from '../modules/whatsapp';
 import * as pricingEngine from '../services/pricing-engine';
+import { hasOfficialLockedQuote, officialQuoteSettlementSelect } from '../services/official-quote-readiness';
 import { isMotoPassengerEnabled } from '../services/moto-passenger-flag.service';
 import { authenticatePassenger, authenticateDriver, requireAuth } from '../middlewares/auth';
 import { getPresignedUrl } from '../config/s3-upload';
@@ -254,9 +255,16 @@ router.post('/', authenticatePassenger, async (req: Request, res: Response) => {
         where: {
           passenger_id: passengerId,
           idempotency_key: idempotencyKey
-        }
+        },
+        include: { settlement: { select: officialQuoteSettlementSelect } },
       });
       if (existing) {
+        // An idempotency key cannot turn a stranded, unpriced ride into a
+        // successful booking. The official settlement, not the cache alone,
+        // must prove the quote and lock before acknowledging the old request.
+        if (!hasOfficialLockedQuote(existing)) {
+          return res.status(409).json({ success: false, error: 'PRICING_QUOTE_UNAVAILABLE' });
+        }
         return res.json({ success: true, data: { ride_id: existing.id, status: existing.status } });
       }
     }
@@ -348,7 +356,7 @@ router.post('/', authenticatePassenger, async (req: Request, res: Response) => {
     }
 
     // Pricing: quote + lock (V1: confirmação implícita)
-    let quoteResult: any = null;
+    let quoteResult: pricingEngine.QuoteResult | null = null;
     try {
       quoteResult = await pricingEngine.quote(
         ride.id, origin.lat, origin.lng, destination.lat, destination.lng,
@@ -358,8 +366,40 @@ router.post('/', authenticatePassenger, async (req: Request, res: Response) => {
           : null,
         service_category || 'CAR_NORMAL'
       );
+      if (!quoteResult || !Number.isFinite(quoteResult.quoted_price) || quoteResult.quoted_price <= 0) {
+        throw new Error('PRICING_QUOTE_INVALID_RESULT');
+      }
+
+      // Confirm the durable, official snapshot before reporting success or
+      // scheduling dispatch. A successful callback alone is not enough.
+      const pricedRide = await prisma.rides_v2.findUnique({
+        where: { id: ride.id },
+        include: { settlement: { select: officialQuoteSettlementSelect } },
+      });
+      if (!hasOfficialLockedQuote(pricedRide) ||
+          Math.round(Number(pricedRide!.quoted_price) * 100) !==
+            Math.round(quoteResult.quoted_price * 100)) {
+        throw new Error('PRICING_QUOTE_SNAPSHOT_MISMATCH');
+      }
     } catch (priceErr) {
       console.error(`[PRICING_QUOTE_FAILED] ride_id=${ride.id}`, priceErr);
+      // Existing enum has no dedicated pricing_failure state. Park this
+      // unoffered ride in the non-dispatchable no_driver state, never fabricate
+      // a client success or imply that a COMMIT outcome was safely rolled back.
+      try {
+        await prisma.rides_v2.updateMany({
+          where: {
+            id: ride.id, passenger_id: passengerId,
+            status: { in: ['requested', 'scheduled'] },
+          },
+          data: { status: 'no_driver' },
+        });
+      } catch (cleanupErr) {
+        console.error(`[PRICING_FAIL_CLOSED_UPDATE_FAILED] ride_id=${ride.id}`, cleanupErr);
+      }
+      // Dispatcher and scheduled job also independently reject unpriced rows,
+      // including when the cleanup write itself failed.
+      return res.status(503).json({ success: false, error: 'PRICING_QUOTE_UNAVAILABLE' });
     }
 
     // Acionar dispatcher (async, não bloqueia resposta) — skip for scheduled rides
@@ -378,8 +418,8 @@ router.post('/', authenticatePassenger, async (req: Request, res: Response) => {
         ride_id: ride.id,
         status: scheduledDate ? 'scheduled' : ride.status,
         scheduled_for: scheduledDate?.toISOString() ?? null,
-        quoted_price: quoteResult?.quoted_price ?? null,
-        territory: quoteResult?.route_territory ?? null,
+        quoted_price: quoteResult.quoted_price,
+        territory: quoteResult.route_territory,
       }
     });
   } catch (error: any) {
