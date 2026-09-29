@@ -24,10 +24,13 @@ export type CareOperationalEvidenceReason =
   | 'CARE_TERRITORY_REVIEW_REQUIRED'
   | 'CARE_OUTSIDE_FALLBACK_NOT_AUTHORIZED'
   | 'CARE_TERRITORY_MISMATCH'
+  | 'CARE_TERRITORY_SCOPE_NOT_VERIFIED'
   | 'CARE_MUNICIPAL_SCOPE_NOT_VERIFIED'
   | 'CARE_INSURANCE_SCOPE_NOT_VERIFIED';
 
 export interface CareOperationalEvidenceSnapshot {
+  /** A registry prerequisite, NOT proof that this pickup/vehicle is CARE-licensed. */
+  territoryRegistryReviewed: boolean;
   evidence: CareExternalEvidence;
   reasons: CareOperationalEvidenceReason[];
 }
@@ -35,12 +38,18 @@ export interface CareOperationalEvidenceSnapshot {
 const denied = (
   ...reasons: CareOperationalEvidenceReason[]
 ): CareOperationalEvidenceSnapshot => ({
+  territoryRegistryReviewed: false,
   evidence: {
     municipalAuthorized: false,
     territoryEligible: false,
     insuranceConfirmedForMode: false,
   },
-  reasons: [...reasons, 'CARE_MUNICIPAL_SCOPE_NOT_VERIFIED', 'CARE_INSURANCE_SCOPE_NOT_VERIFIED'],
+  reasons: [
+    ...reasons,
+    'CARE_TERRITORY_SCOPE_NOT_VERIFIED',
+    'CARE_MUNICIPAL_SCOPE_NOT_VERIFIED',
+    'CARE_INSURANCE_SCOPE_NOT_VERIFIED',
+  ],
 });
 
 type ReadNeighborhood = {
@@ -79,8 +88,8 @@ function isReviewedActiveTerritory(value: ReadNeighborhood, now: Date): boolean 
 
 /**
  * Snapshot for a later explicit CARE review. This function cannot, by design,
- * return an operational authorization while specialized municipality/insurance
- * proofs are not represented in the verified backend sources.
+ * return an operational authorization while verified pickup coverage,
+ * specialized municipality and insurance proofs remain absent.
  *
  * Call with the SAME transaction client as the existing offer/acceptance flow
  * when those sources are eventually integrated. No writing or external calls.
@@ -171,15 +180,17 @@ export async function resolveCareOperationalEvidence(
       return denied('CARE_TERRITORY_MISMATCH');
     }
 
-    // This is an existing-territory precondition only. It does NOT attest
-    // that the municipality or insurer approved any CARE mode.
+    // Registry review != verified geofence/CARE operating territory.
+    // Do not reuse a positive registry check as a dispatch authorization.
     return {
+      territoryRegistryReviewed: true,
       evidence: {
-        territoryEligible: true,
+        territoryEligible: false,
         municipalAuthorized: false,
         insuranceConfirmedForMode: false,
       },
       reasons: [
+        'CARE_TERRITORY_SCOPE_NOT_VERIFIED',
         'CARE_MUNICIPAL_SCOPE_NOT_VERIFIED',
         'CARE_INSURANCE_SCOPE_NOT_VERIFIED',
       ],
