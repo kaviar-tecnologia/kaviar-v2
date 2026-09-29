@@ -227,6 +227,7 @@ model admins {
   insurance_coverages_created operational_insurance_coverages[] @relation("insurance_coverages_created_by")
   insurance_coverages_updated operational_insurance_coverages[] @relation("insurance_coverages_updated_by")
   insurance_coverages_care_verified operational_insurance_coverages[] @relation("insurance_coverages_care_verified_by")
+  driver_insurance_coverage_links driver_insurance_enrollments[] @relation("driver_insurance_coverage_linked_by")
   municipal_regulations_care_verified municipal_regulations[] @relation("municipal_regulations_care_verified_by")
   municipal_authorizations_submitted_admin municipal_authorizations[] @relation("municipal_authorizations_submitted_by_admin")
   municipal_authorizations_submitted_manager municipal_authorizations[] @relation("municipal_authorizations_submitted_by_manager")
@@ -2797,6 +2798,8 @@ model driver_insurance_enrollments {
   cancelled_at        DateTime? @db.Date
   provider_reference  String?   @db.VarChar(120)
   operational_coverage_id String?
+  operational_coverage_linked_at DateTime?
+  operational_coverage_linked_by_admin_id String?
   request_payload     Json
   provider_response   Json?
   last_error_code     String?   @db.VarChar(50)
@@ -2808,6 +2811,7 @@ model driver_insurance_enrollments {
 
   driver drivers @relation(fields: [driver_id], references: [id], onDelete: Cascade)
   operational_coverage operational_insurance_coverages? @relation(fields: [operational_coverage_id], references: [id], onDelete: SetNull)
+  operational_coverage_linked_by_admin admins? @relation("driver_insurance_coverage_linked_by", fields: [operational_coverage_linked_by_admin_id], references: [id], onDelete: SetNull)
 
   @@unique([driver_id, provider, vehicle_plate, valid_from], name: "driver_provider_plate_valid_from", map: "ux_driver_insurance_provider_plate_from")
   @@index([driver_id])
