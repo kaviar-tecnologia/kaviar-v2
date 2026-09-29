@@ -1208,52 +1208,34 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
       timestamp: new Date().toISOString()
     });
 
-    // Pricing: settle (fechar economia — idempotente)
-    let settlement: any = null;
+    // The official engine settles the locked fare, actual wait, driver earning
+    // and territorial credit in ONE economic transaction. Never write another
+    // wait adjustment outside the authoritative ride_settlements transaction.
+    let settlement: pricingEngine.SettlementResult | null = null;
     try {
-      settlement = await pricingEngine.settle(ride_id);
+      const hasCompletedWait = Boolean(
+        ride.wait_requested && ride.wait_started_at && ride.wait_ended_at,
+      );
+      settlement = await pricingEngine.settle(
+        ride_id,
+        hasCompletedWait ? { waitRatePerMinute: config.wait.ratePerMin } : undefined,
+      );
     } catch (settleErr) {
       console.error(`[PRICING_SETTLE_FAILED] ride_id=${ride_id}`, settleErr);
+      return res.status(503).json({
+        success: false, error: 'PRICING_SETTLEMENT_UNCONFIRMED',
+      });
+    }
+    if (!settlement) {
+      console.error(`[PRICING_SETTLE_MISSING] ride_id=${ride_id}`);
+      return res.status(503).json({
+        success: false, error: 'PRICING_SETTLEMENT_UNCONFIRMED',
+      });
     }
 
-    // Wait charge: somar ao final_price após settle (apenas se espera foi encerrada)
-    let _shadowWaitCents = 0;
-    if (settlement && ride.wait_requested && ride.wait_started_at && ride.wait_ended_at) {
-      try {
-        const waitMinutes = Math.floor(
-          (ride.wait_ended_at.getTime() - ride.wait_started_at.getTime()) / 60000
-        );
-        const waitCharge = Math.round(waitMinutes * config.wait.ratePerMin * 100) / 100;
-        if (waitCharge > 0) {
-          _shadowWaitCents = Math.round(waitCharge * 100);
-          const newFinalPrice = Math.round((settlement.final_price + waitCharge) * 100) / 100;
-          const newDriverEarnings = Math.round((settlement.driver_earnings + waitCharge) * 100) / 100;
-          await prisma.$transaction([
-            prisma.rides_v2.update({
-              where: { id: ride_id },
-              data: { final_price: new Decimal(newFinalPrice), driver_earnings: new Decimal(newDriverEarnings) }
-            }),
-            prisma.$executeRaw`
-              UPDATE ride_settlements
-              SET final_price = ${newFinalPrice}, driver_earnings = ${newDriverEarnings}
-              WHERE ride_id = ${ride_id}
-            `,
-          ]);
-          settlement.final_price = newFinalPrice;
-          settlement.driver_earnings = newDriverEarnings;
-          // Crédito dobrado: espera real = serviço composto
-          const doubledCreditCost = Math.round(settlement.credit_cost * 2 * 100) / 100;
-          await prisma.$executeRaw`
-            UPDATE ride_settlements
-            SET credit_cost = ${doubledCreditCost}
-            WHERE ride_id = ${ride_id}
-          `;
-          settlement.credit_cost = doubledCreditCost;
-          console.log(`[WAIT_CHARGE] ride_id=${ride_id} wait_min=${waitMinutes} charge=${waitCharge} new_final=${newFinalPrice} credit_cost=${doubledCreditCost}`);
-        }
-      } catch (waitErr) {
-        console.error(`[WAIT_CHARGE_FAILED] ride_id=${ride_id}`, waitErr);
-      }
+    const _shadowWaitCents = settlement.wait_charge_cents ?? 0;
+    if (_shadowWaitCents > 0) {
+      console.log(`[WAIT_CHARGE] ride_id=${ride_id} wait_cents=${_shadowWaitCents} final=${settlement.final_price} credit_cost=${settlement.credit_cost}`);
     }
 
     // Partner commission: gerar comissão se motorista vinculado a parceiro territorial
