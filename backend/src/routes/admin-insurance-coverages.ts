@@ -258,6 +258,79 @@ router.patch('/:id', async (req: Request, res: Response) => {
   }
 });
 
+router.post('/:id/care-scope-review', CARE_REVIEW_ROLE, async (req: Request, res: Response) => {
+  try {
+    const admin = (req as any).admin;
+    const scope = (req as any).territoryScope;
+    const parsed = careScopeReviewSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: parsed.error.errors[0]?.message || 'Payload inválido.' });
+    }
+
+    const existing = await prisma.operational_insurance_coverages.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ success: false, error: 'Cobertura não encontrada.' });
+    if (!isCareModality(existing.modality)) {
+      return res.status(409).json({ success: false, error: 'Revisão CARE só se aplica às modalidades CARE.' });
+    }
+    if (!existing.territory_id || !inScope(admin, scope, existing.territory_id)) {
+      return res.status(403).json({ success: false, error: 'Território CARE fora do escopo administrativo.' });
+    }
+
+    const payload = parsed.data;
+    if (payload.decision === 'APPROVE') {
+      if (!existing.document_url?.trim() || !existing.policy_number?.trim() || !existing.provider_name?.trim()) {
+        return res.status(409).json({
+          success: false,
+          error: 'Documento, apólice e seguradora são obrigatórios antes da aprovação do escopo CARE.',
+        });
+      }
+    }
+
+    const updated = await prisma.operational_insurance_coverages.update({
+      where: { id: existing.id },
+      data: payload.decision === 'APPROVE'
+        ? {
+            care_scope_verified: true,
+            care_scope_verified_at: new Date(),
+            care_scope_verified_by_admin_id: admin.id,
+            updated_by_admin_id: admin.id,
+          }
+        : {
+            care_scope_verified: false,
+            status: existing.status === 'ACTIVE' ? 'SUSPENDED' : existing.status,
+            updated_by_admin_id: admin.id,
+          },
+      include: {
+        territory: { select: { id: true, name: true, level: true, status: true } },
+      },
+    });
+
+    const ctx = auditCtx(req);
+    void audit({
+      adminId: ctx.adminId,
+      adminEmail: ctx.adminEmail,
+      action: payload.decision === 'APPROVE' ? 'approve_care_insurance_scope' : 'revoke_care_insurance_scope',
+      entityType: 'operational_insurance_coverage',
+      entityId: existing.id,
+      oldValue: {
+        careScopeVerified: existing.care_scope_verified,
+        status: existing.status,
+      },
+      newValue: {
+        careScopeVerified: updated.care_scope_verified,
+        status: updated.status,
+        reason: payload.reason || null,
+      },
+      ipAddress: ctx.ip,
+      userAgent: ctx.ua,
+    });
+
+    return res.json({ success: true, data: updated });
+  } catch {
+    return res.status(500).json({ success: false, error: 'Erro ao revisar escopo CARE da cobertura.' });
+  }
+});
+
 router.get('/readiness', async (req: Request, res: Response) => {
   try {
     const admin = (req as any).admin;
