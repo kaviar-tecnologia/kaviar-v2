@@ -15,11 +15,15 @@ function fixture() {
       ride_type: 'care',
       service_category: 'CARE_ASSISTED',
       origin_neighborhood_id: 'origin-n',
+      origin_community_id: 'shared-community',
+      is_homebound: false,
+      outside_fallback_allowed: false,
+      outside_fallback_consented_at: null as Date | null,
       origin_lat: -22.91,
       origin_lng: -43.22,
     },
     requirement: { mode: 'ASSISTED', status: 'READY' },
-    driver: { vehicle_plate: 'ABC-1D23', neighborhood_id: 'driver-n' },
+    driver: { vehicle_plate: 'ABC-1D23', neighborhood_id: 'driver-n', community_id: 'shared-community' },
     origin: {
       id: 'origin-n',
       city: 'Cidade Exemplo',
@@ -242,6 +246,37 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
       operational_coverage_linked_by_admin_id: null,
     });
     expect((await resolve(db)).reasons).toContain('CARE_SCOPE_DRIVER_ENROLLMENT_MISSING');
+  });
+
+  it('does not issue scope evidence for legacy homebound/outside fallback', async () => {
+    for (const field of ['is_homebound', 'outside_fallback_allowed'] as const) {
+      const s = fixture();
+      s.ride[field] = true;
+      const { db, calls } = mockDb(s);
+      expect((await resolve(db)).reasons).toContain('CARE_SCOPE_OUTSIDE_FALLBACK_UNSUPPORTED');
+      expect(calls.geofence).not.toHaveBeenCalled();
+      expect(calls.regulation).not.toHaveBeenCalled();
+    }
+
+    const s = fixture();
+    s.ride.outside_fallback_consented_at = REVIEW;
+    const { db, calls } = mockDb(s);
+    expect((await resolve(db)).reasons).toContain('CARE_SCOPE_OUTSIDE_FALLBACK_UNSUPPORTED');
+    expect(calls.geofence).not.toHaveBeenCalled();
+  });
+
+  it('preserves same-neighborhood or explicitly matching-community restriction', async () => {
+    const s = fixture();
+    s.driver.community_id = 'another-community';
+    const mismatch = mockDb(s);
+    expect((await resolve(mismatch.db)).reasons).toContain('CARE_SCOPE_DRIVER_NEIGHBORHOOD_MISMATCH');
+    expect(mismatch.calls.geofence).not.toHaveBeenCalled();
+
+    const sameNeighborhood = fixture();
+    sameNeighborhood.driver.neighborhood_id = 'origin-n';
+    sameNeighborhood.driver.community_id = 'another-community';
+    const matched = mockDb(sameNeighborhood);
+    expect((await resolve(matched.db)).verified).toBe(true);
   });
 
   it('fails closed when pickup is outside, geom missing or PostGIS read fails', async () => {
