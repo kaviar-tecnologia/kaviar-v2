@@ -127,6 +127,7 @@ export default function MyManagerRegistration() {
                     <TextField select label="Tipo de Pix" value={form.pix_key_type}
                       onChange={event => setField('pix_key_type', event.target.value)} sx={{ minWidth: 130 }}>
                       <MenuItem value="cpf">CPF</MenuItem>
+                      <MenuItem value="cnpj">CNPJ</MenuItem>
                       <MenuItem value="email">E-mail</MenuItem>
                       <MenuItem value="phone">Telefone</MenuItem>
                       <MenuItem value="random">Aleatória</MenuItem>

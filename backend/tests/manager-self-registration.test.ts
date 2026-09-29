@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isValidBrazilianCpf,
+  isValidBrazilianCnpj,
   isValidManagerPixKey,
   managerDocumentVerificationMissingFields,
   managerRegistrationMissingFields,
@@ -87,6 +88,22 @@ describe('manager self-registration policy', () => {
     const complete = { ...pending, document_cpf: '52998224725', address: fullAddress };
     expect(managerDocumentVerificationMissingFields(complete, Array(7).fill(true))).toContain('verification_confirmations');
     expect(managerDocumentVerificationMissingFields(complete, Array(8).fill(true))).toEqual([]);
+  });
+
+  it('preserves company and association review with CNPJ and representative credentials', () => {
+    const company = {
+      ...pending, recipient_type: 'company', full_name: null, document_cpf: null,
+      company_name: 'Empresa Exemplo Ltda', document_cnpj: '11.222.333/0001-81',
+      legal_representative_name: 'Responsável Exemplo',
+      legal_representative_cpf: '52998224725', address: fullAddress,
+    };
+    expect(isValidBrazilianCnpj(company.document_cnpj)).toBe(true);
+    expect(managerDocumentVerificationMissingFields(company, Array(8).fill(true))).toEqual([]);
+    expect(managerDocumentVerificationMissingFields({ ...company, recipient_type: 'association' }, Array(8).fill(true))).toEqual([]);
+    expect(managerDocumentVerificationMissingFields({ ...company, document_cnpj: '11.222.333/0001-80' }, Array(8).fill(true))).toContain('cnpj');
+    expect(managerDocumentVerificationMissingFields({ ...company, legal_representative_cpf: null }, Array(8).fill(true))).toContain('legal_representative_cpf');
+    expect(isValidBrazilianCnpj('00000000000000')).toBe(false);
+    expect(isValidManagerPixKey('11222333000181', 'cnpj')).toBe(true);
   });
 
   it('does not expose full CPF or Pix key in the registration summary', () => {

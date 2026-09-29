@@ -11,6 +11,14 @@ export type ManagerRegistrationProfile = {
   pix_key_type: string | null;
 };
 
+export type ManagerDocumentReviewProfile = ManagerRegistrationProfile & {
+  recipient_type?: string;
+  company_name?: string | null;
+  document_cnpj?: string | null;
+  legal_representative_name?: string | null;
+  legal_representative_cpf?: string | null;
+};
+
 export type ManagerRegistrationChanges = {
   document_cpf?: string;
   address?: string;
@@ -19,7 +27,7 @@ export type ManagerRegistrationChanges = {
   pix_key_type?: string;
 };
 
-const pixTypes = ['cpf', 'email', 'phone', 'random'] as const;
+const pixTypes = ['cpf', 'cnpj', 'email', 'phone', 'random'] as const;
 const registrationSchema = z.object({
   document_cpf: z.string().max(20).optional(),
   address: z.string().trim().min(20).max(400),
@@ -43,12 +51,28 @@ export function isValidBrazilianCpf(value: string | null | undefined): boolean {
   return true;
 }
 
+export function isValidBrazilianCnpj(value: string | null | undefined): boolean {
+  const cnpj = digits(value || '');
+  if (!/^\d{14}$/.test(cnpj) || /^(\d)\1{13}$/.test(cnpj)) return false;
+  for (const length of [12, 13]) {
+    const weights = length === 12
+      ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+      : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const sum = [...cnpj.slice(0, length)].reduce((acc, digit, index) =>
+      acc + Number(digit) * weights[index], 0);
+    const remainder = sum % 11;
+    if (Number(cnpj[length]) !== (remainder < 2 ? 0 : 11 - remainder)) return false;
+  }
+  return true;
+}
+
 const hasText = (value: string | null | undefined) => Boolean(value?.trim());
 
 export function isValidManagerPixKey(key: string, type: string | null | undefined): boolean {
   const value = key.trim();
   switch (type) {
     case 'cpf': return isValidBrazilianCpf(value);
+    case 'cnpj': return isValidBrazilianCnpj(value);
     case 'email': return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 120;
     case 'phone': return /^(?:\+?55)?[1-9]\d{9,10}$/.test(value.replace(/[\s()-]/g, ''));
     case 'random': return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -56,14 +80,20 @@ export function isValidManagerPixKey(key: string, type: string | null | undefine
   }
 }
 
-export function managerRegistrationMissingFields(profile: ManagerRegistrationProfile): string[] {
+function commonManagerReviewMissingFields(profile: ManagerRegistrationProfile): string[] {
   const missing: string[] = [];
-  if (!hasText(profile.full_name)) missing.push('full_name');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.email || '')) missing.push('email');
   if (!/^(?:\+?55)?[1-9]\d{9,10}$/.test((profile.phone || '').replace(/[\s()-]/g, ''))) missing.push('phone');
-  if (!isValidBrazilianCpf(profile.document_cpf)) missing.push('cpf');
   if (!profile.address?.trim() || profile.address.trim().length < 20) missing.push('address');
   if (hasText(profile.pix_key) && !isValidManagerPixKey(profile.pix_key!, profile.pix_key_type)) missing.push('pix_key');
+  return missing;
+}
+
+// O cadastro próprio desta etapa atende Gestor pessoa física.
+export function managerRegistrationMissingFields(profile: ManagerRegistrationProfile): string[] {
+  const missing = commonManagerReviewMissingFields(profile);
+  if (!hasText(profile.full_name)) missing.push('full_name');
+  if (!isValidBrazilianCpf(profile.document_cpf)) missing.push('cpf');
   return missing;
 }
 
@@ -106,10 +136,21 @@ export function planManagerSelfRegistration(
 }
 
 export function managerDocumentVerificationMissingFields(
-  profile: ManagerRegistrationProfile,
+  profile: ManagerDocumentReviewProfile,
   confirmations: unknown,
 ): string[] {
-  const missing = managerRegistrationMissingFields(profile);
+  const missing = commonManagerReviewMissingFields(profile);
+  if (profile.recipient_type === 'company' || profile.recipient_type === 'association') {
+    if (!hasText(profile.company_name)) missing.push('company_name');
+    if (!isValidBrazilianCnpj(profile.document_cnpj)) missing.push('cnpj');
+    if (!hasText(profile.legal_representative_name)) missing.push('legal_representative_name');
+    if (!isValidBrazilianCpf(profile.legal_representative_cpf)) missing.push('legal_representative_cpf');
+  } else if (!profile.recipient_type || profile.recipient_type === 'individual') {
+    if (!hasText(profile.full_name)) missing.push('full_name');
+    if (!isValidBrazilianCpf(profile.document_cpf)) missing.push('cpf');
+  } else {
+    missing.push('recipient_type');
+  }
   if (!Array.isArray(confirmations) || confirmations.length !== 8 ||
       !confirmations.every(value => value === true)) {
     missing.push('verification_confirmations');

@@ -91,6 +91,21 @@ describe('territorial manager manual document review endpoint', () => {
     expect(JSON.stringify(auditMock.mock.calls)).not.toContain(address);
   });
 
+  it('does not block a company manager with a valid CNPJ and legal representative', async () => {
+    const company = {
+      ...initial(), recipient_type: 'company', full_name: null, document_cpf: null,
+      company_name: 'Empresa Exemplo Ltda', document_cnpj: '11222333000181',
+      legal_representative_name: 'Responsável Exemplo', legal_representative_cpf: '52998224725',
+    };
+    prismaMock.operator_profiles.findUnique.mockResolvedValue(company);
+    txFindUnique.mockResolvedValue({ ...company, document_status: 'verified' });
+    const res = await request(app).patch(url).send({
+      document_status: 'verified', verification_confirmations: confirmed,
+    });
+    expect(res.status).toBe(200);
+    expect(updateMany).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects a concurrent change instead of verifying a stale identity', async () => {
     updateMany.mockResolvedValue({ count: 0 });
     const res = await request(app).patch(url).send({
