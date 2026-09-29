@@ -47,6 +47,7 @@ describe('Flat Fee Single Source — resolveEffectivePlatformFeePercent', () => 
     vi.resetModules();
     const { pool } = await import('../src/db');
     poolMock = pool;
+    poolMock.connect.mockResolvedValue({ query: poolMock.query, release: vi.fn() });
   });
 
   afterEach(() => {
@@ -63,6 +64,10 @@ describe('Flat Fee Single Source — resolveEffectivePlatformFeePercent', () => 
 
   function setupFlatActive() {
     poolMock.query.mockImplementation((sql: string) => {
+      if (sql.includes('FROM rides_v2') && sql.includes('FOR UPDATE')) {
+        return { rows: [{ id: 'synthetic', ride_type: 'normal', service_category: 'CAR_NORMAL',
+          trip_details: null, status: 'completed', locked_price: '31.24' }] };
+      }
       if (sql.includes('feature_flags')) return { rows: [{ enabled: true }] };
       // platform_fee_configs should NOT be consulted in flat mode
       if (sql.includes('platform_fee_configs')) {
@@ -74,6 +79,10 @@ describe('Flat Fee Single Source — resolveEffectivePlatformFeePercent', () => 
 
   function setupFlatInactive() {
     poolMock.query.mockImplementation((sql: string) => {
+      if (sql.includes('FROM rides_v2') && sql.includes('FOR UPDATE')) {
+        return { rows: [{ id: 'synthetic', ride_type: 'normal', service_category: 'CAR_NORMAL',
+          trip_details: null, status: 'completed', locked_price: '31.24' }] };
+      }
       if (sql.includes('feature_flags')) return { rows: [{ enabled: false }] };
       return { rows: [] };
     });
@@ -281,6 +290,7 @@ describe('Flat Fee Single Source — Snapshot Validation', () => {
     vi.resetModules();
     const { pool } = await import('../src/db');
     poolMock = pool;
+    poolMock.connect.mockResolvedValue({ query: poolMock.query, release: vi.fn() });
   });
 
   afterEach(() => {
@@ -291,6 +301,10 @@ describe('Flat Fee Single Source — Snapshot Validation', () => {
     // Simulate: ride was quoted with 15% (before flat mode), now flat mode is active (18%)
     const rideId = 'test-ride-mismatch';
     poolMock.query.mockImplementation((sql: string, params?: any[]) => {
+      if (sql.includes('FROM rides_v2') && sql.includes('FOR UPDATE')) {
+        return { rows: [{ id: 'synthetic', ride_type: 'normal', service_category: 'CAR_NORMAL',
+          trip_details: null, status: 'completed', locked_price: '31.24' }] };
+      }
       if (sql.includes('ride_settlements') && sql.includes('SELECT')) {
         return {
           rows: [{
@@ -337,6 +351,10 @@ describe('Flat Fee Single Source — Snapshot Validation', () => {
     const rideId = 'test-ride-match';
     let committed = false;
     poolMock.query.mockImplementation((sql: string, params?: any[]) => {
+      if (sql.includes('FROM rides_v2') && sql.includes('FOR UPDATE')) {
+        return { rows: [{ id: 'synthetic', ride_type: 'normal', service_category: 'CAR_NORMAL',
+          trip_details: null, status: 'completed', locked_price: '31.24' }] };
+      }
       if (sql.includes('ride_settlements') && sql.includes('SELECT')) {
         return {
           rows: [{
@@ -433,6 +451,7 @@ describe('Flat Fee Single Source — Old Snapshot Idempotency', () => {
     vi.resetModules();
     const { pool } = await import('../src/db');
     poolMock = pool;
+    poolMock.connect.mockResolvedValue({ query: poolMock.query, release: vi.fn() });
   });
 
   afterEach(() => {
@@ -445,6 +464,10 @@ describe('Flat Fee Single Source — Old Snapshot Idempotency', () => {
     // This is correct: the ride was settled with 15% historically, that's immutable.
     const rideId = 'test-ride-old-settled';
     poolMock.query.mockImplementation((sql: string) => {
+      if (sql.includes('FROM rides_v2') && sql.includes('FOR UPDATE')) {
+        return { rows: [{ id: 'synthetic', ride_type: 'normal', service_category: 'CAR_NORMAL',
+          trip_details: null, status: 'completed', locked_price: '31.24' }] };
+      }
       if (sql.includes('ride_settlements') && sql.includes('SELECT')) {
         return {
           rows: [{
@@ -484,6 +507,10 @@ describe('Flat Fee Single Source — Old Snapshot Idempotency', () => {
   it('N2: already settled ride with current 18% snapshot also returns idempotently', async () => {
     const rideId = 'test-ride-current-settled';
     poolMock.query.mockImplementation((sql: string) => {
+      if (sql.includes('FROM rides_v2') && sql.includes('FOR UPDATE')) {
+        return { rows: [{ id: 'synthetic', ride_type: 'normal', service_category: 'CAR_NORMAL',
+          trip_details: null, status: 'completed', locked_price: '31.24' }] };
+      }
       if (sql.includes('ride_settlements') && sql.includes('SELECT')) {
         return {
           rows: [{
@@ -607,6 +634,7 @@ describe('Flat Fee Single Source — Territorial Settle Snapshot', () => {
     vi.resetModules();
     const { pool } = await import('../src/db');
     poolMock = pool;
+    poolMock.connect.mockResolvedValue({ query: poolMock.query, release: vi.fn() });
   });
 
   afterEach(() => {
@@ -619,6 +647,10 @@ describe('Flat Fee Single Source — Territorial Settle Snapshot', () => {
     const rideId = 'test-ride-territorial-snapshot';
     let committed = false;
     poolMock.query.mockImplementation((sql: string, params?: any[]) => {
+      if (sql.includes('FROM rides_v2') && sql.includes('FOR UPDATE')) {
+        return { rows: [{ id: 'synthetic', ride_type: 'normal', service_category: 'CAR_NORMAL',
+          trip_details: null, status: 'completed', locked_price: '31.24' }] };
+      }
       if (sql.includes('ride_settlements') && sql.includes('SELECT')) {
         return {
           rows: [{
@@ -678,6 +710,10 @@ describe('Flat Fee Single Source — Territorial Settle Snapshot', () => {
     const rideId = 'test-ride-territorial-no-mismatch';
     let committed = false;
     poolMock.query.mockImplementation((sql: string) => {
+      if (sql.includes('FROM rides_v2') && sql.includes('FOR UPDATE')) {
+        return { rows: [{ id: 'synthetic', ride_type: 'normal', service_category: 'CAR_NORMAL',
+          trip_details: null, status: 'completed', locked_price: '31.24' }] };
+      }
       if (sql.includes('ride_settlements') && sql.includes('SELECT')) {
         return {
           rows: [{
