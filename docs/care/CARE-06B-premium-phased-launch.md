@@ -69,6 +69,24 @@ prova de fonte na própria transação, idempotência/concorrência em PostgreSQ
 descartável, comparações quote–lock–ajuste–settlement e regressão de CAR/MOTO/
 Premium. Esse é o restante de #436. Não marcar #436 concluída por esta etapa.
 
+## CARE-06B: proteção do escritor oficial (etapa 2)
+
+O `pricing-engine.ts` agora verifica a categoria solicitada **e** a identidade
+CARE realmente persistida em `rides_v2` (inclusive intenção CARE estruturada
+em `trip_details`) antes da leitura idempotente do settlement no `quote()`.
+`refine()` e `settle()` repetem a verificação antes de qualquer operação
+econômica. Falta de leitura do registro real não transforma CARE em CAR_NORMAL.
+Isso fecha o acesso pelo escritor quando algum futuro caller passar indevidamente
+categoria de carro para uma corrida CARE, sem mudar a fórmula anterior de
+CAR_NORMAL/MOTO_PASSENGER.
+
+**O gate é negativo e incondicional.** Esta etapa não emite cotação positiva
+CARE, não liga o preço a oferta/aceite e não habilita pagamento. A futura
+integração positiva deverá provar a mesma rota, horário, perfil e condições
+objetivas no escritor oficial e persistir quote/lock/settlement sob transação
+coerente; nunca remover este bloqueio antes da revisão separada de CARE-04A
+e dos demais requisitos operacionais e externos. A Issue #436 continua aberta.
+
 ## Release
 
 CARE-04A permanece incondicional: criação/estimativa, dispatcher, oferta, aceite
