@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { acceptOfferInternal } from '../src/services/offer-acceptance.service';
@@ -16,27 +17,33 @@ describe('Offer acceptance concurrency', () => {
 
     const passenger = await prisma.passengers.create({
       data: {
+        id: 'care05d-normal-passenger-' + randomUUID(),
         name: `Test Passenger ${uniqueSuffix}`,
         email: `passenger-${uniqueSuffix}@example.com`,
         status: 'approved',
+        updated_at: new Date(),
       }
     });
     testPassengerId = passenger.id;
 
     const driverA = await prisma.drivers.create({
       data: {
+        id: 'care05d-normal-driver-' + randomUUID(),
         name: `Test Driver A ${uniqueSuffix}`,
         email: `driver-a-${uniqueSuffix}@example.com`,
         status: 'approved',
+        updated_at: new Date(),
       }
     });
     testDriverAId = driverA.id;
 
     const driverB = await prisma.drivers.create({
       data: {
+        id: 'care05d-normal-driver-' + randomUUID(),
         name: `Test Driver B ${uniqueSuffix}`,
         email: `driver-b-${uniqueSuffix}@example.com`,
         status: 'approved',
+        updated_at: new Date(),
       }
     });
     testDriverBId = driverB.id;
