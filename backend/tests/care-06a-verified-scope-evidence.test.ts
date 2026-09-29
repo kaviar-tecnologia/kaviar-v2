@@ -243,7 +243,7 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
     const expired = mockDb();
     expired.calls.authorization.mockResolvedValue({
       ...fixture().authorization,
-      authorization_valid_until: new Date(NOW.getTime() - 1000),
+      authorization_valid_until: new Date('2026-09-28T00:00:00.000Z'),
     });
     expect((await resolve(expired.db)).reasons).toContain('CARE_SCOPE_MUNICIPAL_AUTHORIZATION_MISSING');
 
