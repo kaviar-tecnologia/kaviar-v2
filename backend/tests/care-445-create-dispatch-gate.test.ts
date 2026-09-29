@@ -197,7 +197,7 @@ describe('CARE-445: create/idempotency must never dispatch or return success wit
     }));
   });
 
-  it.each([null, { quoted_price: Number.NaN }, { quoted_price: 0 }])(
+  it.each([null, { quoted_price: Number.NaN }, { quoted_price: 0 }, { quoted_price: 23.001 }])(
     'returns error and no dispatch when quote returns an invalid result %s',
     async (result) => {
       quoteMock.mockResolvedValueOnce(result);
@@ -228,6 +228,18 @@ describe('CARE-445: create/idempotency must never dispatch or return success wit
     expect(res.status).toBe(409);
     expect(res.body).toMatchObject({ success: false, error: 'PRICING_QUOTE_UNAVAILABLE' });
     expect(prismaMock.rides_v2.create).not.toHaveBeenCalled();
+    expect(quoteMock).not.toHaveBeenCalled();
+    expect(dispatchRideMock).not.toHaveBeenCalled();
+  });
+
+  it('does not convert a failed priced/no_driver request into a successful retry', async () => {
+    prismaMock.rides_v2.findFirst.mockResolvedValueOnce({
+      ...officialRide(), status: 'no_driver',
+    });
+    const res = await request(app).post('/api/v2/rides')
+      .set('Idempotency-Key', 'prior-failed-request')
+      .send(requestBody());
+    expect(res.status).toBe(409);
     expect(quoteMock).not.toHaveBeenCalled();
     expect(dispatchRideMock).not.toHaveBeenCalled();
   });
