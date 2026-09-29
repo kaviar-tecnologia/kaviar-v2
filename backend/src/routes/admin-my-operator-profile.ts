@@ -390,7 +390,7 @@ router.get('/territory-info', async (req: Request, res: Response) => {
 
     const territory = await prisma.operational_territories.findUnique({
       where: { id: access.territory_id },
-      select: { id: true, name: true, level: true },
+      select: { id: true, name: true, level: true, status: true, is_active: true },
     });
     if (!territory) return res.json({ success: true, data: null });
 
@@ -400,7 +400,7 @@ router.get('/territory-info', async (req: Request, res: Response) => {
       orderBy: { name: 'asc' },
     });
 
-    res.json({ success: true, data: { territory_name: territory.name, neighborhoods: neighborhoods.map(n => n.name) } });
+    res.json({ success: true, data: { territory_id: territory.id, territory_name: territory.name, territory_status: territory.status, territory_active: territory.is_active, neighborhoods: neighborhoods.map(n => n.name) } });
   } catch {
     res.status(500).json({ success: false, error: 'Erro ao buscar território' });
   }

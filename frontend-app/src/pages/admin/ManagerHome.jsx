@@ -63,23 +63,33 @@ export default function ManagerHome() {
         return;
       }
 
-      // Fetch all territories for this manager
+      // Operational commerce lists active territories only. Include the manager's
+      // assigned planning territory for visibility without enabling operation.
       try {
-        const terrRes = await fetch(`${API_BASE_URL}/api/admin/commerce/my-territories`, { headers });
+        const [terrRes, ownRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/api/admin/commerce/my-territories`, { headers }),
+          fetch(`${API_BASE_URL}/api/admin/my-operator-profile/territory-info`, { headers }),
+        ]);
         const terrData = await terrRes.json();
-        if (terrData.success && Array.isArray(terrData.data)) {
-          setMyTerritories(terrData.data);
-          // Fetch neighborhoods for these territories
-          const tIds = terrData.data.map(t => t.id);
-          if (tIds.length > 0) {
-            try {
-              const nbRes = await fetch(`${API_BASE_URL}/api/governance/neighborhoods`, { headers });
-              const nbData = await nbRes.json();
-              if (nbData.success && Array.isArray(nbData.data)) {
-                setMyNeighborhoods(nbData.data.filter(n => n.is_active && tIds.includes(n.territory_id)));
-              }
-            } catch {}
-          }
+        const ownData = await ownRes.json();
+        const territories = terrData.success && Array.isArray(terrData.data) ? [...terrData.data] : [];
+        const own = ownData.success ? ownData.data : null;
+        if (own?.territory_id && !territories.some(t => t.id === own.territory_id)) {
+          territories.push({
+            id: own.territory_id, name: own.territory_name,
+            status: own.territory_status, is_active: own.territory_active,
+          });
+        }
+        setMyTerritories(territories);
+        const tIds = territories.map(t => t.id);
+        if (tIds.length > 0) {
+          try {
+            const nbRes = await fetch(`${API_BASE_URL}/api/governance/neighborhoods`, { headers });
+            const nbData = await nbRes.json();
+            if (nbData.success && Array.isArray(nbData.data)) {
+              setMyNeighborhoods(nbData.data.filter(n => n.is_active && tIds.includes(n.territory_id)));
+            }
+          } catch {}
         }
       } catch {}
       setTerritoriesLoaded(true);
@@ -135,7 +145,7 @@ export default function ManagerHome() {
           <Box sx={{ mb: 2, p: 1.5, bgcolor: '#fff', borderRadius: 2, border: '1px solid rgba(201,154,22,0.15)' }}>
             <Typography sx={{ fontSize: 11, fontWeight: 700, color: TEXT_GRAY, textTransform: 'uppercase', mb: 0.5 }}>Meu território</Typography>
             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: myNeighborhoods.length > 0 ? 1 : 0 }}>
-              {myTerritories.map(t => <Chip key={t.id} label={t.name} size="small" sx={{ bgcolor: GOLD_LIGHT, color: KAVIAR_BLACK, fontWeight: 700, fontSize: 12 }} />)}
+              {myTerritories.map(t => <Chip key={t.id} label={t.status === 'planning' || t.is_active === false ? `${t.name} · Em planejamento` : t.name} size="small" sx={{ bgcolor: GOLD_LIGHT, color: KAVIAR_BLACK, fontWeight: 700, fontSize: 12 }} />)}
             </Box>
             {myNeighborhoods.length > 0 && (
               <Box sx={{ mt: 1 }}>
