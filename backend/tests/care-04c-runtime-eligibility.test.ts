@@ -45,6 +45,7 @@ async function approvedEvidence(): Promise<CareExternalEvidence> {
         territory: {
           id: 'synthetic-territory',
           uf: 'RJ',
+          city_name: 'Synthetic City',
           is_active: true,
           status: 'active',
           coverage_status: 'COMPLETE',
@@ -96,7 +97,7 @@ async function approvedEvidence(): Promise<CareExternalEvidence> {
     'synthetic-driver',
     now,
   );
-  if (!result.verified) throw new Error('synthetic verified scope fixture failed');
+  if (!result.verified) throw new Error(`synthetic verified scope fixture failed: ${result.reasons.join(', ')}`);
   return result.evidence;
 }
 
