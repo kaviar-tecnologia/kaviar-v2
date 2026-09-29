@@ -941,8 +941,9 @@ router.post('/:ride_id/driver-cancel', authenticateDriver, async (req: Request, 
     if (canRedispatch) {
       // Redispatch: limpar ride e reabrir
       await prisma.$transaction(async (tx) => {
-        await tx.rides_v2.update({
-          where: { id: ride_id },
+        const reopened = await tx.rides_v2.updateMany({
+          where: { id: ride_id, driver_id: driverId,
+            status: { in: ['accepted', 'arrived'] } },
           data: {
             status: 'requested',
             driver_id: null,
@@ -951,8 +952,11 @@ router.post('/:ride_id/driver-cancel', authenticateDriver, async (req: Request, 
             driver_adjustment: null,
             adjusted_price: null,
             trip_details: { ...td, _redispatch_count: redispatchCount + 1 },
-          }
+          },
         });
+        if (reopened.count !== 1) {
+          throw Object.assign(new Error('RIDE_STATUS_CONFLICT'), { code: 'RIDE_STATUS_CONFLICT' });
+        }
         await tx.ride_offers.updateMany({
           where: { ride_id, driver_id: driverId, status: 'accepted' },
           data: { status: 'canceled' }
@@ -965,14 +969,25 @@ router.post('/:ride_id/driver-cancel', authenticateDriver, async (req: Request, 
 
       setImmediate(() => dispatcherService.dispatchRide(ride_id).catch(err => {
         console.error(`[REDISPATCH_ERROR] ride_id=${ride_id}`, err);
-        prisma.rides_v2.update({ where: { id: ride_id }, data: { status: 'canceled_by_driver', canceled_at: new Date() } })
-          .then(() => notifyRideCancelledToPassenger({ id: ride_id, passenger_id: ride.passenger_id }))
+        prisma.rides_v2.updateMany({
+          where: { id: ride_id, status: 'requested', driver_id: null },
+          data: { status: 'canceled_by_driver', canceled_at: new Date() },
+        })
+          .then((updated) => {
+            if (updated.count === 1) notifyRideCancelledToPassenger({ id: ride_id, passenger_id: ride.passenger_id });
+          })
           .catch(() => {});
       }));
     } else {
       // Limite de redispatch atingido — cancelar normalmente
       await prisma.$transaction(async (tx) => {
-        await tx.rides_v2.update({ where: { id: ride_id }, data: { status: 'canceled_by_driver', canceled_at: new Date() } });
+        const canceled = await tx.rides_v2.updateMany({
+          where: { id: ride_id, driver_id: driverId, status: { in: ['accepted', 'arrived'] } },
+          data: { status: 'canceled_by_driver', canceled_at: new Date() },
+        });
+        if (canceled.count !== 1) {
+          throw Object.assign(new Error('RIDE_STATUS_CONFLICT'), { code: 'RIDE_STATUS_CONFLICT' });
+        }
         await tx.driver_status.update({ where: { driver_id: driverId }, data: { availability: 'online' } });
       });
 
@@ -996,6 +1011,9 @@ router.post('/:ride_id/driver-cancel', authenticateDriver, async (req: Request, 
     res.json({ success: true });
   } catch (error: any) {
     console.error('[RIDE_DRIVER_CANCEL_ERROR]', error);
+    if (error?.code === 'RIDE_STATUS_CONFLICT') {
+      return res.status(409).json({ error: 'RIDE_STATUS_CONFLICT' });
+    }
     res.status(500).json({ error: 'Erro interno. Tente novamente.' });
   }
 });
