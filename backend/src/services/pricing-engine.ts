@@ -19,6 +19,7 @@ import { resolveTerritory, TerritoryResolution } from './territory-resolver.serv
 import { getFloorForRoute } from './territory-floor.service';
 import { getRouteDistance } from './google-directions.service';
 import { PLATFORM_FEE_PERCENT } from './finance/territory/monetary';
+import { CARE_UNAVAILABLE_CODE, isUnsupportedCareIntent } from './care/care-readiness-policy';
 
 // --- Fee model flat 18% feature flag ---
 
@@ -278,6 +279,21 @@ export async function quote(rideId: string, originLat: number, originLng: number
   postWaitDest?: { lat: number; lng: number } | null,
   serviceCategory: string = 'CAR_NORMAL'
 ): Promise<QuoteResult> {
+  // CARE-04A is unconditional at the official economic writer too. A caller
+  // may pass CAR_NORMAL for a persisted CARE ride; verify BOTH the supplied
+  // category and the stored record BEFORE reading a reusable settlement.
+  // CARE-06B positive quoting will require a separately reviewed same-transaction
+  // integration, not a loose flag or a category alias.
+  const refuseCareQuote = (): never => {
+    throw Object.assign(new Error(CARE_UNAVAILABLE_CODE), { code: CARE_UNAVAILABLE_CODE });
+  };
+  if (isUnsupportedCareIntent({ service_category: serviceCategory })) refuseCareQuote();
+  const persistedRide = await pool.query(
+    'SELECT ride_type, service_category, trip_details FROM rides_v2 WHERE id = $1',
+    [rideId]
+  );
+  if (persistedRide.rows[0] && isUnsupportedCareIntent(persistedRide.rows[0])) refuseCareQuote();
+
   // Idempotência: se já existe settlement, retorna valores existentes
   const existing = await pool.query(
     'SELECT * FROM ride_settlements WHERE ride_id = $1', [rideId]
@@ -296,7 +312,9 @@ export async function quote(rideId: string, originLat: number, originLng: number
   }
 
   // Resolve profile
-  const profile = await resolveProfile(originLat, originLng);
+  // Preserve the existing CAR_NORMAL profile source and MOTO pricing behavior.
+  // Never derive a CARE price from a missing service-specific profile by fallback.
+  const profile = await resolveProfile(originLat, originLng, 'CAR_NORMAL');
 
   // Resolve territories
   const [originRes, destRes] = await Promise.all([
