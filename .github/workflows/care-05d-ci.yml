@@ -1,0 +1,51 @@
+name: CARE-05D Official Lifecycle PostgreSQL
+
+on:
+  pull_request:
+    paths:
+      - 'backend/tests/care-05d-lifecycle-postgres.test.ts'
+      - 'docs/care/CARE-05D-lifecycle-homologation.md'
+      - '.github/workflows/care-05d-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  lifecycle-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DATABASE_URL: postgresql://care05d_ci:ci_password@127.0.0.1:5432/care05d_disposable
+      NODE_ENV: test
+      JWT_SECRET: care05d-synthetic-not-production
+    services:
+      postgres:
+        image: postgis/postgis:15-3.4
+        env:
+          POSTGRES_DB: care05d_disposable
+          POSTGRES_USER: care05d_ci
+          POSTGRES_PASSWORD: ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U care05d_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install dependencies and generate Prisma client
+        working-directory: backend
+        run: npm ci
+      - name: Typecheck backend
+        working-directory: backend
+        run: npx tsc --noEmit -p tsconfig.build.json
+      - name: Build disposable Prisma schema
+        working-directory: backend
+        run: npx prisma db push --accept-data-loss --skip-generate
+      - name: Official CARE lifecycle and standard-ride regression on disposable database
+        working-directory: backend
+        run: npx vitest run tests/care-05d-lifecycle-postgres.test.ts tests/care-04b-atomic-postgres.test.ts tests/offer-acceptance-concurrency.test.ts --maxWorkers=1
