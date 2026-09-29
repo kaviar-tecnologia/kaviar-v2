@@ -15,6 +15,8 @@ function fixture() {
       ride_type: 'care',
       service_category: 'CARE_ASSISTED',
       origin_neighborhood_id: 'origin-n',
+      origin_lat: -22.91,
+      origin_lng: -43.22,
     },
     requirement: { mode: 'ASSISTED', status: 'READY' },
     driver: { vehicle_plate: 'ABC-1D23', neighborhood_id: 'driver-n' },
@@ -103,6 +105,7 @@ function mockDb(s = fixture()) {
     authorization: vi.fn().mockResolvedValue(s.authorization),
     coverage: vi.fn().mockResolvedValue(s.coverage),
     enrollment: vi.fn().mockResolvedValue(s.enrollment),
+    geofence: vi.fn().mockResolvedValue([{ covered: true }]),
   };
   const db = {
     rides_v2: { findUnique: calls.ride },
@@ -113,6 +116,7 @@ function mockDb(s = fixture()) {
     municipal_authorizations: { findFirst: calls.authorization },
     operational_insurance_coverages: { findFirst: calls.coverage },
     driver_insurance_enrollments: { findFirst: calls.enrollment },
+    $queryRaw: calls.geofence,
   } as unknown as CareScopeEvidenceClient;
   return { db, calls };
 }
@@ -161,6 +165,11 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
         operational_coverage_id: 'coverage-care',
       }),
     }));
+    expect(calls.geofence).toHaveBeenCalledTimes(1);
+    const geofenceSql = (calls.geofence.mock.calls[0][0] as TemplateStringsArray).join(' ');
+    expect(geofenceSql).toContain('ST_Covers(');
+    expect(geofenceSql).toContain('neighborhood_geofences');
+    expect(geofenceSql).not.toContain('ST_DWithin');
   });
 
   it('does not treat a generic CAR record as CARE evidence', async () => {
@@ -222,6 +231,37 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
       operational_coverage_linked_by_admin_id: null,
     });
     expect((await resolve(db)).reasons).toContain('CARE_SCOPE_DRIVER_ENROLLMENT_MISSING');
+  });
+
+  it('fails closed when pickup is outside, geom missing or PostGIS read fails', async () => {
+    const outside = mockDb();
+    outside.calls.geofence.mockResolvedValue([{ covered: false }]);
+    expect((await resolve(outside.db)).reasons)
+      .toContain('CARE_SCOPE_PICKUP_GEOFENCE_UNVERIFIED');
+    expect(outside.calls.regulation).not.toHaveBeenCalled();
+
+    const missing = mockDb();
+    missing.calls.geofence.mockResolvedValue([]);
+    expect((await resolve(missing.db)).reasons)
+      .toContain('CARE_SCOPE_PICKUP_GEOFENCE_UNVERIFIED');
+
+    const invalidCoord = mockDb();
+    invalidCoord.calls.ride.mockResolvedValue({ ...fixture().ride, origin_lat: NaN });
+    expect((await resolve(invalidCoord.db)).reasons)
+      .toContain('CARE_SCOPE_PICKUP_GEOFENCE_UNVERIFIED');
+    expect(invalidCoord.calls.geofence).not.toHaveBeenCalled();
+
+    const dbFailed = mockDb();
+    dbFailed.calls.geofence.mockRejectedValue(new Error('synthetic PostGIS failure'));
+    expect((await resolve(dbFailed.db)).reasons)
+      .toContain('CARE_SCOPE_LOOKUP_FAILED');
+  });
+
+  it('rejects a driver home with unreviewed territory even if territory ID matches', async () => {
+    const s = fixture();
+    s.driverHome.is_verified = false;
+    expect((await resolve(mockDb(s).db)).reasons)
+      .toContain('CARE_SCOPE_DRIVER_OUTSIDE_TERRITORY');
   });
 
   it('rejects a driver registered in another operational territory', async () => {
