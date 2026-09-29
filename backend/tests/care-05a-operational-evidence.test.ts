@@ -89,6 +89,12 @@ describe('CARE-05A: verified existing territory is necessary, never sufficient',
     expect(ordinary.evidence.territoryEligible).toBe(false);
     expect(ordinary.reasons).toContain('CARE_RIDE_IDENTITY_INVALID');
 
+    const orphan = fixture();
+    orphan.ride.ride_type = 'care';
+    orphan.ride.service_category = 'CAR_NORMAL';
+    expect((await evaluate(mockDb(orphan).db)).reasons)
+      .toContain('CARE_RIDE_IDENTITY_INVALID');
+
     const { db, calls } = mockDb();
     calls.driver.mockResolvedValue(null);
     expect((await evaluate(db)).reasons).toContain('CARE_RIDE_OR_DRIVER_MISSING');
