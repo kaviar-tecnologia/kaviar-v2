@@ -12,7 +12,7 @@
  * de qualidade insuficiente com diagnóstico.
  */
 import { prisma as defaultPrisma } from '../../lib/prisma';
-import { OpenStreetMapProvider } from './providers/openstreetmap-provider';
+import { OpenStreetMapProvider, OVERPASS_MIRRORS } from './providers/openstreetmap-provider';
 import {
   type TerritorialDatasetProvider,
   type AcquisitionOptions,
@@ -112,6 +112,7 @@ export async function acquireCityDataset(params: AcquireParams): Promise<Acquire
   try {
     // Resolve um bbox MUNICIPAL confiável (dado próprio/território ou limite OSM).
     // Se não houver bbox confiável, NÃO adquire dataset persistível silenciosamente.
+    let preferredMirror: string | undefined;
     let bbox = params.bbox ?? null;
     if (!bbox) {
       const resolved = await resolveMunicipalBBox(prisma, city, uf, {
@@ -124,6 +125,7 @@ export async function acquireCityDataset(params: AcquireParams): Promise<Acquire
         return { ok: false, reason: 'Múltiplos limites municipais ambíguos para a cidade/UF.', code: 'MUNICIPAL_BBOX_AMBIGUOUS', city, uf };
       }
       bbox = resolved.bbox;
+      preferredMirror = resolved.sourceUrl;
       if (!bbox) {
         return {
           ok: false,
@@ -136,7 +138,10 @@ export async function acquireCityDataset(params: AcquireParams): Promise<Acquire
 
     if (signal.aborted) return abortResult();
 
-    const provider = params.provider ?? new OpenStreetMapProvider({ bbox });
+    const mirrors = preferredMirror
+      ? [preferredMirror, ...OVERPASS_MIRRORS.filter(url => url !== preferredMirror)]
+      : undefined;
+    const provider = params.provider ?? new OpenStreetMapProvider({ bbox, mirrors });
 
     let acquired;
     try {

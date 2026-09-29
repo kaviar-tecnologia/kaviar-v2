@@ -407,6 +407,51 @@ describe('bbox municipal resolvido no caminho real (sem bbox injetado)', () => {
     } as any;
   }
 
+
+  it('prioriza na busca dos bairros o mirror que forneceu o município', async () => {
+    const calls: string[] = [];
+    const bounds = [{
+      type: 'relation', id: 298242,
+      bounds: {
+        minlon: -46.6520805, minlat: -23.7391266,
+        maxlon: -46.5775772, maxlat: -23.6575980,
+      },
+    }];
+    const raw = overpassJson([
+      suburbRelation(10, 'Canhema', -46.62, -23.69),
+    ]);
+    const fetchImpl = (async (url: string, init: any) => {
+      calls.push(url);
+      const query = decodeURIComponent(String(init.body || ''));
+      if (query.includes('out bb;')) {
+        if (url === OVERPASS_MIRRORS[0]) {
+          return jsonResponse('recusado', { status: 406 });
+        }
+        if (url === OVERPASS_MIRRORS[1]) throw new Error('indisponível');
+        return jsonResponse(JSON.stringify({ elements: bounds }));
+      }
+      if (url !== OVERPASS_MIRRORS[2]) throw new Error('mirror errado');
+      return jsonResponse(raw);
+    }) as unknown as typeof fetch;
+
+    const prisma = prismaNoGeofences({
+      id: 't1', name: 'Diadema', city_name: 'Diadema',
+      uf: 'SP', level: 'city',
+    });
+    const res = await acquireCityDataset({
+      territoryId: 't1', prisma,
+      acquisitionOptions: { fetchImpl },
+      putObject: async () => {},
+    });
+
+    expect(res.ok).toBe(true);
+    expect(calls).toEqual([
+      OVERPASS_MIRRORS[0], OVERPASS_MIRRORS[1],
+      OVERPASS_MIRRORS[2], OVERPASS_MIRRORS[2],
+    ]);
+    if (res.ok) expect(res.stats.valid).toBe(1);
+  });
+
   it('geometria FORA do município é rejeitada usando bbox municipal do OSM (sem bbox de teste)', async () => {
     // Município Cariacica bounds ~ [-40.5..-40.35, -20.4..-20.24]
     const muniBounds = [{ type: 'relation', id: 1, bounds: { minlon: -40.5, minlat: -20.4, maxlon: -40.35, maxlat: -20.24 } }];
@@ -704,6 +749,39 @@ describe('bboxFromOsmMunicipality — endurecimento e ambiguidade', () => {
     const r = await bboxFromOsmMunicipality('X', 'ES', { fetchImpl, signal: ac.signal, mirrors: [OVERPASS_MIRRORS[0]] });
     expect(r.bbox).toBeNull();
     expect(calls).toBe(0);
+  });
+
+
+  it('406 e mirror travado permitem alcançar o terceiro', async () => {
+    const calls: string[] = [];
+    const fetchImpl = (async (url: string, init: any) => {
+      calls.push(url);
+      if (calls.length === 1) {
+        return jsonResponse('recusado', { status: 406 });
+      }
+      if (calls.length === 2) {
+        return new Promise((_resolve, reject) => {
+          const fail = () => reject(new Error('abortado'));
+          if (init.signal.aborted) fail();
+          else init.signal.addEventListener('abort', fail, { once: true });
+        });
+      }
+      return jsonResponse(JSON.stringify({ elements: [{
+        type: 'relation', id: 298242,
+        bounds: {
+          minlon: -46.6520805, minlat: -23.7391266,
+          maxlon: -46.5775772, maxlat: -23.6575980,
+        },
+      }] }));
+    }) as unknown as typeof fetch;
+
+    const result = await bboxFromOsmMunicipality('Diadema', 'SP', {
+      fetchImpl, mirrors: OVERPASS_MIRRORS, mirrorTimeoutMs: 30,
+    });
+
+    expect(calls).toEqual([...OVERPASS_MIRRORS]);
+    expect(result.ambiguous).toBe(false);
+    expect(result.bbox).not.toBeNull();
   });
 
   it('query sempre inclui cidade + UF (estado)', () => {
