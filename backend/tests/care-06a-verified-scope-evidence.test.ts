@@ -83,7 +83,7 @@ function fixture() {
     },
     enrollment: {
       id: 'enrollment-care',
-      provider_reference: 'PROVIDER-001',
+      provider_reference: 'POL-C-001',
       operational_coverage_linked_at: REVIEW,
       operational_coverage_linked_by_admin_id: 'admin-insurance-link',
       valid_from: FROM,
@@ -223,7 +223,18 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
     expect((await resolve(noEnrollment.db)).reasons).toContain('CARE_SCOPE_DRIVER_ENROLLMENT_MISSING');
   });
 
-  it('rejects enrollment not explicitly linked/reviewed by an admin', async () => {
+  it('rejects enrollment whose insurance reference belongs to a different policy', async () => {
+    const { db, calls } = mockDb();
+    calls.enrollment.mockResolvedValue({
+      ...fixture().enrollment,
+      provider_reference: 'OTHER-POLICY',
+    });
+    const r = await resolve(db);
+    expect(r.verified).toBe(false);
+    expect(r.reasons).toContain('CARE_SCOPE_POLICY_REFERENCE_MISMATCH');
+  });
+
+    it('rejects enrollment not explicitly linked/reviewed by an admin', async () => {
     const { db, calls } = mockDb();
     calls.enrollment.mockResolvedValue({
       ...fixture().enrollment,
