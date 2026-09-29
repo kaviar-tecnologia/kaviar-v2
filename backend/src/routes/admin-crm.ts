@@ -22,6 +22,8 @@ function buildLeadWhere(admin: any, scope: any, query: any) {
 
   // Territory scope for non-SUPER_ADMIN
   if (admin.role !== 'SUPER_ADMIN') {
+    // Candidate decisions and private recruitment notes belong to SUPER_ADMIN only.
+    where.NOT = { lead_type: 'TERRITORIAL_MANAGER' };
     const tIds = (scope?.territoryIds || []).filter((id: string) => id && UUID_RE.test(id));
     if (tIds.length === 0) {
       where.assigned_admin_id = admin.id;
@@ -160,6 +162,7 @@ router.get('/leads/:id', authenticateAdmin, CRM_ROLES, applyTerritoryScope, asyn
 
     // Scope check for non-SUPER_ADMIN
     if (admin.role !== 'SUPER_ADMIN') {
+      if (lead.lead_type === 'TERRITORIAL_MANAGER') return res.status(403).json({ success: false, error: 'Candidatura de Gestor restrita ao SUPER_ADMIN' });
       const inScope = (scope?.territoryIds || []).includes(lead.territory_id) || lead.assigned_admin_id === admin.id;
       if (!inScope) return res.status(403).json({ success: false, error: 'Sem permissão' });
     }
@@ -179,6 +182,7 @@ router.post('/leads', authenticateAdmin, CRM_ROLES, applyTerritoryScope, async (
     const { name, business_name, phone, email, lead_type, status, source, priority, business_category, business_address, contact_person, wants_showcase, wants_delivery_support, wants_partnership, wants_ads, commercial_notes, territory_id, neighborhood_id, assigned_admin_id, notes, next_action, next_action_at, captured_by_member_id } = req.body;
 
     if (!name) return res.status(400).json({ success: false, error: 'Nome é obrigatório' });
+    if (admin.role !== 'SUPER_ADMIN' && lead_type === 'TERRITORIAL_MANAGER') return res.status(403).json({ success: false, error: 'Candidatura de Gestor restrita ao SUPER_ADMIN' });
 
     // Validate captured_by_member_id ownership
     let validCapturedBy: string | null = null;
@@ -253,6 +257,7 @@ router.patch('/leads/:id', authenticateAdmin, CRM_ROLES, applyTerritoryScope, as
 
     // Scope check
     if (admin.role !== 'SUPER_ADMIN') {
+      if (existing.lead_type === 'TERRITORIAL_MANAGER') return res.status(403).json({ success: false, error: 'Candidatura de Gestor restrita ao SUPER_ADMIN' });
       const inScope = (scope?.territoryIds || []).includes(existing.territory_id) || existing.assigned_admin_id === admin.id;
       if (!inScope) return res.status(403).json({ success: false, error: 'Sem permissão' });
     }
@@ -294,6 +299,9 @@ router.patch('/leads/:id', authenticateAdmin, CRM_ROLES, applyTerritoryScope, as
       }
     }
 
+    // Territorial managers cannot turn a regular CRM lead into a manager application.
+    if (admin.role !== 'SUPER_ADMIN' && lead_type === 'TERRITORIAL_MANAGER') return res.status(403).json({ success: false, error: 'Candidatura de Gestor restrita ao SUPER_ADMIN' });
+
     // Only SUPER_ADMIN can reassign or change territory
     if (admin.role === 'SUPER_ADMIN') {
       if (assigned_admin_id !== undefined) data.assigned_admin_id = assigned_admin_id || null;
@@ -323,6 +331,7 @@ router.patch('/leads/:id/status', authenticateAdmin, CRM_ROLES, applyTerritorySc
     if (!existing) return res.status(404).json({ success: false, error: 'Lead não encontrado' });
 
     if (admin.role !== 'SUPER_ADMIN') {
+      if (existing.lead_type === 'TERRITORIAL_MANAGER') return res.status(403).json({ success: false, error: 'Candidatura de Gestor restrita ao SUPER_ADMIN' });
       const inScope = (scope?.territoryIds || []).includes(existing.territory_id) || existing.assigned_admin_id === admin.id;
       if (!inScope) return res.status(403).json({ success: false, error: 'Sem permissão' });
     }
@@ -363,6 +372,7 @@ router.post('/leads/:id/interactions', authenticateAdmin, CRM_ROLES, applyTerrit
     if (!existing) return res.status(404).json({ success: false, error: 'Lead não encontrado' });
 
     if (admin.role !== 'SUPER_ADMIN') {
+      if (existing.lead_type === 'TERRITORIAL_MANAGER') return res.status(403).json({ success: false, error: 'Candidatura de Gestor restrita ao SUPER_ADMIN' });
       const inScope = (scope?.territoryIds || []).includes(existing.territory_id) || existing.assigned_admin_id === admin.id;
       if (!inScope) return res.status(403).json({ success: false, error: 'Sem permissão' });
     }
@@ -396,6 +406,7 @@ router.get('/leads/:id/interactions', authenticateAdmin, CRM_ROLES, applyTerrito
     if (!existing) return res.status(404).json({ success: false, error: 'Lead não encontrado' });
 
     if (admin.role !== 'SUPER_ADMIN') {
+      if (existing.lead_type === 'TERRITORIAL_MANAGER') return res.status(403).json({ success: false, error: 'Candidatura de Gestor restrita ao SUPER_ADMIN' });
       const inScope = (scope?.territoryIds || []).includes(existing.territory_id) || existing.assigned_admin_id === admin.id;
       if (!inScope) return res.status(403).json({ success: false, error: 'Sem permissão' });
     }
