@@ -240,11 +240,15 @@ describe.skipIf(!disposable)('CARE-445 quote: official table names on disposable
     expect(r.rows[0]).toMatchObject({ settled_at: null, final_price: null });
   });
 
-  it('rolls back settle when final cache update fails', async () => {
+  it('rolls back entire waited settlement when final cache update fails', async () => {
     const id = await ride('CAR_NORMAL', settleFailureId);
     await run(id);
-    await pool.query("UPDATE rides_v2 SET status='completed' WHERE id=$1", [id]);
-    await expect(settle(id)).rejects.toThrow('synthetic settle cache failure');
+    await pool.query(`
+      UPDATE rides_v2 SET status='completed', wait_requested=true,
+        wait_started_at='2026-09-29T12:00:00Z', wait_ended_at='2026-09-29T12:02:00Z'
+      WHERE id=$1`, [id]);
+    await expect(settle(id, { waitRatePerMinute: 0.50 }))
+      .rejects.toThrow('synthetic settle cache failure');
     const r = await pool.query(`
       SELECT s.settled_at, s.final_price, r.final_price AS cache_final
       FROM ride_settlements s JOIN rides_v2 r ON r.id=s.ride_id WHERE s.ride_id=$1`, [id]);
