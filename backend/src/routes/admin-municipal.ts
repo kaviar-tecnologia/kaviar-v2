@@ -4,7 +4,10 @@ import { prisma } from '../lib/prisma';
 import { allowReadAccess, authenticateAdmin, requireRole, requireSuperAdmin } from '../middlewares/auth';
 import { applyTerritoryScope } from '../middlewares/territory-scope';
 import { getMunicipalRegulation, MUNICIPAL_MODALITIES, normalizeCity, normalizeState } from '../services/municipal-regulation.service';
-import { audit, auditCtx } from '../utils/audit';
+import { auditCtx } from '../utils/audit';
+import {
+  assertCareSnapshot, CareAdminConflict, lockCareAdminRow, writeCareAdminAuditTx,
+} from '../services/care/care-admin-atomic';
 
 const router = Router();
 
@@ -243,9 +246,20 @@ router.patch('/municipal-regulations/:id', MUNICIPAL_CONFIG_ROLE, async (req: Re
         payload.vehicle_age_basis !== existing.vehicle_age_basis) ||
       (payload.authorization_validity_months !== undefined &&
         payload.authorization_validity_months !== existing.authorization_validity_months) ||
-      (payload.responsible_agency !== undefined && (payload.responsible_agency || null) !== existing.responsible_agency);
+      (payload.responsible_agency !== undefined && (payload.responsible_agency || null) !== existing.responsible_agency) ||
+      (payload.notes !== undefined && (payload.notes || null) !== existing.notes) ||
+      // A deactivation is a revocation, not a reversible pause retaining approval.
+      (payload.is_active === false && existing.care_scope_verified === true);
 
     const updated = await prisma.$transaction(async (tx) => {
+      const careWrite = isCareMunicipalModality(existing.service_modality) ||
+        isCareMunicipalModality(targetModality);
+      if (careWrite) {
+        await lockCareAdminRow(tx, 'regulation', existing.id);
+        const locked = await tx.municipal_regulations.findUnique({ where: { id: existing.id } });
+        if (!locked) throw new CareAdminConflict();
+        assertCareSnapshot(existing, locked);
+      }
       const data: any = {};
       if (payload.city !== undefined) data.city = normalizeCity(payload.city);
       if (payload.state !== undefined) data.state = normalizeState(payload.state);
@@ -296,10 +310,27 @@ router.patch('/municipal-regulations/:id', MUNICIPAL_CONFIG_ROLE, async (req: Re
         }
       }
 
-      return tx.municipal_regulations.findUnique({
+      const changed = await tx.municipal_regulations.findUnique({
         where: { id: req.params.id },
         include: { requirements: { orderBy: [{ sort_order: 'asc' }, { label: 'asc' }] } },
       });
+      if (careWrite && changed) {
+        const ctx = auditCtx(req);
+        await writeCareAdminAuditTx(tx, {
+          adminId: ctx.adminId, action: 'patch_care_municipal_scope',
+          entityType: 'municipal_regulation', entityId: existing.id,
+          oldValue: {
+            modality: existing.service_modality, active: existing.is_active,
+            verified: existing.care_scope_verified,
+          },
+          newValue: {
+            modality: changed.service_modality, active: changed.is_active,
+            verified: changed.care_scope_verified, changedFields: Object.keys(payload),
+          },
+          ipAddress: ctx.ip, userAgent: ctx.ua,
+        });
+      }
+      return changed;
     });
 
     res.json({ success: true, data: updated });
@@ -307,7 +338,9 @@ router.patch('/municipal-regulations/:id', MUNICIPAL_CONFIG_ROLE, async (req: Re
     if (error instanceof z.ZodError) {
       return res.status(400).json({ success: false, error: error.errors[0]?.message || 'Payload inválido.' });
     }
-
+    if (error instanceof CareAdminConflict) {
+      return res.status(409).json({ success: false, error: error.code });
+    }
     console.error('[MUNICIPAL_REGULATIONS_PATCH_ERROR]', error);
     res.status(500).json({ success: false, error: 'Erro ao atualizar regra municipal.' });
   }
@@ -345,37 +378,40 @@ router.post('/municipal-regulations/:id/care-scope-review', MUNICIPAL_CONFIG_ROL
       };
     }
 
-    const updated = await prisma.municipal_regulations.update({
-      where: { id: req.params.id },
-      data,
-      include: { requirements: { orderBy: [{ sort_order: 'asc' }, { label: 'asc' }] } },
-    });
-
-    const ctx = auditCtx(req);
-    void audit({
-      adminId: ctx.adminId,
-      adminEmail: ctx.adminEmail,
-      action: payload.decision === 'APPROVE' ? 'approve_care_municipal_scope' : 'revoke_care_municipal_scope',
-      entityType: 'municipal_regulation',
-      entityId: existing.id,
-      oldValue: {
-        careScopeVerified: existing.care_scope_verified,
-        isActive: existing.is_active,
-      },
-      newValue: {
-        careScopeVerified: updated.care_scope_verified,
-        isActive: updated.is_active,
-        documentUrl: updated.care_scope_document_url,
-        reason: payload.reason || null,
-      },
-      ipAddress: ctx.ip,
-      userAgent: ctx.ua,
+    const updated = await prisma.$transaction(async (tx) => {
+      await lockCareAdminRow(tx, 'regulation', existing.id);
+      const locked = await tx.municipal_regulations.findUnique({ where: { id: existing.id } });
+      if (!locked) throw new CareAdminConflict();
+      assertCareSnapshot(existing, locked);
+      if (!isCareMunicipalModality(locked.service_modality)) throw new CareAdminConflict();
+      if (payload.decision === 'APPROVE' &&
+          !['REGULATED', 'NOT_REGULATED'].includes(locked.regulation_status)) {
+        throw new CareAdminConflict('CARE_SCOPE_REVIEW_REQUIREMENTS_CHANGED');
+      }
+      const changed = await tx.municipal_regulations.update({
+        where: { id: locked.id },
+        data,
+        include: { requirements: { orderBy: [{ sort_order: 'asc' }, { label: 'asc' }] } },
+      });
+      const ctx = auditCtx(req);
+      await writeCareAdminAuditTx(tx, {
+        adminId: ctx.adminId,
+        action: payload.decision === 'APPROVE' ? 'approve_care_municipal_scope' : 'revoke_care_municipal_scope',
+        entityType: 'municipal_regulation', entityId: locked.id,
+        oldValue: { verified: locked.care_scope_verified, active: locked.is_active },
+        newValue: { verified: changed.care_scope_verified, active: changed.is_active },
+        reason: payload.reason, ipAddress: ctx.ip, userAgent: ctx.ua,
+      });
+      return changed;
     });
 
     return res.json({ success: true, data: updated });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ success: false, error: error.errors[0]?.message || 'Payload inválido.' });
+    }
+    if (error instanceof CareAdminConflict) {
+      return res.status(409).json({ success: false, error: error.code });
     }
     console.error('[MUNICIPAL_CARE_SCOPE_REVIEW_ERROR]', error);
     return res.status(500).json({ success: false, error: 'Erro ao revisar escopo municipal CARE.' });

@@ -13,6 +13,9 @@ import {
 } from '../services/driver-insurance.service';
 import { PrevilemosError } from '../services/previlemos-service';
 import { audit, auditCtx } from '../utils/audit';
+import {
+  CareAdminConflict, lockCareAdminRow, writeCareAdminAuditTx,
+} from '../services/care/care-admin-atomic';
 
 const router = Router();
 
@@ -197,105 +200,138 @@ router.post(
   async (req, res) => {
     try {
       const body = coverageLinkSchema.parse(req.body);
-      const [enrollment, driver] = await Promise.all([
-        prisma.driver_insurance_enrollments.findFirst({
-          where: { id: req.params.insuranceId, driver_id: req.params.id },
-        }),
-        prisma.drivers.findUnique({
-          where: { id: req.params.id },
-          select: { vehicle_plate: true },
-        }),
-      ]);
+      // The driver lock serializes competing link requests for the same driver.
+      // Enrollment and coverage row locks ensure provider cancellation/review
+      // cannot change a read before its linked write is committed.
+      const updated = await prisma.$transaction(async (tx) => {
+        await lockCareAdminRow(tx, 'driver', req.params.id);
+        await lockCareAdminRow(tx, 'enrollment', req.params.insuranceId);
+        const [enrollment, driver] = await Promise.all([
+          tx.driver_insurance_enrollments.findFirst({
+            where: { id: req.params.insuranceId, driver_id: req.params.id },
+          }),
+          tx.drivers.findUnique({
+            where: { id: req.params.id },
+            select: { vehicle_plate: true, neighborhood_id: true },
+          }),
+        ]);
+        if (!enrollment || !driver) throw new CareAdminConflict('INSURANCE_ENROLLMENT_CHANGED');
 
-      if (!enrollment) {
-        return res.status(404).json({ success: false, error: 'INSURANCE_ENROLLMENT_NOT_FOUND' });
-      }
-      if (!driver || normalizePlate(driver.vehicle_plate) !== normalizePlate(enrollment.vehicle_plate)) {
-        return res.status(409).json({
-          success: false,
-          error: 'INSURANCE_ENROLLMENT_VEHICLE_MISMATCH',
-          message: 'A placa atual do motorista não corresponde ao vínculo securitário.',
-        });
-      }
-
-      let coverage: any = null;
-      if (body.coverage_id) {
-        coverage = await prisma.operational_insurance_coverages.findUnique({
-          where: { id: body.coverage_id },
-        });
-        if (!coverage) {
-          return res.status(404).json({ success: false, error: 'OPERATIONAL_COVERAGE_NOT_FOUND' });
-        }
-        if (!CARE_INSURANCE_MODALITIES.has(String(coverage.modality)) ||
-            coverage.status !== 'ACTIVE' ||
-            coverage.care_scope_verified !== true ||
-            !coverage.territory_id ||
-            !coverage.document_url?.trim()) {
-          return res.status(409).json({
-            success: false,
-            error: 'CARE_OPERATIONAL_COVERAGE_NOT_VERIFIED',
-          });
-        }
-        if (enrollment.status !== 'ACTIVE' || enrollment.cancelled_at ||
-            !enrollment.provider_reference?.trim()) {
-          return res.status(409).json({
-            success: false,
-            error: 'DRIVER_INSURANCE_ENROLLMENT_NOT_ACTIVE',
-          });
-        }
-        if (enrollment.valid_from < coverage.valid_from ||
-            enrollment.valid_until > coverage.valid_until) {
-          return res.status(409).json({
-            success: false,
-            error: 'DRIVER_INSURANCE_OUTSIDE_OPERATIONAL_COVERAGE_WINDOW',
-          });
-        }
-        // provider_reference stores Previlemos NumSeguro. A link to a
-        // different policy/certificate does not prove coverage of this car.
-        // No manual bypass: separately numbered master policies need a
-        // reviewed, structured mapping before any CARE authorization.
-        if (coverage.coverage_type !== 'APP' ||
-            !coverage.policy_number?.trim() ||
-            coverage.policy_number.trim().toUpperCase() !==
-              enrollment.provider_reference.trim().toUpperCase()) {
-          return res.status(409).json({
-            success: false,
-            error: 'CARE_POLICY_REFERENCE_MISMATCH',
-          });
-        }
-      }
-
-      const admin = (req as any).admin;
-      const updated = await prisma.driver_insurance_enrollments.update({
-        where: { id: enrollment.id },
-        data: body.coverage_id
-          ? {
-              operational_coverage_id: body.coverage_id,
-              operational_coverage_linked_at: new Date(),
-              operational_coverage_linked_by_admin_id: admin.id,
-            }
-          : {
-              operational_coverage_id: null,
-              operational_coverage_linked_at: null,
-              operational_coverage_linked_by_admin_id: null,
+        if (body.coverage_id) {
+          // Unlinking must remain possible after expiry/revocation/plate change.
+          // Positive linking has stronger requirements, re-read under locks.
+          if (!driver.vehicle_plate ||
+              normalizePlate(driver.vehicle_plate) !== normalizePlate(enrollment.vehicle_plate)) {
+            throw new CareAdminConflict('INSURANCE_ENROLLMENT_VEHICLE_MISMATCH');
+          }
+          if (!driver.neighborhood_id) {
+            throw new CareAdminConflict('CARE_DRIVER_TERRITORY_UNVERIFIED');
+          }
+          await lockCareAdminRow(tx, 'neighborhood', driver.neighborhood_id);
+          const driverHome = await tx.neighborhoods.findUnique({
+            where: { id: driver.neighborhood_id },
+            select: {
+              is_active: true, is_verified: true, verified_at: true,
+              verified_by: true, territory_id: true,
             },
-      });
+          });
+          await lockCareAdminRow(tx, 'coverage', body.coverage_id);
+          const coverage = await tx.operational_insurance_coverages.findUnique({
+            where: { id: body.coverage_id },
+          });
+          const now = new Date();
+          const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+          if (!coverage || !CARE_INSURANCE_MODALITIES.has(String(coverage.modality)) ||
+              coverage.status !== 'ACTIVE' || coverage.coverage_type !== 'APP' ||
+              coverage.care_scope_verified !== true || !coverage.territory_id ||
+              !coverage.document_url?.trim() || !coverage.policy_number?.trim() ||
+              !coverage.provider_name?.trim() || !coverage.care_scope_verified_by_admin_id?.trim() ||
+              !coverage.care_scope_verified_at || coverage.care_scope_verified_at > now ||
+              coverage.valid_from > today || coverage.valid_until < today) {
+            throw new CareAdminConflict('CARE_OPERATIONAL_COVERAGE_NOT_VERIFIED');
+          }
+          if (!driverHome || driverHome.is_active !== true || driverHome.is_verified !== true ||
+              !driverHome.verified_by?.trim() || !driverHome.verified_at ||
+              driverHome.verified_at > now || driverHome.territory_id !== coverage.territory_id) {
+            throw new CareAdminConflict('CARE_DRIVER_TERRITORY_UNVERIFIED');
+          }
+          if (enrollment.status !== 'ACTIVE' || enrollment.cancelled_at ||
+              !enrollment.provider_reference?.trim() ||
+              enrollment.valid_from > today || enrollment.valid_until < today) {
+            throw new CareAdminConflict('DRIVER_INSURANCE_ENROLLMENT_NOT_ACTIVE');
+          }
+          if (enrollment.valid_from < coverage.valid_from ||
+              enrollment.valid_until > coverage.valid_until) {
+            throw new CareAdminConflict('DRIVER_INSURANCE_OUTSIDE_OPERATIONAL_COVERAGE_WINDOW');
+          }
+          if (coverage.policy_number.trim().toUpperCase() !==
+              enrollment.provider_reference.trim().toUpperCase()) {
+            throw new CareAdminConflict('CARE_POLICY_REFERENCE_MISMATCH');
+          }
+          // A second active linked certificate for the same driver, plate,
+          // mode and territory would make the runtime evidence ambiguous.
+          const otherLinks = await tx.driver_insurance_enrollments.findMany({
+            where: {
+              driver_id: req.params.id,
+              id: { not: enrollment.id },
+              status: 'ACTIVE',
+              cancelled_at: null,
+              valid_from: { lte: today },
+              valid_until: { gte: today },
+              operational_coverage_id: { not: null },
+              operational_coverage: {
+                is: {
+                  territory_id: coverage.territory_id,
+                  modality: coverage.modality,
+                  coverage_type: 'APP',
+                  status: 'ACTIVE',
+                  care_scope_verified: true,
+                  valid_from: { lte: today },
+                  valid_until: { gte: today },
+                },
+              },
+            },
+            select: { vehicle_plate: true },
+          });
+          if (otherLinks.some((link) =>
+            normalizePlate(link.vehicle_plate) === normalizePlate(driver.vehicle_plate))) {
+            throw new CareAdminConflict('CARE_DRIVER_ENROLLMENT_AMBIGUOUS');
+          }
+        }
 
-      const ctx = auditCtx(req);
-      void audit({
-        adminId: ctx.adminId,
-        adminEmail: ctx.adminEmail,
-        action: body.coverage_id ? 'link_driver_care_insurance_coverage' : 'unlink_driver_care_insurance_coverage',
-        entityType: 'driver_insurance_enrollment',
-        entityId: enrollment.id,
-        oldValue: { operationalCoverageId: enrollment.operational_coverage_id || null },
-        newValue: { operationalCoverageId: updated.operational_coverage_id || null },
-        ipAddress: ctx.ip,
-        userAgent: ctx.ua,
+        const admin = (req as any).admin;
+        const result = await tx.driver_insurance_enrollments.update({
+          where: { id: enrollment.id },
+          data: body.coverage_id
+            ? {
+                operational_coverage_id: body.coverage_id,
+                operational_coverage_linked_at: new Date(),
+                operational_coverage_linked_by_admin_id: admin.id,
+              }
+            : {
+                operational_coverage_id: null,
+                operational_coverage_linked_at: null,
+                operational_coverage_linked_by_admin_id: null,
+              },
+        });
+        const ctx = auditCtx(req);
+        await writeCareAdminAuditTx(tx, {
+          adminId: ctx.adminId,
+          action: body.coverage_id ? 'link_driver_care_insurance_coverage' : 'unlink_driver_care_insurance_coverage',
+          entityType: 'driver_insurance_enrollment',
+          entityId: enrollment.id,
+          oldValue: { coverageId: enrollment.operational_coverage_id ?? null },
+          newValue: { coverageId: result.operational_coverage_id ?? null },
+          ipAddress: ctx.ip, userAgent: ctx.ua,
+        });
+        return result;
       });
 
       return res.json({ success: true, data: publicEnrollment(updated) });
     } catch (error) {
+      if (error instanceof CareAdminConflict) {
+        return res.status(409).json({ success: false, error: error.code });
+      }
       return handleError(res, error);
     }
   }
