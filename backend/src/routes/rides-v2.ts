@@ -1100,13 +1100,14 @@ router.post('/:ride_id/wait/end', authenticateDriver, async (req: Request, res: 
     if (ride.status !== 'in_progress') {
       return res.status(400).json({ error: 'Operação não permitida no estado atual da corrida' });
     }
+    if (!ride.wait_requested) return res.status(400).json({ error: 'Espera não solicitada nesta corrida' });
     if (!ride.wait_started_at) return res.status(400).json({ error: 'Espera não foi iniciada' });
     if (ride.wait_ended_at) return res.status(400).json({ error: 'Espera já encerrada' });
 
     const ended = await prisma.rides_v2.updateMany({
       where: {
         id: ride_id, driver_id: driverId, status: 'in_progress',
-        wait_started_at: { not: null }, wait_ended_at: null,
+        wait_requested: true, wait_started_at: { not: null }, wait_ended_at: null,
       },
       data: { wait_ended_at: new Date() },
     });
