@@ -646,16 +646,25 @@ export async function settle(
     let waitChargeCents = 0;
     if (options.waitRatePerMinute !== undefined) {
       const rate = options.waitRatePerMinute;
-      const start = ride.wait_started_at ? new Date(ride.wait_started_at).getTime() : Number.NaN;
-      const end = ride.wait_ended_at ? new Date(ride.wait_ended_at).getTime() : Number.NaN;
+      const hasStart = ride.wait_started_at != null;
+      const hasEnd = ride.wait_ended_at != null;
       if (!ride.wait_requested || !Number.isFinite(rate) || rate < 0 ||
-          !Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+          hasStart !== hasEnd) {
         throw new Error('PRICING_WAIT_SNAPSHOT_INVALID');
       }
-      const minutes = Math.floor((end - start) / 60000);
-      waitChargeCents = Math.round(minutes * rate * 100);
-      if (!Number.isSafeInteger(waitChargeCents) || waitChargeCents < 0) {
-        throw new Error('PRICING_WAIT_SNAPSHOT_INVALID');
+      // A requested ride that never started waiting legitimately has no charge.
+      // Never rely on the earlier, potentially stale route read to decide.
+      if (hasStart && hasEnd) {
+        const start = new Date(ride.wait_started_at).getTime();
+        const end = new Date(ride.wait_ended_at).getTime();
+        if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+          throw new Error('PRICING_WAIT_SNAPSHOT_INVALID');
+        }
+        const minutes = Math.floor((end - start) / 60000);
+        waitChargeCents = Math.round(minutes * rate * 100);
+        if (!Number.isSafeInteger(waitChargeCents) || waitChargeCents < 0) {
+          throw new Error('PRICING_WAIT_SNAPSHOT_INVALID');
+        }
       }
     }
     const finalCents = Math.round(lockedPrice * 100) + waitChargeCents;
