@@ -16,30 +16,44 @@ export async function withCarePricingTransaction<T>(
   work: (client: PoolClient) => Promise<T>,
 ): Promise<T> {
   const client = await source.connect();
-  let inTransaction = false;
+  let phase: 'begin' | 'work' | 'commit' | 'done' = 'begin';
   let releaseAsBroken = false;
 
   try {
     await client.query('BEGIN');
-    inTransaction = true;
+    phase = 'work';
     const result = await work(client);
+    phase = 'commit';
     await client.query('COMMIT');
-    inTransaction = false;
+    phase = 'done';
     return result;
   } catch (cause) {
-    if (!inTransaction) {
-      // A failed BEGIN can mean a broken connection. Do not recycle it.
+    if (phase === 'commit') {
+      // The server may have committed before its acknowledgement was lost.
+      // A subsequent ROLLBACK cannot undo that committed transaction.
+      // Never retry the economic operation automatically; reconcile by the
+      // unique persisted ride ID on a new connection before any next action.
       releaseAsBroken = true;
+      throw Object.assign(
+        new Error('CARE_PRICING_COMMIT_OUTCOME_UNKNOWN'),
+        { code: 'CARE_PRICING_COMMIT_OUTCOME_UNKNOWN', originalError: cause },
+      );
     }
-    if (inTransaction) {
+
+    if (phase === 'begin') {
+      // BEGIN failed, so the connection state cannot be trusted.
+      releaseAsBroken = true;
+      throw cause;
+    }
+
+    if (phase === 'work') {
       try {
         await client.query('ROLLBACK');
       } catch (rollbackError) {
-        // Never put a client of unknown transaction state back in the pool.
         releaseAsBroken = true;
         throw Object.assign(
           new Error('CARE_PRICING_TRANSACTION_ROLLBACK_FAILED'),
-          { originalError: cause, rollbackError },
+          { code: 'CARE_PRICING_TRANSACTION_ROLLBACK_FAILED', originalError: cause, rollbackError },
         );
       }
     }
