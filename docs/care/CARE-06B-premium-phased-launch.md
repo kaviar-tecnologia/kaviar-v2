@@ -75,7 +75,7 @@ O `pricing-engine.ts` agora verifica a categoria solicitada **e** a identidade
 CARE realmente persistida em `rides_v2` (inclusive intenção CARE estruturada
 em `trip_details`) antes da leitura idempotente do settlement no `quote()`.
 `refine()` e `settle()` repetem a verificação antes de qualquer operação
-econômica. Falta de leitura do registro real não transforma CARE em CAR_NORMAL.
+econômica. Falha na consulta ao registro real interrompe a operação, sem converter CARE em CAR_NORMAL.
 Isso fecha o acesso pelo escritor quando algum futuro caller passar indevidamente
 categoria de carro para uma corrida CARE, sem mudar a fórmula anterior de
 CAR_NORMAL/MOTO_PASSENGER.
