@@ -1230,12 +1230,11 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
     // wait adjustment outside the authoritative ride_settlements transaction.
     let settlement: pricingEngine.SettlementResult | null = null;
     try {
-      const hasCompletedWait = Boolean(
-        ride.wait_requested && ride.wait_started_at && ride.wait_ended_at,
-      );
+      // The engine locks and reads the current interval itself. The route's
+      // earlier snapshot may precede a concurrent wait/end operation.
       settlement = await pricingEngine.settle(
         ride_id,
-        hasCompletedWait ? { waitRatePerMinute: config.wait.ratePerMin } : undefined,
+        ride.wait_requested ? { waitRatePerMinute: config.wait.ratePerMin } : undefined,
       );
     } catch (settleErr) {
       console.error(`[PRICING_SETTLE_FAILED] ride_id=${ride_id}`, settleErr);
