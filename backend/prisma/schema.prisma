@@ -227,6 +227,7 @@ model admins {
   insurance_coverages_created operational_insurance_coverages[] @relation("insurance_coverages_created_by")
   insurance_coverages_updated operational_insurance_coverages[] @relation("insurance_coverages_updated_by")
   insurance_coverages_care_verified operational_insurance_coverages[] @relation("insurance_coverages_care_verified_by")
+  municipal_regulations_care_verified municipal_regulations[] @relation("municipal_regulations_care_verified_by")
   municipal_authorizations_submitted_admin municipal_authorizations[] @relation("municipal_authorizations_submitted_by_admin")
   municipal_authorizations_submitted_manager municipal_authorizations[] @relation("municipal_authorizations_submitted_by_manager")
   municipal_authorizations_approved municipal_authorizations[] @relation("municipal_authorizations_approved_by_admin")
@@ -1826,15 +1827,21 @@ model municipal_regulations {
   authorization_validity_months   Int?
   responsible_agency              String?
   notes                           String?
+  care_scope_verified             Boolean                     @default(false)
+  care_scope_verified_at          DateTime?
+  care_scope_verified_by_admin_id String?
+  care_scope_document_url         String?
   is_active                       Boolean                     @default(true)
   created_at                      DateTime                    @default(now())
   updated_at                      DateTime                    @updatedAt
 
   requirements                    municipal_regulation_requirements[]
   authorizations                  municipal_authorizations[]
+  care_scope_verified_by_admin    admins?                     @relation("municipal_regulations_care_verified_by", fields: [care_scope_verified_by_admin_id], references: [id], onDelete: SetNull)
 
   @@index([city, state])
   @@index([service_modality, is_active])
+  @@index([care_scope_verified])
 }
 
 model municipal_regulation_requirements {
