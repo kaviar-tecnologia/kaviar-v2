@@ -97,8 +97,11 @@ const fail = (...reasons: CareScopeEvidenceRejection[]): CareScopeEvidenceResult
 const normalizedPlate = (value: string | null | undefined): string =>
   typeof value === 'string' ? value.toUpperCase().replace(/[\s-]/g, '') : '';
 
-const validDate = (value: Date | null | undefined, now: Date): value is Date =>
-  value instanceof Date && Number.isFinite(value.getTime()) && value.getTime() >= now.getTime();
+const startOfUtcDay = (value: Date): Date =>
+  new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+
+const validOnCivilDay = (value: Date | null | undefined, today: Date): value is Date =>
+  value instanceof Date && Number.isFinite(value.getTime()) && value.getTime() >= today.getTime();
 
 const pastOrNow = (value: Date | null | undefined, now: Date): value is Date =>
   value instanceof Date && Number.isFinite(value.getTime()) && value.getTime() <= now.getTime();
@@ -123,6 +126,7 @@ export async function resolveVerifiedCareScopeEvidence(
   }
 
   try {
+    const today = startOfUtcDay(now);
     const [ride, requirement, driver] = await Promise.all([
       db.rides_v2.findUnique({
         where: { id: rideId },
@@ -259,7 +263,7 @@ export async function resolveVerifiedCareScopeEvidence(
           status: 'APPROVED_BY_CITY_HALL',
           approved_by_admin_id: { not: null },
           authorization_document_url: { not: null },
-          authorization_valid_until: { gte: now },
+          authorization_valid_until: { gte: today },
         },
         select: {
           id: true,
@@ -271,7 +275,7 @@ export async function resolveVerifiedCareScopeEvidence(
       if (!authorization ||
           !authorization.authorization_document_url?.trim() ||
           !authorization.approved_by_admin_id?.trim() ||
-          !validDate(authorization.authorization_valid_until, now)) {
+          !validOnCivilDay(authorization.authorization_valid_until, today)) {
         return fail('CARE_SCOPE_MUNICIPAL_AUTHORIZATION_MISSING');
       }
     }
@@ -281,8 +285,8 @@ export async function resolveVerifiedCareScopeEvidence(
         territory_id: origin.territory_id,
         modality: mode,
         status: 'ACTIVE',
-        valid_from: { lte: now },
-        valid_until: { gte: now },
+        valid_from: { lte: today },
+        valid_until: { gte: today },
         document_url: { not: null },
         care_scope_verified: true,
         care_scope_verified_at: { lte: now },
@@ -305,8 +309,8 @@ export async function resolveVerifiedCareScopeEvidence(
         !coverage.document_url?.trim() ||
         !pastOrNow(coverage.care_scope_verified_at, now) ||
         !coverage.care_scope_verified_by_admin_id?.trim() ||
-        !validDate(coverage.valid_until, now) ||
-        coverage.valid_from.getTime() > now.getTime()) {
+        !validOnCivilDay(coverage.valid_until, today) ||
+        coverage.valid_from.getTime() > today.getTime()) {
       return fail('CARE_SCOPE_INSURANCE_REVIEW_INVALID');
     }
 
@@ -316,8 +320,8 @@ export async function resolveVerifiedCareScopeEvidence(
         operational_coverage_id: coverage.id,
         vehicle_plate: { equals: driver.vehicle_plate!, mode: 'insensitive' },
         status: 'ACTIVE',
-        valid_from: { lte: now },
-        valid_until: { gte: now },
+        valid_from: { lte: today },
+        valid_until: { gte: today },
         cancelled_at: null,
         provider_reference: { not: null },
       },
@@ -332,7 +336,7 @@ export async function resolveVerifiedCareScopeEvidence(
     if (!enrollment || !enrollment.provider_reference?.trim() ||
         enrollment.valid_from.getTime() < coverage.valid_from.getTime() ||
         enrollment.valid_until.getTime() > coverage.valid_until.getTime() ||
-        !validDate(enrollment.valid_until, now)) {
+        !validOnCivilDay(enrollment.valid_until, today)) {
       return fail('CARE_SCOPE_DRIVER_ENROLLMENT_MISSING');
     }
 
