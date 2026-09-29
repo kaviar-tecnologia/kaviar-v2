@@ -10,10 +10,15 @@ const review = new Date('2026-09-27T17:00:00.000Z');
 const validUntil = new Date('2026-10-28T17:00:00.000Z');
 
 const approvedEvidence = (): CareExternalEvidence => ({
-  municipalAuthorized: true,
-  territoryEligible: true,
-  insuranceConfirmedForMode: true,
-});
+  rideId: 'synthetic-care-ride',
+  driverId: 'synthetic-driver',
+  mode: 'CARE_ASSISTED',
+  territoryId: 'synthetic-territory',
+  city: 'Synthetic City',
+  state: 'RJ',
+  vehiclePlate: 'ABC1D23',
+  verifiedAt: now,
+} as unknown as CareExternalEvidence);
 
 const samples = () => ({
   ride: {
