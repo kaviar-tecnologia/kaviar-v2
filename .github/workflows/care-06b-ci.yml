@@ -1,0 +1,44 @@
+name: CARE-06B Official Fare Preflight
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/services/care/care-official-fare-evidence.ts'
+      - 'backend/tests/care-06b-official-fare-evidence.test.ts'
+      - 'backend/src/services/care/care-fare-parity.ts'
+      - 'backend/tests/care-05b-fare-parity.test.ts'
+      - 'docs/care/CARE-06B-premium-phased-launch.md'
+      - '.github/workflows/care-06b-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  care-official-fare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/care06b_disposable
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install dependencies and generate Prisma client
+        working-directory: backend
+        run: npm ci
+      - name: Validate Prisma schema
+        working-directory: backend
+        run: npx prisma validate
+      - name: Typecheck backend
+        working-directory: backend
+        run: npx tsc --noEmit -p tsconfig.build.json
+      - name: Run official fare provenance and nondiscrimination regressions
+        working-directory: backend
+        run: >-
+          npx vitest run
+          tests/care-06b-official-fare-evidence.test.ts
+          tests/care-05b-fare-parity.test.ts
+          tests/care-03-eligibility.test.ts
+          tests/care-04-readiness-policy.test.ts
