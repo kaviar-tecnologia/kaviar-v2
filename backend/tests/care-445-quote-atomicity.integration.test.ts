@@ -7,7 +7,7 @@ vi.mock('../src/services/territory-resolver.service', () => ({ resolveTerritory:
 vi.mock('../src/services/territory-floor.service', () => ({ getFloorForRoute: mocks.floor }));
 
 import { pool } from '../src/db';
-import { quote } from '../src/services/pricing-engine';
+import { quote, refine, settle } from '../src/services/pricing-engine';
 
 const disposable = (() => {
   try {
@@ -23,6 +23,8 @@ if (process.env.GITHUB_ACTIONS === 'true' && process.env.CARE_QUOTE_ATOMIC_INTEG
 }
 
 const failureId = '00000000-0000-4000-8000-000000004445';
+const refineFailureId = '00000000-0000-4000-8000-000000004446';
+const settleFailureId = '00000000-0000-4000-8000-000000004447';
 
 describe.skipIf(!disposable)('CARE-445 quote: official table names on disposable PostgreSQL', () => {
   beforeAll(async () => {
@@ -45,17 +47,23 @@ describe.skipIf(!disposable)('CARE-445 quote: official table names on disposable
       CREATE TABLE rides_v2 (
         id TEXT PRIMARY KEY, ride_type TEXT NOT NULL, service_category TEXT NOT NULL,
         trip_details JSONB, pricing_profile_id UUID, quoted_price NUMERIC,
-        locked_price NUMERIC, platform_fee NUMERIC, driver_earnings NUMERIC, territory_match TEXT
+        locked_price NUMERIC, final_price NUMERIC, platform_fee NUMERIC,
+        driver_earnings NUMERIC, territory_match TEXT, is_homebound BOOLEAN DEFAULT false,
+        status TEXT NOT NULL DEFAULT 'requested'
       );
       CREATE TABLE ride_settlements (
         ride_id TEXT PRIMARY KEY, pricing_profile_id UUID NOT NULL, pricing_profile_slug TEXT NOT NULL,
         origin_neighborhood_id TEXT, origin_neighborhood TEXT, dest_neighborhood_id TEXT,
-        dest_neighborhood TEXT, route_territory TEXT NOT NULL, distance_km NUMERIC NOT NULL,
+        dest_neighborhood TEXT, driver_neighborhood_id TEXT, driver_neighborhood TEXT,
+        route_territory TEXT NOT NULL, driver_territory TEXT, settlement_territory TEXT,
+        distance_km NUMERIC NOT NULL,
         base_fare_used NUMERIC NOT NULL, per_km_used NUMERIC NOT NULL,
         per_minute_used NUMERIC NOT NULL, minimum_fare_used NUMERIC NOT NULL,
-        quoted_price NUMERIC NOT NULL, locked_price NUMERIC NOT NULL,
+        quoted_price NUMERIC NOT NULL, locked_price NUMERIC NOT NULL, final_price NUMERIC,
         fee_percent NUMERIC NOT NULL, fee_amount NUMERIC NOT NULL,
-        driver_earnings NUMERIC NOT NULL, quoted_at TIMESTAMPTZ NOT NULL, locked_at TIMESTAMPTZ NOT NULL
+        driver_earnings NUMERIC NOT NULL, credit_cost INT, credit_match_type TEXT,
+        quoted_at TIMESTAMPTZ NOT NULL, locked_at TIMESTAMPTZ NOT NULL,
+        refined_at TIMESTAMPTZ, settled_at TIMESTAMPTZ
       );
       INSERT INTO feature_flags VALUES ('FEE_MODEL_FLAT_18', true);
       INSERT INTO pricing_profiles VALUES (
@@ -65,6 +73,11 @@ describe.skipIf(!disposable)('CARE-445 quote: official table names on disposable
       CREATE FUNCTION care445_cache_failure() RETURNS trigger AS $$
       BEGIN
         IF NEW.id = '00000000-0000-4000-8000-000000004445' THEN RAISE EXCEPTION 'synthetic cache write rejected'; END IF;
+        IF NEW.id = '00000000-0000-4000-8000-000000004446' AND OLD.locked_price IS NOT NULL
+           AND NEW.territory_match IS DISTINCT FROM OLD.territory_match
+        THEN RAISE EXCEPTION 'synthetic refine cache failure'; END IF;
+        IF NEW.id = '00000000-0000-4000-8000-000000004447' AND NEW.final_price IS NOT NULL
+        THEN RAISE EXCEPTION 'synthetic settle cache failure'; END IF;
         RETURN NEW;
       END; $$ LANGUAGE plpgsql;
       CREATE TRIGGER care445_fail_quote_cache BEFORE UPDATE ON rides_v2
@@ -125,6 +138,88 @@ describe.skipIf(!disposable)('CARE-445 quote: official table names on disposable
     expect(rows).toHaveLength(1);
     expect(Number(rows[0].official)).toBe(23);
     expect(Number(rows[0].cache)).toBe(23);
+  });
+
+
+  it('refines both official and cached values atomically and settles them once', async () => {
+    const id = await ride();
+    await run(id);
+    await pool.query("UPDATE rides_v2 SET status='accepted' WHERE id=$1", [id]);
+    await refine(id, 'n', 'Origin');
+    const refined = await pool.query(`
+      SELECT s.refined_at, s.fee_amount, s.driver_earnings, s.locked_price,
+             r.platform_fee AS cache_fee, r.driver_earnings AS cache_earnings
+      FROM ride_settlements s JOIN rides_v2 r ON r.id=s.ride_id WHERE s.ride_id=$1`, [id]);
+    expect(refined.rows[0].refined_at).not.toBeNull();
+    expect([refined.rows[0].fee_amount, refined.rows[0].driver_earnings,
+      refined.rows[0].locked_price, refined.rows[0].cache_fee,
+      refined.rows[0].cache_earnings].map(Number)).toEqual([4.14, 18.86, 23, 4.14, 18.86]);
+
+    await pool.query("UPDATE rides_v2 SET status='completed' WHERE id=$1", [id]);
+    expect(await settle(id)).toMatchObject({ final_price: 23, fee_percent: 18,
+      fee_amount: 4.14, driver_earnings: 18.86, credit_cost: 0, credit_match_type: 'FLAT_FEE' });
+    const final = await pool.query(`
+      SELECT s.settled_at, s.final_price, s.fee_amount, s.driver_earnings,
+             r.final_price AS cache_final, r.platform_fee AS cache_fee,
+             r.driver_earnings AS cache_earnings
+      FROM ride_settlements s JOIN rides_v2 r ON r.id=s.ride_id WHERE s.ride_id=$1`, [id]);
+    expect(final.rows[0].settled_at).not.toBeNull();
+    expect([final.rows[0].final_price, final.rows[0].fee_amount, final.rows[0].driver_earnings,
+      final.rows[0].cache_final, final.rows[0].cache_fee, final.rows[0].cache_earnings]
+      .map(Number)).toEqual([23, 4.14, 18.86, 23, 4.14, 18.86]);
+  });
+
+  it('serializes simultaneous refine and settle calls by ride lock', async () => {
+    const id = await ride();
+    await run(id);
+    await pool.query("UPDATE rides_v2 SET status='accepted' WHERE id=$1", [id]);
+    await Promise.all([refine(id, 'n', 'Origin'), refine(id, 'n', 'Origin')]);
+    const afterRefine = await pool.query(
+      'SELECT refined_at FROM ride_settlements WHERE ride_id=$1', [id]);
+    expect(afterRefine.rows[0].refined_at).not.toBeNull();
+    await pool.query("UPDATE rides_v2 SET status='completed' WHERE id=$1", [id]);
+    const [a, b] = await Promise.all([settle(id), settle(id)]);
+    expect(a).toEqual(b);
+    const r = await pool.query(
+      'SELECT settled_at, final_price FROM ride_settlements WHERE ride_id=$1', [id]);
+    expect(r.rowCount).toBe(1);
+    expect(r.rows[0].settled_at).not.toBeNull();
+    expect(Number(r.rows[0].final_price)).toBe(23);
+  });
+
+  it('rolls back refine if the cache write fails after the official update', async () => {
+    const id = await ride('CAR_NORMAL', refineFailureId);
+    await run(id);
+    await pool.query("UPDATE rides_v2 SET status='accepted' WHERE id=$1", [id]);
+    await expect(refine(id, 'other-neighborhood', 'Outside'))
+      .rejects.toThrow('synthetic refine cache failure');
+    const r = await pool.query(`
+      SELECT s.refined_at, s.driver_territory, r.territory_match
+      FROM ride_settlements s JOIN rides_v2 r ON r.id=s.ride_id WHERE s.ride_id=$1`, [id]);
+    expect(r.rows[0].refined_at).toBeNull();
+    expect(r.rows[0].driver_territory).toBeNull();
+    expect(r.rows[0].territory_match).toBe('local');
+  });
+
+  it('rolls back settle when final cache update fails', async () => {
+    const id = await ride('CAR_NORMAL', settleFailureId);
+    await run(id);
+    await pool.query("UPDATE rides_v2 SET status='completed' WHERE id=$1", [id]);
+    await expect(settle(id)).rejects.toThrow('synthetic settle cache failure');
+    const r = await pool.query(`
+      SELECT s.settled_at, s.final_price, r.final_price AS cache_final
+      FROM ride_settlements s JOIN rides_v2 r ON r.id=s.ride_id WHERE s.ride_id=$1`, [id]);
+    expect(r.rows[0]).toMatchObject({ settled_at: null, final_price: null, cache_final: null });
+  });
+
+  it('rejects mismatched adjusted price until the official adjustment writer is fixed', async () => {
+    const id = await ride();
+    await run(id);
+    await pool.query("UPDATE rides_v2 SET status='completed' WHERE id=$1", [id]);
+    await pool.query('UPDATE ride_settlements SET locked_price = 24 WHERE ride_id=$1', [id]);
+    await expect(settle(id)).rejects.toThrow('PRICING_SETTLEMENT_SNAPSHOT_INCONSISTENT');
+    const r = await pool.query('SELECT settled_at FROM ride_settlements WHERE ride_id=$1', [id]);
+    expect(r.rows[0].settled_at).toBeNull();
   });
 
   it('preserves MOTO_PASSENGER pricing and never disguises CARE as CAR_NORMAL', async () => {
