@@ -634,6 +634,13 @@ export async function settle(
       throw new Error('PRICING_SETTLEMENT_SNAPSHOT_INCONSISTENT');
     }
 
+    // Never silently omit a started wait from another caller that forgot the
+    // server-side rate: doing so would close the ride at the base fare.
+    if (options.waitRatePerMinute === undefined && ride.wait_requested &&
+        (ride.wait_started_at || ride.wait_ended_at)) {
+      throw new Error('PRICING_WAIT_RATE_REQUIRED');
+    }
+
     // Charge 100% of actual wait to the driver using persisted ride evidence.
     // This is part of the original settlement transaction, not a later writer.
     let waitChargeCents = 0;
