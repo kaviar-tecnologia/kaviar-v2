@@ -81,7 +81,7 @@ async function approvedEvidence(): Promise<CareExternalEvidence> {
     driver_insurance_enrollments: {
       findFirst: vi.fn().mockResolvedValue({
         id: 'synthetic-enrollment',
-        provider_reference: 'SYNTHETIC-REF',
+        provider_reference: 'POL-001',
         operational_coverage_linked_at: review,
         operational_coverage_linked_by_admin_id: 'synthetic-link-reviewer',
         valid_from: new Date('2026-09-01T00:00:00.000Z'),
