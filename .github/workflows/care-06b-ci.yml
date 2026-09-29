@@ -7,6 +7,7 @@ on:
       - 'backend/src/services/care/care-pricing-transaction.ts'
       - 'backend/tests/care-06b-pricing-transaction.test.ts'
       - 'backend/tests/care-445-quote-atomicity.test.ts'
+      - 'backend/tests/care-445-quote-atomicity.integration.test.ts'
       - 'backend/tests/care-06b-pricing-transaction.integration.test.ts'
       - 'backend/src/services/pricing-engine.ts'
       - 'backend/tests/care-06b-pricing-boundary.test.ts'
@@ -70,3 +71,8 @@ jobs:
         env:
           CARE_PRICING_ATOMIC_INTEGRATION: '1'
         run: npx vitest run tests/care-06b-pricing-transaction.integration.test.ts
+      - name: Prove official quote table atomicity and two-caller idempotency in disposable PostgreSQL
+        working-directory: backend
+        env:
+          CARE_QUOTE_ATOMIC_INTEGRATION: '1'
+        run: npx vitest run tests/care-445-quote-atomicity.integration.test.ts
