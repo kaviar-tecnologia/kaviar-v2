@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma';
 import { authenticateAdmin, requireSuperAdmin } from '../middlewares/auth';
 import { audit, auditCtx } from '../utils/audit';
 import { findApprovedManagerCandidate, planManagerCandidatePrefill } from '../services/territory/manager-application-prefill';
+import { managerDocumentVerificationMissingFields } from '../services/territory/manager-self-registration';
 import { COMPANY } from '../config/company';
 import { isLegacyPayAllowed, isMonthLegacy, isValidReferenceMonth } from '../services/finance/territory/engine-selection';
 import crypto from 'crypto';
@@ -222,7 +223,7 @@ router.patch('/operators/:id', async (req: Request, res: Response) => {
     const existing = await prisma.operator_profiles.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ success: false, error: 'Operador não encontrado' });
 
-    const { document_status, contract_status, is_active, rejected_reason, ...fields } = req.body;
+    const { document_status, contract_status, is_active, rejected_reason, verification_confirmations, ...fields } = req.body;
     const updates: any = {};
     const isTerritorialManager = existing.relationship_type === 'territorial_manager';
 
@@ -279,6 +280,17 @@ router.patch('/operators/:id', async (req: Request, res: Response) => {
     }
 
     if (document_status === 'verified') {
+      if (isTerritorialManager) {
+        const missing = managerDocumentVerificationMissingFields({ ...existing, ...updates }, verification_confirmations);
+        if (missing.length) {
+          return res.status(409).json({
+            success: false,
+            error: 'Verificação bloqueada: cadastro ou conferência documental incompletos.',
+            code: 'MANAGER_DOCUMENT_REVIEW_INCOMPLETE',
+            missing_fields: missing,
+          });
+        }
+      }
       updates.document_status = 'verified';
       updates.verified_by = (req as any).admin.id;
       updates.verified_at = new Date();
@@ -323,11 +335,32 @@ router.patch('/operators/:id', async (req: Request, res: Response) => {
     }
     if (is_active === false) updates.is_active = false;
 
-    const operator = await prisma.operator_profiles.update({ where: { id: req.params.id }, data: updates });
+    const operator = isTerritorialManager && document_status === 'verified'
+      ? await prisma.$transaction(async tx => {
+          const result = await tx.operator_profiles.updateMany({
+            where: {
+              id: existing.id,
+              updated_at: existing.updated_at,
+              document_status: existing.document_status,
+              document_cpf: existing.document_cpf,
+              address: existing.address,
+              contract_status: existing.contract_status,
+              is_active: existing.is_active,
+            },
+            data: updates,
+          });
+          if (result.count !== 1) return null;
+          return tx.operator_profiles.findUnique({ where: { id: existing.id } });
+        })
+      : await prisma.operator_profiles.update({ where: { id: req.params.id }, data: updates });
+    if (!operator) return res.status(409).json({ success: false, error: 'Cadastro alterado durante a conferência. Atualize antes de verificar.' });
 
     const ctx = auditCtx(req);
     const action = document_status === 'verified' ? 'verify_operator_profile' : document_status === 'rejected' ? 'reject_operator_profile' : 'update_operator_profile';
-    audit({ adminId: ctx.adminId, adminEmail: ctx.adminEmail, action, entityType: 'operator_profile', entityId: req.params.id, newValue: updates, ipAddress: ctx.ip });
+    const auditValue = isTerritorialManager && document_status === 'verified'
+      ? { document_status: 'verified', manual_confirmations: 8, changed_fields: Object.keys(updates) }
+      : updates;
+    audit({ adminId: ctx.adminId, adminEmail: ctx.adminEmail, action, entityType: 'operator_profile', entityId: req.params.id, newValue: auditValue, ipAddress: ctx.ip });
 
     res.json({ success: true, data: operator });
   } catch (error) {

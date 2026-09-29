@@ -4,9 +4,124 @@ import { prisma } from '../lib/prisma';
 import { authenticateAdmin } from '../middlewares/auth';
 import { audit, auditCtx } from '../utils/audit';
 import { TERRITORIAL_MANAGER_CONTRACT_VERSION } from '../services/contracts/territorial-manager-contract-v1_2';
+import { managerRegistrationMissingFields, maskRegistrationCpf, maskRegistrationPix, planManagerSelfRegistration } from '../services/territory/manager-self-registration';
 
 const router = Router();
 router.use(authenticateAdmin);
+
+
+// Cadastro contratual da própria gestora. Não cria acesso, contrato ou direito a repasse.
+function canEditManagerRegistration(profile: any): boolean {
+  return profile.relationship_type === 'territorial_manager' &&
+    profile.recipient_type === 'individual' &&
+    profile.document_status === 'pending' &&
+    profile.contract_status === 'pending' &&
+    profile.is_active === false &&
+    !profile.contract_url && !profile.contract_template_url;
+}
+
+function ownManagerRegistrationView(profile: any) {
+  const missingFields = managerRegistrationMissingFields(profile);
+  return {
+    fullName: profile.full_name || '',
+    email: profile.email || profile.admin.email || '',
+    phone: profile.phone || profile.admin.phone || '',
+    territory: profile.territory?.name || '',
+    address: profile.address || '',
+    cpfMasked: maskRegistrationCpf(profile.document_cpf),
+    hasCpf: Boolean(profile.document_cpf),
+    hasRg: Boolean(profile.document_rg),
+    pixMasked: maskRegistrationPix(profile.pix_key),
+    pixKeyType: profile.pix_key_type || null,
+    hasPix: Boolean(profile.pix_key),
+    documentStatus: profile.document_status,
+    contractStatus: profile.contract_status,
+    readyForReview: missingFields.length === 0,
+    missingFields,
+    canEdit: canEditManagerRegistration(profile),
+  };
+}
+
+async function findOwnManagerRegistration(adminId: string) {
+  return prisma.operator_profiles.findUnique({
+    where: { admin_id: adminId },
+    include: {
+      admin: { select: { id: true, name: true, email: true, phone: true, role: true, is_active: true } },
+      territory: { select: { name: true } },
+    },
+  });
+}
+
+// GET /api/admin/my-operator-profile/registration — apenas dados do próprio perfil.
+router.get('/registration', async (req: Request, res: Response) => {
+  try {
+    const admin = (req as any).admin;
+    if (admin.role !== 'TERRITORIAL_MANAGER') return res.status(403).json({ success: false, error: 'Acesso restrito ao Gestor Territorial.' });
+    const profile = await findOwnManagerRegistration(admin.id);
+    if (!profile || profile.admin.role !== 'TERRITORIAL_MANAGER' || !profile.admin.is_active ||
+        profile.relationship_type !== 'territorial_manager' || profile.recipient_type !== 'individual') {
+      return res.status(404).json({ success: false, error: 'Cadastro do gestor não encontrado.' });
+    }
+    return res.json({ success: true, data: ownManagerRegistrationView(profile) });
+  } catch {
+    return res.status(500).json({ success: false, error: 'Não foi possível consultar seu cadastro.' });
+  }
+});
+
+// PATCH /api/admin/my-operator-profile/registration — somente CPF, endereço, RG e Pix próprios.
+router.patch('/registration', async (req: Request, res: Response) => {
+  try {
+    const admin = (req as any).admin;
+    if (admin.role !== 'TERRITORIAL_MANAGER') return res.status(403).json({ success: false, error: 'Acesso restrito ao Gestor Territorial.' });
+    const profile = await findOwnManagerRegistration(admin.id);
+    if (!profile || profile.admin.role !== 'TERRITORIAL_MANAGER' || !profile.admin.is_active ||
+        profile.relationship_type !== 'territorial_manager' || profile.recipient_type !== 'individual') {
+      return res.status(404).json({ success: false, error: 'Cadastro do gestor não encontrado.' });
+    }
+    if (!canEditManagerRegistration(profile)) {
+      return res.status(409).json({ success: false, error: 'Cadastro indisponível para edição. Solicite revisão da central.' });
+    }
+
+    const plan = planManagerSelfRegistration(req.body, profile);
+    if (!plan.ok) return res.status(400).json({ success: false, error: plan.error });
+    if (Object.keys(plan.changes).length === 0) {
+      return res.json({ success: true, data: ownManagerRegistrationView(profile) });
+    }
+
+    // Concorrência: se o perfil foi revisado, ativado ou recebeu minuta, não sobrescrever.
+    const result = await prisma.operator_profiles.updateMany({
+      where: {
+        id: profile.id,
+        admin_id: admin.id,
+        updated_at: profile.updated_at,
+        relationship_type: 'territorial_manager',
+        recipient_type: 'individual',
+        document_status: 'pending',
+        contract_status: 'pending',
+        is_active: false,
+        contract_url: null,
+        contract_template_url: null,
+      },
+      data: plan.changes,
+    });
+    if (result.count !== 1) {
+      return res.status(409).json({ success: false, error: 'O cadastro foi alterado. Atualize a página e tente novamente.' });
+    }
+    const updated = await findOwnManagerRegistration(admin.id);
+    if (!updated) return res.status(409).json({ success: false, error: 'Perfil indisponível após atualização.' });
+    const ctx = auditCtx(req);
+    audit({
+      adminId: ctx.adminId, adminEmail: ctx.adminEmail,
+      action: 'manager_self_registration_submitted',
+      entityType: 'operator_profile', entityId: profile.id,
+      newValue: { changed_fields: Object.keys(plan.changes), status: 'pending_manual_review' },
+      ipAddress: ctx.ip,
+    });
+    return res.json({ success: true, data: ownManagerRegistrationView(updated) });
+  } catch {
+    return res.status(500).json({ success: false, error: 'Não foi possível salvar seu cadastro.' });
+  }
+});
 
 // GET /api/admin/my-operator-profile
 router.get('/', async (req: Request, res: Response) => {
