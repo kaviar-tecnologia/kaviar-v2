@@ -7,6 +7,7 @@ on:
       - 'backend/src/routes/admin-my-operator-profile.ts'
       - 'backend/src/routes/admin-payouts.ts'
       - 'backend/tests/manager-self-registration*.test.ts'
+      - 'backend/tests/manager-document-review-route.test.ts'
       - 'frontend-app/src/pages/admin/MyManagerRegistration.jsx'
       - 'frontend-app/src/pages/admin/MyContractPage.jsx'
       - 'frontend-app/src/pages/admin/ManagerHome.jsx'
@@ -48,7 +49,7 @@ jobs:
       - name: Typecheck backend
         run: cd backend && npx tsc --noEmit -p tsconfig.build.json
       - name: Test self-registration and contract safeguards
-        run: cd backend && npx vitest run tests/manager-self-registration.test.ts tests/manager-self-registration-routes.test.ts tests/manager-application-prefill.test.ts tests/territorial-manager-contract-v1_2.test.ts
+        run: cd backend && npx vitest run tests/manager-self-registration.test.ts tests/manager-self-registration-routes.test.ts tests/manager-document-review-route.test.ts tests/manager-application-prefill.test.ts tests/territorial-manager-contract-v1_2.test.ts
       - name: Install frontend dependencies
         run: cd frontend-app && npm ci
       - name: Build frontend
