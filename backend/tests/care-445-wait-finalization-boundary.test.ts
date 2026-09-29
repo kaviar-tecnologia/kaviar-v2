@@ -19,6 +19,25 @@ describe('CARE-445 — complete uses only the official economic settlement write
     expect(completion).not.toContain('WAIT_CHARGE_FAILED');
   });
 
+  it('requires a compare-and-set on completion even for rides without wait', () => {
+    const routeStart = source.indexOf("router.post('/:ride_id/complete'");
+    const routeEnd = source.indexOf('// 5.9 Passenger boarding', routeStart);
+    const route = source.slice(routeStart, routeEnd);
+    expect(routeStart).toBeGreaterThan(0);
+    expect(routeEnd).toBeGreaterThan(routeStart);
+    expect(route).not.toContain('tx.rides_v2.update({');
+    expect(route).toContain("status: 'in_progress'");
+    expect(route).toContain('if (completed.count !== 1)');
+  });
+
+  it('renders the driver wait notification from the persisted settlement, not a hard-coded rate', () => {
+    const routeStart = source.indexOf("router.post('/:ride_id/complete'");
+    const routeEnd = source.indexOf('// 5.9 Passenger boarding', routeStart);
+    const route = source.slice(routeStart, routeEnd);
+    expect(route).toContain('const waitCharge = _shadowWaitCents / 100;');
+    expect(route).not.toContain('waitMinutes * 0.50');
+  });
+
   it('does not proceed to wallet or commission on unknown or missing settlement', () => {
     expect(completion).toContain("error: 'PRICING_SETTLEMENT_UNCONFIRMED'");
     expect(completion).toContain('if (!settlement)');
