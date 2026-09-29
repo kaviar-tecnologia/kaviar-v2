@@ -43,7 +43,20 @@ const denied = (
   reasons: [...reasons, 'CARE_MUNICIPAL_SCOPE_NOT_VERIFIED', 'CARE_INSURANCE_SCOPE_NOT_VERIFIED'],
 });
 
-type ReadNeighborhood = Awaited<ReturnType<CareOperationalReadClient['neighborhoods']['findUnique']>>;
+type ReadNeighborhood = {
+  is_active: boolean;
+  is_verified: boolean;
+  verified_by: string | null;
+  verified_at: Date | null;
+  territory_id: string | null;
+  territory: {
+    is_active: boolean;
+    status: string;
+    coverage_status: string;
+    coverage_reviewed_by: string | null;
+    coverage_reviewed_at: Date | null;
+  } | null;
+} | null;
 
 /** Existing coverage review, not a new or inferred CARE regulatory approval. */
 function isReviewedActiveTerritory(value: ReadNeighborhood, now: Date): boolean {
@@ -137,21 +150,14 @@ export async function resolveCareOperationalEvidence(
       },
     } as const;
 
-    const [origin, driverHome] = await Promise.all([
-      db.neighborhoods.findUnique({
-        where: { id: ride.origin_neighborhood_id },
-        select,
-      }),
-      sameNeighborhood
-        ? db.neighborhoods.findUnique({
-            where: { id: ride.origin_neighborhood_id },
-            select,
-          })
-        : db.neighborhoods.findUnique({
-            where: { id: driver.neighborhood_id },
-            select,
-          }),
-    ]);
+    const origin = await db.neighborhoods.findUnique({
+      where: { id: ride.origin_neighborhood_id },
+      select,
+    });
+    const driverHome = sameNeighborhood ? origin : await db.neighborhoods.findUnique({
+      where: { id: driver.neighborhood_id },
+      select,
+    });
 
     if (!origin || !driverHome) return denied('CARE_TERRITORY_UNRESOLVED');
     if (!isReviewedActiveTerritory(origin, now) ||
