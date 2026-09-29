@@ -17,9 +17,11 @@ export type CareScopeEvidenceRejection =
   | 'CARE_SCOPE_PICKUP_GEOFENCE_UNVERIFIED'
   | 'CARE_SCOPE_DRIVER_OUTSIDE_TERRITORY'
   | 'CARE_SCOPE_MUNICIPAL_RECORD_MISSING'
+  | 'CARE_SCOPE_MUNICIPAL_RECORD_AMBIGUOUS'
   | 'CARE_SCOPE_MUNICIPAL_REVIEW_INVALID'
   | 'CARE_SCOPE_MUNICIPAL_AUTHORIZATION_MISSING'
   | 'CARE_SCOPE_INSURANCE_COVERAGE_MISSING'
+  | 'CARE_SCOPE_INSURANCE_COVERAGE_AMBIGUOUS'
   | 'CARE_SCOPE_INSURANCE_REVIEW_INVALID'
   | 'CARE_SCOPE_DRIVER_ENROLLMENT_MISSING'
   | 'CARE_SCOPE_POLICY_REFERENCE_MISMATCH'
@@ -286,7 +288,7 @@ export async function resolveVerifiedCareScopeEvidence(
         AND ng.geom IS NOT NULL
         AND ST_SRID(ng.geom) = 4326
         AND ST_IsValid(ng.geom)
-      LIMIT 1
+      LIMIT 2
     `;
     if (pickupCoverage.length !== 1 || pickupCoverage[0]?.covered !== true) {
       return fail('CARE_SCOPE_PICKUP_GEOFENCE_UNVERIFIED');
@@ -295,7 +297,9 @@ export async function resolveVerifiedCareScopeEvidence(
     const city = origin.city.trim();
     const state = territory.uf!.trim().toUpperCase();
 
-    const regulation = await db.municipal_regulations.findFirst({
+    // Never choose an arbitrary record when two active rules claim the same
+    // municipality and exact CARE modality. The registry must be unambiguous.
+    const regulations = await db.municipal_regulations.findMany({
       where: {
         city: { equals: city, mode: 'insensitive' },
         state: { equals: state, mode: 'insensitive' },
@@ -311,9 +315,12 @@ export async function resolveVerifiedCareScopeEvidence(
         care_scope_verified_by_admin_id: true,
         care_scope_document_url: true,
       },
+      take: 2,
     });
 
-    if (!regulation) return fail('CARE_SCOPE_MUNICIPAL_RECORD_MISSING');
+    if (regulations.length === 0) return fail('CARE_SCOPE_MUNICIPAL_RECORD_MISSING');
+    if (regulations.length !== 1) return fail('CARE_SCOPE_MUNICIPAL_RECORD_AMBIGUOUS');
+    const regulation = regulations[0];
     const municipalReviewValid =
       regulation.care_scope_verified === true &&
       pastOrNow(regulation.care_scope_verified_at, now) &&
@@ -359,7 +366,9 @@ export async function resolveVerifiedCareScopeEvidence(
       }
     }
 
-    const coverage = await db.operational_insurance_coverages.findFirst({
+    // More than one currently eligible policy for the exact scope cannot be
+    // selected by findFirst: fail closed until its official link is resolved.
+    const coverages = await db.operational_insurance_coverages.findMany({
       where: {
         territory_id: origin.territory_id,
         modality: mode,
@@ -382,9 +391,12 @@ export async function resolveVerifiedCareScopeEvidence(
         care_scope_verified_at: true,
         care_scope_verified_by_admin_id: true,
       },
+      take: 2,
     });
 
-    if (!coverage) return fail('CARE_SCOPE_INSURANCE_COVERAGE_MISSING');
+    if (coverages.length === 0) return fail('CARE_SCOPE_INSURANCE_COVERAGE_MISSING');
+    if (coverages.length !== 1) return fail('CARE_SCOPE_INSURANCE_COVERAGE_AMBIGUOUS');
+    const coverage = coverages[0];
     if (!coverage.provider_name.trim() || !coverage.policy_number.trim() ||
         !coverage.document_url?.trim() ||
         !pastOrNow(coverage.care_scope_verified_at, now) ||
