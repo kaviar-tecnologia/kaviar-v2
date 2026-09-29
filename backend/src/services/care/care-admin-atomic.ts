@@ -44,7 +44,8 @@ export function assertCareSnapshot(
 ): void {
   if (!(before.updated_at instanceof Date) ||
       !(locked.updated_at instanceof Date) ||
-      before.updated_at.getTime() !== locked.updated_at.getTime()) {
+      before.updated_at.getTime() !== locked.updated_at.getTime() ||
+      JSON.stringify(before) !== JSON.stringify(locked)) {
     throw new CareAdminConflict();
   }
 }
