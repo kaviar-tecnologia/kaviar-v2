@@ -228,7 +228,11 @@ router.patch('/municipal-regulations/:id', MUNICIPAL_CONFIG_ROLE, async (req: Re
       (payload.municipality_code !== undefined && (payload.municipality_code || null) !== existing.municipality_code) ||
       (payload.law_number !== undefined && (payload.law_number || null) !== existing.law_number) ||
       (payload.law_date !== undefined &&
-        (payload.law_date ? new Date(payload.law_date).toISOString().slice(0, 10) : null) !==
+        (payload.law_date
+          ? (Number.isNaN(new Date(payload.law_date).getTime())
+              ? '__INVALID_DATE__'
+              : new Date(payload.law_date).toISOString().slice(0, 10))
+          : null) !==
         (existing.law_date ? existing.law_date.toISOString().slice(0, 10) : null)) ||
       (payload.law_document_url !== undefined && (payload.law_document_url || null) !== existing.law_document_url) ||
       (payload.requires_city_approval !== undefined && payload.requires_city_approval !== existing.requires_city_approval) ||
