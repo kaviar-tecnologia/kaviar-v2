@@ -237,11 +237,20 @@ describe('CARE-445: refine/settle official writers are single-client transaction
     expect(sqlLog().some(sql => sql.trimStart().startsWith('UPDATE '))).toBe(false);
   });
 
-  it('no wait option keeps normal finalization unchanged for CAR/MOTO', async () => {
+  it('blocks a forgotten wait rate instead of silently closing a started wait at base fare', async () => {
     lockedRide = {
       ...lockedRide, wait_requested: true,
       wait_started_at: new Date('2026-09-29T12:00:00Z'),
-      wait_ended_at: new Date('2026-09-29T12:02:00Z'),
+      wait_ended_at: null,
+    };
+    await expect(settle(id)).rejects.toThrow('PRICING_WAIT_RATE_REQUIRED');
+    expect(sqlLog().at(-1)).toBe('ROLLBACK');
+    expect(sqlLog().some(sql => sql.trimStart().startsWith('UPDATE '))).toBe(false);
+  });
+
+  it('no wait option keeps normal finalization unchanged for CAR/MOTO', async () => {
+    lockedRide = {
+      ...lockedRide, wait_requested: false, wait_started_at: null, wait_ended_at: null,
     };
     const result = await settle(id);
     expect(result).toMatchObject({
