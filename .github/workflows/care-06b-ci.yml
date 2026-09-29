@@ -10,6 +10,7 @@ on:
       - 'backend/tests/care-445-refine-settle-atomicity.test.ts'
       - 'backend/tests/care-445-premium-adjustment.test.ts'
       - 'backend/tests/care-445-wait-finalization-boundary.test.ts'
+      - 'backend/tests/care-445-wait-timestamp-race.test.ts'
       - 'backend/tests/wait-charge-accounting.test.ts'
       - 'backend/tests/flat-fee-consistency.test.ts'
       - 'backend/src/services/official-quote-readiness.ts'
@@ -80,6 +81,7 @@ jobs:
           tests/care-445-refine-settle-atomicity.test.ts
           tests/care-445-premium-adjustment.test.ts
           tests/care-445-wait-finalization-boundary.test.ts
+          tests/care-445-wait-timestamp-race.test.ts
           tests/wait-charge-accounting.test.ts
           tests/flat-fee-consistency.test.ts
           tests/care-445-official-quote-readiness.test.ts
