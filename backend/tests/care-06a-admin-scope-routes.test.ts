@@ -345,7 +345,7 @@ describe('CARE-06A explicit driver enrollment link', () => {
       valid_from: new Date('2026-09-01T00:00:00.000Z'),
       valid_until: new Date('2026-12-31T00:00:00.000Z'),
       cancelled_at: null,
-      provider_reference: 'PROVIDER-001',
+      provider_reference: 'POL-001',
       operational_coverage_id: null,
       operational_coverage_linked_at: null,
       operational_coverage_linked_by_admin_id: null,
@@ -367,7 +367,7 @@ describe('CARE-06A explicit driver enrollment link', () => {
       valid_from: new Date('2026-09-01T00:00:00.000Z'),
       valid_until: new Date('2026-12-31T00:00:00.000Z'),
       cancelled_at: null,
-      provider_reference: 'PROVIDER-001',
+      provider_reference: 'POL-001',
       ...data,
     }));
 
@@ -380,5 +380,27 @@ describe('CARE-06A explicit driver enrollment link', () => {
     expect(data.operational_coverage_id).toBe('22222222-2222-4222-8222-222222222222');
     expect(data.operational_coverage_linked_by_admin_id).toBe('admin-care');
     expect(data.operational_coverage_linked_at).toBeInstanceOf(Date);
+  });
+
+  it('does not link a certificate to an unrelated operational policy', async () => {
+    prismaMock.driver_insurance_enrollments.findFirst.mockResolvedValue({
+      driver_id: 'driver-care',
+      vehicle_plate: 'ABC1D23',
+      status: 'ACTIVE',
+      cancelled_at: null,
+      provider_reference: 'OTHER-POLICY',
+      valid_from: new Date('2026-09-01T00:00:00.000Z'),
+      valid_until: new Date('2026-12-31T00:00:00.000Z'),
+    });
+    prismaMock.drivers.findUnique.mockResolvedValue({ vehicle_plate: 'ABC-1D23' });
+    prismaMock.operational_insurance_coverages.findUnique.mockResolvedValue(
+      careCoverage({ status: 'ACTIVE', care_scope_verified: true }),
+    );
+    const res = await request(driverInsuranceApp)
+      .post('/api/admin/drivers/driver-care/insurance/previlemos/11111111-1111-4111-8111-111111111111/operational-coverage')
+      .send({ coverage_id: '22222222-2222-4222-8222-222222222222' });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('CARE_POLICY_REFERENCE_MISMATCH');
+    expect(prismaMock.driver_insurance_enrollments.update).not.toHaveBeenCalled();
   });
 });
