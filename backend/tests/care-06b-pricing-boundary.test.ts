@@ -11,7 +11,7 @@ vi.mock('../src/services/google-directions.service', () => ({ getRouteDistance: 
 vi.mock('../src/services/territory-floor.service', () => ({ getFloorForRoute: floorMock }));
 vi.mock('../src/services/territory-resolver.service', () => ({ resolveTerritory: territoryMock }));
 
-import { quote } from '../src/services/pricing-engine';
+import { quote, refine, settle } from '../src/services/pricing-engine';
 import { CARE_UNAVAILABLE_CODE } from '../src/services/care/care-readiness-policy';
 
 const profile = {
@@ -103,6 +103,23 @@ describe('CARE-06B: official pricing writer containment without CAR/MOTO regress
       expect.stringContaining('service_category = $2'), ['CAR', 'CAR_NORMAL'],
     );
   });
+
+  it.each(['refine', 'settle'] as const)(
+    'blocks a persisted CARE ride in the official %s writer before settlement access',
+    async (stage) => {
+      queryMock.mockImplementation(async (sql: string) => {
+        if (sql.includes('SELECT ride_type, service_category, trip_details FROM rides_v2')) {
+          return { rows: [{ ride_type: 'care', service_category: 'CARE_ASSISTED', trip_details: null }] };
+        }
+        throw new Error('Unexpected economic read or write before CARE containment');
+      });
+      const run = stage === 'refine'
+        ? () => refine('ride-1', null, null)
+        : () => settle('ride-1');
+      await expect(run()).rejects.toMatchObject({ code: CARE_UNAVAILABLE_CODE });
+      expect(queryMock).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('rejects failed persisted-ride read instead of inventing an ordinary category', async () => {
     queryMock.mockRejectedValueOnce(new Error('read unavailable'));
