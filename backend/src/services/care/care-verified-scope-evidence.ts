@@ -11,6 +11,8 @@ export type CareScopeEvidenceRejection =
   | 'CARE_SCOPE_INPUT_INVALID'
   | 'CARE_SCOPE_RIDE_INVALID'
   | 'CARE_SCOPE_DRIVER_INVALID'
+  | 'CARE_SCOPE_OUTSIDE_FALLBACK_UNSUPPORTED'
+  | 'CARE_SCOPE_DRIVER_NEIGHBORHOOD_MISMATCH'
   | 'CARE_SCOPE_TERRITORY_UNVERIFIED'
   | 'CARE_SCOPE_PICKUP_GEOFENCE_UNVERIFIED'
   | 'CARE_SCOPE_DRIVER_OUTSIDE_TERRITORY'
@@ -150,6 +152,10 @@ export async function resolveVerifiedCareScopeEvidence(
           ride_type: true,
           service_category: true,
           origin_neighborhood_id: true,
+          origin_community_id: true,
+          is_homebound: true,
+          outside_fallback_allowed: true,
+          outside_fallback_consented_at: true,
           origin_lat: true,
           origin_lng: true,
         },
@@ -160,7 +166,7 @@ export async function resolveVerifiedCareScopeEvidence(
       }),
       db.drivers.findUnique({
         where: { id: driverId },
-        select: { vehicle_plate: true, neighborhood_id: true },
+        select: { vehicle_plate: true, neighborhood_id: true, community_id: true },
       }),
     ]);
 
@@ -171,9 +177,25 @@ export async function resolveVerifiedCareScopeEvidence(
       return fail('CARE_SCOPE_RIDE_INVALID');
     }
 
+    // CARE-05A/05B disallow the conventional homebound and outside-territory
+    // fallback. A later branded proof must not silently broaden that boundary.
+    if (ride.is_homebound === true || ride.outside_fallback_allowed === true ||
+        ride.outside_fallback_consented_at != null) {
+      return fail('CARE_SCOPE_OUTSIDE_FALLBACK_UNSUPPORTED');
+    }
+
     const vehiclePlate = normalizedPlate(driver?.vehicle_plate);
     if (!driver || !vehiclePlate || !driver.neighborhood_id) {
       return fail('CARE_SCOPE_DRIVER_INVALID');
+    }
+
+    // Preserve CARE-05A's locality prerequisite: a reviewed territory alone
+    // does not authorize an unrelated neighborhood/community candidate.
+    const sameNeighborhood = ride.origin_neighborhood_id === driver.neighborhood_id;
+    const sameCommunity = !!ride.origin_community_id &&
+      ride.origin_community_id === driver.community_id;
+    if (!sameNeighborhood && !sameCommunity) {
+      return fail('CARE_SCOPE_DRIVER_NEIGHBORHOOD_MISMATCH');
     }
 
     const neighborhoodSelect = {
@@ -188,6 +210,7 @@ export async function resolveVerifiedCareScopeEvidence(
         select: {
           id: true,
           uf: true,
+          city_name: true,
           is_active: true,
           status: true,
           coverage_status: true,
@@ -222,12 +245,20 @@ export async function resolveVerifiedCareScopeEvidence(
       !!territory.coverage_reviewed_by?.trim() &&
       pastOrNow(territory.coverage_reviewed_at, now) &&
       !!origin.city?.trim() &&
-      !!territory.uf?.trim();
+      !!territory.uf?.trim() &&
+      // The municipality must agree between the existing neighborhood and
+      // operational territory records; a stale neighborhood label cannot
+      // select a different city's regulation by itself.
+      !!territory.city_name?.trim() &&
+      origin.city.trim().toLocaleLowerCase('pt-BR') ===
+        territory.city_name.trim().toLocaleLowerCase('pt-BR');
 
     if (!territoryReviewed || !origin || !territory || !origin.territory_id) {
       return fail('CARE_SCOPE_TERRITORY_UNVERIFIED');
     }
     if (!driverHome || driverHome.territory_id !== origin.territory_id ||
+        driverHome.city?.trim().toLocaleLowerCase('pt-BR') !==
+          origin.city.trim().toLocaleLowerCase('pt-BR') ||
         driverHome.is_active !== true || driverHome.is_verified !== true ||
         !driverHome.verified_by?.trim() || !pastOrNow(driverHome.verified_at, now) ||
         driverHome.territory?.is_active !== true || driverHome.territory.status !== 'active' ||
