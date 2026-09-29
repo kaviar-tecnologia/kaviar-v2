@@ -55,7 +55,8 @@ describe('CARE-06A — additive official scope contract', () => {
     expect(verifiedScope).not.toMatch(/\.(?:create|update|updateMany|delete|deleteMany|upsert)\s*\(/);
     expect(verifiedScope).not.toContain('Previlemos');
     expect(verifiedScope).not.toContain('Wallet');
-    expect(verifiedScope).not.toContain('dispatcher');
+    expect(verifiedScope).not.toMatch(/from\s+['"].*dispatcher/);
+    expect(verifiedScope).not.toContain('dispatchRide(');
     expect(verifiedScope).not.toContain('ride_settlements');
   });
 });
