@@ -131,6 +131,13 @@ jobs:
             )
           ORDER BY table_name, column_name;
           SQL
+      - name: Prove CARE administrative locks and audit rollback in disposable PostgreSQL
+        if: github.event_name == 'pull_request'
+        working-directory: backend
+        env:
+          CARE_ADMIN_ATOMIC_INTEGRATION: '1'
+        run: npx vitest run tests/care-06a-admin-atomic.integration.test.ts
+
       - name: Remove temporary base schema
         if: always()
         working-directory: backend
