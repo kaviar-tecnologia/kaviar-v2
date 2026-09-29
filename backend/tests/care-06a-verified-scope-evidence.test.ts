@@ -109,8 +109,13 @@ function mockDb(s = fixture()) {
     neighborhood,
     regulation: vi.fn().mockResolvedValue([s.regulation]),
     authorization: vi.fn().mockResolvedValue(s.authorization),
-    coverage: vi.fn().mockResolvedValue([s.coverage]),
-    enrollment: vi.fn().mockResolvedValue(s.enrollment),
+    coverage: vi.fn().mockResolvedValue({ id: s.coverage.id }),
+    enrollment: vi.fn().mockResolvedValue([{
+      ...s.enrollment,
+      vehicle_plate: s.driver.vehicle_plate,
+      operational_coverage_id: s.coverage.id,
+      operational_coverage: s.coverage,
+    }]),
     geofence: vi.fn().mockResolvedValue([{ covered: true }]),
   };
   const db = {
@@ -120,8 +125,8 @@ function mockDb(s = fixture()) {
     neighborhoods: { findUnique: calls.neighborhood },
     municipal_regulations: { findMany: calls.regulation },
     municipal_authorizations: { findFirst: calls.authorization },
-    operational_insurance_coverages: { findMany: calls.coverage },
-    driver_insurance_enrollments: { findFirst: calls.enrollment },
+    operational_insurance_coverages: { findFirst: calls.coverage },
+    driver_insurance_enrollments: { findMany: calls.enrollment },
     $queryRaw: calls.geofence,
   } as unknown as CareScopeEvidenceClient;
   return { db, calls };
@@ -159,20 +164,26 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
       where: expect.objectContaining({ service_modality: 'CARE_ASSISTED' }),
       take: 2,
     }));
-    expect(calls.coverage).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({
-        modality: 'CARE_ASSISTED',
-        territory_id: 'territory-1',
-        care_scope_verified: true,
-      }),
-      take: 2,
-    }));
     expect(calls.enrollment).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
         driver_id: 'driver-care',
-        operational_coverage_id: 'coverage-care',
+        operational_coverage_id: { not: null },
+        operational_coverage: {
+          is: expect.objectContaining({
+            modality: 'CARE_ASSISTED',
+            territory_id: 'territory-1',
+            coverage_type: 'APP',
+            status: 'ACTIVE',
+            care_scope_verified: true,
+          }),
+        },
       }),
+      select: expect.objectContaining({
+        operational_coverage: { select: expect.objectContaining({ policy_number: true }) },
+      }),
+      take: 2,
     }));
+    expect(calls.coverage).not.toHaveBeenCalled();
     expect(calls.geofence).toHaveBeenCalledTimes(1);
     const geofenceSql = (calls.geofence.mock.calls[0][0] as TemplateStringsArray).join(' ');
     expect(geofenceSql).toContain('ST_Covers(');
@@ -180,22 +191,48 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
     expect(geofenceSql).not.toContain('ST_DWithin');
   });
 
-  it('fails closed when more than one active municipal or insurance record claims the same exact CARE scope', async () => {
-    const a = mockDb();
-    a.calls.regulation.mockResolvedValue([
+  it('fails closed when multiple active municipal records claim the same exact CARE scope', async () => {
+    const { db, calls } = mockDb();
+    calls.regulation.mockResolvedValue([
       fixture().regulation,
       { ...fixture().regulation, id: 'reg-conflicting', care_scope_document_url: 's3://private/other.pdf' },
     ]);
-    expect((await resolve(a.db)).reasons).toContain('CARE_SCOPE_MUNICIPAL_RECORD_AMBIGUOUS');
-    expect(a.calls.coverage).not.toHaveBeenCalled();
+    expect((await resolve(db)).reasons).toContain('CARE_SCOPE_MUNICIPAL_RECORD_AMBIGUOUS');
+    expect(calls.enrollment).not.toHaveBeenCalled();
+  });
 
-    const b = mockDb();
-    b.calls.coverage.mockResolvedValue([
-      fixture().coverage,
-      { ...fixture().coverage, id: 'coverage-conflicting', policy_number: 'OTHER-POLICY' },
+  it('accepts an exact driver policy while a different driver has another active policy in the same territory', async () => {
+    const { db, calls } = mockDb();
+    // Another valid territory policy does not appear in this driver's linked enrollment query.
+    calls.coverage.mockResolvedValue({ id: 'other-driver-coverage' });
+    const result = await resolve(db);
+    expect(result.verified).toBe(true);
+    if (!result.verified) throw new Error('expected verified driver-specific coverage');
+    expect(result.evidence.insurance.coverageId).toBe('coverage-care');
+    expect(calls.coverage).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on two active, reviewed and linked enrollments for the same driver and CARE scope', async () => {
+    const s = fixture();
+    const { db, calls } = mockDb(s);
+    const enrollment = {
+      ...s.enrollment,
+      vehicle_plate: s.driver.vehicle_plate,
+      operational_coverage_id: s.coverage.id,
+      operational_coverage: s.coverage,
+    };
+    calls.enrollment.mockResolvedValue([
+      enrollment,
+      {
+        ...enrollment,
+        id: 'other-enrollment',
+        provider_reference: 'POL-C-002',
+        operational_coverage_id: 'other-coverage',
+        operational_coverage: { ...s.coverage, id: 'other-coverage', policy_number: 'POL-C-002' },
+      },
     ]);
-    expect((await resolve(b.db)).reasons).toContain('CARE_SCOPE_INSURANCE_COVERAGE_AMBIGUOUS');
-    expect(b.calls.enrollment).not.toHaveBeenCalled();
+    expect((await resolve(db)).reasons).toContain('CARE_SCOPE_DRIVER_ENROLLMENT_AMBIGUOUS');
+    expect(calls.coverage).not.toHaveBeenCalled();
   });
 
   it('does not treat a generic CAR record as CARE evidence', async () => {
@@ -241,20 +278,25 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
 
   it('requires an exact reviewed CARE policy and a driver enrollment explicitly linked to it', async () => {
     const noCoverage = mockDb();
-    noCoverage.calls.coverage.mockResolvedValue([]);
+    noCoverage.calls.enrollment.mockResolvedValue([]);
+    noCoverage.calls.coverage.mockResolvedValue(null);
     expect((await resolve(noCoverage.db)).reasons).toContain('CARE_SCOPE_INSURANCE_COVERAGE_MISSING');
 
     const noEnrollment = mockDb();
-    noEnrollment.calls.enrollment.mockResolvedValue(null);
+    noEnrollment.calls.enrollment.mockResolvedValue([]);
     expect((await resolve(noEnrollment.db)).reasons).toContain('CARE_SCOPE_DRIVER_ENROLLMENT_MISSING');
   });
 
   it('rejects enrollment whose insurance reference belongs to a different policy', async () => {
     const { db, calls } = mockDb();
-    calls.enrollment.mockResolvedValue({
-      ...fixture().enrollment,
+    const s = fixture();
+    calls.enrollment.mockResolvedValue([{
+      ...s.enrollment,
+      vehicle_plate: s.driver.vehicle_plate,
+      operational_coverage_id: s.coverage.id,
+      operational_coverage: s.coverage,
       provider_reference: 'OTHER-POLICY',
-    });
+    }]);
     const r = await resolve(db);
     expect(r.verified).toBe(false);
     expect(r.reasons).toContain('CARE_SCOPE_POLICY_REFERENCE_MISMATCH');
@@ -262,11 +304,15 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
 
     it('rejects enrollment not explicitly linked/reviewed by an admin', async () => {
     const { db, calls } = mockDb();
-    calls.enrollment.mockResolvedValue({
-      ...fixture().enrollment,
+    const s = fixture();
+    calls.enrollment.mockResolvedValue([{
+      ...s.enrollment,
+      vehicle_plate: s.driver.vehicle_plate,
+      operational_coverage_id: s.coverage.id,
+      operational_coverage: s.coverage,
       operational_coverage_linked_at: null,
       operational_coverage_linked_by_admin_id: null,
-    });
+    }]);
     expect((await resolve(db)).reasons).toContain('CARE_SCOPE_DRIVER_ENROLLMENT_MISSING');
   });
 
@@ -361,9 +407,15 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
 
   it('fails closed on stale review, expired evidence, malformed identity and DB errors', async () => {
     const stale = mockDb();
-    stale.calls.coverage.mockResolvedValue([{
-      ...fixture().coverage,
-      care_scope_verified_at: new Date(NOW.getTime() + 1000),
+    const staleFixture = fixture();
+    stale.calls.enrollment.mockResolvedValue([{
+      ...staleFixture.enrollment,
+      vehicle_plate: staleFixture.driver.vehicle_plate,
+      operational_coverage_id: staleFixture.coverage.id,
+      operational_coverage: {
+        ...staleFixture.coverage,
+        care_scope_verified_at: new Date(NOW.getTime() + 1000),
+      },
     }]);
     expect((await resolve(stale.db)).reasons).toContain('CARE_SCOPE_INSURANCE_REVIEW_INVALID');
 
