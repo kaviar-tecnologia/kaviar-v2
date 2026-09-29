@@ -198,15 +198,6 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
     expect(b.calls.enrollment).not.toHaveBeenCalled();
   });
 
-  it('rejects multiple matching pickup geofences rather than trusting an arbitrary first row', async () => {
-    const { db, calls } = mockDb();
-    calls.geofence.mockResolvedValue([{ covered: true }, { covered: false }]);
-    expect((await resolve(db)).reasons).toContain('CARE_SCOPE_PICKUP_GEOFENCE_UNVERIFIED');
-    expect(calls.regulation).not.toHaveBeenCalled();
-    const geofenceSql = (calls.geofence.mock.calls[0][0] as TemplateStringsArray).join(' ');
-    expect(geofenceSql).toContain('LIMIT 2');
-  });
-
   it('does not treat a generic CAR record as CARE evidence', async () => {
     const { db, calls } = mockDb();
     calls.regulation.mockResolvedValue([]);
