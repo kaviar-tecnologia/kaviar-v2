@@ -366,7 +366,7 @@ router.post('/', authenticatePassenger, async (req: Request, res: Response) => {
           : null,
         service_category || 'CAR_NORMAL'
       );
-      const rawCents = quoteResult?.quoted_price * 100;
+      const rawCents = quoteResult ? quoteResult.quoted_price * 100 : Number.NaN;
       if (!quoteResult || !Number.isFinite(rawCents) || rawCents <= 0 ||
           !Number.isSafeInteger(Math.round(rawCents)) ||
           Math.abs(rawCents - Math.round(rawCents)) > 1e-7) {
