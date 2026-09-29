@@ -407,17 +407,26 @@ export default function CrmPage() {
                 <Typography sx={{ fontSize: 11, color: TEXT_SECONDARY }}>Bairros</Typography>
                 <Typography sx={{ fontSize: 14, fontWeight: 700, color: TEXT_PRIMARY }}>{territoryInfo.neighborhoods?.length || 0}</Typography>
               </Box>
+              {territoryInfo.territory_status !== 'active' && (
+                <Chip label="Território em preparação" size="small" sx={{ bgcolor: 'rgba(212,175,55,0.12)', color: GOLD, border: '1px solid rgba(212,175,55,0.3)' }} />
+              )}
             </Box>
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1.5 }}>
               {territoryInfo.neighborhoods?.map((n, i) => (
                 <Chip key={i} label={n} size="small" sx={{ fontSize: 10, bgcolor: 'rgba(212,175,55,0.12)', color: TEXT_PRIMARY, border: '1px solid rgba(212,175,55,0.25)' }} />
               ))}
             </Box>
-            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-              <Chip label="Piso urbano R$20" size="small" sx={{ fontSize: 10, bgcolor: 'rgba(16,185,129,0.12)', color: '#10B981', border: '1px solid rgba(16,185,129,0.3)' }} />
-              <Chip label="Motorista fica com 82%" size="small" sx={{ fontSize: 10, bgcolor: 'rgba(99,102,241,0.12)', color: '#818CF8', border: '1px solid rgba(99,102,241,0.3)' }} />
-            </Box>
-            <Typography sx={{ fontSize: 10, color: TEXT_SECONDARY, mt: 1 }}>Você vê e recebe apenas sobre corridas originadas nesta área.</Typography>
+            {territoryInfo.territory_status === 'active' && territoryInfo.territory_active && (
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                <Chip label="Piso urbano R$20" size="small" sx={{ fontSize: 10, bgcolor: 'rgba(16,185,129,0.12)', color: '#10B981', border: '1px solid rgba(16,185,129,0.3)' }} />
+                <Chip label="Motorista fica com 82%" size="small" sx={{ fontSize: 10, bgcolor: 'rgba(99,102,241,0.12)', color: '#818CF8', border: '1px solid rgba(99,102,241,0.3)' }} />
+              </Box>
+            )}
+            <Typography sx={{ fontSize: 10, color: TEXT_SECONDARY, mt: 1 }}>
+              {territoryInfo.territory_status === 'active' && territoryInfo.territory_active
+                ? 'Área territorial vinculada. Repasse depende de elegibilidade contratual e financeira.'
+                : 'Área em preparação. A exibição dos bairros não ativa operação, contrato nem repasses.'}
+            </Typography>
           </CardContent>
         </Card>
       )}
