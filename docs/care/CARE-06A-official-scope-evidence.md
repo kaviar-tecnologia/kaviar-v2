@@ -7,7 +7,9 @@ representada por um boolean solto sem origem. A entrega evolui, de forma
 **aditiva**, as fontes oficiais já existentes de regulação municipal e seguro.
 
 Não cria segundo dispatcher, cadastro regulatório paralelo, apólice paralela,
-wallet, ledger, motor de preço ou endpoint CARE. O CARE-04A continua
+wallet, ledger ou motor de preço. As ações administrativas adicionadas ficam
+nos módulos oficiais já existentes de regulação e seguro; não existe API pública
+CARE nem endpoint de liberação. O CARE-04A continua
 incondicional e nenhuma corrida CARE é liberada por esta PR.
 
 ## Regulação municipal oficial
@@ -48,9 +50,11 @@ Um registro CARE `ACTIVE` exige território específico, documento de apólice/
 endosso e revisão administrativa. Cobertura genérica `CAR_PASSENGER`/APP,
 `notes`, texto livre ou simples status `ACTIVE` não satisfazem o gate.
 
-`driver_insurance_enrollments` recebe `operational_coverage_id`, ligando o
-motorista/placa à cobertura operacional exata. Assim, uma inscrição genérica no
-provedor não pode ser promovida automaticamente para CARE.
+`driver_insurance_enrollments` recebe `operational_coverage_id` e a proveniência
+`operational_coverage_linked_at` / `operational_coverage_linked_by_admin_id`,
+ligando explicitamente motorista/placa à cobertura operacional exata. Assim,
+uma inscrição genérica no provedor não pode ser promovida automaticamente para
+CARE e um vínculo sem revisor identificado continua inválido.
 
 ## Evidência tipada e vinculada à corrida
 
@@ -64,11 +68,13 @@ oficiais existentes. Um resultado positivo contém, em um único bundle:
 - cobertura, apólice/endosso, documento, vigência e revisão;
 - enrollment do motorista ligado à cobertura exata.
 
-O resultado é tipado como `VerifiedCareScopeEvidence`. O adaptador
+O resultado é tipado como `VerifiedCareScopeEvidence` e carrega uma marca de
+proveniência em runtime emitida somente pelo próprio resolver. O adaptador
 `evaluateCareEligibilityFromDb` deixa de aceitar
 `{ municipalAuthorized: true, territoryEligible: true,
-insuranceConfirmedForMode: true }` construído livremente e exige esse bundle.
-Também revalida ride, driver, modo, placa e instante da evidência.
+insuranceConfirmedForMode: true }` ou objeto plano equivalente construído
+livremente e exige o bundle efetivamente emitido pelo resolver. Também revalida
+ride, driver, modo, placa e instante da evidência.
 
 ## Limites que permanecem
 
