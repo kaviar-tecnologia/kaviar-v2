@@ -20,6 +20,7 @@ export type CareScopeEvidenceRejection =
   | 'CARE_SCOPE_INSURANCE_COVERAGE_MISSING'
   | 'CARE_SCOPE_INSURANCE_REVIEW_INVALID'
   | 'CARE_SCOPE_DRIVER_ENROLLMENT_MISSING'
+  | 'CARE_SCOPE_POLICY_REFERENCE_MISMATCH'
   | 'CARE_SCOPE_LOOKUP_FAILED';
 
 export type CareScopeEvidenceClient = Pick<
@@ -331,6 +332,7 @@ export async function resolveVerifiedCareScopeEvidence(
       where: {
         territory_id: origin.territory_id,
         modality: mode,
+        coverage_type: 'APP',
         status: 'ACTIVE',
         valid_from: { lte: today },
         valid_until: { gte: today },
@@ -391,6 +393,14 @@ export async function resolveVerifiedCareScopeEvidence(
         enrollment.valid_until.getTime() > coverage.valid_until.getTime() ||
         !validOnCivilDay(enrollment.valid_until, today)) {
       return fail('CARE_SCOPE_DRIVER_ENROLLMENT_MISSING');
+    }
+    // Previlemos's provider_reference is NumSeguro. A free-text policy name
+    // or a manually linked, different certificate cannot prove the same risk.
+    // For distinct master/certificate numbers, deny until a separately
+    // reviewed structured equivalence exists in the official insurance source.
+    if (coverage.policy_number.trim().toUpperCase() !==
+        enrollment.provider_reference.trim().toUpperCase()) {
+      return fail('CARE_SCOPE_POLICY_REFERENCE_MISMATCH');
     }
 
     const evidence = {
