@@ -520,3 +520,51 @@ describe('CARE-06A administrative transactional conflict and audit boundaries', 
     expect(prismaMock.operational_insurance_coverages.findUnique).not.toHaveBeenCalled();
   });
 });
+
+describe('CARE-06A material revocation cannot retain stale approval', () => {
+  it('clears the municipal review when a reviewed CARE regulation is deactivated', async () => {
+    prismaMock.municipal_regulations.findUnique.mockResolvedValue(careRegulation({
+      is_active: true, care_scope_verified: true,
+    }));
+    prismaMock.municipal_regulations.update.mockImplementation(async ({ data }: any) =>
+      careRegulation({ is_active: true, care_scope_verified: true, ...data }));
+    const response = await request(municipalApp)
+      .patch('/api/admin/municipal-regulations/reg-care')
+      .send({ is_active: false });
+    expect(response.status).toBe(200);
+    const data = prismaMock.municipal_regulations.update.mock.calls[0][0].data;
+    expect(data.is_active).toBe(false);
+    expect(data.care_scope_verified).toBe(false);
+    expect(prismaMock.$executeRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it('suspends and invalidates a reviewed CARE policy when coverage amounts change', async () => {
+    prismaMock.operational_insurance_coverages.findUnique.mockResolvedValue(careCoverage({
+      status: 'ACTIVE', care_scope_verified: true,
+    }));
+    prismaMock.operational_insurance_coverages.update.mockImplementation(async ({ data }: any) =>
+      careCoverage({ status: 'ACTIVE', care_scope_verified: true, ...data }));
+    const response = await request(coverageApp)
+      .patch('/api/admin/insurance-coverages/coverage-care')
+      .send({ coverage_amount_medical: 5000 });
+    expect(response.status).toBe(200);
+    const data = prismaMock.operational_insurance_coverages.update.mock.calls[0][0].data;
+    expect(data.care_scope_verified).toBe(false);
+    expect(data.status).toBe('SUSPENDED');
+    expect(prismaMock.$executeRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it('revokes verified coverage on suspension so reactivation needs a fresh review', async () => {
+    prismaMock.operational_insurance_coverages.findUnique.mockResolvedValue(careCoverage({
+      status: 'ACTIVE', care_scope_verified: true,
+    }));
+    prismaMock.operational_insurance_coverages.update.mockImplementation(async ({ data }: any) =>
+      careCoverage({ status: 'ACTIVE', care_scope_verified: true, ...data }));
+    const response = await request(coverageApp)
+      .patch('/api/admin/insurance-coverages/coverage-care')
+      .send({ status: 'SUSPENDED' });
+    expect(response.status).toBe(200);
+    expect(prismaMock.operational_insurance_coverages.update.mock.calls[0][0].data.care_scope_verified)
+      .toBe(false);
+  });
+});
