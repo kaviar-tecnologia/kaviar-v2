@@ -217,7 +217,6 @@ router.post(
         ]);
         if (!enrollment || !driver) throw new CareAdminConflict('INSURANCE_ENROLLMENT_CHANGED');
 
-        let coverage: Awaited<ReturnType<typeof tx.operational_insurance_coverages.findUnique>> = null;
         if (body.coverage_id) {
           // Unlinking must remain possible after expiry/revocation/plate change.
           // Positive linking has stronger requirements, re-read under locks.
@@ -237,7 +236,7 @@ router.post(
             },
           });
           await lockCareAdminRow(tx, 'coverage', body.coverage_id);
-          coverage = await tx.operational_insurance_coverages.findUnique({
+          const coverage = await tx.operational_insurance_coverages.findUnique({
             where: { id: body.coverage_id },
           });
           const now = new Date();
