@@ -293,6 +293,7 @@ export default function ManagerHome() {
             { Icon: Description, title: 'Tabela de Preços', desc: 'Pisos mínimos e propostas', to: '/admin/manager-territory-floors' },
             { Icon: Star, title: 'Reputação', desc: 'Avaliações dos motoristas', to: '/admin/manager-reputation' },
             { Icon: Pets, title: 'KAVIAR Pet', desc: 'Pedidos Pet assistidos', to: '/admin/private-rides' },
+            { Icon: PersonAdd, title: 'Meu Cadastro', desc: 'Informe CPF e endereço para a minuta v1.2', to: '/admin/meu-cadastro' },
             { Icon: Description, title: 'Meu Contrato', desc: 'Contrato v1.2 e ativação', to: '/admin/meu-contrato' },
             { Icon: Description, title: 'Materiais do Gestor', desc: 'Proposta, piloto pré-ativação e FAQ', to: '/admin/comercial-gestor' },
             { Icon: AddBusiness, title: 'CRM KAVIAR', desc: 'Leads, prospecção e comércios locais', to: '/admin/crm' },

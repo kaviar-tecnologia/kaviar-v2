@@ -106,6 +106,7 @@ export default function MyContractPage() {
       <Box sx={{ minHeight: '100vh', bgcolor: '#FAFAF8', pt: 2, pb: 6 }}>
         <Box sx={{ maxWidth: 720, mx: 'auto', px: 2 }}>
           <Button component={Link} to="/admin" startIcon={<ArrowBack />} size="small" sx={{ color: '#6B7280', mb: 2 }}>Voltar ao painel</Button>
+          <Button component={Link} to="/admin/meu-cadastro" size="small" sx={{ color: GOLD, mb: 2, ml: 1 }}>Completar meu cadastro</Button>
 
           <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>
             <span style={{ color: GOLD }}>📋</span> Meu Contrato — Gestor Territorial
