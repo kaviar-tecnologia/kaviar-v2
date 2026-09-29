@@ -54,7 +54,9 @@ describe('CARE-06A — additive official scope contract', () => {
     expect(verifiedScope).toContain('isVerifiedCareScopeEvidence');
     expect(verifiedScope).toContain("source: 'municipal_regulations'");
     expect(verifiedScope).toContain("source: 'operational_insurance_coverages'");
-    expect(verifiedScope).toContain('operational_coverage_id: coverage.id');
+    expect(verifiedScope).toContain('operational_coverage: { is: coverageScope }');
+    expect(verifiedScope).toContain('enrollment.operational_coverage_id !== coverage.id');
+    expect(verifiedScope).toContain('CARE_SCOPE_DRIVER_ENROLLMENT_AMBIGUOUS');
   });
 
   it('keeps the resolver read-only and does not call provider, wallet, dispatcher or settlement code', () => {
