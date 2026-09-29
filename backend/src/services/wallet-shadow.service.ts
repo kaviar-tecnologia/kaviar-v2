@@ -76,7 +76,13 @@ export async function shadowCalculate(input: ShadowInput): Promise<void> {
     // Previously read from platform_fee_configs; now derives from PLATFORM_FEE_PERCENT
     // to guarantee shadow results match real settlement values.
     const feePercent = PLATFORM_FEE_PERCENT;
-    const feeAmountCents = Math.round(finalPriceCents * feePercent / 100);
+    // The final total includes wait; the 18% fee excludes the confirmed wait.
+    const feeBaseCents = finalPriceCents - waitChargeCents;
+    if (![finalPriceCents, waitChargeCents, feeBaseCents].every(Number.isSafeInteger) ||
+        waitChargeCents < 0 || feeBaseCents <= 0) {
+      throw new Error('SHADOW_WAIT_FEE_BASE_INVALID');
+    }
+    const feeAmountCents = Math.round(feeBaseCents * feePercent / 100);
 
     // Single query: resolve territory, assignment, and finance rules
     const ctx = await pool.query(
