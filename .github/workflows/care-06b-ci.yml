@@ -12,6 +12,7 @@ on:
       - 'backend/tests/care-445-create-dispatch-gate.test.ts'
       - 'backend/tests/care-445-scheduled-quote-gate.test.ts'
       - 'backend/tests/dispatcher-attempt-windows.test.ts'
+      - 'backend/tests/rides-v2-outside-fallback-consent.test.ts'
       - 'backend/src/routes/rides-v2.ts'
       - 'backend/src/services/dispatcher.service.ts'
       - 'backend/src/jobs/scheduled-dispatch.job.ts'
@@ -75,6 +76,7 @@ jobs:
           tests/care-445-create-dispatch-gate.test.ts
           tests/care-445-scheduled-quote-gate.test.ts
           tests/dispatcher-attempt-windows.test.ts
+          tests/rides-v2-outside-fallback-consent.test.ts
           tests/care-05b-fare-parity.test.ts
           tests/care-03-eligibility.test.ts
           tests/care-04-readiness-policy.test.ts
