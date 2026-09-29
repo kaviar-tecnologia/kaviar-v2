@@ -85,13 +85,13 @@ describe('CARE-445: refine/settle official writers are single-client transaction
   it('refine refuses mutation if a competing refine or settle already committed before the lock', async () => {
     snapshot.refined_at = new Date();
     await refine(id, 'n-a', 'Origin');
-    expect(sqlLog().some(sql => sql.includes('UPDATE'))).toBe(false);
+    expect(sqlLog().some(sql => sql.trimStart().startsWith('UPDATE '))).toBe(false);
     expect(sqlLog().at(-1)).toBe('COMMIT');
     snapshot.refined_at = null;
     snapshot.settled_at = new Date();
     mocks.txQuery.mockClear();
     await refine(id, 'n-a', 'Origin');
-    expect(sqlLog().some(sql => sql.includes('UPDATE'))).toBe(false);
+    expect(sqlLog().some(sql => sql.trimStart().startsWith('UPDATE '))).toBe(false);
   });
 
   it('refine rejects persisted CARE under the lock, not merely at preflight', async () => {
@@ -139,7 +139,7 @@ describe('CARE-445: refine/settle official writers are single-client transaction
     snapshot.credit_match_type = 'LOCAL';
     const result = await settle(id);
     expect(result).toMatchObject({ fee_percent: 15, fee_amount: 4.69, driver_earnings: 26.55 });
-    expect(sqlLog().some(sql => sql.includes('UPDATE'))).toBe(false);
+    expect(sqlLog().some(sql => sql.trimStart().startsWith('UPDATE '))).toBe(false);
   });
 
   it('refuses missing ride, zero-row economic update and inconsistent locked snapshot', async () => {
