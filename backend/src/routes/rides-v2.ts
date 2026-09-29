@@ -1196,16 +1196,37 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
     if (ride.status !== 'in_progress') {
       return res.status(400).json({ error: 'Operação não permitida no estado atual da corrida' });
     }
+    // A started wait must end before completion; otherwise the final economic
+    // amount is unknown. The conditional update below also closes the race.
+    if (ride.wait_requested && Boolean(ride.wait_started_at) !== Boolean(ride.wait_ended_at)) {
+      return res.status(409).json({ error: 'WAIT_COMPLETION_CONFLICT' });
+    }
 
     await prisma.$transaction(async (tx) => {
-      await tx.rides_v2.update({
-        where: { id: ride_id },
-        data: {
-          status: 'completed',
-          completed_at: new Date(),
-          updated_at: new Date()
+      const completionData = {
+        status: 'completed' as const,
+        completed_at: new Date(),
+        updated_at: new Date(),
+      };
+      if (ride.wait_requested) {
+        const completed = await tx.rides_v2.updateMany({
+          where: {
+            id: ride_id, driver_id: driverId, status: 'in_progress', wait_requested: true,
+            OR: [
+              { wait_started_at: null, wait_ended_at: null },
+              { wait_started_at: { not: null }, wait_ended_at: { not: null } },
+            ],
+          },
+          data: completionData,
+        });
+        if (completed.count !== 1) {
+          throw Object.assign(new Error('WAIT_COMPLETION_CONFLICT'), {
+            code: 'WAIT_COMPLETION_CONFLICT',
+          });
         }
-      });
+      } else {
+        await tx.rides_v2.update({ where: { id: ride_id }, data: completionData });
+      }
 
       // Liberar motorista
       await tx.driver_status.update({
@@ -1437,6 +1458,9 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
     res.json({ success: true, credit: creditResult });
   } catch (error: any) {
     console.error('[RIDE_COMPLETE_ERROR]', error);
+    if (error?.code === 'WAIT_COMPLETION_CONFLICT') {
+      return res.status(409).json({ error: 'WAIT_COMPLETION_CONFLICT' });
+    }
     res.status(500).json({ error: 'Erro interno. Tente novamente.' });
   }
 });
