@@ -35,7 +35,7 @@ const sqlLog = () => mocks.txQuery.mock.calls.map(([sql]) => String(sql));
 beforeEach(() => {
   vi.clearAllMocks();
   snapshot = base();
-  lockedRide = { ...normal };
+  lockedRide = { ...normal, locked_price: '31.24' };
   mocks.connect.mockResolvedValue({ query: mocks.txQuery, release: mocks.release });
   mocks.query.mockImplementation(async (sql: string) => {
     if (sql.includes('SELECT ride_type, service_category, trip_details FROM rides_v2')) return { rows: [normal] };
@@ -89,6 +89,7 @@ describe('CARE-445: refine/settle official writers are single-client transaction
     expect(sqlLog().at(-1)).toBe('COMMIT');
     snapshot.refined_at = null;
     snapshot.settled_at = new Date();
+    mocks.txQuery.mockClear();
     await refine(id, 'n-a', 'Origin');
     expect(sqlLog().some(sql => sql.includes('UPDATE'))).toBe(false);
   });
@@ -145,7 +146,7 @@ describe('CARE-445: refine/settle official writers are single-client transaction
     lockedRide = null as any;
     await expect(settle(id)).rejects.toThrow('PRICING_RIDE_NOT_FOUND');
     expect(sqlLog().at(-1)).toBe('ROLLBACK');
-    lockedRide = { ...normal };
+    lockedRide = { ...normal, locked_price: '31.24' };
     mocks.txQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('FROM rides_v2') && sql.includes('FOR UPDATE')) return { rows: [lockedRide] };
       if (sql.includes('FROM ride_settlements') && sql.includes('FOR UPDATE')) return { rows: [snapshot] };
