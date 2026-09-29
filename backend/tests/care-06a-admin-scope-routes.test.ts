@@ -25,7 +25,11 @@ const { prismaMock, authState, auditMock } = vi.hoisted(() => {
     },
     driver_insurance_enrollments: {
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       update: vi.fn(),
+    },
+    neighborhoods: {
+      findUnique: vi.fn(),
     },
     drivers: {
       findUnique: vi.fn(),
@@ -40,6 +44,8 @@ const { prismaMock, authState, auditMock } = vi.hoisted(() => {
       create: vi.fn(),
     },
     $transaction: vi.fn(),
+    $queryRaw: vi.fn(),
+    $executeRaw: vi.fn(),
   };
 
   return {
@@ -151,6 +157,7 @@ const careRegulation = (overrides: any = {}) => ({
   care_scope_verified_by_admin_id: null,
   care_scope_document_url: null,
   requirements: [],
+  updated_at: new Date('2026-09-28T12:00:00.000Z'),
   ...overrides,
 });
 
@@ -175,6 +182,7 @@ const careCoverage = (overrides: any = {}) => ({
   care_scope_verified_by_admin_id: null,
   created_by_admin_id: 'admin-care',
   updated_by_admin_id: 'admin-care',
+  updated_at: new Date('2026-09-28T12:00:00.000Z'),
   ...overrides,
 });
 
@@ -184,6 +192,13 @@ beforeEach(() => {
   authState.scope = { territoryIds: ['33333333-3333-4333-8333-333333333333'], neighborhoodIds: [], accessLevel: 'full' };
 
   prismaMock.$transaction.mockImplementation(async (fn: any) => fn(prismaMock));
+  prismaMock.$queryRaw.mockResolvedValue([{ id: 'locked' }]);
+  prismaMock.$executeRaw.mockResolvedValue(1);
+  prismaMock.driver_insurance_enrollments.findMany.mockResolvedValue([]);
+  prismaMock.neighborhoods.findUnique.mockResolvedValue({
+    is_active: true, is_verified: true, verified_at: new Date('2026-09-28T12:00:00.000Z'),
+    verified_by: 'admin-territory', territory_id: '33333333-3333-4333-8333-333333333333',
+  });
   prismaMock.municipal_regulation_requirements.createMany.mockResolvedValue({ count: 0 });
   prismaMock.municipal_regulation_requirements.deleteMany.mockResolvedValue({ count: 0 });
   prismaMock.operational_territories.findMany.mockResolvedValue([]);
@@ -350,12 +365,14 @@ describe('CARE-06A explicit driver enrollment link', () => {
       operational_coverage_linked_at: null,
       operational_coverage_linked_by_admin_id: null,
     });
-    prismaMock.drivers.findUnique.mockResolvedValue({ vehicle_plate: 'ABC-1D23' });
+    prismaMock.drivers.findUnique.mockResolvedValue({ vehicle_plate: 'ABC-1D23', neighborhood_id: 'driver-n' });
     prismaMock.operational_insurance_coverages.findUnique.mockResolvedValue(
       careCoverage({
         id: '22222222-2222-4222-8222-222222222222',
         status: 'ACTIVE',
         care_scope_verified: true,
+        care_scope_verified_at: new Date('2026-09-28T12:00:00.000Z'),
+        care_scope_verified_by_admin_id: 'admin-care',
       }),
     );
     prismaMock.driver_insurance_enrollments.update.mockImplementation(async ({ data }: any) => ({
@@ -392,9 +409,13 @@ describe('CARE-06A explicit driver enrollment link', () => {
       valid_from: new Date('2026-09-01T00:00:00.000Z'),
       valid_until: new Date('2026-12-31T00:00:00.000Z'),
     });
-    prismaMock.drivers.findUnique.mockResolvedValue({ vehicle_plate: 'ABC-1D23' });
+    prismaMock.drivers.findUnique.mockResolvedValue({ vehicle_plate: 'ABC-1D23', neighborhood_id: 'driver-n' });
     prismaMock.operational_insurance_coverages.findUnique.mockResolvedValue(
-      careCoverage({ status: 'ACTIVE', care_scope_verified: true }),
+      careCoverage({
+        status: 'ACTIVE', care_scope_verified: true,
+        care_scope_verified_at: new Date('2026-09-28T12:00:00.000Z'),
+        care_scope_verified_by_admin_id: 'admin-care',
+      }),
     );
     const res = await request(driverInsuranceApp)
       .post('/api/admin/drivers/driver-care/insurance/previlemos/11111111-1111-4111-8111-111111111111/operational-coverage')
