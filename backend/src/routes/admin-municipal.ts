@@ -256,7 +256,9 @@ router.patch('/municipal-regulations/:id', MUNICIPAL_CONFIG_ROLE, async (req: Re
           isCareMunicipalModality(existing.service_modality) &&
           careScopeSensitiveChange) {
         data.care_scope_verified = false;
-        data.is_active = false;
+        if (isCareMunicipalModality(targetModality)) {
+          data.is_active = false;
+        }
       }
 
       await tx.municipal_regulations.update({
