@@ -250,4 +250,31 @@ describe('CARE-445: refine/settle official writers are single-client transaction
     expect(result?.wait_charge_cents ?? 0).toBe(0);
   });
 
+  it('doubles LOCAL territorial credit only once while preserving the historic fee rate', async () => {
+    vi.resetModules();
+    lockedRide = {
+      ...lockedRide, wait_requested: true,
+      wait_started_at: new Date('2026-09-29T12:00:00Z'),
+      wait_ended_at: new Date('2026-09-29T12:02:00Z'),
+    };
+    mocks.txQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM rides_v2') && sql.includes('FOR UPDATE')) return { rows: [lockedRide], rowCount: 1 };
+      if (sql.includes('FROM ride_settlements') && sql.includes('FOR UPDATE')) return { rows: [snapshot], rowCount: 1 };
+      if (sql.includes('feature_flags')) return { rows: [{ enabled: false }], rowCount: 1 };
+      if (sql.includes('pricing_profiles')) return { rows: [profile], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
+    const { settle: uncachedSettle } = await import('../src/services/pricing-engine');
+    const result = await uncachedSettle(id, { waitRatePerMinute: 0.50 });
+    expect(result).toMatchObject({
+      final_price: 32.24, fee_percent: 18, fee_amount: 5.62,
+      driver_earnings: 26.62, credit_cost: 2, credit_match_type: 'LOCAL',
+      wait_charge_cents: 100,
+    });
+    const updated = mocks.txQuery.mock.calls.find(([sql]) =>
+      String(sql).trimStart().startsWith('UPDATE ride_settlements'));
+    expect(updated?.[1]?.[3]).toBe(2);
+    expect(mocks.query.mock.calls.some(([sql]) => String(sql).includes('feature_flags'))).toBe(false);
+  });
+
 });
