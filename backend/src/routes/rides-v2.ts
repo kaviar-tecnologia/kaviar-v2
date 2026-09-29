@@ -1208,24 +1208,25 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
         completed_at: new Date(),
         updated_at: new Date(),
       };
-      if (ride.wait_requested) {
-        const completed = await tx.rides_v2.updateMany({
-          where: {
-            id: ride_id, driver_id: driverId, status: 'in_progress', wait_requested: true,
+      // Compare-and-set is mandatory even for ordinary rides: a stale request
+      // must not complete a canceled/already completed ride or replay effects.
+      const completed = await tx.rides_v2.updateMany({
+        where: {
+          id: ride_id, driver_id: driverId, status: 'in_progress',
+          wait_requested: Boolean(ride.wait_requested),
+          ...(ride.wait_requested ? {
             OR: [
               { wait_started_at: null, wait_ended_at: null },
               { wait_started_at: { not: null }, wait_ended_at: { not: null } },
             ],
-          },
-          data: completionData,
+          } : {}),
+        },
+        data: completionData,
+      });
+      if (completed.count !== 1) {
+        throw Object.assign(new Error('WAIT_COMPLETION_CONFLICT'), {
+          code: 'WAIT_COMPLETION_CONFLICT',
         });
-        if (completed.count !== 1) {
-          throw Object.assign(new Error('WAIT_COMPLETION_CONFLICT'), {
-            code: 'WAIT_COMPLETION_CONFLICT',
-          });
-        }
-      } else {
-        await tx.rides_v2.update({ where: { id: ride_id }, data: completionData });
       }
 
       // Liberar motorista
@@ -1411,11 +1412,10 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
         }
         if (driver?.phone) {
           // Use v3/v4 if approved, fallback to v2
-          const hasWait = !!(ride.wait_requested && ride.wait_started_at && ride.wait_ended_at);
-          const waitMinutes = hasWait
-            ? Math.floor((ride.wait_ended_at!.getTime() - ride.wait_started_at!.getTime()) / 60000)
-            : 0;
-          const waitCharge = Math.round(waitMinutes * 0.50 * 100) / 100;
+          // Render the confirmed settlement amount; no stale route timestamps
+          // or separate hard-coded per-minute rate in a financial notification.
+          const hasWait = _shadowWaitCents > 0;
+          const waitCharge = _shadowWaitCents / 100;
           const basePrice = hasWait && waitCharge > 0
             ? String(Math.round((settlement.final_price - waitCharge) * 100) / 100)
             : price;
