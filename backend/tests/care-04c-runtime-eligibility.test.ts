@@ -55,7 +55,7 @@ async function approvedEvidence(): Promise<CareExternalEvidence> {
       }),
     },
     municipal_regulations: {
-      findFirst: vi.fn().mockResolvedValue({
+      findMany: vi.fn().mockResolvedValue([{
         id: 'synthetic-regulation',
         regulation_status: 'NOT_REGULATED',
         requires_city_approval: false,
@@ -63,11 +63,11 @@ async function approvedEvidence(): Promise<CareExternalEvidence> {
         care_scope_verified_at: review,
         care_scope_verified_by_admin_id: 'synthetic-municipal-reviewer',
         care_scope_document_url: 'https://example.invalid/care-municipal.pdf',
-      }),
+      }]),
     },
     municipal_authorizations: { findFirst: vi.fn() },
     operational_insurance_coverages: {
-      findFirst: vi.fn().mockResolvedValue({
+      findMany: vi.fn().mockResolvedValue([{
         id: 'synthetic-coverage',
         provider_name: 'Synthetic Insurer',
         policy_number: 'POL-001',
@@ -76,7 +76,7 @@ async function approvedEvidence(): Promise<CareExternalEvidence> {
         valid_until: validUntil,
         care_scope_verified_at: review,
         care_scope_verified_by_admin_id: 'synthetic-insurance-reviewer',
-      }),
+      }]),
     },
     $queryRaw: vi.fn().mockResolvedValue([{ covered: true }]),
     driver_insurance_enrollments: {
