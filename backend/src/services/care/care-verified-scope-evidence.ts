@@ -459,7 +459,7 @@ export async function resolveVerifiedCareScopeEvidence(
         !validOnCivilDay(enrollment.valid_until, today)) {
       return fail('CARE_SCOPE_DRIVER_ENROLLMENT_MISSING');
     }
-    // Previlemos NumSeguro must match the exact reviewed APP policy.
+    // The provider-issued certificate number must match the exact reviewed APP policy.
     // Distinct certificate/master numbers require separately verified mapping.
     if (coverage.policy_number.trim().toUpperCase() !==
         enrollment.provider_reference.trim().toUpperCase()) {
