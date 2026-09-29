@@ -288,7 +288,7 @@ export async function resolveVerifiedCareScopeEvidence(
         AND ng.geom IS NOT NULL
         AND ST_SRID(ng.geom) = 4326
         AND ST_IsValid(ng.geom)
-      LIMIT 2
+      LIMIT 1
     `;
     if (pickupCoverage.length !== 1 || pickupCoverage[0]?.covered !== true) {
       return fail('CARE_SCOPE_PICKUP_GEOFENCE_UNVERIFIED');
