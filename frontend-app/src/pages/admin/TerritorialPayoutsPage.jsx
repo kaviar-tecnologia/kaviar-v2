@@ -493,7 +493,7 @@ export default function TerritorialPayoutsPage() {
     const now = new Date().toISOString();
     const adminId = JSON.parse(atob(token.split('.')[1])).id || '';
     const body = isManager
-      ? { document_status: 'verified' }
+      ? { document_status: 'verified', verification_confirmations: verifyChecks }
       : { document_status: 'verified', contract_status: 'not_required', terms_accepted_at: now, responsibility_terms_accepted_at: now, confidentiality_terms_accepted_at: now, terms_version: 'v1.0', terms_accepted_by: adminId };
     const res = await fetch(`${API_BASE_URL}/api/admin/territorial-payouts/operators/${id}`, { method: 'PATCH', headers, body: JSON.stringify(body) });
     const d = await res.json();
@@ -849,7 +849,7 @@ export default function TerritorialPayoutsPage() {
           {(verifyTarget?.relationship_type === 'territorial_manager' ? [
             'Conferi a identidade do Gestor Territorial.',
             'Conferi CPF/CNPJ e responsável legal, quando aplicável.',
-            'Conferi a titularidade dos dados financeiros cadastrados.',
+            'Conferi a titularidade dos dados financeiros, quando cadastrados; sem Pix não há repasse.',
             'Conferi que o Gestor está vinculado ao território correto.',
             'A verificação documental não formaliza o contrato v1.2.',
             'A verificação documental não ativa participação financeira.',
