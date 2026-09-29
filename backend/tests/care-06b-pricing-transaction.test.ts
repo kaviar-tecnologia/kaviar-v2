@@ -67,7 +67,7 @@ describe('CARE-06B single-client pricing transaction primitive', () => {
     await expect(withCarePricingTransaction(pool as never, async () => 'never'))
       .rejects.toThrow('synthetic BEGIN');
     expect(queries).toEqual(['BEGIN']);
-    expect(client.release).toHaveBeenCalledWith(false);
+    expect(client.release).toHaveBeenCalledWith(true);
   });
 
   it('never executes the callback when the connection cannot be acquired', async () => {
