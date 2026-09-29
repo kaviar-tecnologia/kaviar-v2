@@ -394,7 +394,7 @@ export async function resolveVerifiedCareScopeEvidence(
         !validOnCivilDay(enrollment.valid_until, today)) {
       return fail('CARE_SCOPE_DRIVER_ENROLLMENT_MISSING');
     }
-    // Previlemos's provider_reference is NumSeguro. A free-text policy name
+    // The provider reference is the issued insurance number. A free-text policy name
     // or a manually linked, different certificate cannot prove the same risk.
     // For distinct master/certificate numbers, deny until a separately
     // reviewed structured equivalence exists in the official insurance source.
