@@ -27,6 +27,10 @@ export async function withCarePricingTransaction<T>(
     inTransaction = false;
     return result;
   } catch (cause) {
+    if (!inTransaction) {
+      // A failed BEGIN can mean a broken connection. Do not recycle it.
+      releaseAsBroken = true;
+    }
     if (inTransaction) {
       try {
         await client.query('ROLLBACK');
