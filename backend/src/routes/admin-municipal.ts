@@ -219,6 +219,20 @@ router.patch('/municipal-regulations/:id', MUNICIPAL_CONFIG_ROLE, async (req: Re
       });
     }
 
+    const careScopeSensitiveChange =
+      payload.requirements !== undefined ||
+      (payload.city !== undefined && normalizeCity(payload.city) !== existing.city) ||
+      (payload.state !== undefined && normalizeState(payload.state) !== existing.state) ||
+      (payload.service_modality !== undefined && payload.service_modality !== existing.service_modality) ||
+      (payload.regulation_status !== undefined && payload.regulation_status !== existing.regulation_status) ||
+      (payload.law_number !== undefined && (payload.law_number || null) !== existing.law_number) ||
+      (payload.law_document_url !== undefined && (payload.law_document_url || null) !== existing.law_document_url) ||
+      (payload.requires_city_approval !== undefined && payload.requires_city_approval !== existing.requires_city_approval) ||
+      (payload.requires_protocol !== undefined && payload.requires_protocol !== existing.requires_protocol) ||
+      (payload.authorization_validity_months !== undefined &&
+        payload.authorization_validity_months !== existing.authorization_validity_months) ||
+      (payload.responsible_agency !== undefined && (payload.responsible_agency || null) !== existing.responsible_agency);
+
     const updated = await prisma.$transaction(async (tx) => {
       const data: any = {};
       if (payload.city !== undefined) data.city = normalizeCity(payload.city);
@@ -237,6 +251,13 @@ router.patch('/municipal-regulations/:id', MUNICIPAL_CONFIG_ROLE, async (req: Re
       if (payload.responsible_agency !== undefined) data.responsible_agency = payload.responsible_agency;
       if (payload.notes !== undefined) data.notes = payload.notes;
       if (payload.is_active !== undefined) data.is_active = payload.is_active;
+
+      if (existing.care_scope_verified === true &&
+          isCareMunicipalModality(existing.service_modality) &&
+          careScopeSensitiveChange) {
+        data.care_scope_verified = false;
+        data.is_active = false;
+      }
 
       await tx.municipal_regulations.update({
         where: { id: req.params.id },
