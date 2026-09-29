@@ -41,6 +41,13 @@ beforeEach(() => {
 });
 
 describe('municipal regulation service', () => {
+  it('mapeia modos CARE exatos sem tratá-los como CAR comum', () => {
+    expect(mapServiceCategoryToMunicipalModality('CARE_ASSISTED')).toBe('CARE_ASSISTED');
+    expect(mapServiceCategoryToMunicipalModality('CARE_FOLDING_WHEELCHAIR')).toBe('CARE_FOLDING_WHEELCHAIR');
+    expect(mapServiceCategoryToMunicipalModality('CARE_ADAPTED_WHEELCHAIR')).toBe('CARE_ADAPTED_WHEELCHAIR');
+    expect(mapServiceCategoryToMunicipalModality('CAR_NORMAL')).toBe('CAR');
+  });
+
   it('evaluateMunicipalAuthorizationValidity retorna ACTIVE quando aprovação não tem prazo final', () => {
     const result = evaluateMunicipalAuthorizationValidity({
       status: 'APPROVED_BY_CITY_HALL',
