@@ -136,6 +136,8 @@ export interface SettlementResult {
   credit_cost: number;
   credit_match_type: string;
   settlement_territory: TerritoryType;
+  /** Charge persisted at settlement, in cents; only set for wait-enabled completion. */
+  wait_charge_cents?: number;
 }
 
 // --- Helpers ---
@@ -564,7 +566,9 @@ export async function refine(rideId: string, driverNeighborhoodId: string | null
  * settle() — Fecha economia no complete. Idempotente.
  * Retorna dados para consumo de crédito e notificações.
  */
-export async function settle(rideId: string): Promise<SettlementResult | null> {
+export async function settle(
+  rideId: string, options: { waitRatePerMinute?: number } = {},
+): Promise<SettlementResult | null> {
   await assertNotCarePricingRide(rideId);
 
   // The official ride lock serializes quote, refine, and settle for this ride.
@@ -573,7 +577,7 @@ export async function settle(rideId: string): Promise<SettlementResult | null> {
     settlement: SettlementResult | null; fee_source: string | null;
   }> => {
     const rideRow = await tx.query(
-      'SELECT ride_type, service_category, trip_details, status, locked_price FROM rides_v2 WHERE id = $1 FOR UPDATE',
+      'SELECT ride_type, service_category, trip_details, status, locked_price, wait_requested, wait_started_at, wait_ended_at FROM rides_v2 WHERE id = $1 FOR UPDATE',
       [rideId]
     );
     const ride = rideRow.rows[0];
@@ -594,7 +598,7 @@ export async function settle(rideId: string): Promise<SettlementResult | null> {
     // Historical settlements are immutable, including their original fee
     // configuration. A repeated completion never charges twice.
     if (s.settled_at) {
-      return { settlement: {
+      const historical: SettlementResult = {
         final_price: Number(s.final_price),
         fee_percent: Number(s.fee_percent),
         fee_amount: Number(s.fee_amount),
@@ -602,7 +606,15 @@ export async function settle(rideId: string): Promise<SettlementResult | null> {
         credit_cost: Number(s.credit_cost),
         credit_match_type: s.credit_match_type,
         settlement_territory: s.settlement_territory,
-      }, fee_source: 'persisted' };
+      };
+      if (options.waitRatePerMinute !== undefined) {
+        const deltaCents = Math.round((historical.final_price - Number(s.locked_price)) * 100);
+        if (!Number.isSafeInteger(deltaCents) || deltaCents < 0) {
+          throw new Error('PRICING_WAIT_SNAPSHOT_INVALID');
+        }
+        historical.wait_charge_cents = deltaCents;
+      }
+      return { settlement: historical, fee_source: 'persisted' };
     }
     if (ride.status !== 'completed') throw new Error('PRICING_SETTLE_RIDE_NOT_COMPLETED');
 
@@ -610,17 +622,40 @@ export async function settle(rideId: string): Promise<SettlementResult | null> {
     if (!profile.rows[0]) throw new Error('PRICING_PROFILE_NOT_FOUND');
     const p = toProfile(profile.rows[0]);
     const settlement_territory: TerritoryType = s.driver_territory || s.route_territory;
-    const final_price = Number(s.locked_price);
+    const lockedPrice = Number(s.locked_price);
     const cacheLocked = Number(ride.locked_price);
     const snapshotFee = Number(s.fee_amount);
     const snapshotEarnings = Number(s.driver_earnings);
     // The pending adjustment flow must update its official and cache snapshots
     // atomically before settle. Never silently finalize mismatched amounts.
-    if (![final_price, cacheLocked, snapshotFee, snapshotEarnings].every(Number.isFinite) ||
-        final_price <= 0 || round2(final_price) !== round2(cacheLocked) ||
-        round2(snapshotFee + snapshotEarnings) !== round2(final_price)) {
+    if (![lockedPrice, cacheLocked, snapshotFee, snapshotEarnings].every(Number.isFinite) ||
+        lockedPrice <= 0 || round2(lockedPrice) !== round2(cacheLocked) ||
+        round2(snapshotFee + snapshotEarnings) !== round2(lockedPrice)) {
       throw new Error('PRICING_SETTLEMENT_SNAPSHOT_INCONSISTENT');
     }
+
+    // Charge 100% of actual wait to the driver using persisted ride evidence.
+    // This is part of the original settlement transaction, not a later writer.
+    let waitChargeCents = 0;
+    if (options.waitRatePerMinute !== undefined) {
+      const rate = options.waitRatePerMinute;
+      const start = ride.wait_started_at ? new Date(ride.wait_started_at).getTime() : Number.NaN;
+      const end = ride.wait_ended_at ? new Date(ride.wait_ended_at).getTime() : Number.NaN;
+      if (!ride.wait_requested || !Number.isFinite(rate) || rate < 0 ||
+          !Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+        throw new Error('PRICING_WAIT_SNAPSHOT_INVALID');
+      }
+      const minutes = Math.floor((end - start) / 60000);
+      waitChargeCents = Math.round(minutes * rate * 100);
+      if (!Number.isSafeInteger(waitChargeCents) || waitChargeCents < 0) {
+        throw new Error('PRICING_WAIT_SNAPSHOT_INVALID');
+      }
+    }
+    const finalCents = Math.round(lockedPrice * 100) + waitChargeCents;
+    if (!Number.isSafeInteger(finalCents) || finalCents <= 0 || finalCents > 99999999) {
+      throw new Error('PRICING_WAIT_PRICE_OUT_OF_RANGE');
+    }
+    const final_price = finalCents / 100;
 
     const { percent: effective_fee_percent, source: fee_source } =
       await resolveEffectivePlatformFeePercent(p, settlement_territory, false, tx);
@@ -641,8 +676,9 @@ export async function settle(rideId: string): Promise<SettlementResult | null> {
           ), { code: 'SETTLE_FEE_SNAPSHOT_MISMATCH' }
         );
       }
-      fee_amount = round2(final_price * fee_percent / 100);
-      driver_earnings = round2(final_price - fee_amount);
+      // Flat fee applies to locked base only; the wait is 100% driver revenue.
+      fee_amount = round2(lockedPrice * fee_percent / 100);
+      driver_earnings = round2(lockedPrice - fee_amount);
       credit_cost = 0;
       credit_match_type = 'FLAT_FEE';
     } else {
@@ -653,6 +689,16 @@ export async function settle(rideId: string): Promise<SettlementResult | null> {
       const cr = creditForTerritory(p, settlement_territory);
       credit_cost = cr.cost;
       credit_match_type = cr.matchType;
+    }
+
+    if (waitChargeCents > 0) {
+      driver_earnings = round2(driver_earnings + waitChargeCents / 100);
+      credit_cost *= 2; // Legacy composed-service credit rule, exactly once.
+      if (!Number.isSafeInteger(credit_cost) || credit_cost < 0 ||
+          credit_cost > 2147483647) throw new Error('PRICING_WAIT_CREDIT_OUT_OF_RANGE');
+    }
+    if (round2(fee_amount + driver_earnings) !== final_price) {
+      throw new Error('PRICING_SETTLEMENT_SNAPSHOT_INCONSISTENT');
     }
 
     const updated = await tx.query(
@@ -672,8 +718,11 @@ export async function settle(rideId: string): Promise<SettlementResult | null> {
     );
     if (cache.rowCount !== 1) throw new Error('PRICING_RIDE_CACHE_UPDATE_FAILED');
 
-    return { settlement: { final_price, fee_percent, fee_amount, driver_earnings,
-      credit_cost, credit_match_type, settlement_territory }, fee_source };
+    return { settlement: {
+      final_price, fee_percent, fee_amount, driver_earnings,
+      credit_cost, credit_match_type, settlement_territory,
+      ...(options.waitRatePerMinute !== undefined ? { wait_charge_cents: waitChargeCents } : {}),
+    }, fee_source };
   });
 
   if (result.settlement && result.fee_source !== 'persisted') {
