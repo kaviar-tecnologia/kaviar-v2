@@ -385,6 +385,8 @@ export async function resolveVerifiedCareScopeEvidence(
         providerName: coverage.provider_name,
         policyNumber: coverage.policy_number,
         providerReference: enrollment.provider_reference,
+        coverageLinkedAt: enrollment.operational_coverage_linked_at!,
+        coverageLinkedByAdminId: enrollment.operational_coverage_linked_by_admin_id!,
         documentUrl: coverage.document_url!,
         validFrom: enrollment.valid_from,
         validUntil: enrollment.valid_until,
