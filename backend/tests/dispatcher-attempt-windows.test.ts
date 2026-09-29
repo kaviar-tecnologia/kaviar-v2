@@ -7,7 +7,7 @@ const { prismaMock } = vi.hoisted(() => ({
       update: vi.fn(),
       updateMany: vi.fn(),
     },
-    ride_offers: { updateMany: vi.fn() },
+    ride_offers: { updateMany: vi.fn(), create: vi.fn() },
     $transaction: vi.fn(),
     driver_status: {
       findMany: vi.fn(),
@@ -110,6 +110,20 @@ describe('dispatcher attempt windows', () => {
       where: { ride_id: 'ride-window', status: 'pending' },
       data: { status: 'canceled' },
     });
+  });
+
+  it('rechecks the official lock in the offer transaction if pricing changes mid-dispatch', async () => {
+    prismaMock.rides_v2.findUnique
+      .mockResolvedValueOnce(baseRide())
+      .mockResolvedValueOnce({ ...baseRide(), settlement: null });
+    const dispatcher = new DispatcherService();
+    const findCandidates = vi.spyOn(dispatcher as any, 'findCandidates').mockResolvedValue([{
+      driver_id: 'driver-1', distance_km: 1, score: 1,
+      same_community: true, same_neighborhood: true,
+    }]);
+    await expect(dispatcher.dispatchRide('ride-window')).rejects.toThrow('PRICING_QUOTE_UNAVAILABLE');
+    expect(findCandidates).toHaveBeenCalledTimes(1);
+    expect(prismaMock.ride_offers.create).not.toHaveBeenCalled();
   });
 
   it('não deixa 5 falhas anteriores ao consentimento consumirem a nova janela', async () => {
