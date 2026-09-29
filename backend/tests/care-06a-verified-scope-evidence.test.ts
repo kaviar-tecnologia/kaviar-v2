@@ -82,6 +82,8 @@ function fixture() {
     enrollment: {
       id: 'enrollment-care',
       provider_reference: 'PROVIDER-001',
+      operational_coverage_linked_at: REVIEW,
+      operational_coverage_linked_by_admin_id: 'admin-insurance-link',
       valid_from: FROM,
       valid_until: UNTIL,
     },
@@ -140,6 +142,7 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
         coverageId: 'coverage-care',
         enrollmentId: 'enrollment-care',
         policyNumber: 'POL-C-001',
+        coverageLinkedByAdminId: 'admin-insurance-link',
       },
     });
     expect(calls.regulation).toHaveBeenCalledWith(expect.objectContaining({
@@ -209,6 +212,16 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
     const noEnrollment = mockDb();
     noEnrollment.calls.enrollment.mockResolvedValue(null);
     expect((await resolve(noEnrollment.db)).reasons).toContain('CARE_SCOPE_DRIVER_ENROLLMENT_MISSING');
+  });
+
+  it('rejects enrollment not explicitly linked/reviewed by an admin', async () => {
+    const { db, calls } = mockDb();
+    calls.enrollment.mockResolvedValue({
+      ...fixture().enrollment,
+      operational_coverage_linked_at: null,
+      operational_coverage_linked_by_admin_id: null,
+    });
+    expect((await resolve(db)).reasons).toContain('CARE_SCOPE_DRIVER_ENROLLMENT_MISSING');
   });
 
   it('rejects a driver registered in another operational territory', async () => {
