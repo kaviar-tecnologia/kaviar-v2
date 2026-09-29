@@ -46,7 +46,7 @@ const { prismaMock, authState, auditMock } = vi.hoisted(() => {
     prismaMock,
     authState: {
       admin: { id: 'admin-care', email: 'care-admin@example.invalid', role: 'SUPER_ADMIN' },
-      scope: { territoryIds: ['territory-care'], neighborhoodIds: [], accessLevel: 'full' },
+      scope: { territoryIds: ['33333333-3333-4333-8333-333333333333'], neighborhoodIds: [], accessLevel: 'full' },
     } as any,
     auditMock: vi.fn(),
   };
@@ -156,7 +156,7 @@ const careRegulation = (overrides: any = {}) => ({
 
 const careCoverage = (overrides: any = {}) => ({
   id: 'coverage-care',
-  territory_id: 'territory-care',
+  territory_id: '33333333-3333-4333-8333-333333333333',
   modality: 'CARE_ASSISTED',
   provider_name: 'Seguradora Exemplo',
   policy_number: 'POL-001',
@@ -181,7 +181,7 @@ const careCoverage = (overrides: any = {}) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   authState.admin = { id: 'admin-care', email: 'care-admin@example.invalid', role: 'SUPER_ADMIN' };
-  authState.scope = { territoryIds: ['territory-care'], neighborhoodIds: [], accessLevel: 'full' };
+  authState.scope = { territoryIds: ['33333333-3333-4333-8333-333333333333'], neighborhoodIds: [], accessLevel: 'full' };
 
   prismaMock.$transaction.mockImplementation(async (fn: any) => fn(prismaMock));
   prismaMock.municipal_regulation_requirements.createMany.mockResolvedValue({ count: 0 });
@@ -270,7 +270,7 @@ describe('CARE-06A insurance scope review in existing admin module', () => {
     const active = await request(coverageApp)
       .post('/api/admin/insurance-coverages')
       .send({
-        territory_id: 'territory-care',
+        territory_id: '33333333-3333-4333-8333-333333333333',
         modality: 'CARE_ASSISTED',
         provider_name: 'Seguradora Exemplo',
         policy_number: 'POL-001',
@@ -285,7 +285,7 @@ describe('CARE-06A insurance scope review in existing admin module', () => {
     const draft = await request(coverageApp)
       .post('/api/admin/insurance-coverages')
       .send({
-        territory_id: 'territory-care',
+        territory_id: '33333333-3333-4333-8333-333333333333',
         modality: 'CARE_ASSISTED',
         provider_name: 'Seguradora Exemplo',
         policy_number: 'POL-001',
