@@ -20,6 +20,8 @@ async function approvedEvidence(): Promise<CareExternalEvidence> {
         ride_type: 'care',
         service_category: 'CARE_ASSISTED',
         origin_neighborhood_id: 'synthetic-neighborhood',
+        origin_lat: -22.91,
+        origin_lng: -43.22,
       }),
     },
     care_trip_requirements: {
@@ -75,6 +77,7 @@ async function approvedEvidence(): Promise<CareExternalEvidence> {
         care_scope_verified_by_admin_id: 'synthetic-insurance-reviewer',
       }),
     },
+    $queryRaw: vi.fn().mockResolvedValue([{ covered: true }]),
     driver_insurance_enrollments: {
       findFirst: vi.fn().mockResolvedValue({
         id: 'synthetic-enrollment',
@@ -225,6 +228,7 @@ describe('CARE-04C read-only evidence adapter (synthetic objects only)', () => {
       ['mode', { mode: 'CARE_ADAPTED_WHEELCHAIR' }],
       ['plate', { vehiclePlate: 'ZZZ9Z99' }],
       ['verification-time', { verifiedAt: new Date(now.getTime() + 1000) }],
+      ['stale-verification', { verifiedAt: new Date(now.getTime() - 1000) }],
     ];
     const issued = await approvedEvidence();
     for (const [label, patch] of mismatches) {
