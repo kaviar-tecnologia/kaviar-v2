@@ -225,10 +225,18 @@ router.patch('/municipal-regulations/:id', MUNICIPAL_CONFIG_ROLE, async (req: Re
       (payload.state !== undefined && normalizeState(payload.state) !== existing.state) ||
       (payload.service_modality !== undefined && payload.service_modality !== existing.service_modality) ||
       (payload.regulation_status !== undefined && payload.regulation_status !== existing.regulation_status) ||
+      (payload.municipality_code !== undefined && (payload.municipality_code || null) !== existing.municipality_code) ||
       (payload.law_number !== undefined && (payload.law_number || null) !== existing.law_number) ||
+      (payload.law_date !== undefined &&
+        (payload.law_date ? new Date(payload.law_date).toISOString().slice(0, 10) : null) !==
+        (existing.law_date ? existing.law_date.toISOString().slice(0, 10) : null)) ||
       (payload.law_document_url !== undefined && (payload.law_document_url || null) !== existing.law_document_url) ||
       (payload.requires_city_approval !== undefined && payload.requires_city_approval !== existing.requires_city_approval) ||
       (payload.requires_protocol !== undefined && payload.requires_protocol !== existing.requires_protocol) ||
+      (payload.max_vehicle_age_years !== undefined &&
+        payload.max_vehicle_age_years !== existing.max_vehicle_age_years) ||
+      (payload.vehicle_age_basis !== undefined &&
+        payload.vehicle_age_basis !== existing.vehicle_age_basis) ||
       (payload.authorization_validity_months !== undefined &&
         payload.authorization_validity_months !== existing.authorization_validity_months) ||
       (payload.responsible_agency !== undefined && (payload.responsible_agency || null) !== existing.responsible_agency);
