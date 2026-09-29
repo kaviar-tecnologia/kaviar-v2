@@ -193,6 +193,24 @@ describe('CARE-445 — wait timestamps cannot change after completion', () => {
       data: { wait_started_at: expect.any(Date) },
     });
   });
+  it('refuses a stale ordinary completion when another request already changed status', async () => {
+    prismaMock.rides_v2.findUnique.mockResolvedValueOnce({
+      ...waitRide({ wait_requested: false, wait_started_at: null, wait_ended_at: null }),
+      passenger_id: 'passenger-1',
+    });
+    prismaMock.rides_v2.updateMany.mockResolvedValueOnce({ count: 0 });
+    const response = await request(appWait).post('/api/v2/rides/ride-445-wait/complete');
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('WAIT_COMPLETION_CONFLICT');
+    expect(prismaMock.rides_v2.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        id: 'ride-445-wait', driver_id: 'driver-1',
+        status: 'in_progress', wait_requested: false,
+      }),
+      data: expect.objectContaining({ status: 'completed' }),
+    }));
+  });
+
   it('refuses completion when waiting has started but not ended', async () => {
     prismaMock.rides_v2.findUnique.mockResolvedValueOnce({
       ...waitRide(), passenger_id: 'passenger-1',
