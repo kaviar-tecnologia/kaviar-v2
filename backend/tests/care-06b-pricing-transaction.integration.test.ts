@@ -19,6 +19,11 @@ const disposable = (() => {
   }
 })();
 
+if (process.env.GITHUB_ACTIONS === 'true' &&
+    process.env.CARE_PRICING_ATOMIC_INTEGRATION === '1' && !disposable) {
+  throw new Error('CARE_PRICING_TEST_DATABASE_NOT_DISPOSABLE');
+}
+
 describe.skipIf(!disposable)('CARE-06B — real single-client PostgreSQL transactions', () => {
   let pool: pg.Pool;
 
