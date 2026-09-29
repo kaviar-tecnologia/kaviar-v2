@@ -56,7 +56,8 @@ describe('CARE-06B single-client pricing transaction primitive', () => {
     });
     await expect(failure).rejects.toMatchObject({
       message: 'CARE_PRICING_TRANSACTION_ROLLBACK_FAILED',
-      errors: [expect.any(Error), expect.any(Error)],
+      originalError: expect.any(Error),
+      rollbackError: expect.any(Error),
     });
     expect(queries).toEqual(['BEGIN', 'FIRST WRITE', 'ROLLBACK']);
     expect(client.release).toHaveBeenCalledWith(true);
