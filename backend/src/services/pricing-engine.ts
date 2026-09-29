@@ -28,11 +28,13 @@ let cachedFlatFeeFlag: { value: boolean; fetchedAt: number } | null = null;
 let cachedFlatFeePercent: { id: string; percent: number; fetchedAt: number } | null = null;
 const FLAG_CACHE_TTL = 60_000;
 
-export async function isFlatFeeEnabled(): Promise<boolean> {
+export async function isFlatFeeEnabled(queryRunner: Pick<typeof pool, 'query'> = pool): Promise<boolean> {
   if (cachedFlatFeeFlag && Date.now() - cachedFlatFeeFlag.fetchedAt < FLAG_CACHE_TTL) return cachedFlatFeeFlag.value;
   let enabled = false;
   try {
-    const r = await pool.query(`SELECT enabled FROM feature_flags WHERE key = 'FEE_MODEL_FLAT_18' LIMIT 1`);
+    // Under a pricing transaction, use the checked-out client. Querying the
+    // shared pool while all clients are reserved can starve the pool.
+    const r = await queryRunner.query(`SELECT enabled FROM feature_flags WHERE key = 'FEE_MODEL_FLAT_18' LIMIT 1`);
     enabled = r.rows[0]?.enabled === true;
   } catch {
     enabled = process.env.FEE_MODEL_FLAT_18 === 'true';
@@ -83,8 +85,9 @@ export async function resolveEffectivePlatformFeePercent(
   profile: PricingProfile,
   territory: TerritoryType,
   homebound = false,
+  queryRunner: Pick<typeof pool, 'query'> = pool,
 ): Promise<{ percent: number; source: 'flat_constant' | 'territorial' }> {
-  const flatActive = await isFlatFeeEnabled();
+  const flatActive = await isFlatFeeEnabled(queryRunner);
   if (flatActive) {
     return { percent: PLATFORM_FEE_PERCENT, source: 'flat_constant' };
   }
@@ -528,7 +531,7 @@ export async function refine(rideId: string, driverNeighborhoodId: string | null
     );
     const pricing_profile_fee_percent = feeForTerritory(p, driver_territory, isHomebound);
     const { percent: fee_percent, source: fee_source } =
-      await resolveEffectivePlatformFeePercent(p, driver_territory, isHomebound);
+      await resolveEffectivePlatformFeePercent(p, driver_territory, isHomebound, tx);
     const fee_amount = round2(locked * fee_percent / 100);
     const driver_earnings = round2(locked - fee_amount);
 
@@ -620,7 +623,7 @@ export async function settle(rideId: string): Promise<SettlementResult | null> {
     }
 
     const { percent: effective_fee_percent, source: fee_source } =
-      await resolveEffectivePlatformFeePercent(p, settlement_territory);
+      await resolveEffectivePlatformFeePercent(p, settlement_territory, false, tx);
     let fee_percent: number, fee_amount: number, driver_earnings: number;
     let credit_cost: number, credit_match_type: string;
 
