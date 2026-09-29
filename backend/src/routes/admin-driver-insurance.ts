@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { prisma } from '../lib/prisma';
 import {
   authenticateAdmin,
   requireSuperAdmin,
@@ -48,6 +49,19 @@ const cancelSchema = z.object({
   dataCancelamento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
+const coverageLinkSchema = z.object({
+  coverage_id: z.string().uuid().nullable(),
+});
+
+const CARE_INSURANCE_MODALITIES = new Set([
+  'CARE_ASSISTED',
+  'CARE_FOLDING_WHEELCHAIR',
+  'CARE_ADAPTED_WHEELCHAIR',
+]);
+
+const normalizePlate = (value: string | null | undefined) =>
+  typeof value === 'string' ? value.toUpperCase().replace(/[\s-]/g, '') : '';
+
 function publicEnrollment(enrollment: any) {
   return {
     id: enrollment.id,
@@ -58,6 +72,9 @@ function publicEnrollment(enrollment: any) {
     validUntil: enrollment.valid_until,
     cancelledAt: enrollment.cancelled_at,
     providerReference: enrollment.provider_reference,
+    operationalCoverageId: enrollment.operational_coverage_id,
+    operationalCoverageLinkedAt: enrollment.operational_coverage_linked_at,
+    operationalCoverageLinkedByAdminId: enrollment.operational_coverage_linked_by_admin_id,
     providerResponse: enrollment.provider_response,
     lastErrorCode: enrollment.last_error_code,
     lastErrorMessage: enrollment.last_error_message,
@@ -166,6 +183,105 @@ router.get(
         success: true,
         data: rows.map(publicEnrollment),
       });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  }
+);
+
+// POST /api/admin/drivers/:id/insurance/previlemos/:insuranceId/operational-coverage
+router.post(
+  '/drivers/:id/insurance/previlemos/:insuranceId/operational-coverage',
+  authenticateAdmin,
+  requireSuperAdmin,
+  async (req, res) => {
+    try {
+      const body = coverageLinkSchema.parse(req.body);
+      const [enrollment, driver] = await Promise.all([
+        prisma.driver_insurance_enrollments.findFirst({
+          where: { id: req.params.insuranceId, driver_id: req.params.id },
+        }),
+        prisma.drivers.findUnique({
+          where: { id: req.params.id },
+          select: { vehicle_plate: true },
+        }),
+      ]);
+
+      if (!enrollment) {
+        return res.status(404).json({ success: false, error: 'INSURANCE_ENROLLMENT_NOT_FOUND' });
+      }
+      if (!driver || normalizePlate(driver.vehicle_plate) !== normalizePlate(enrollment.vehicle_plate)) {
+        return res.status(409).json({
+          success: false,
+          error: 'INSURANCE_ENROLLMENT_VEHICLE_MISMATCH',
+          message: 'A placa atual do motorista não corresponde ao vínculo securitário.',
+        });
+      }
+
+      let coverage: any = null;
+      if (body.coverage_id) {
+        coverage = await prisma.operational_insurance_coverages.findUnique({
+          where: { id: body.coverage_id },
+        });
+        if (!coverage) {
+          return res.status(404).json({ success: false, error: 'OPERATIONAL_COVERAGE_NOT_FOUND' });
+        }
+        if (!CARE_INSURANCE_MODALITIES.has(String(coverage.modality)) ||
+            coverage.status !== 'ACTIVE' ||
+            coverage.care_scope_verified !== true ||
+            !coverage.territory_id ||
+            !coverage.document_url?.trim()) {
+          return res.status(409).json({
+            success: false,
+            error: 'CARE_OPERATIONAL_COVERAGE_NOT_VERIFIED',
+          });
+        }
+        if (enrollment.status !== 'ACTIVE' || enrollment.cancelled_at ||
+            !enrollment.provider_reference?.trim()) {
+          return res.status(409).json({
+            success: false,
+            error: 'DRIVER_INSURANCE_ENROLLMENT_NOT_ACTIVE',
+          });
+        }
+        if (enrollment.valid_from < coverage.valid_from ||
+            enrollment.valid_until > coverage.valid_until) {
+          return res.status(409).json({
+            success: false,
+            error: 'DRIVER_INSURANCE_OUTSIDE_OPERATIONAL_COVERAGE_WINDOW',
+          });
+        }
+      }
+
+      const admin = (req as any).admin;
+      const updated = await prisma.driver_insurance_enrollments.update({
+        where: { id: enrollment.id },
+        data: body.coverage_id
+          ? {
+              operational_coverage_id: body.coverage_id,
+              operational_coverage_linked_at: new Date(),
+              operational_coverage_linked_by_admin_id: admin.id,
+            }
+          : {
+              operational_coverage_id: null,
+              operational_coverage_linked_at: null,
+              operational_coverage_linked_by_admin_id: null,
+            },
+      });
+
+      const ctx = auditCtx(req);
+      void audit({
+        adminId: ctx.adminId,
+        adminEmail: ctx.adminEmail,
+        action: body.coverage_id ? 'link_driver_care_insurance_coverage' : 'unlink_driver_care_insurance_coverage',
+        entityType: 'driver_insurance_enrollment',
+        entityId: enrollment.id,
+        oldValue: { operationalCoverageId: enrollment.operational_coverage_id || null },
+        newValue: { operationalCoverageId: updated.operational_coverage_id || null },
+        ipAddress: ctx.ip,
+        userAgent: ctx.ua,
+      });
+
+      return res.json({ success: true, data: publicEnrollment(updated) });
     } catch (error) {
       return handleError(res, error);
     }
