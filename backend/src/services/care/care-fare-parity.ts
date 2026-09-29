@@ -67,13 +67,18 @@ export function evaluateCareFareParity(
     return { valid: false, reasons: ['CARE_CANONICAL_FARE_MISSING'] };
   }
 
+  const quotedAt = canonical.quotedAt instanceof Date
+    ? canonical.quotedAt.getTime() : NaN;
+  const lockedAt = canonical.lockedAt instanceof Date
+    ? canonical.lockedAt.getTime() : NaN;
   if (canonical.source !== 'ride_settlements' ||
-      !canonical.pricingProfileId?.trim() || !canonical.routeKey?.trim() ||
-      !care.pricingProfileId?.trim() || !care.routeKey?.trim() ||
-      !(canonical.quotedAt instanceof Date) ||
-      !(canonical.lockedAt instanceof Date) ||
-      !Number.isFinite(canonical.quotedAt.getTime()) ||
-      !Number.isFinite(canonical.lockedAt.getTime())) {
+      typeof canonical.pricingProfileId !== 'string' ||
+      !canonical.pricingProfileId.trim() ||
+      typeof canonical.routeKey !== 'string' || !canonical.routeKey.trim() ||
+      typeof care.pricingProfileId !== 'string' ||
+      !care.pricingProfileId.trim() ||
+      typeof care.routeKey !== 'string' || !care.routeKey.trim() ||
+      !Number.isFinite(quotedAt) || !Number.isFinite(lockedAt)) {
     reasons.add('CARE_FARE_SOURCE_UNVERIFIED');
   }
 
@@ -91,7 +96,7 @@ export function evaluateCareFareParity(
   } else {
     const [baseQuoted, baseLocked, proposedQuoted, proposedLocked] = amounts as number[];
     if (baseQuoted !== baseLocked || proposedQuoted !== proposedLocked ||
-        canonical.lockedAt.getTime() < canonical.quotedAt.getTime()) {
+        (Number.isFinite(quotedAt) && Number.isFinite(lockedAt) && lockedAt < quotedAt)) {
       reasons.add('CARE_FARE_NOT_LOCKED');
     }
     if (baseQuoted !== proposedQuoted || baseLocked !== proposedLocked) {
