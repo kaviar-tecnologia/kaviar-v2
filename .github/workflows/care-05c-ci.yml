@@ -1,0 +1,33 @@
+name: CARE-05C Official Scope Audit
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/services/care/care-scope-evidence-audit.ts'
+      - 'backend/tests/care-05c-scope-evidence-audit.test.ts'
+      - 'docs/care/CARE-05C-official-scope-audit.md'
+      - '.github/workflows/care-05c-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  scope-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DATABASE_URL: postgresql://care05c_ci:ci_password@127.0.0.1:5432/care05c_disposable
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install dependencies
+        working-directory: backend
+        run: npm ci
+      - name: Typecheck backend
+        working-directory: backend
+        run: npx tsc --noEmit -p tsconfig.build.json
+      - name: Run CARE proof and regressions
+        working-directory: backend
+        run: npx vitest run tests/care-05c-scope-evidence-audit.test.ts tests/care-05a-operational-evidence.test.ts tests/care-05b-fare-parity.test.ts tests/care-04c-runtime-eligibility.test.ts tests/care-04-readiness-policy.test.ts
