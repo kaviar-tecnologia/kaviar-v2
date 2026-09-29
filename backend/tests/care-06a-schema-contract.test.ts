@@ -27,10 +27,13 @@ describe('CARE-06A — additive official scope contract', () => {
     expect(schema).toContain('care_scope_verified_by_admin_id');
     expect(schema).toContain('care_scope_document_url');
     expect(schema).toContain('operational_coverage_id String?');
+    expect(schema).toContain('operational_coverage_linked_at DateTime?');
+    expect(schema).toContain('operational_coverage_linked_by_admin_id String?');
     expect(schema).toContain('driver_enrollments      driver_insurance_enrollments[]');
     expect(migration).toContain('municipal_regulations_care_active_requires_review');
     expect(migration).toContain('operational_insurance_coverages_care_active_requires_review');
     expect(migration).toContain('driver_insurance_enrollments_operational_coverage_id_fkey');
+    expect(migration).toContain('driver_insurance_enrollments_coverage_linked_by_admin_fkey');
   });
 
   it('contains no seed, status activation, destructive table/column operation or financial write', () => {
@@ -45,7 +48,10 @@ describe('CARE-06A — additive official scope contract', () => {
     expect(runtime).not.toContain('territoryEligible: boolean');
     expect(runtime).not.toContain('insuranceConfirmedForMode: boolean');
     expect(runtime).toContain('VerifiedCareScopeEvidence');
+    expect(runtime).toContain('isVerifiedCareScopeEvidence');
     expect(runtime).toContain('CARE_SCOPE_EVIDENCE_MISMATCH');
+    expect(verifiedScope).toContain('careScopeEvidenceBrand');
+    expect(verifiedScope).toContain('isVerifiedCareScopeEvidence');
     expect(verifiedScope).toContain("source: 'municipal_regulations'");
     expect(verifiedScope).toContain("source: 'operational_insurance_coverages'");
     expect(verifiedScope).toContain('operational_coverage_id: coverage.id');
