@@ -248,6 +248,17 @@ describe('CARE-445: refine/settle official writers are single-client transaction
     expect(sqlLog().some(sql => sql.trimStart().startsWith('UPDATE '))).toBe(false);
   });
 
+  it('a requested wait never started settles at the base fare with no doubled credit', async () => {
+    lockedRide = {
+      ...lockedRide, wait_requested: true, wait_started_at: null, wait_ended_at: null,
+    };
+    const result = await settle(id, { waitRatePerMinute: 0.50 });
+    expect(result).toMatchObject({
+      final_price: 31.24, fee_amount: 5.62, driver_earnings: 25.62,
+      credit_cost: 0, wait_charge_cents: 0,
+    });
+  });
+
   it('no wait option keeps normal finalization unchanged for CAR/MOTO', async () => {
     lockedRide = {
       ...lockedRide, wait_requested: false, wait_started_at: null, wait_ended_at: null,
