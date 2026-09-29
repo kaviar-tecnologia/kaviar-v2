@@ -113,11 +113,14 @@ export async function resolveCareOperationalEvidence(
     ]);
 
     if (!ride || !driver) return denied('CARE_RIDE_OR_DRIVER_MISSING');
-    if (ride.ride_type !== 'care' || !isUnsupportedCareIntent({
-      service_category: ride.service_category,
-      ride_type: ride.ride_type,
-      trip_details: ride.trip_details,
-    })) {
+    if (ride.ride_type !== 'care' ||
+        !['CARE_ASSISTED', 'CARE_FOLDING_WHEELCHAIR', 'CARE_ADAPTED_WHEELCHAIR']
+          .includes(ride.service_category) ||
+        !isUnsupportedCareIntent({
+          service_category: ride.service_category,
+          ride_type: ride.ride_type,
+          trip_details: ride.trip_details,
+        })) {
       return denied('CARE_RIDE_IDENTITY_INVALID');
     }
 
