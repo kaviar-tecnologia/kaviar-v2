@@ -246,7 +246,10 @@ router.patch('/municipal-regulations/:id', MUNICIPAL_CONFIG_ROLE, async (req: Re
         payload.vehicle_age_basis !== existing.vehicle_age_basis) ||
       (payload.authorization_validity_months !== undefined &&
         payload.authorization_validity_months !== existing.authorization_validity_months) ||
-      (payload.responsible_agency !== undefined && (payload.responsible_agency || null) !== existing.responsible_agency);
+      (payload.responsible_agency !== undefined && (payload.responsible_agency || null) !== existing.responsible_agency) ||
+      (payload.notes !== undefined && (payload.notes || null) !== existing.notes) ||
+      // A deactivation is a revocation, not a reversible pause retaining approval.
+      (payload.is_active === false && existing.care_scope_verified === true);
 
     const updated = await prisma.$transaction(async (tx) => {
       const careWrite = isCareMunicipalModality(existing.service_modality) ||
