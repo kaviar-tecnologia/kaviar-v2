@@ -93,6 +93,16 @@ describe('CrmPage premium redesign', () => {
     expect(src).toContain('createOpen');
   });
 
+  it('shows a planning territory and its neighborhoods without implying payouts', () => {
+    const manager = readFileSync(resolve(__dirname, '../pages/admin/ManagerHome.jsx'), 'utf8');
+    expect(manager).toContain('/api/admin/my-operator-profile/territory-info');
+    expect(manager).toContain("t.status === 'planning' || t.is_active === false");
+    expect(manager).toContain('tIds.includes(n.territory_id)');
+    expect(src).toContain('territoryInfo.neighborhoods?.map');
+    expect(src).toContain('Área em preparação. A exibição dos bairros não ativa operação, contrato nem repasses.');
+    expect(src).toContain("territoryInfo.territory_status === 'active' && territoryInfo.territory_active");
+  });
+
   it('preserves pagination', () => {
     expect(src).toContain('Pagination');
     expect(src).toContain('Math.ceil(total / 30)');
