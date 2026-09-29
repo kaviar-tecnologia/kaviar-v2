@@ -137,7 +137,9 @@ export async function evaluateCareEligibilityFromDb(
       externalEvidence.mode === expectedMode &&
       externalEvidence.territoryId.trim().length > 0 &&
       normalizedPlate(externalEvidence.vehiclePlate) === normalizedPlate(driver.vehicle_plate) &&
-      Number.isFinite(evidenceTime) && evidenceTime <= now.getTime();
+      // A prior transaction's evidence cannot be replayed after revocation.
+      // Resolve in the same decision/transaction with the very same clock.
+      Number.isFinite(evidenceTime) && evidenceTime === now.getTime();
 
     if (externalEvidence && !scopeMatches) {
       reasons.push('CARE_SCOPE_EVIDENCE_MISMATCH');
