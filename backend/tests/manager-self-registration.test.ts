@@ -103,6 +103,10 @@ describe('manager self-registration policy', () => {
     expect(managerDocumentVerificationMissingFields({ ...company, document_cnpj: '11.222.333/0001-80' }, Array(8).fill(true))).toContain('cnpj');
     expect(managerDocumentVerificationMissingFields({ ...company, legal_representative_cpf: null }, Array(8).fill(true))).toContain('legal_representative_cpf');
     expect(isValidBrazilianCnpj('00000000000000')).toBe(false);
+    // Exemplo do manual público da Receita Federal para o formato alfanumérico.
+    expect(isValidBrazilianCnpj('12.ABC.345/01DE-35')).toBe(true);
+    expect(isValidBrazilianCnpj('12.ABC.345/01DE-34')).toBe(false);
+    expect(isValidManagerPixKey('12ABC34501DE35', 'cnpj')).toBe(true);
     expect(isValidManagerPixKey('11222333000181', 'cnpj')).toBe(true);
   });
 

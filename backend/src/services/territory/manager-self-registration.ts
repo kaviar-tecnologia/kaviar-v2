@@ -52,14 +52,16 @@ export function isValidBrazilianCpf(value: string | null | undefined): boolean {
 }
 
 export function isValidBrazilianCnpj(value: string | null | undefined): boolean {
-  const cnpj = digits(value || '');
-  if (!/^\d{14}$/.test(cnpj) || /^(\d)\1{13}$/.test(cnpj)) return false;
+  // Receita Federal: 12 caracteres alfanuméricos + 2 verificadores numéricos;
+  // valor para cálculo de cada caractere = código ASCII - 48.
+  const cnpj = (value || '').toUpperCase().replace(/[.\s/-]/g, '');
+  if (!/^[0-9A-Z]{12}[0-9]{2}$/.test(cnpj) || /^(\d)\1{13}$/.test(cnpj)) return false;
   for (const length of [12, 13]) {
     const weights = length === 12
       ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
       : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-    const sum = [...cnpj.slice(0, length)].reduce((acc, digit, index) =>
-      acc + Number(digit) * weights[index], 0);
+    const sum = [...cnpj.slice(0, length)].reduce((acc, character, index) =>
+      acc + (character.charCodeAt(0) - 48) * weights[index], 0);
     const remainder = sum % 11;
     if (Number(cnpj[length]) !== (remainder < 2 ? 0 : 11 - remainder)) return false;
   }

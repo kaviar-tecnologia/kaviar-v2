@@ -106,6 +106,20 @@ describe('territorial manager manual document review endpoint', () => {
     expect(updateMany).toHaveBeenCalledTimes(1);
   });
 
+  it('accepts the official alphanumeric CNPJ format for PJ review', async () => {
+    const company = {
+      ...initial(), recipient_type: 'company', full_name: null, document_cpf: null,
+      company_name: 'Empresa Exemplo Ltda', document_cnpj: '12.ABC.345/01DE-35',
+      legal_representative_name: 'Responsável Exemplo', legal_representative_cpf: '52998224725',
+    };
+    prismaMock.operator_profiles.findUnique.mockResolvedValue(company);
+    txFindUnique.mockResolvedValue({ ...company, document_status: 'verified' });
+    const res = await request(app).patch(url).send({
+      document_status: 'verified', verification_confirmations: confirmed,
+    });
+    expect(res.status).toBe(200);
+  });
+
   it('rejects a concurrent change instead of verifying a stale identity', async () => {
     updateMany.mockResolvedValue({ count: 0 });
     const res = await request(app).patch(url).send({
