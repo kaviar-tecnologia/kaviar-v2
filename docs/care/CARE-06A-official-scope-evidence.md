@@ -54,7 +54,12 @@ endosso e revisão administrativa. Cobertura genérica `CAR_PASSENGER`/APP,
 `operational_coverage_linked_at` / `operational_coverage_linked_by_admin_id`,
 ligando explicitamente motorista/placa à cobertura operacional exata. Assim,
 uma inscrição genérica no provedor não pode ser promovida automaticamente para
-CARE e um vínculo sem revisor identificado continua inválido.
+CARE e um vínculo sem revisor identificado continua inválido. Como
+`provider_reference` registra o `NumSeguro` retornado pela Previlemos, o
+vínculo e o resolver exigem igualdade exata com o `policy_number` de cobertura
+CARE do tipo `APP`. Se apólice-mestra e certificado tiverem números distintos,
+não se presume equivalência: será necessário modelar/revisar a relação oficial
+antes de permitir o vínculo, sem interpretar nomes/textos livres.
 
 ## Evidência tipada e vinculada à corrida
 
@@ -63,6 +68,7 @@ oficiais existentes. Um resultado positivo contém, em um único bundle:
 
 - corrida, motorista, modalidade CARE e placa;
 - território, bairro de origem e revisão territorial;
+- coordenada real do embarque coberta pela geofence PostGIS do bairro (ST_Covers, SRID 4326, sem fallback);
 - município/UF, registro regulatório, documento e revisão;
 - autorização municipal individual quando exigida;
 - cobertura, apólice/endosso, documento, vigência e revisão;
@@ -74,7 +80,9 @@ proveniência em runtime emitida somente pelo próprio resolver. O adaptador
 `{ municipalAuthorized: true, territoryEligible: true,
 insuranceConfirmedForMode: true }` ou objeto plano equivalente construído
 livremente e exige o bundle efetivamente emitido pelo resolver. Também revalida
-ride, driver, modo, placa e instante da evidência.
+ride, driver, modo, placa e instante da evidência. O instante deve corresponder
+exatamente ao momento da decisão: um bundle anterior não pode ser reutilizado
+em oferta/aceite posterior, especialmente após revogação.
 
 ## Limites que permanecem
 
@@ -83,9 +91,11 @@ porque CARE-04A bloqueia antes e a integração operacional positiva exige os
 demais gates completos. Não altera pricing, settlement, rotas, wallet,
 pagamentos ou workers.
 
-O território ainda precisa de verificação explícita da geofence do ponto real
-da corrida no próximo passo. A existência de um bairro/território revisado não
-basta por si só.
+O ponto de embarque agora é verificado com `ST_Covers` no PostGIS pelo mesmo
+cliente Prisma de leitura da evidência. Geofence ausente, inválida, fora da área
+ou falha de leitura rejeita o bundle. A revisão cadastral, isoladamente, nunca
+autoriza a operação. Ainda é necessária homologação territorial real por
+modalidade, sem aproveitar fallback de 800 metros da corrida convencional.
 
 A política de preço permanece: nenhuma diferença por idade, deficiência,
 mobilidade reduzida, cadeira de rodas, cão-guia, acompanhante necessário ou
