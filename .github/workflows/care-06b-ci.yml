@@ -12,6 +12,7 @@ on:
       - 'backend/tests/care-445-wait-finalization-boundary.test.ts'
       - 'backend/tests/care-445-wait-timestamp-race.test.ts'
       - 'backend/tests/care-445-wallet-wait-fee-base.test.ts'
+      - 'backend/tests/care-445-completion-replay.test.ts'
       - 'backend/tests/wallet-v2-ride-flow.test.ts'
       - 'backend/tests/wallet-shadow.test.ts'
       - 'backend/src/services/wallet-v2/wallet-settlement.service.ts'
@@ -89,6 +90,7 @@ jobs:
           tests/care-445-wait-finalization-boundary.test.ts
           tests/care-445-wait-timestamp-race.test.ts
           tests/care-445-wallet-wait-fee-base.test.ts
+          tests/care-445-completion-replay.test.ts
           tests/wallet-v2-ride-flow.test.ts
           tests/wallet-shadow.test.ts
           tests/wait-charge-accounting.test.ts
