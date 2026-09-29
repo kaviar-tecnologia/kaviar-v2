@@ -1,0 +1,33 @@
+name: CARE-05A Operational Evidence
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/services/care/care-operational-evidence.ts'
+      - 'backend/tests/care-05a-operational-evidence.test.ts'
+      - 'docs/care/CARE-05A-operational-evidence.md'
+      - '.github/workflows/care-05a-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DATABASE_URL: postgresql://care05a_ci:ci_password@127.0.0.1:5432/care05a_disposable
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install dependencies and generate Prisma client
+        working-directory: backend
+        run: npm ci
+      - name: Typecheck backend
+        working-directory: backend
+        run: npx tsc --noEmit -p tsconfig.build.json
+      - name: CARE evidence and regression tests
+        working-directory: backend
+        run: npx vitest run tests/care-05a-operational-evidence.test.ts tests/care-04d-lifecycle-boundaries.test.ts tests/care-04c-runtime-eligibility.test.ts tests/care-04-readiness-policy.test.ts tests/care-03-eligibility.test.ts
