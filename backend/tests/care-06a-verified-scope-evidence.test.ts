@@ -316,6 +316,52 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
     expect((await resolve(db)).reasons).toContain('CARE_SCOPE_DRIVER_ENROLLMENT_MISSING');
   });
 
+  it('denies a mismatched plate or broken enrollment-to-coverage identity', async () => {
+    const plate = mockDb();
+    const source = fixture();
+    plate.calls.enrollment.mockResolvedValue([{
+      ...source.enrollment,
+      vehicle_plate: 'ZZZ9Z99',
+      operational_coverage_id: source.coverage.id,
+      operational_coverage: source.coverage,
+    }]);
+    expect((await resolve(plate.db)).reasons).toContain('CARE_SCOPE_DRIVER_ENROLLMENT_MISSING');
+
+    const wrongLink = mockDb();
+    wrongLink.calls.enrollment.mockResolvedValue([{
+      ...source.enrollment,
+      vehicle_plate: source.driver.vehicle_plate,
+      operational_coverage_id: 'other-coverage',
+      operational_coverage: source.coverage,
+    }]);
+    expect((await resolve(wrongLink.db)).reasons).toContain('CARE_SCOPE_DRIVER_ENROLLMENT_MISSING');
+  });
+
+  it('denies an expired linked policy or enrollment outside the policy window', async () => {
+    const source = fixture();
+    const expired = mockDb();
+    expired.calls.enrollment.mockResolvedValue([{
+      ...source.enrollment,
+      vehicle_plate: source.driver.vehicle_plate,
+      operational_coverage_id: source.coverage.id,
+      operational_coverage: {
+        ...source.coverage,
+        valid_until: new Date('2026-09-28T00:00:00.000Z'),
+      },
+    }]);
+    expect((await resolve(expired.db)).reasons).toContain('CARE_SCOPE_INSURANCE_REVIEW_INVALID');
+
+    const outside = mockDb();
+    outside.calls.enrollment.mockResolvedValue([{
+      ...source.enrollment,
+      vehicle_plate: source.driver.vehicle_plate,
+      operational_coverage_id: source.coverage.id,
+      operational_coverage: source.coverage,
+      valid_from: new Date('2026-08-01T00:00:00.000Z'),
+    }]);
+    expect((await resolve(outside.db)).reasons).toContain('CARE_SCOPE_DRIVER_ENROLLMENT_MISSING');
+  });
+
   it('does not issue scope evidence for legacy homebound/outside fallback', async () => {
     for (const field of ['is_homebound', 'outside_fallback_allowed'] as const) {
       const s = fixture();
