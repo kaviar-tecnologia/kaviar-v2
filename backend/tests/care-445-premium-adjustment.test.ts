@@ -147,7 +147,8 @@ const offer = () => ({
 const settlement = () => ({
   ride_id: 'ride-premium-445', quoted_price: '23.00', locked_price: '23.00',
   pricing_profile_id: 'profile-1', fee_percent: '18.00',
-  fee_amount: '4.14', driver_earnings: '18.86', settled_at: null, locked_at: new Date(),
+  fee_amount: '4.14', driver_earnings: '18.86', settled_at: null,
+  quoted_at: new Date('2026-09-29T12:00:00Z'), locked_at: new Date('2026-09-29T12:00:00Z'),
 });
 let locked: Record<string,any>, economic: Record<string,any>, currentOffer: Record<string,any>;
 
