@@ -28,10 +28,10 @@ ALTER TABLE "municipal_regulations"
 ALTER TABLE "municipal_regulations"
   ADD CONSTRAINT "municipal_regulations_care_active_requires_review"
   CHECK (
-    "service_modality" NOT IN (
-      'CARE_ASSISTED'::"MunicipalServiceModality",
-      'CARE_FOLDING_WHEELCHAIR'::"MunicipalServiceModality",
-      'CARE_ADAPTED_WHEELCHAIR'::"MunicipalServiceModality"
+    "service_modality"::text NOT IN (
+      'CARE_ASSISTED',
+      'CARE_FOLDING_WHEELCHAIR',
+      'CARE_ADAPTED_WHEELCHAIR'
     )
     OR "is_active" IS NOT TRUE
     OR (
