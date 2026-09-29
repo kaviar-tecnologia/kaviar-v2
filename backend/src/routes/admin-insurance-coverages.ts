@@ -4,10 +4,27 @@ import { prisma } from '../lib/prisma';
 import { authenticateAdmin, requireRole } from '../middlewares/auth';
 import { applyTerritoryScope } from '../middlewares/territory-scope';
 import { requireTerritoryScope } from '../middlewares/require-territory-scope';
+import { audit, auditCtx } from '../utils/audit';
 
 const router = Router();
 const ALLOWED_ROLES = ['SUPER_ADMIN', 'TERRITORIAL_MANAGER', 'TERRITORIAL_OPERATOR'];
-const MODALITIES = ['CAR_PASSENGER', 'MOTO_PASSENGER', 'MOTO_DELIVERY'] as const;
+const MODALITIES = [
+  'CAR_PASSENGER',
+  'MOTO_PASSENGER',
+  'MOTO_DELIVERY',
+  'CARE_ASSISTED',
+  'CARE_FOLDING_WHEELCHAIR',
+  'CARE_ADAPTED_WHEELCHAIR',
+] as const;
+const READINESS_MODALITIES = ['CAR_PASSENGER', 'MOTO_PASSENGER', 'MOTO_DELIVERY'] as const;
+const CARE_MODALITIES = [
+  'CARE_ASSISTED',
+  'CARE_FOLDING_WHEELCHAIR',
+  'CARE_ADAPTED_WHEELCHAIR',
+] as const;
+const isCareModality = (value: string | null | undefined): boolean =>
+  !!value && (CARE_MODALITIES as readonly string[]).includes(value);
+const CARE_REVIEW_ROLE = requireRole(['SUPER_ADMIN']);
 const COVERAGE_TYPES = ['APP', 'RC_F', 'PERSONAL_ACCIDENT', 'CARGO', 'OTHER'] as const;
 const STATUSES = ['DRAFT', 'ACTIVE', 'EXPIRED', 'SUSPENDED'] as const;
 
@@ -53,6 +70,10 @@ const createSchema = z.object({
 });
 
 const patchSchema = createSchema.partial();
+const careScopeReviewSchema = z.object({
+  decision: z.enum(['APPROVE', 'REVOKE']),
+  reason: z.string().min(3).max(2000).optional(),
+});
 
 router.get('/', async (req: Request, res: Response) => {
   try {
