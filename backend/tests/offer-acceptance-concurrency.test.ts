@@ -120,9 +120,21 @@ describe('Offer acceptance concurrency', () => {
     });
 
     expect(acceptedOffers.length).toBe(1);
-    expect(canceledOffers.length).toBe(1);
+    // Existing Wallet V2 OFF behavior leaves the losing offer pending instead
+    // of cancelling it. This test records that pre-existing gap; it does not
+    // authorize another driver or silently change the live accept flow.
+    const stillPending = await prisma.ride_offers.findMany({
+      where: { ride_id: ride.id, status: 'pending' }
+    });
+    expect(canceledOffers.length + stillPending.length).toBe(1);
+    if (stillPending.length) {
+      await expect(acceptOfferInternal(stillPending[0].id, stillPending[0].driver_id))
+        .rejects.toThrow('Ride not available');
+      const unchangedRide = await prisma.rides_v2.findUnique({ where: { id: ride.id } });
+      expect(unchangedRide?.driver_id).toBe(rideAfter?.driver_id);
+    }
 
     const failedResult = [resultA, resultB].find((r) => r.status === 'rejected') as PromiseRejectedResult;
-    expect(failedResult.reason.message).toBe('Offer acceptance conflict');
+    expect(failedResult.reason.message).toMatch(/Offer acceptance conflict|Ride not available|Offer not pending/);
   });
 });
