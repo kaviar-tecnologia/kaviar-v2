@@ -1193,60 +1193,58 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
       return res.status(403).json({ error: 'Acesso negado' });
     }
 
-    if (ride.status !== 'in_progress') {
+    // An explicit retry may reconcile a ride already marked completed after
+    // pricing COMMIT acknowledgement was lost or a downstream fee failed.
+    // Never re-run the operational transition on replay.
+    const isRecovery = ride.status === 'completed';
+    if (!isRecovery && ride.status !== 'in_progress') {
       return res.status(400).json({ error: 'Operação não permitida no estado atual da corrida' });
     }
-    // A started wait must end before completion; otherwise the final economic
-    // amount is unknown. The conditional update below also closes the race.
-    if (ride.wait_requested && Boolean(ride.wait_started_at) !== Boolean(ride.wait_ended_at)) {
-      return res.status(409).json({ error: 'WAIT_COMPLETION_CONFLICT' });
-    }
 
-    await prisma.$transaction(async (tx) => {
-      const completionData = {
-        status: 'completed' as const,
-        completed_at: new Date(),
-        updated_at: new Date(),
-      };
-      // Compare-and-set is mandatory even for ordinary rides: a stale request
-      // must not complete a canceled/already completed ride or replay effects.
-      const completed = await tx.rides_v2.updateMany({
-        where: {
-          id: ride_id, driver_id: driverId, status: 'in_progress',
-          wait_requested: Boolean(ride.wait_requested),
-          ...(ride.wait_requested ? {
-            OR: [
-              { wait_started_at: null, wait_ended_at: null },
-              { wait_started_at: { not: null }, wait_ended_at: { not: null } },
-            ],
-          } : {}),
-        },
-        data: completionData,
-      });
-      if (completed.count !== 1) {
-        throw Object.assign(new Error('WAIT_COMPLETION_CONFLICT'), {
-          code: 'WAIT_COMPLETION_CONFLICT',
-        });
+    if (!isRecovery) {
+      if (ride.wait_requested && Boolean(ride.wait_started_at) !== Boolean(ride.wait_ended_at)) {
+        return res.status(409).json({ error: 'WAIT_COMPLETION_CONFLICT' });
       }
 
-      // Liberar motorista
-      await tx.driver_status.update({
-        where: { driver_id: driverId },
-        data: { availability: 'online' }
+      await prisma.$transaction(async (tx) => {
+        const completionData = {
+          status: 'completed' as const,
+          completed_at: new Date(),
+          updated_at: new Date(),
+        };
+        // Compare-and-set for ordinary and wait rides alike. A stale caller
+        // must not overwrite cancel/completed or repeat operational effects.
+        const completed = await tx.rides_v2.updateMany({
+          where: {
+            id: ride_id, driver_id: driverId, status: 'in_progress',
+            wait_requested: Boolean(ride.wait_requested),
+            ...(ride.wait_requested ? {
+              OR: [
+                { wait_started_at: null, wait_ended_at: null },
+                { wait_started_at: { not: null }, wait_ended_at: { not: null } },
+              ],
+            } : {}),
+          },
+          data: completionData,
+        });
+        if (completed.count !== 1) {
+          throw Object.assign(new Error('WAIT_COMPLETION_CONFLICT'), {
+            code: 'WAIT_COMPLETION_CONFLICT',
+          });
+        }
+
+        await tx.driver_status.update({
+          where: { driver_id: driverId },
+          data: { availability: 'online' },
+        });
+        await tx.passengers.update({
+          where: { id: ride.passenger_id },
+          data: { last_lat: null, last_lng: null, last_location_updated_at: null },
+        });
       });
 
-      // Limpar localização compartilhada do passageiro
-      await tx.passengers.update({ where: { id: ride.passenger_id }, data: { last_lat: null, last_lng: null, last_location_updated_at: null } });
-    });
-
-    console.log(`[RIDE_STATUS_CHANGED] ride_id=${ride_id} status=completed driver_id=${driverId}`);
-
-    // SSE: notificar passageiro imediatamente
-    realTimeService.emitToRide(ride_id, {
-      type: 'ride.status.changed',
-      status: 'completed',
-      timestamp: new Date().toISOString()
-    });
+      console.log(`[RIDE_STATUS_CHANGED] ride_id=${ride_id} status=completed driver_id=${driverId}`);
+    }
 
     // The official engine settles the locked fare, actual wait, driver earning
     // and territorial credit in ONE economic transaction. Never write another
@@ -1309,6 +1307,7 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
         }
       } catch (partnerErr) {
         console.error(`[PARTNER_COMMISSION_FAILED] ride_id=${ride_id}`, partnerErr);
+        return res.status(503).json({ success: false, error: 'RIDE_FINANCIAL_EFFECTS_UNCONFIRMED' });
       }
     }
 
@@ -1374,6 +1373,7 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
             console.log(`[FEE_DEBITED] ride_id=${ride_id} driver_id=${driverId} fee=${settlement.fee_amount} balance=${delta.balance}`);
           } catch (feeErr) {
             console.error(`[FEE_DEBIT_FAILED] ride_id=${ride_id} driver_id=${driverId}`, feeErr);
+            return res.status(503).json({ success: false, error: 'RIDE_FINANCIAL_EFFECTS_UNCONFIRMED' });
           }
         } else if (process.env.CREDIT_CONSUME_ENABLED === 'true') {
           try {
@@ -1382,6 +1382,7 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
             console.log(`[CREDIT_CONSUMED] ride_id=${ride_id} driver_id=${driverId} cost=${settlement.credit_cost} type=${settlement.credit_match_type} balance=${delta.balance}`);
           } catch (creditErr) {
             console.error(`[CREDIT_CONSUME_FAILED] ride_id=${ride_id} driver_id=${driverId}`, creditErr);
+            return res.status(503).json({ success: false, error: 'RIDE_FINANCIAL_EFFECTS_UNCONFIRMED' });
           }
         }
       }
@@ -1398,8 +1399,18 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
       }).catch(err => console.error(`[SHADOW_CATCH] ride=${ride_id}`, err));
     }
 
-    // WhatsApp: notificar passageiro e motorista que corrida concluiu
-    if (process.env.WA_RIDE_COMPLETE_ENABLED === 'true' && settlement) {
+    // Emit the completed status only after confirmed economic effects.
+    // Replay must not duplicate an already emitted completion event.
+    if (!isRecovery) {
+      realTimeService.emitToRide(ride_id, {
+        type: 'ride.status.changed', status: 'completed',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    // Completion messages are at-most-once on the original request; the durable
+    // notification outbox remains a separate launch gate for interrupted requests.
+    if (!isRecovery && process.env.WA_RIDE_COMPLETE_ENABLED === 'true' && settlement) {
       try {
         const [passenger, driver] = await Promise.all([
           prisma.passengers.findUnique({ where: { id: ride.passenger_id }, select: { phone: true, name: true } }),
