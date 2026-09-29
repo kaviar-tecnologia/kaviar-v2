@@ -109,7 +109,9 @@ jobs:
               'care_scope_verified_at',
               'care_scope_verified_by_admin_id',
               'care_scope_document_url',
-              'operational_coverage_id'
+              'operational_coverage_id',
+              'operational_coverage_linked_at',
+              'operational_coverage_linked_by_admin_id'
             )
           ORDER BY table_name, column_name;
           SQL
