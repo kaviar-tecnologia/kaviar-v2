@@ -262,7 +262,7 @@ router.post('/', authenticatePassenger, async (req: Request, res: Response) => {
         // An idempotency key cannot turn a stranded, unpriced ride into a
         // successful booking. The official settlement, not the cache alone,
         // must prove the quote and lock before acknowledging the old request.
-        if (!hasOfficialLockedQuote(existing)) {
+        if (!hasOfficialLockedQuote(existing) || existing.status === 'no_driver') {
           return res.status(409).json({ success: false, error: 'PRICING_QUOTE_UNAVAILABLE' });
         }
         return res.json({ success: true, data: { ride_id: existing.id, status: existing.status } });
@@ -366,7 +366,10 @@ router.post('/', authenticatePassenger, async (req: Request, res: Response) => {
           : null,
         service_category || 'CAR_NORMAL'
       );
-      if (!quoteResult || !Number.isFinite(quoteResult.quoted_price) || quoteResult.quoted_price <= 0) {
+      const rawCents = quoteResult?.quoted_price * 100;
+      if (!quoteResult || !Number.isFinite(rawCents) || rawCents <= 0 ||
+          !Number.isSafeInteger(Math.round(rawCents)) ||
+          Math.abs(rawCents - Math.round(rawCents)) > 1e-7) {
         throw new Error('PRICING_QUOTE_INVALID_RESULT');
       }
 
