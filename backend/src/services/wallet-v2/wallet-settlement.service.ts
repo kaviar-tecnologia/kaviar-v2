@@ -17,7 +17,8 @@ export interface FeeDebitExecutor {
 export interface SettlementParams {
   rideId: string;
   driverId: string;
-  finalPriceCents: bigint;
+  finalPriceCents: bigint; // total including the confirmed wait charge
+  feeBaseCents?: bigint; // optional locked fare; defaults to total for legacy no-wait callers
   reservedCents: bigint;
   territoryId?: string;
 }
@@ -60,6 +61,11 @@ export class WalletSettlementService {
   async settleRide(params: SettlementParams): Promise<{ collected: boolean }> {
     assertSettlementActive();
 
+    const feeBaseCents = params.feeBaseCents ?? params.finalPriceCents;
+    if (feeBaseCents <= 0n || feeBaseCents > params.finalPriceCents) {
+      throw Object.assign(new Error('WALLET_FEE_BASE_INVALID'), { code: 'WALLET_FEE_BASE_INVALID' });
+    }
+
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -77,7 +83,9 @@ export class WalletSettlementService {
         if (
           existingSnapshot.driverId !== params.driverId ||
           existingSnapshot.finalPriceCents !== params.finalPriceCents ||
-          (existingSnapshot.territoryId ?? undefined) !== (params.territoryId ?? undefined)
+          (existingSnapshot.territoryId ?? undefined) !== (params.territoryId ?? undefined) ||
+          (params.feeBaseCents !== undefined &&
+            existingSnapshot.feeAmountCents !== applyBasisPoints(feeBaseCents, PLATFORM_FEE_RATE_BPS))
         ) {
           await client.query('ROLLBACK');
           throw Object.assign(
@@ -160,7 +168,7 @@ export class WalletSettlementService {
       // Otherwise 100% of the platform fee stays with KAVIAR and no manager obligation is created.
       const effectiveManagerCommissionRateBps = managerId ? MANAGER_COMMISSION_RATE_BPS : 0;
       const split = this.feeSplit.calculateSplit(
-        params.finalPriceCents,
+        feeBaseCents,
         PLATFORM_FEE_RATE_BPS,
         effectiveManagerCommissionRateBps,
       );
@@ -180,6 +188,7 @@ export class WalletSettlementService {
           rideId: params.rideId,
           driverId: params.driverId,
           finalPriceCents: params.finalPriceCents,
+          feeBaseCents,
           territoryId: params.territoryId || null,
           managerId,
           managerAssignmentId,
@@ -235,6 +244,7 @@ export class WalletSettlementService {
           rideId: params.rideId,
           driverId: params.driverId,
           finalPriceCents: params.finalPriceCents,
+          feeBaseCents,
           territoryId: params.territoryId || null,
           managerId,
           managerAssignmentId,
