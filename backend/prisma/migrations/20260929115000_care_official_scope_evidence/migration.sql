@@ -107,7 +107,9 @@ CREATE INDEX "operational_insurance_coverages_care_scope_verified_idx"
   ON "operational_insurance_coverages"("care_scope_verified");
 
 ALTER TABLE "driver_insurance_enrollments"
-  ADD COLUMN "operational_coverage_id" TEXT;
+  ADD COLUMN "operational_coverage_id" TEXT,
+  ADD COLUMN "operational_coverage_linked_at" TIMESTAMPTZ(6),
+  ADD COLUMN "operational_coverage_linked_by_admin_id" TEXT;
 
 ALTER TABLE "driver_insurance_enrollments"
   ADD CONSTRAINT "driver_insurance_enrollments_operational_coverage_id_fkey"
@@ -116,5 +118,15 @@ ALTER TABLE "driver_insurance_enrollments"
   ON DELETE SET NULL
   ON UPDATE CASCADE;
 
+ALTER TABLE "driver_insurance_enrollments"
+  ADD CONSTRAINT "driver_insurance_enrollments_coverage_linked_by_admin_fkey"
+  FOREIGN KEY ("operational_coverage_linked_by_admin_id")
+  REFERENCES "admins"("id")
+  ON DELETE SET NULL
+  ON UPDATE CASCADE;
+
 CREATE INDEX "driver_insurance_enrollments_operational_coverage_id_idx"
   ON "driver_insurance_enrollments"("operational_coverage_id");
+
+CREATE INDEX "driver_insurance_enrollments_coverage_linked_by_admin_idx"
+  ON "driver_insurance_enrollments"("operational_coverage_linked_by_admin_id");
