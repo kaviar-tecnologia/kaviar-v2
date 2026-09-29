@@ -260,6 +260,7 @@ describe('CARE-06A municipal scope review in existing admin module', () => {
   it('invalidates and deactivates prior CARE review when regulatory scope changes', async () => {
     prismaMock.municipal_regulations.findUnique
       .mockResolvedValueOnce(careRegulation({ is_active: true, care_scope_verified: true }))
+      .mockResolvedValueOnce(careRegulation({ is_active: true, care_scope_verified: true }))
       .mockResolvedValueOnce(careRegulation({ is_active: false, care_scope_verified: false }));
     prismaMock.municipal_regulations.update.mockImplementation(async ({ data }: any) =>
       careRegulation({ ...data }),
