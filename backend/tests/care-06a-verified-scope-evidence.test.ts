@@ -35,6 +35,7 @@ function fixture() {
       territory: {
         id: 'territory-1',
         uf: 'RJ',
+        city_name: 'Cidade Exemplo',
         is_active: true,
         status: 'active',
         coverage_status: 'COMPLETE',
@@ -53,6 +54,7 @@ function fixture() {
       territory: {
         id: 'territory-1',
         uf: 'RJ',
+        city_name: 'Cidade Exemplo',
         is_active: true,
         status: 'active',
         coverage_status: 'COMPLETE',
@@ -277,6 +279,25 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
     sameNeighborhood.driver.community_id = 'another-community';
     const matched = mockDb(sameNeighborhood);
     expect((await resolve(matched.db)).verified).toBe(true);
+  });
+
+  it('requires consistent municipality in official origin, territory and driver-home records', async () => {
+    const mismatch = fixture();
+    mismatch.origin.territory.city_name = 'Outro Município';
+    const a = mockDb(mismatch);
+    expect((await resolve(a.db)).reasons).toContain('CARE_SCOPE_TERRITORY_UNVERIFIED');
+    expect(a.calls.regulation).not.toHaveBeenCalled();
+
+    const missingCity = fixture();
+    missingCity.origin.territory.city_name = null as never;
+    expect((await resolve(mockDb(missingCity).db)).reasons)
+      .toContain('CARE_SCOPE_TERRITORY_UNVERIFIED');
+
+    const differentDriverCity = fixture();
+    differentDriverCity.driverHome.city = 'Outro Município';
+    const b = mockDb(differentDriverCity);
+    expect((await resolve(b.db)).reasons).toContain('CARE_SCOPE_DRIVER_OUTSIDE_TERRITORY');
+    expect(b.calls.regulation).not.toHaveBeenCalled();
   });
 
   it('fails closed when pickup is outside, geom missing or PostGIS read fails', async () => {
