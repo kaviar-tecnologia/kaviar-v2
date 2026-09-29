@@ -70,6 +70,8 @@ export interface VerifiedCareScopeEvidence {
     providerName: string;
     policyNumber: string;
     providerReference: string;
+    coverageLinkedAt: Date;
+    coverageLinkedByAdminId: string;
     documentUrl: string;
     validFrom: Date;
     validUntil: Date;
