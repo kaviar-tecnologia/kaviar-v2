@@ -160,11 +160,11 @@ describe('CARE-05D — actual official lifecycle remains closed (disposable Post
   it('cancellation remains final while dispatcher cancels any pending imported offer', async () => {
     const { ride, offer } = await offeredCareRide();
     await db.rides_v2.update({
-      where: { id: ride.id }, data: { status: 'canceled' },
+      where: { id: ride.id }, data: { status: 'canceled_by_passenger' },
     });
     await dispatcherService.dispatchRide(ride.id);
     expect((await db.rides_v2.findUnique({ where: { id: ride.id } }))?.status)
-      .toBe('canceled');
+      .toBe('canceled_by_passenger');
     expect((await db.ride_offers.findUnique({ where: { id: offer.id } }))?.status)
       .toBe('canceled');
     await assertNoCareAcceptance(ride.id);
