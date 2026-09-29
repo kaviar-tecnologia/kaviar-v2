@@ -250,6 +250,19 @@ router.post(
             error: 'DRIVER_INSURANCE_OUTSIDE_OPERATIONAL_COVERAGE_WINDOW',
           });
         }
+        // provider_reference stores Previlemos NumSeguro. A link to a
+        // different policy/certificate does not prove coverage of this car.
+        // No manual bypass: separately numbered master policies need a
+        // reviewed, structured mapping before any CARE authorization.
+        if (coverage.coverage_type !== 'APP' ||
+            !coverage.policy_number?.trim() ||
+            coverage.policy_number.trim().toUpperCase() !==
+              enrollment.provider_reference.trim().toUpperCase()) {
+          return res.status(409).json({
+            success: false,
+            error: 'CARE_POLICY_REFERENCE_MISMATCH',
+          });
+        }
       }
 
       const admin = (req as any).admin;
