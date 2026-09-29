@@ -20,6 +20,7 @@ import {
   evaluateDriverRegulatoryCompatibility,
   getDriverMunicipalStatus,
   getMunicipalRegulation,
+  mapServiceCategoryToMunicipalModality,
 } from '../src/services/municipal-regulation.service';
 
 const mockFindRegulation = prisma.municipal_regulations.findFirst as ReturnType<typeof vi.fn>;
