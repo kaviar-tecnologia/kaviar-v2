@@ -40,13 +40,31 @@ describe('CARE-06B single-client pricing transaction primitive', () => {
     expect(client.release).toHaveBeenCalledWith(false);
   });
 
-  it('rolls back when COMMIT fails rather than returning success', async () => {
+  it('never assumes rollback on lost COMMIT acknowledgement and discards the connection', async () => {
     const { pool, client, queries } = fakePool(['COMMIT']);
     await expect(withCarePricingTransaction(pool as never, async (tx) => {
       await tx.query('FIRST WRITE');
-    })).rejects.toThrow('synthetic COMMIT');
-    expect(queries).toEqual(['BEGIN', 'FIRST WRITE', 'COMMIT', 'ROLLBACK']);
-    expect(client.release).toHaveBeenCalledWith(false);
+    })).rejects.toMatchObject({
+      code: 'CARE_PRICING_COMMIT_OUTCOME_UNKNOWN',
+      originalError: expect.any(Error),
+    });
+    expect(queries).toEqual(['BEGIN', 'FIRST WRITE', 'COMMIT']);
+    expect(client.release).toHaveBeenCalledWith(true);
+  });
+
+  it('does not automatically retry an operation after the COMMIT response is lost', async () => {
+    const { pool, client, queries } = fakePool(['COMMIT']);
+    const economicWrite = vi.fn(async (tx) => {
+      await tx.query('FIRST WRITE');
+      return 'persisted';
+    });
+    await expect(withCarePricingTransaction(pool as never, economicWrite)).rejects.toMatchObject({
+      code: 'CARE_PRICING_COMMIT_OUTCOME_UNKNOWN',
+    });
+    expect(economicWrite).toHaveBeenCalledTimes(1);
+    expect(queries.filter((sql) => sql === 'FIRST WRITE')).toHaveLength(1);
+    expect(pool.connect).toHaveBeenCalledTimes(1);
+    expect(client.release).toHaveBeenCalledWith(true);
   });
 
   it('destroys the client when rollback itself fails', async () => {
