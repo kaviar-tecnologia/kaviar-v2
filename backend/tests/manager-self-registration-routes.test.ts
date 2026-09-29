@@ -135,6 +135,22 @@ describe('manager registration route and review boundary', () => {
     })).status).toBe(409);
   });
 
+  it('includes inactive assigned territory metadata without changing activation', () => {
+    const route = readFileSync('src/routes/admin-my-operator-profile.ts', 'utf8');
+    expect(route).toContain('territory_id: territory.id');
+    expect(route).toContain('territory_status: territory.status');
+    expect(route).toContain('territory_active: territory.is_active');
+    expect(route).toContain('where: { territory_id: territory.id, is_active: true }');
+  });
+
+  it('keeps manager recruitment applications out of territorial CRM reads and edits', () => {
+    const route = readFileSync('src/routes/admin-crm.ts', 'utf8');
+    expect(route).toContain("where.NOT = { lead_type: 'TERRITORIAL_MANAGER' }");
+    expect(route).toContain("if (lead.lead_type === 'TERRITORIAL_MANAGER') return res.status(403)");
+    expect((route.match(/if \(existing\.lead_type === 'TERRITORIAL_MANAGER'\) return res\.status\(403\)/g) || []).length).toBe(4);
+    expect(route).toContain("admin.role !== 'SUPER_ADMIN' && lead_type === 'TERRITORIAL_MANAGER'");
+  });
+
   it('requires backend confirmation for documentary verification, not just UI checkboxes', () => {
     const route = readFileSync('src/routes/admin-payouts.ts', 'utf8');
     const ui = readFileSync('../frontend-app/src/pages/admin/TerritorialPayoutsPage.jsx', 'utf8');
