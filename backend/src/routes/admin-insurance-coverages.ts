@@ -238,7 +238,9 @@ router.patch('/:id', async (req: Request, res: Response) => {
         String((data as any)[field] ?? '') !== String((existing as any)[field] ?? ''));
     if (invalidatesCareReview) {
       data.care_scope_verified = false;
-      if (targetStatus === 'ACTIVE') data.status = 'SUSPENDED';
+      if (isCareModality(targetModality) && targetStatus === 'ACTIVE') {
+        data.status = 'SUSPENDED';
+      }
     }
 
     data.updated_by_admin_id = admin.id;
