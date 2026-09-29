@@ -233,12 +233,17 @@ router.patch('/:id', async (req: Request, res: Response) => {
 
     const sensitiveFields = [
       'territory_id', 'modality', 'provider_name', 'policy_number',
-      'coverage_type', 'document_url', 'valid_from', 'valid_until',
+      'coverage_type', 'coverage_description', 'coverage_amount_death',
+      'coverage_amount_disability', 'coverage_amount_medical',
+      'document_url', 'valid_from', 'valid_until', 'notes',
     ];
+    // Suspending or expiring an already-reviewed CARE policy revokes its
+    // approval; reactivation then requires a fresh, explicit review.
     const invalidatesCareReview = existing.care_scope_verified === true &&
       isCareModality(existing.modality) &&
-      sensitiveFields.some((field) => Object.prototype.hasOwnProperty.call(data, field) &&
-        String((data as any)[field] ?? '') !== String((existing as any)[field] ?? ''));
+      (sensitiveFields.some((field) => Object.prototype.hasOwnProperty.call(data, field) &&
+        String((data as any)[field] ?? '') !== String((existing as any)[field] ?? '')) ||
+       (data.status !== undefined && data.status !== 'ACTIVE' && data.status !== existing.status));
     if (invalidatesCareReview) {
       data.care_scope_verified = false;
       if (isCareModality(targetModality) && targetStatus === 'ACTIVE') {
