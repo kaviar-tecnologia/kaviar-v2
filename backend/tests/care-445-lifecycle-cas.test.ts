@@ -174,6 +174,19 @@ describe('CARE-445 — stale lifecycle writes may not override completion/cancel
     }));
   });
 
+  it('rejects a driver-cancel that lost the race to the trip start', async () => {
+    prismaMock.rides_v2.findUnique.mockResolvedValueOnce({
+      ...waitRide({ status: 'arrived', trip_details: {} }), passenger_id: 'passenger-1',
+    });
+    prismaMock.rides_v2.updateMany.mockResolvedValueOnce({ count: 0 });
+    const response = await request(appWait).post('/api/v2/rides/ride-445-wait/driver-cancel').send({ reason: 'test' });
+    expect(response.status).toBe(409);
+    expect(prismaMock.rides_v2.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'ride-445-wait', driver_id: 'driver-1', status: { in: ['accepted', 'arrived'] } },
+      data: expect.objectContaining({ status: 'requested', driver_id: null }),
+    }));
+  });
+
   it('rejects a stale arrived update after a concurrent cancellation', async () => {
     prismaMock.rides_v2.findUnique.mockResolvedValueOnce({
       ...waitRide({ status: 'accepted' }), passenger_id: 'passenger-1',
