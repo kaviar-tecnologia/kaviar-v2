@@ -4,21 +4,98 @@ import {
   type CareReadClient,
   type CareExternalEvidence,
 } from '../src/services/care/care-runtime-eligibility';
+import {
+  resolveVerifiedCareScopeEvidence,
+  type CareScopeEvidenceClient,
+} from '../src/services/care/care-verified-scope-evidence';
 
 const now = new Date('2026-09-28T17:00:00.000Z');
 const review = new Date('2026-09-27T17:00:00.000Z');
 const validUntil = new Date('2026-10-28T17:00:00.000Z');
 
-const approvedEvidence = (): CareExternalEvidence => ({
-  rideId: 'synthetic-care-ride',
-  driverId: 'synthetic-driver',
-  mode: 'CARE_ASSISTED',
-  territoryId: 'synthetic-territory',
-  city: 'Synthetic City',
-  state: 'RJ',
-  vehiclePlate: 'ABC1D23',
-  verifiedAt: now,
-} as unknown as CareExternalEvidence);
+async function approvedEvidence(): Promise<CareExternalEvidence> {
+  const scopeDb = {
+    rides_v2: {
+      findUnique: vi.fn().mockResolvedValue({
+        ride_type: 'care',
+        service_category: 'CARE_ASSISTED',
+        origin_neighborhood_id: 'synthetic-neighborhood',
+      }),
+    },
+    care_trip_requirements: {
+      findUnique: vi.fn().mockResolvedValue({ mode: 'ASSISTED', status: 'READY' }),
+    },
+    drivers: {
+      findUnique: vi.fn().mockResolvedValue({
+        vehicle_plate: 'ABC-1D23',
+        neighborhood_id: 'synthetic-neighborhood',
+      }),
+    },
+    neighborhoods: {
+      findUnique: vi.fn().mockResolvedValue({
+        id: 'synthetic-neighborhood',
+        city: 'Synthetic City',
+        is_active: true,
+        is_verified: true,
+        verified_at: review,
+        verified_by: 'synthetic-territory-reviewer',
+        territory_id: 'synthetic-territory',
+        territory: {
+          id: 'synthetic-territory',
+          uf: 'RJ',
+          is_active: true,
+          status: 'active',
+          coverage_status: 'COMPLETE',
+          coverage_reviewed_at: review,
+          coverage_reviewed_by: 'synthetic-territory-reviewer',
+        },
+      }),
+    },
+    municipal_regulations: {
+      findFirst: vi.fn().mockResolvedValue({
+        id: 'synthetic-regulation',
+        regulation_status: 'NOT_REGULATED',
+        requires_city_approval: false,
+        care_scope_verified: true,
+        care_scope_verified_at: review,
+        care_scope_verified_by_admin_id: 'synthetic-municipal-reviewer',
+        care_scope_document_url: 'https://example.invalid/care-municipal.pdf',
+      }),
+    },
+    municipal_authorizations: { findFirst: vi.fn() },
+    operational_insurance_coverages: {
+      findFirst: vi.fn().mockResolvedValue({
+        id: 'synthetic-coverage',
+        provider_name: 'Synthetic Insurer',
+        policy_number: 'POL-001',
+        document_url: 'https://example.invalid/care-policy.pdf',
+        valid_from: new Date('2026-09-01T00:00:00.000Z'),
+        valid_until: validUntil,
+        care_scope_verified_at: review,
+        care_scope_verified_by_admin_id: 'synthetic-insurance-reviewer',
+      }),
+    },
+    driver_insurance_enrollments: {
+      findFirst: vi.fn().mockResolvedValue({
+        id: 'synthetic-enrollment',
+        provider_reference: 'SYNTHETIC-REF',
+        operational_coverage_linked_at: review,
+        operational_coverage_linked_by_admin_id: 'synthetic-link-reviewer',
+        valid_from: new Date('2026-09-01T00:00:00.000Z'),
+        valid_until: validUntil,
+      }),
+    },
+  } as unknown as CareScopeEvidenceClient;
+
+  const result = await resolveVerifiedCareScopeEvidence(
+    scopeDb,
+    'synthetic-care-ride',
+    'synthetic-driver',
+    now,
+  );
+  if (!result.verified) throw new Error('synthetic verified scope fixture failed');
+  return result.evidence;
+}
 
 const samples = () => ({
   ride: {
@@ -100,10 +177,16 @@ function mockedClient(s: ReturnType<typeof samples>) {
   return { db, calls };
 }
 
-const decide = (
+const decide = async (
   db: CareReadClient,
-  evidence: CareExternalEvidence | null | undefined = approvedEvidence(),
-) => evaluateCareEligibilityFromDb(db, 'synthetic-care-ride', 'synthetic-driver', evidence, now);
+  evidence?: CareExternalEvidence | null,
+) => evaluateCareEligibilityFromDb(
+  db,
+  'synthetic-care-ride',
+  'synthetic-driver',
+  evidence === undefined ? await approvedEvidence() : evidence,
+  now,
+);
 
 describe('CARE-04C read-only evidence adapter (synthetic objects only)', () => {
   beforeEach(() => vi.clearAllMocks());
