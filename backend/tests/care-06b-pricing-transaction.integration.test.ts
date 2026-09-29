@@ -70,6 +70,45 @@ describe.skipIf(!disposable)('CARE-06B — real single-client PostgreSQL transac
     expect(rows.rows[0]).toMatchObject({ first_value: 0, second_value: 0 });
   });
 
+  it('detects an acknowledged-commit loss even when PostgreSQL has already committed', async () => {
+    const id = await newProbe();
+    let releaseBroken = false;
+    // Simulate the wire failure AFTER PostgreSQL has committed, not a failure
+    // before execution. A blind retry would apply the economic write twice.
+    const ackLostSource = {
+      connect: async () => {
+        const real = await pool.connect();
+        const query = real.query.bind(real);
+        return {
+          query: async (sql: string, values?: unknown[]) => {
+            const result = values
+              ? await query(sql, values as any[])
+              : await query(sql);
+            if (sql === 'COMMIT') throw new Error('synthetic ACK_LOST_AFTER_COMMIT');
+            return result;
+          },
+          release: (broken?: boolean) => {
+            releaseBroken = broken === true;
+            real.release(broken);
+          },
+        } as unknown as pg.PoolClient;
+      },
+    };
+
+    await expect(withCarePricingTransaction(ackLostSource as never, async (tx) => {
+      await tx.query(
+        'UPDATE care06b_tx_probe SET first_value = first_value + 1 WHERE id = $1',
+        [id],
+      );
+    })).rejects.toMatchObject({ code: 'CARE_PRICING_COMMIT_OUTCOME_UNKNOWN' });
+    expect(releaseBroken).toBe(true);
+    // The proper response is a separate read/reconciliation, not a second write.
+    const recorded = await pool.query(
+      'SELECT first_value FROM care06b_tx_probe WHERE id = $1', [id],
+    );
+    expect(recorded.rows[0].first_value).toBe(1);
+  });
+
   it('prevents a competing write from crossing a FOR UPDATE lock', async () => {
     const id = await newProbe();
     let releaseFirst!: () => void;
