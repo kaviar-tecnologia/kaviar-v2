@@ -136,11 +136,18 @@ describe('CARE-04C read-only evidence adapter (synthetic objects only)', () => {
     expect(noScope.reasons).toEqual(expect.arrayContaining([
       'MUNICIPAL_AUTHORIZATION_MISSING', 'TERRITORY_NOT_ELIGIBLE', 'INSURANCE_NOT_CONFIRMED',
     ]));
-    for (const key of ['municipalAuthorized', 'territoryEligible', 'insuranceConfirmedForMode'] as const) {
-      const scope = approvedEvidence();
-      scope[key] = false;
+    const mismatches: Array<[string, Partial<Record<string, unknown>>]> = [
+      ['ride', { rideId: 'other-ride' }],
+      ['driver', { driverId: 'other-driver' }],
+      ['mode', { mode: 'CARE_ADAPTED_WHEELCHAIR' }],
+      ['plate', { vehiclePlate: 'ZZZ9Z99' }],
+      ['verification-time', { verifiedAt: new Date(now.getTime() + 1000) }],
+    ];
+    for (const [label, patch] of mismatches) {
+      const scope = { ...approvedEvidence(), ...patch } as unknown as CareExternalEvidence;
       const decision = await decide(db, scope);
-      expect(decision.eligible, key).toBe(false);
+      expect(decision.eligible, label).toBe(false);
+      expect(decision.reasons, label).toContain('CARE_SCOPE_EVIDENCE_MISMATCH');
     }
   });
 
