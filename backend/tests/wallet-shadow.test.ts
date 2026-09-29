@@ -58,7 +58,7 @@ function setupMocks(opts: {
 }
 
 describe('shadowCalculate', () => {
-  it('calculates 18% fee on finalPriceCents (includes wait)', async () => {
+  it('calculates 18% fee on base while preserving total price with wait', async () => {
     setupMocks();
     await shadowCalculate({ rideId: 'r1', driverId: 'd1', finalPriceCents: 2150, waitChargeCents: 150, legacyCreditCost: 1 });
     const insert = mockQuery.mock.calls.find((c: any) => c[0].includes('INSERT INTO wallet_shadow'));
@@ -72,10 +72,10 @@ describe('shadowCalculate', () => {
     // p[18]=divergenceCents, p[19]=refMonth
     expect(p[2]).toBe(2150);           // final_price_cents
     expect(p[3]).toBe(150);            // wait_charge_cents
-    expect(p[6]).toBe(387);            // fee = round(2150 * 18 / 100)
-    expect(p[8]).toBe(232);            // matrix = round(387 * 60 / 100)
-    expect(p[10]).toBe(155);           // manager = 387 - 232
-    expect(p[11]).toBe(2150 - 387);    // driver_earnings
+    expect(p[6]).toBe(360);            // fee = round((2150 - 150) * 18 / 100)
+    expect(p[8]).toBe(216);            // matrix = round(360 * 60 / 100)
+    expect(p[10]).toBe(144);           // manager = 360 - 216
+    expect(p[11]).toBe(2150 - 360);    // driver receives all wait
     expect(p[8]! + p[10]!).toBe(p[6]);// shares sum = fee
   });
 
