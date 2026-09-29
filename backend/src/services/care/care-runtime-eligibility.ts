@@ -4,7 +4,10 @@ import {
   type CareEligibilityResult,
   type CareRejectionCode,
 } from './care-eligibility';
-import type { VerifiedCareScopeEvidence } from './care-verified-scope-evidence';
+import {
+  isVerifiedCareScopeEvidence,
+  type VerifiedCareScopeEvidence,
+} from './care-verified-scope-evidence';
 
 /**
  * CARE-04C: read-only adapter for the existing rides_v2 lifecycle.
@@ -127,7 +130,8 @@ export async function evaluateCareEligibilityFromDb(
     const evidenceTime = externalEvidence?.verifiedAt instanceof Date
       ? externalEvidence.verifiedAt.getTime()
       : NaN;
-    const scopeMatches = !!externalEvidence && !!ride && !!requirements && !!driver &&
+    const scopeMatches = isVerifiedCareScopeEvidence(externalEvidence) &&
+      !!ride && !!requirements && !!driver &&
       externalEvidence.rideId === rideId &&
       externalEvidence.driverId === driverId &&
       externalEvidence.mode === expectedMode &&
