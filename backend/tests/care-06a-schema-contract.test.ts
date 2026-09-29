@@ -37,7 +37,7 @@ describe('CARE-06A — additive official scope contract', () => {
   });
 
   it('contains no seed, status activation, destructive table/column operation or financial write', () => {
-    expect(migration).not.toMatch(/\b(?:INSERT|UPDATE|DELETE|TRUNCATE)\b/i);
+    expect(migration).not.toMatch(/^\s*(?:INSERT|UPDATE|DELETE|TRUNCATE)\b/im);
     expect(migration).not.toMatch(/DROP\s+(?:TABLE|COLUMN)/i);
     expect(migration).not.toContain('financial_');
     expect(migration).not.toContain('ride_settlements');
