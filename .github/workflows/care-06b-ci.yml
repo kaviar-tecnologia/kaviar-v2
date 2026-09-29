@@ -64,7 +64,6 @@ jobs:
           tests/care-03-eligibility.test.ts
           tests/care-04-readiness-policy.test.ts
       - name: Prove atomic commit, rollback and row lock on disposable PostgreSQL
-        if: github.event_name == 'pull_request'
         working-directory: backend
         env:
           CARE_PRICING_ATOMIC_INTEGRATION: '1'
