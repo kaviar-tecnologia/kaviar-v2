@@ -84,6 +84,17 @@ export type CareScopeEvidenceResult =
   | { verified: true; evidence: VerifiedCareScopeEvidence; reasons: [] }
   | { verified: false; evidence: null; reasons: CareScopeEvidenceRejection[] };
 
+/**
+ * Runtime provenance check. The brand symbol is module-private, so a request
+ * JSON or a hand-built plain object cannot satisfy this gate by setting loose
+ * booleans/strings. Only evidence issued by this resolver carries the brand.
+ */
+export function isVerifiedCareScopeEvidence(value: unknown): value is VerifiedCareScopeEvidence {
+  return !!value &&
+    typeof value === 'object' &&
+    (value as Record<PropertyKey, unknown>)[careScopeEvidenceBrand] === true;
+}
+
 const MODE_BY_REQUIREMENT: Readonly<Record<string, CareVerifiedMode>> = {
   ASSISTED: 'CARE_ASSISTED',
   FOLDING_WHEELCHAIR: 'CARE_FOLDING_WHEELCHAIR',
