@@ -107,9 +107,9 @@ function mockDb(s = fixture()) {
     requirement: vi.fn().mockResolvedValue(s.requirement),
     driver: vi.fn().mockResolvedValue(s.driver),
     neighborhood,
-    regulation: vi.fn().mockResolvedValue(s.regulation),
+    regulation: vi.fn().mockResolvedValue([s.regulation]),
     authorization: vi.fn().mockResolvedValue(s.authorization),
-    coverage: vi.fn().mockResolvedValue(s.coverage),
+    coverage: vi.fn().mockResolvedValue([s.coverage]),
     enrollment: vi.fn().mockResolvedValue(s.enrollment),
     geofence: vi.fn().mockResolvedValue([{ covered: true }]),
   };
@@ -118,9 +118,9 @@ function mockDb(s = fixture()) {
     care_trip_requirements: { findUnique: calls.requirement },
     drivers: { findUnique: calls.driver },
     neighborhoods: { findUnique: calls.neighborhood },
-    municipal_regulations: { findFirst: calls.regulation },
+    municipal_regulations: { findMany: calls.regulation },
     municipal_authorizations: { findFirst: calls.authorization },
-    operational_insurance_coverages: { findFirst: calls.coverage },
+    operational_insurance_coverages: { findMany: calls.coverage },
     driver_insurance_enrollments: { findFirst: calls.enrollment },
     $queryRaw: calls.geofence,
   } as unknown as CareScopeEvidenceClient;
@@ -157,6 +157,7 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
     });
     expect(calls.regulation).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ service_modality: 'CARE_ASSISTED' }),
+      take: 2,
     }));
     expect(calls.coverage).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
@@ -164,6 +165,7 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
         territory_id: 'territory-1',
         care_scope_verified: true,
       }),
+      take: 2,
     }));
     expect(calls.enrollment).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({
@@ -178,9 +180,36 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
     expect(geofenceSql).not.toContain('ST_DWithin');
   });
 
+  it('fails closed when more than one active municipal or insurance record claims the same exact CARE scope', async () => {
+    const a = mockDb();
+    a.calls.regulation.mockResolvedValue([
+      fixture().regulation,
+      { ...fixture().regulation, id: 'reg-conflicting', care_scope_document_url: 's3://private/other.pdf' },
+    ]);
+    expect((await resolve(a.db)).reasons).toContain('CARE_SCOPE_MUNICIPAL_RECORD_AMBIGUOUS');
+    expect(a.calls.coverage).not.toHaveBeenCalled();
+
+    const b = mockDb();
+    b.calls.coverage.mockResolvedValue([
+      fixture().coverage,
+      { ...fixture().coverage, id: 'coverage-conflicting', policy_number: 'OTHER-POLICY' },
+    ]);
+    expect((await resolve(b.db)).reasons).toContain('CARE_SCOPE_INSURANCE_COVERAGE_AMBIGUOUS');
+    expect(b.calls.enrollment).not.toHaveBeenCalled();
+  });
+
+  it('rejects multiple matching pickup geofences rather than trusting an arbitrary first row', async () => {
+    const { db, calls } = mockDb();
+    calls.geofence.mockResolvedValue([{ covered: true }, { covered: false }]);
+    expect((await resolve(db)).reasons).toContain('CARE_SCOPE_PICKUP_GEOFENCE_UNVERIFIED');
+    expect(calls.regulation).not.toHaveBeenCalled();
+    const geofenceSql = (calls.geofence.mock.calls[0][0] as TemplateStringsArray).join(' ');
+    expect(geofenceSql).toContain('LIMIT 2');
+  });
+
   it('does not treat a generic CAR record as CARE evidence', async () => {
     const { db, calls } = mockDb();
-    calls.regulation.mockResolvedValue(null);
+    calls.regulation.mockResolvedValue([]);
     const result = await resolve(db);
     expect(result).toEqual({
       verified: false,
@@ -192,10 +221,10 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
 
   it('requires explicit municipal review and, when applicable, valid city-hall authorization', async () => {
     const first = mockDb();
-    first.calls.regulation.mockResolvedValue({
+    first.calls.regulation.mockResolvedValue([{
       ...fixture().regulation,
       care_scope_verified: false,
-    });
+    }]);
     expect((await resolve(first.db)).reasons).toContain('CARE_SCOPE_MUNICIPAL_REVIEW_INVALID');
 
     const second = mockDb();
@@ -205,11 +234,11 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
 
   it('allows a reviewed NOT_REGULATED CARE position without inventing a driver authorization', async () => {
     const { db, calls } = mockDb();
-    calls.regulation.mockResolvedValue({
+    calls.regulation.mockResolvedValue([{
       ...fixture().regulation,
       regulation_status: 'NOT_REGULATED',
       requires_city_approval: false,
-    });
+    }]);
     const result = await resolve(db);
     expect(result.verified).toBe(true);
     expect(calls.authorization).not.toHaveBeenCalled();
@@ -221,7 +250,7 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
 
   it('requires an exact reviewed CARE policy and a driver enrollment explicitly linked to it', async () => {
     const noCoverage = mockDb();
-    noCoverage.calls.coverage.mockResolvedValue(null);
+    noCoverage.calls.coverage.mockResolvedValue([]);
     expect((await resolve(noCoverage.db)).reasons).toContain('CARE_SCOPE_INSURANCE_COVERAGE_MISSING');
 
     const noEnrollment = mockDb();
@@ -341,10 +370,10 @@ describe('CARE-06A — exact structured provenance from official sources', () =>
 
   it('fails closed on stale review, expired evidence, malformed identity and DB errors', async () => {
     const stale = mockDb();
-    stale.calls.coverage.mockResolvedValue({
+    stale.calls.coverage.mockResolvedValue([{
       ...fixture().coverage,
       care_scope_verified_at: new Date(NOW.getTime() + 1000),
-    });
+    }]);
     expect((await resolve(stale.db)).reasons).toContain('CARE_SCOPE_INSURANCE_REVIEW_INVALID');
 
     const expired = mockDb();
