@@ -41,12 +41,14 @@ beforeEach(() => {
     if (sql.includes('SELECT ride_type, service_category, trip_details FROM rides_v2')) return { rows: [normal] };
     if (sql.includes('feature_flags')) return { rows: [{ enabled: true }] };
     if (sql.includes('ride_settlements')) return { rows: [snapshot], rowCount: 1 };
+    if (sql.includes('feature_flags')) return { rows: [{ enabled: true }], rowCount: 1 };
     if (sql.includes('pricing_profiles')) return { rows: [profile], rowCount: 1 };
     return { rows: [], rowCount: 1 };
   });
   mocks.txQuery.mockImplementation(async (sql: string) => {
     if (sql.includes('FROM rides_v2') && sql.includes('FOR UPDATE')) return { rows: [lockedRide], rowCount: 1 };
     if (sql.includes('FROM ride_settlements') && sql.includes('FOR UPDATE')) return { rows: [snapshot], rowCount: 1 };
+    if (sql.includes('feature_flags')) return { rows: [{ enabled: true }], rowCount: 1 };
     if (sql.includes('pricing_profiles')) return { rows: [profile], rowCount: 1 };
     return { rows: [], rowCount: 1 };
   });
