@@ -21,7 +21,7 @@ export type CareScopeEvidenceRejection =
   | 'CARE_SCOPE_MUNICIPAL_REVIEW_INVALID'
   | 'CARE_SCOPE_MUNICIPAL_AUTHORIZATION_MISSING'
   | 'CARE_SCOPE_INSURANCE_COVERAGE_MISSING'
-  | 'CARE_SCOPE_INSURANCE_COVERAGE_AMBIGUOUS'
+  | 'CARE_SCOPE_DRIVER_ENROLLMENT_AMBIGUOUS'
   | 'CARE_SCOPE_INSURANCE_REVIEW_INVALID'
   | 'CARE_SCOPE_DRIVER_ENROLLMENT_MISSING'
   | 'CARE_SCOPE_POLICY_REFERENCE_MISMATCH'
@@ -366,37 +366,82 @@ export async function resolveVerifiedCareScopeEvidence(
       }
     }
 
-    // More than one currently eligible policy for the exact scope cannot be
-    // selected by findFirst: fail closed until its official link is resolved.
-    const coverages = await db.operational_insurance_coverages.findMany({
+    // Resolve the exact insurance link from the DRIVER, not an arbitrary
+    // territory-wide policy. Different drivers may legitimately have different
+    // reviewed policies for the same CARE mode and territory.
+    const coverageScope = {
+      territory_id: origin.territory_id,
+      modality: mode,
+      coverage_type: 'APP' as const,
+      status: 'ACTIVE',
+      valid_from: { lte: today },
+      valid_until: { gte: today },
+      document_url: { not: null },
+      care_scope_verified: true,
+      care_scope_verified_at: { lte: now },
+      care_scope_verified_by_admin_id: { not: null },
+    };
+
+    const enrollments = await db.driver_insurance_enrollments.findMany({
       where: {
-        territory_id: origin.territory_id,
-        modality: mode,
-        coverage_type: 'APP',
+        driver_id: driverId,
+        vehicle_plate: { equals: driver.vehicle_plate!, mode: 'insensitive' },
         status: 'ACTIVE',
         valid_from: { lte: today },
         valid_until: { gte: today },
-        document_url: { not: null },
-        care_scope_verified: true,
-        care_scope_verified_at: { lte: now },
-        care_scope_verified_by_admin_id: { not: null },
+        cancelled_at: null,
+        provider_reference: { not: null },
+        operational_coverage_id: { not: null },
+        operational_coverage_linked_at: { not: null },
+        operational_coverage_linked_by_admin_id: { not: null },
+        operational_coverage: { is: coverageScope },
       },
       select: {
         id: true,
-        provider_name: true,
-        policy_number: true,
-        document_url: true,
+        vehicle_plate: true,
+        provider_reference: true,
+        operational_coverage_id: true,
+        operational_coverage_linked_at: true,
+        operational_coverage_linked_by_admin_id: true,
         valid_from: true,
         valid_until: true,
-        care_scope_verified_at: true,
-        care_scope_verified_by_admin_id: true,
+        operational_coverage: {
+          select: {
+            id: true,
+            provider_name: true,
+            policy_number: true,
+            document_url: true,
+            valid_from: true,
+            valid_until: true,
+            care_scope_verified_at: true,
+            care_scope_verified_by_admin_id: true,
+          },
+        },
       },
       take: 2,
     });
 
-    if (coverages.length === 0) return fail('CARE_SCOPE_INSURANCE_COVERAGE_MISSING');
-    if (coverages.length !== 1) return fail('CARE_SCOPE_INSURANCE_COVERAGE_AMBIGUOUS');
-    const coverage = coverages[0];
+    if (enrollments.length === 0) {
+      // This existence check classifies the denial; it does not select a policy
+      // or grant permission. Only an explicit driver-to-coverage link can do so.
+      const availableCoverage = await db.operational_insurance_coverages.findFirst({
+        where: coverageScope,
+        select: { id: true },
+      });
+      return fail(availableCoverage
+        ? 'CARE_SCOPE_DRIVER_ENROLLMENT_MISSING'
+        : 'CARE_SCOPE_INSURANCE_COVERAGE_MISSING');
+    }
+    if (enrollments.length !== 1) {
+      return fail('CARE_SCOPE_DRIVER_ENROLLMENT_AMBIGUOUS');
+    }
+
+    const enrollment = enrollments[0];
+    const coverage = enrollment.operational_coverage;
+    if (!coverage || enrollment.operational_coverage_id !== coverage.id ||
+        normalizedPlate(enrollment.vehicle_plate) !== vehiclePlate) {
+      return fail('CARE_SCOPE_DRIVER_ENROLLMENT_MISSING');
+    }
     if (!coverage.provider_name.trim() || !coverage.policy_number.trim() ||
         !coverage.document_url?.trim() ||
         !pastOrNow(coverage.care_scope_verified_at, now) ||
@@ -406,30 +451,7 @@ export async function resolveVerifiedCareScopeEvidence(
       return fail('CARE_SCOPE_INSURANCE_REVIEW_INVALID');
     }
 
-    const enrollment = await db.driver_insurance_enrollments.findFirst({
-      where: {
-        driver_id: driverId,
-        operational_coverage_id: coverage.id,
-        vehicle_plate: { equals: driver.vehicle_plate!, mode: 'insensitive' },
-        status: 'ACTIVE',
-        valid_from: { lte: today },
-        valid_until: { gte: today },
-        cancelled_at: null,
-        provider_reference: { not: null },
-        operational_coverage_linked_at: { not: null },
-        operational_coverage_linked_by_admin_id: { not: null },
-      },
-      select: {
-        id: true,
-        provider_reference: true,
-        operational_coverage_linked_at: true,
-        operational_coverage_linked_by_admin_id: true,
-        valid_from: true,
-        valid_until: true,
-      },
-    });
-
-    if (!enrollment || !enrollment.provider_reference?.trim() ||
+    if (!enrollment.provider_reference?.trim() ||
         !pastOrNow(enrollment.operational_coverage_linked_at, now) ||
         !enrollment.operational_coverage_linked_by_admin_id?.trim() ||
         enrollment.valid_from.getTime() < coverage.valid_from.getTime() ||
@@ -437,10 +459,8 @@ export async function resolveVerifiedCareScopeEvidence(
         !validOnCivilDay(enrollment.valid_until, today)) {
       return fail('CARE_SCOPE_DRIVER_ENROLLMENT_MISSING');
     }
-    // The provider reference is the issued insurance number. A free-text policy name
-    // or a manually linked, different certificate cannot prove the same risk.
-    // For distinct master/certificate numbers, deny until a separately
-    // reviewed structured equivalence exists in the official insurance source.
+    // Previlemos NumSeguro must match the exact reviewed APP policy.
+    // Distinct certificate/master numbers require separately verified mapping.
     if (coverage.policy_number.trim().toUpperCase() !==
         enrollment.provider_reference.trim().toUpperCase()) {
       return fail('CARE_SCOPE_POLICY_REFERENCE_MISMATCH');
