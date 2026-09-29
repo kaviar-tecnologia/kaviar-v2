@@ -12,6 +12,7 @@ export type CareScopeEvidenceRejection =
   | 'CARE_SCOPE_RIDE_INVALID'
   | 'CARE_SCOPE_DRIVER_INVALID'
   | 'CARE_SCOPE_TERRITORY_UNVERIFIED'
+  | 'CARE_SCOPE_PICKUP_GEOFENCE_UNVERIFIED'
   | 'CARE_SCOPE_DRIVER_OUTSIDE_TERRITORY'
   | 'CARE_SCOPE_MUNICIPAL_RECORD_MISSING'
   | 'CARE_SCOPE_MUNICIPAL_REVIEW_INVALID'
@@ -31,6 +32,7 @@ export type CareScopeEvidenceClient = Pick<
   | 'municipal_authorizations'
   | 'operational_insurance_coverages'
   | 'driver_insurance_enrollments'
+  | '$queryRaw'
 >;
 
 export interface VerifiedCareScopeEvidence {
@@ -147,6 +149,8 @@ export async function resolveVerifiedCareScopeEvidence(
           ride_type: true,
           service_category: true,
           origin_neighborhood_id: true,
+          origin_lat: true,
+          origin_lng: true,
         },
       }),
       db.care_trip_requirements.findUnique({
@@ -222,8 +226,38 @@ export async function resolveVerifiedCareScopeEvidence(
     if (!territoryReviewed || !origin || !territory || !origin.territory_id) {
       return fail('CARE_SCOPE_TERRITORY_UNVERIFIED');
     }
-    if (!driverHome || driverHome.territory_id !== origin.territory_id) {
+    if (!driverHome || driverHome.territory_id !== origin.territory_id ||
+        driverHome.is_active !== true || driverHome.is_verified !== true ||
+        !driverHome.verified_by?.trim() || !pastOrNow(driverHome.verified_at, now) ||
+        driverHome.territory?.is_active !== true || driverHome.territory.status !== 'active' ||
+        driverHome.territory.coverage_status !== 'COMPLETE' ||
+        !driverHome.territory.coverage_reviewed_by?.trim() ||
+        !pastOrNow(driverHome.territory.coverage_reviewed_at, now)) {
       return fail('CARE_SCOPE_DRIVER_OUTSIDE_TERRITORY');
+    }
+
+    // Exact stored pickup coordinate; no neighborhood center or 800m fallback.
+    // Resolve through the SAME Prisma client/transaction as the evidence.
+    const lat = Number(ride.origin_lat);
+    const lng = Number(ride.origin_lng);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90 ||
+        !Number.isFinite(lng) || lng < -180 || lng > 180) {
+      return fail('CARE_SCOPE_PICKUP_GEOFENCE_UNVERIFIED');
+    }
+    const pickupCoverage = await db.$queryRaw<Array<{ covered: boolean }>>`
+      SELECT ST_Covers(
+        ng.geom,
+        ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)
+      ) AS covered
+      FROM neighborhood_geofences ng
+      WHERE ng.neighborhood_id = ${ride.origin_neighborhood_id}
+        AND ng.geom IS NOT NULL
+        AND ST_SRID(ng.geom) = 4326
+        AND ST_IsValid(ng.geom)
+      LIMIT 1
+    `;
+    if (pickupCoverage.length !== 1 || pickupCoverage[0]?.covered !== true) {
+      return fail('CARE_SCOPE_PICKUP_GEOFENCE_UNVERIFIED');
     }
 
     const city = origin.city.trim();
