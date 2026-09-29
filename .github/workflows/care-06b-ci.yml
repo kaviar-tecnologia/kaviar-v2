@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'backend/src/services/care/care-official-fare-evidence.ts'
+      - 'backend/src/services/pricing-engine.ts'
+      - 'backend/tests/care-06b-pricing-boundary.test.ts'
       - 'backend/tests/care-06b-official-fare-evidence.test.ts'
       - 'backend/src/services/care/care-fare-parity.ts'
       - 'backend/tests/care-05b-fare-parity.test.ts'
@@ -39,6 +41,7 @@ jobs:
         run: >-
           npx vitest run
           tests/care-06b-official-fare-evidence.test.ts
+          tests/care-06b-pricing-boundary.test.ts
           tests/care-05b-fare-parity.test.ts
           tests/care-03-eligibility.test.ts
           tests/care-04-readiness-policy.test.ts
