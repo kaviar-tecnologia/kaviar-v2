@@ -31,7 +31,7 @@ export type CareOperationalEvidenceReason =
 export interface CareOperationalEvidenceSnapshot {
   /** A registry prerequisite, NOT proof that this pickup/vehicle is CARE-licensed. */
   territoryRegistryReviewed: boolean;
-  evidence: CareExternalEvidence;
+  evidence: CareExternalEvidence | null;
   reasons: CareOperationalEvidenceReason[];
 }
 
@@ -39,11 +39,7 @@ const denied = (
   ...reasons: CareOperationalEvidenceReason[]
 ): CareOperationalEvidenceSnapshot => ({
   territoryRegistryReviewed: false,
-  evidence: {
-    municipalAuthorized: false,
-    territoryEligible: false,
-    insuranceConfirmedForMode: false,
-  },
+  evidence: null,
   reasons: [
     ...reasons,
     'CARE_TERRITORY_SCOPE_NOT_VERIFIED',
@@ -184,11 +180,7 @@ export async function resolveCareOperationalEvidence(
     // Do not reuse a positive registry check as a dispatch authorization.
     return {
       territoryRegistryReviewed: true,
-      evidence: {
-        territoryEligible: false,
-        municipalAuthorized: false,
-        insuranceConfirmedForMode: false,
-      },
+      evidence: null,
       reasons: [
         'CARE_TERRITORY_SCOPE_NOT_VERIFIED',
         'CARE_MUNICIPAL_SCOPE_NOT_VERIFIED',
