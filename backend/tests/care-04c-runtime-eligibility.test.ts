@@ -226,12 +226,27 @@ describe('CARE-04C read-only evidence adapter (synthetic objects only)', () => {
       ['plate', { vehiclePlate: 'ZZZ9Z99' }],
       ['verification-time', { verifiedAt: new Date(now.getTime() + 1000) }],
     ];
+    const issued = await approvedEvidence();
     for (const [label, patch] of mismatches) {
-      const scope = { ...approvedEvidence(), ...patch } as unknown as CareExternalEvidence;
+      const scope = { ...issued, ...patch } as CareExternalEvidence;
       const decision = await decide(db, scope);
       expect(decision.eligible, label).toBe(false);
       expect(decision.reasons, label).toContain('CARE_SCOPE_EVIDENCE_MISMATCH');
     }
+
+    const forgedPlainObject = {
+      rideId: 'synthetic-care-ride',
+      driverId: 'synthetic-driver',
+      mode: 'CARE_ASSISTED',
+      territoryId: 'synthetic-territory',
+      city: 'Synthetic City',
+      state: 'RJ',
+      vehiclePlate: 'ABC1D23',
+      verifiedAt: now,
+    } as unknown as CareExternalEvidence;
+    const forgedDecision = await decide(db, forgedPlainObject);
+    expect(forgedDecision.eligible).toBe(false);
+    expect(forgedDecision.reasons).toContain('CARE_SCOPE_EVIDENCE_MISMATCH');
   });
 
   it('rejects CARE draft, missing requirements, and unreviewed trip', async () => {
@@ -312,10 +327,11 @@ describe('CARE-04C read-only evidence adapter (synthetic objects only)', () => {
 
   it('rejects blank IDs or invalid clock before reading the DB', async () => {
     const { db, calls } = mockedClient(samples());
-    expect(await evaluateCareEligibilityFromDb(db, '', 'synthetic-driver', approvedEvidence(), now))
+    const issued = await approvedEvidence();
+    expect(await evaluateCareEligibilityFromDb(db, '', 'synthetic-driver', issued, now))
       .toEqual({ eligible: false, reasons: ['CARE_EVIDENCE_UNAVAILABLE'] });
     expect(await evaluateCareEligibilityFromDb(
-      db, 'synthetic-care-ride', 'synthetic-driver', approvedEvidence(), new Date('invalid'),
+      db, 'synthetic-care-ride', 'synthetic-driver', issued, new Date('invalid'),
     )).toEqual({ eligible: false, reasons: ['CARE_EVIDENCE_UNAVAILABLE'] });
     for (const call of Object.values(calls)) expect(call).not.toHaveBeenCalled();
   });
