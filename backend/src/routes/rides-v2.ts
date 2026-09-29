@@ -451,6 +451,9 @@ router.post('/:ride_id/outside-fallback-consent', authenticatePassenger, async (
         is_homebound: true,
         outside_fallback_allowed: true,
         outside_fallback_consented_at: true,
+        pricing_profile_id: true, quoted_price: true, locked_price: true,
+        platform_fee: true, driver_earnings: true,
+        settlement: { select: officialQuoteSettlementSelect },
       }
     });
 
@@ -467,6 +470,10 @@ router.post('/:ride_id/outside-fallback-consent', authenticatePassenger, async (
         error: 'OUTSIDE_FALLBACK_NOT_AVAILABLE',
         status: ride.status,
       });
+    }
+
+    if (!hasOfficialLockedQuote(ride)) {
+      return res.status(409).json({ success: false, error: 'PRICING_QUOTE_UNAVAILABLE' });
     }
 
     const consentedAt =
