@@ -298,7 +298,7 @@ router.get('/readiness', async (req: Request, res: Response) => {
     const expiring = activeWindow.filter((item) => item.valid_until <= in30days);
 
     const byModality: Record<string, any> = {};
-    for (const modality of MODALITIES) {
+    for (const modality of READINESS_MODALITIES) {
       const modalityItems = activeWindow.filter((item) => item.modality === modality);
       const territoryWithCoverage = new Set(
         modalityItems.filter((item) => item.territory_id).map((item) => item.territory_id as string),
@@ -320,7 +320,7 @@ router.get('/readiness', async (req: Request, res: Response) => {
     const missingAlerts = [] as any[];
     const activeTerritories = territories.filter((t) => t.is_active);
     for (const territory of activeTerritories) {
-      for (const modality of MODALITIES) {
+      for (const modality of READINESS_MODALITIES) {
         const hasCoverage = activeWindow.some(
           (item) => item.modality === modality && (item.territory_id === territory.id || item.territory_id === null),
         );
