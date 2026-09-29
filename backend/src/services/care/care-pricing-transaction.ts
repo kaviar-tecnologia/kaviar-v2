@@ -37,9 +37,9 @@ export async function withCarePricingTransaction<T>(
       } catch (rollbackError) {
         // Never put a client of unknown transaction state back in the pool.
         releaseAsBroken = true;
-        throw new AggregateError(
-          [cause, rollbackError],
-          'CARE_PRICING_TRANSACTION_ROLLBACK_FAILED',
+        throw Object.assign(
+          new Error('CARE_PRICING_TRANSACTION_ROLLBACK_FAILED'),
+          { originalError: cause, rollbackError },
         );
       }
     }
