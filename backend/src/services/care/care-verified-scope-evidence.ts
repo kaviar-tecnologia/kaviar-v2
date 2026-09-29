@@ -210,6 +210,7 @@ export async function resolveVerifiedCareScopeEvidence(
         select: {
           id: true,
           uf: true,
+          city_name: true,
           is_active: true,
           status: true,
           coverage_status: true,
@@ -244,12 +245,20 @@ export async function resolveVerifiedCareScopeEvidence(
       !!territory.coverage_reviewed_by?.trim() &&
       pastOrNow(territory.coverage_reviewed_at, now) &&
       !!origin.city?.trim() &&
-      !!territory.uf?.trim();
+      !!territory.uf?.trim() &&
+      // The municipality must agree between the existing neighborhood and
+      // operational territory records; a stale neighborhood label cannot
+      // select a different city's regulation by itself.
+      !!territory.city_name?.trim() &&
+      origin.city.trim().toLocaleLowerCase('pt-BR') ===
+        territory.city_name.trim().toLocaleLowerCase('pt-BR');
 
     if (!territoryReviewed || !origin || !territory || !origin.territory_id) {
       return fail('CARE_SCOPE_TERRITORY_UNVERIFIED');
     }
     if (!driverHome || driverHome.territory_id !== origin.territory_id ||
+        driverHome.city?.trim().toLocaleLowerCase('pt-BR') !==
+          origin.city.trim().toLocaleLowerCase('pt-BR') ||
         driverHome.is_active !== true || driverHome.is_verified !== true ||
         !driverHome.verified_by?.trim() || !pastOrNow(driverHome.verified_at, now) ||
         driverHome.territory?.is_active !== true || driverHome.territory.status !== 'active' ||
