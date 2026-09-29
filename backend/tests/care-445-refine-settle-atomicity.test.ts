@@ -161,4 +161,25 @@ describe('CARE-445: refine/settle official writers are single-client transaction
     snapshot.locked_price = '32.24';
     await expect(settle(id)).rejects.toThrow('PRICING_SETTLEMENT_SNAPSHOT_INCONSISTENT');
   });
+  it('reads a cold flat-fee flag through the held client, not another pool checkout', async () => {
+    vi.resetModules(); // New module instance has no cached fee flag.
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (sql.includes('feature_flags')) throw new Error('shared pool must not be used under a held transaction');
+      if (sql.includes('SELECT ride_type, service_category, trip_details FROM rides_v2')) return { rows: [normal] };
+      return { rows: [] };
+    });
+    mocks.txQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM rides_v2') && sql.includes('FOR UPDATE')) return { rows: [lockedRide], rowCount: 1 };
+      if (sql.includes('FROM ride_settlements') && sql.includes('FOR UPDATE')) return { rows: [snapshot], rowCount: 1 };
+      if (sql.includes('feature_flags')) return { rows: [{ enabled: true }], rowCount: 1 };
+      if (sql.includes('pricing_profiles')) return { rows: [profile], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
+    const { refine: freshRefine } = await import('../src/services/pricing-engine');
+    await freshRefine(id, 'n-a', 'Origin');
+    expect(mocks.query.mock.calls.some(([sql]) => String(sql).includes('feature_flags'))).toBe(false);
+    expect(sqlLog().some(sql => sql.includes('feature_flags'))).toBe(true);
+    expect(mocks.connect).toHaveBeenCalledTimes(1);
+  });
+
 });
