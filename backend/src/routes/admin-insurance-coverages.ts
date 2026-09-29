@@ -134,6 +134,15 @@ router.post('/', async (req: Request, res: Response) => {
     if (payload.territory_id && !inScope(admin, scope, payload.territory_id)) {
       return res.status(403).json({ success: false, error: 'Território fora do seu escopo.' });
     }
+    if (isCareModality(payload.modality) && !payload.territory_id) {
+      return res.status(400).json({ success: false, error: 'Cobertura CARE exige território específico.' });
+    }
+    if (isCareModality(payload.modality) && payload.status === 'ACTIVE') {
+      return res.status(409).json({
+        success: false,
+        error: 'CARE_SCOPE_REVIEW_REQUIRED_BEFORE_ACTIVATION',
+      });
+    }
 
     const created = await prisma.operational_insurance_coverages.create({
       data: {
