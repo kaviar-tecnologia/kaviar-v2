@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { prismaMock, authState, dispatchRideMock } = vi.hoisted(() => ({
   prismaMock: {
+    $transaction: vi.fn(),
     rides_v2: {
       findUnique: vi.fn(),
       findFirst: vi.fn(),
@@ -138,6 +139,11 @@ beforeEach(() => {
   authState.driverId = 'driver-1';
   prismaMock.rides_v2.findUnique.mockResolvedValue(waitRide());
   prismaMock.rides_v2.updateMany.mockResolvedValue({ count: 1 });
+  prismaMock.$transaction.mockImplementation(async (callback: any) => callback({
+    rides_v2: { updateMany: prismaMock.rides_v2.updateMany },
+    driver_status: { update: vi.fn() },
+    passengers: { update: vi.fn() },
+  }));
 });
 
 describe('CARE-445 — wait timestamps cannot change after completion', () => {
@@ -187,4 +193,31 @@ describe('CARE-445 — wait timestamps cannot change after completion', () => {
       data: { wait_started_at: expect.any(Date) },
     });
   });
+  it('refuses completion when waiting has started but not ended', async () => {
+    prismaMock.rides_v2.findUnique.mockResolvedValueOnce({
+      ...waitRide(), passenger_id: 'passenger-1',
+    });
+    const response = await request(appWait).post('/api/v2/rides/ride-445-wait/complete');
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('WAIT_COMPLETION_CONFLICT');
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('does not mark a ride complete if concurrent wait/start changed the interval', async () => {
+    prismaMock.rides_v2.findUnique.mockResolvedValueOnce({
+      ...waitRide({ wait_started_at: null }), passenger_id: 'passenger-1',
+    });
+    prismaMock.rides_v2.updateMany.mockResolvedValueOnce({ count: 0 });
+    const response = await request(appWait).post('/api/v2/rides/ride-445-wait/complete');
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe('WAIT_COMPLETION_CONFLICT');
+    expect(prismaMock.rides_v2.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        id: 'ride-445-wait', driver_id: 'driver-1', status: 'in_progress',
+        OR: expect.any(Array),
+      }),
+      data: expect.objectContaining({ status: 'completed' }),
+    }));
+  });
+
 });
