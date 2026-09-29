@@ -340,6 +340,8 @@ export async function resolveVerifiedCareScopeEvidence(
     });
 
     if (!enrollment || !enrollment.provider_reference?.trim() ||
+        !pastOrNow(enrollment.operational_coverage_linked_at, now) ||
+        !enrollment.operational_coverage_linked_by_admin_id?.trim() ||
         enrollment.valid_from.getTime() < coverage.valid_from.getTime() ||
         enrollment.valid_until.getTime() > coverage.valid_until.getTime() ||
         !validOnCivilDay(enrollment.valid_until, today)) {
