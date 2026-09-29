@@ -6,6 +6,10 @@ on:
       - 'backend/prisma/schema.prisma'
       - 'backend/prisma/migrations/20260929115000_care_official_scope_evidence/**'
       - 'backend/src/services/care/**'
+      - 'backend/src/services/municipal-regulation.service.ts'
+      - 'backend/src/routes/admin-municipal.ts'
+      - 'backend/src/routes/admin-insurance-coverages.ts'
+      - 'backend/src/routes/admin-driver-insurance.ts'
       - 'backend/tests/care-04c-runtime-eligibility.test.ts'
       - 'backend/tests/care-05a-operational-evidence.test.ts'
       - 'backend/tests/care-06a-*.test.ts'
@@ -58,6 +62,8 @@ jobs:
           npx vitest run
           tests/care-06a-schema-contract.test.ts
           tests/care-06a-verified-scope-evidence.test.ts
+          tests/care-06a-admin-scope-routes.test.ts
+          tests/municipal-regulation.service.test.ts
           tests/care-05c-scope-evidence-audit.test.ts
           tests/care-05b-fare-parity.test.ts
           tests/care-05a-operational-evidence.test.ts
