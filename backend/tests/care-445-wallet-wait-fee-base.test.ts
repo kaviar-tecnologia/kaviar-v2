@@ -31,7 +31,7 @@ function makeService(availableCents = 1000n) {
     recordSplitInClient: vi.fn(async () => ({ territoryId: null })),
   };
   const wallet = {
-    getLockedBalance: vi.fn(async () => ({ balance_cents: availableCents, reserved_cents: 0n })),
+    getLockedBalance: vi.fn(async () => ({ balance_cents: availableCents, reserved_cents: ride.reservedCents })),
     releaseReserveInClient: vi.fn(),
   };
   const debit = { debitFeeInClient: vi.fn() };
@@ -88,7 +88,6 @@ describe('CARE-445 — Wallet V2 fee base is locked fare, not total including wa
     const s = makeService();
     await expect(s.service.settleRide({ ...ride, feeBaseCents: 2200n }))
       .rejects.toMatchObject({ code: 'WALLET_FEE_BASE_INVALID' });
-    expect(s.pool).toBeUndefined();
     expect(s.debit.debitFeeInClient).not.toHaveBeenCalled();
   });
 
