@@ -197,6 +197,18 @@ router.patch('/:id', async (req: Request, res: Response) => {
     }
 
     const data: any = { ...parsed.data };
+    const targetModality = data.modality ?? existing.modality;
+    const targetStatus = data.status ?? existing.status;
+    const finalTerritory = data.territory_id !== undefined ? data.territory_id : existing.territory_id;
+    if (isCareModality(targetModality) && !finalTerritory) {
+      return res.status(400).json({ success: false, error: 'Cobertura CARE exige território específico.' });
+    }
+    if (isCareModality(targetModality) && targetStatus === 'ACTIVE' && existing.care_scope_verified !== true) {
+      return res.status(409).json({
+        success: false,
+        error: 'CARE_SCOPE_REVIEW_REQUIRED_BEFORE_ACTIVATION',
+      });
+    }
 
     if (data.valid_from !== undefined) {
       const date = toDateAtStart(new Date(data.valid_from));
@@ -214,6 +226,19 @@ router.patch('/:id', async (req: Request, res: Response) => {
     const finalUntil = data.valid_until || existing.valid_until;
     if (finalUntil < finalFrom) {
       return res.status(400).json({ success: false, error: 'valid_until não pode ser menor que valid_from.' });
+    }
+
+    const sensitiveFields = [
+      'territory_id', 'modality', 'provider_name', 'policy_number',
+      'coverage_type', 'document_url', 'valid_from', 'valid_until',
+    ];
+    const invalidatesCareReview = existing.care_scope_verified === true &&
+      isCareModality(existing.modality) &&
+      sensitiveFields.some((field) => Object.prototype.hasOwnProperty.call(data, field) &&
+        String((data as any)[field] ?? '') !== String((existing as any)[field] ?? ''));
+    if (invalidatesCareReview) {
+      data.care_scope_verified = false;
+      if (targetStatus === 'ACTIVE') data.status = 'SUSPENDED';
     }
 
     data.updated_by_admin_id = admin.id;
