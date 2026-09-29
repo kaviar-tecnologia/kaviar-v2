@@ -7,10 +7,12 @@ import { withCarePricingTransaction } from '../src/services/care/care-pricing-tr
 // creates an object in production or in an arbitrary developer database.
 const disposable = (() => {
   try {
-    if (process.env.CARE_PRICING_ATOMIC_INTEGRATION !== '1') return false;
+    if (process.env.CARE_PRICING_ATOMIC_INTEGRATION !== '1' ||
+        process.env.GITHUB_ACTIONS !== 'true') return false;
     const uri = new URL(process.env.DATABASE_URL || '');
     return ['postgres:', 'postgresql:'].includes(uri.protocol) &&
       ['127.0.0.1', 'localhost'].includes(uri.hostname) &&
+      uri.port === '5432' && uri.username === 'ci' &&
       uri.pathname === '/care06b_disposable';
   } catch {
     return false;
@@ -19,10 +21,13 @@ const disposable = (() => {
 
 describe.skipIf(!disposable)('CARE-06B — real single-client PostgreSQL transactions', () => {
   let pool: pg.Pool;
-  const created = new Set<string>();
 
   beforeAll(async () => {
     pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+    const identity = await pool.query(
+      'SELECT current_database() AS db, current_user AS role',
+    );
+    expect(identity.rows[0]).toMatchObject({ db: 'care06b_disposable', role: 'ci' });
     await pool.query(`
       CREATE TABLE care06b_tx_probe (
         id TEXT PRIMARY KEY,
@@ -40,7 +45,6 @@ describe.skipIf(!disposable)('CARE-06B — real single-client PostgreSQL transac
 
   const newProbe = async () => {
     const id = randomUUID();
-    created.add(id);
     await pool.query('INSERT INTO care06b_tx_probe (id) VALUES ($1)', [id]);
     return id;
   };
