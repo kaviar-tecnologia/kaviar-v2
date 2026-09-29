@@ -9,6 +9,48 @@ ALTER TYPE "MunicipalServiceModality"
 ALTER TYPE "MunicipalServiceModality"
   ADD VALUE IF NOT EXISTS 'CARE_ADAPTED_WHEELCHAIR';
 
+ALTER TABLE "municipal_regulations"
+  ADD COLUMN "care_scope_verified" BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN "care_scope_verified_at" TIMESTAMPTZ(6),
+  ADD COLUMN "care_scope_verified_by_admin_id" TEXT,
+  ADD COLUMN "care_scope_document_url" TEXT;
+
+ALTER TABLE "municipal_regulations"
+  ADD CONSTRAINT "municipal_regulations_care_verified_by_admin_fkey"
+  FOREIGN KEY ("care_scope_verified_by_admin_id")
+  REFERENCES "admins"("id")
+  ON DELETE SET NULL
+  ON UPDATE CASCADE;
+
+-- Exact CARE municipal modalities must be affirmatively reviewed before an
+-- active record can ever be used as operational evidence. Existing ordinary
+-- CAR/MOTO/TAXI/VAN rows are unaffected.
+ALTER TABLE "municipal_regulations"
+  ADD CONSTRAINT "municipal_regulations_care_active_requires_review"
+  CHECK (
+    "service_modality" NOT IN (
+      'CARE_ASSISTED'::"MunicipalServiceModality",
+      'CARE_FOLDING_WHEELCHAIR'::"MunicipalServiceModality",
+      'CARE_ADAPTED_WHEELCHAIR'::"MunicipalServiceModality"
+    )
+    OR "is_active" IS NOT TRUE
+    OR (
+      "care_scope_verified" IS TRUE
+      AND "care_scope_verified_at" IS NOT NULL
+      AND "care_scope_verified_by_admin_id" IS NOT NULL
+      AND length(trim("care_scope_verified_by_admin_id")) > 0
+      AND "care_scope_document_url" IS NOT NULL
+      AND length(trim("care_scope_document_url")) > 0
+      AND "regulation_status" IN (
+        'REGULATED'::"MunicipalRegulationStatus",
+        'NOT_REGULATED'::"MunicipalRegulationStatus"
+      )
+    )
+  );
+
+CREATE INDEX "municipal_regulations_care_scope_verified_idx"
+  ON "municipal_regulations"("care_scope_verified");
+
 ALTER TABLE "operational_insurance_coverages"
   DROP CONSTRAINT IF EXISTS "operational_insurance_coverages_modality_check";
 
