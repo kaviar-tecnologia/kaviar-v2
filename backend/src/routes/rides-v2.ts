@@ -873,13 +873,12 @@ router.post('/:ride_id/cancel', authenticatePassenger, async (req: Request, res:
       return res.status(400).json({ error: 'Não é possível cancelar neste momento' });
     }
 
-    await prisma.rides_v2.update({
-      where: { id: ride_id },
-      data: {
-        status: 'canceled_by_passenger',
-        canceled_at: new Date()
-      }
+    const canceled = await prisma.rides_v2.updateMany({
+      where: { id: ride_id, passenger_id: passengerId,
+        status: { in: ['scheduled', 'requested', 'offered', 'accepted', 'arrived'] } },
+      data: { status: 'canceled_by_passenger', canceled_at: new Date() },
     });
+    if (canceled.count !== 1) return res.status(409).json({ error: 'RIDE_STATUS_CONFLICT' });
 
     // Limpar localização compartilhada do passageiro
     await prisma.passengers.update({ where: { id: passengerId }, data: { last_lat: null, last_lng: null, last_location_updated_at: null } });
@@ -1017,13 +1016,11 @@ router.post('/:ride_id/arrived', authenticateDriver, async (req: Request, res: R
       return res.status(400).json({ error: 'Operação não permitida no estado atual da corrida' });
     }
 
-    await prisma.rides_v2.update({
-      where: { id: ride_id },
-      data: {
-        status: 'arrived',
-        arrived_at: new Date()
-      }
+    const arrived = await prisma.rides_v2.updateMany({
+      where: { id: ride_id, driver_id: driverId, status: 'accepted' },
+      data: { status: 'arrived', arrived_at: new Date() },
     });
+    if (arrived.count !== 1) return res.status(409).json({ error: 'RIDE_STATUS_CONFLICT' });
 
     console.log(`[RIDE_STATUS_CHANGED] ride_id=${ride_id} status=arrived driver_id=${driverId}`);
 
@@ -1147,13 +1144,11 @@ router.post('/:ride_id/start', authenticateDriver, async (req: Request, res: Res
       }
     }
 
-    await prisma.rides_v2.update({
-      where: { id: ride_id },
-      data: {
-        status: 'in_progress',
-        started_at: new Date()
-      }
+    const started = await prisma.rides_v2.updateMany({
+      where: { id: ride_id, driver_id: driverId, status: 'arrived' },
+      data: { status: 'in_progress', started_at: new Date() },
     });
+    if (started.count !== 1) return res.status(409).json({ error: 'RIDE_STATUS_CONFLICT' });
 
     console.log(`[RIDE_STATUS_CHANGED] ride_id=${ride_id} status=in_progress driver_id=${driverId}`);
 
