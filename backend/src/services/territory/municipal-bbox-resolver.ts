@@ -43,6 +43,29 @@ const MAX_BOUNDS_ELEMENTS = 200;            // limite de elementos retornados
 // Extensão máxima plausível de um município (graus). Rejeita bounds absurdos.
 const MAX_SPAN_DEG = 3.0;
 const BBOX_MIRROR_TIMEOUT_MS = 20_000;
+const BBOX_MAX_ATTEMPTS_PER_MIRROR = 2;
+const BBOX_RETRY_BACKOFF_MS = 500;
+
+async function bboxRetrySleep(ms: number, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return false;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve(true);
+    }, ms);
+    const onAbort = () => {
+      cleanup();
+      resolve(false);
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    // Fecha a janela entre a checagem inicial e o registro do listener.
+    if (signal?.aborted) onAbort();
+  });
+}
 
 export function expand(bbox: CityBoundingBox, marginDeg: number): CityBoundingBox {
   return {
@@ -108,7 +131,14 @@ export function buildMunicipalityBoundsQuery(city: string, uf?: string | null): 
 export async function bboxFromOsmMunicipality(
   city: string,
   uf: string | null,
-  opts: { fetchImpl?: typeof fetch; signal?: AbortSignal; mirrors?: readonly string[]; mirrorTimeoutMs?: number } = {},
+  opts: {
+    fetchImpl?: typeof fetch;
+    signal?: AbortSignal;
+    mirrors?: readonly string[];
+    mirrorTimeoutMs?: number;
+    maxAttemptsPerMirror?: number;
+    retryBackoffMs?: number;
+  } = {},
 ): Promise<{ bbox: CityBoundingBox | null; ambiguous: boolean; sourceUrl?: string }> {
   const fetchImpl = opts.fetchImpl ?? (globalThis.fetch as typeof fetch);
   if (typeof fetchImpl !== 'function') return { bbox: null, ambiguous: false };
@@ -116,60 +146,81 @@ export async function bboxFromOsmMunicipality(
   const query = buildMunicipalityBoundsQuery(city, uf);
   const mirrorTimeoutMs = opts.mirrorTimeoutMs ?? BBOX_MIRROR_TIMEOUT_MS;
 
+  const maxAttempts = opts.maxAttemptsPerMirror ?? BBOX_MAX_ATTEMPTS_PER_MIRROR;
+  const retryBackoffMs = opts.retryBackoffMs ?? BBOX_RETRY_BACKOFF_MS;
+
   for (const url of mirrors) {
-    if (opts.signal?.aborted) return { bbox: null, ambiguous: false };
-    const local = new AbortController();
-    const forwardAbort = () => local.abort();
-    opts.signal?.addEventListener('abort', forwardAbort, { once: true });
-    if (opts.signal?.aborted) local.abort();
-    const timer = setTimeout(() => local.abort(), mirrorTimeoutMs);
-    try {
-      const res: any = await fetchImpl(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
-        body: `data=${encodeURIComponent(query)}`,
-        signal: local.signal,
-        redirect: 'manual',
-      } as any);
-
-      const status = res.status as number;
-      if (res.type === 'opaqueredirect' || (status >= 300 && status < 400)) continue;
-      if (status < 200 || status >= 300) continue;
-      const ct = (res.headers?.get?.('content-type') || '').toLowerCase();
-      if (!ct.includes('json') && !ct.includes('osm3s')) continue;
-
-      const declaredLen = Number(res.headers?.get?.('content-length') || 0);
-      if (declaredLen && declaredLen > MAX_BOUNDS_BYTES) continue;
-      const text: string = await res.text();
-      if (Buffer.byteLength(text, 'utf8') > MAX_BOUNDS_BYTES) continue;
-
-      let parsed: any;
-      try { parsed = JSON.parse(text); } catch { continue; }
-      const els = Array.isArray(parsed?.elements) ? parsed.elements : [];
-      if (els.length > MAX_BOUNDS_ELEMENTS) continue;
-
-      // Coleta bounds VÁLIDOS individuais.
-      const valid: CityBoundingBox[] = [];
-      for (const el of els) {
-        const b = el.bounds;
-        if (!b) continue;
-        const cand: CityBoundingBox = { minLon: b.minlon, maxLon: b.maxlon, minLat: b.minlat, maxLat: b.maxlat };
-        if (isValidBBox(cand)) valid.push(cand);
-      }
-      if (valid.length === 0) continue;
-
-      // AMBIGUIDADE: mais de uma relação municipal plausível → NÃO unir.
-      // (Partes contíguas da mesma relação retornam um único elemento com bounds.)
-      if (valid.length > 1) {
-        return { bbox: null, ambiguous: true };
-      }
-      return { bbox: valid[0], ambiguous: false, sourceUrl: url };
-    } catch {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       if (opts.signal?.aborted) return { bbox: null, ambiguous: false };
-      // Tenta o próximo mirror, salvo cancelamento global.
-    } finally {
-      clearTimeout(timer);
-      opts.signal?.removeEventListener('abort', forwardAbort);
+
+      const local = new AbortController();
+      const forwardAbort = () => local.abort();
+      opts.signal?.addEventListener('abort', forwardAbort, { once: true });
+      if (opts.signal?.aborted) local.abort();
+      const timer = setTimeout(() => local.abort(), mirrorTimeoutMs);
+
+      let retryTransient = false;
+
+      try {
+        const res: any = await fetchImpl(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+          body: `data=${encodeURIComponent(query)}`,
+          signal: local.signal,
+          redirect: 'manual',
+        } as any);
+
+        const status = res.status as number;
+
+        if (res.type === 'opaqueredirect' || (status >= 300 && status < 400)) break;
+
+        if (status < 200 || status >= 300) {
+          retryTransient = status === 429 || status >= 500;
+        } else {
+          const ct = (res.headers?.get?.('content-type') || '').toLowerCase();
+          if (!ct.includes('json') && !ct.includes('osm3s')) break;
+
+          const declaredLen = Number(res.headers?.get?.('content-length') || 0);
+          if (declaredLen && declaredLen > MAX_BOUNDS_BYTES) break;
+
+          const text: string = await res.text();
+          if (Buffer.byteLength(text, 'utf8') > MAX_BOUNDS_BYTES) break;
+
+          let parsed: any;
+          try { parsed = JSON.parse(text); } catch { break; }
+
+          const els = Array.isArray(parsed?.elements) ? parsed.elements : [];
+          if (els.length > MAX_BOUNDS_ELEMENTS) break;
+
+          const valid: CityBoundingBox[] = [];
+          for (const el of els) {
+            const b = el.bounds;
+            if (!b) continue;
+            const cand: CityBoundingBox = {
+              minLon: b.minlon, maxLon: b.maxlon,
+              minLat: b.minlat, maxLat: b.maxlat,
+            };
+            if (isValidBBox(cand)) valid.push(cand);
+          }
+
+          if (valid.length === 0) break;
+          if (valid.length > 1) return { bbox: null, ambiguous: true };
+
+          return { bbox: valid[0], ambiguous: false, sourceUrl: url };
+        }
+      } catch {
+        if (opts.signal?.aborted) return { bbox: null, ambiguous: false };
+        // Timeout local / erro de rede: falha transitória.
+        retryTransient = true;
+      } finally {
+        clearTimeout(timer);
+        opts.signal?.removeEventListener('abort', forwardAbort);
+      }
+
+      if (!retryTransient || attempt >= maxAttempts) break;
+
+      const proceed = await bboxRetrySleep(retryBackoffMs, opts.signal);
+      if (!proceed) return { bbox: null, ambiguous: false };
     }
   }
   return { bbox: null, ambiguous: false };

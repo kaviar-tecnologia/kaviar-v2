@@ -446,8 +446,11 @@ describe('bbox municipal resolvido no caminho real (sem bbox injetado)', () => {
 
     expect(res.ok).toBe(true);
     expect(calls).toEqual([
-      OVERPASS_MIRRORS[0], OVERPASS_MIRRORS[1],
-      OVERPASS_MIRRORS[2], OVERPASS_MIRRORS[2],
+      OVERPASS_MIRRORS[0],
+      OVERPASS_MIRRORS[1],
+      OVERPASS_MIRRORS[1],
+      OVERPASS_MIRRORS[2],
+      OVERPASS_MIRRORS[2],
     ]);
     if (res.ok) expect(res.stats.valid).toBe(1);
   });
@@ -752,14 +755,106 @@ describe('bboxFromOsmMunicipality — endurecimento e ambiguidade', () => {
   });
 
 
+
+
+  it('abort durante backoff do bbox impede nova tentativa', async () => {
+    const ac = new AbortController();
+    let calls = 0;
+
+    const fetchImpl = (async () => {
+      calls++;
+      setTimeout(() => ac.abort(), 5);
+      return jsonResponse('gateway timeout', { status: 504 });
+    }) as unknown as typeof fetch;
+
+    const result = await bboxFromOsmMunicipality('Diadema', 'SP', {
+      fetchImpl,
+      signal: ac.signal,
+      mirrors: [OVERPASS_MIRRORS[2]],
+      mirrorTimeoutMs: 50,
+      maxAttemptsPerMirror: 2,
+      retryBackoffMs: 100,
+    });
+
+    expect(result.bbox).toBeNull();
+    expect(calls).toBe(1);
+  });
+
+  it('504 transitório recebe retry no mesmo mirror e depois aceita 200', async () => {
+    let calls = 0;
+
+    const fetchImpl = (async () => {
+      calls++;
+
+      if (calls === 1) {
+        return jsonResponse('gateway timeout', { status: 504 });
+      }
+
+      return jsonResponse(JSON.stringify({ elements: [{
+        type: 'relation', id: 298242,
+        bounds: {
+          minlon: -46.6520805, minlat: -23.7391266,
+          maxlon: -46.5775772, maxlat: -23.6575980,
+        },
+      }] }));
+    }) as unknown as typeof fetch;
+
+    const result = await bboxFromOsmMunicipality('Diadema', 'SP', {
+      fetchImpl,
+      mirrors: [OVERPASS_MIRRORS[2]],
+      mirrorTimeoutMs: 50,
+      maxAttemptsPerMirror: 2,
+      retryBackoffMs: 1,
+    });
+
+    expect(calls).toBe(2);
+    expect(result.ambiguous).toBe(false);
+    expect(result.bbox).not.toBeNull();
+    expect(result.sourceUrl).toBe(OVERPASS_MIRRORS[2]);
+  });
+
+  it('406 não recebe retry e avança imediatamente ao próximo mirror', async () => {
+    const calls: string[] = [];
+
+    const fetchImpl = (async (url: string) => {
+      calls.push(url);
+
+      if (url === OVERPASS_MIRRORS[0]) {
+        return jsonResponse('recusado', { status: 406 });
+      }
+
+      return jsonResponse(JSON.stringify({ elements: [{
+        type: 'relation', id: 298242,
+        bounds: {
+          minlon: -46.6520805, minlat: -23.7391266,
+          maxlon: -46.5775772, maxlat: -23.6575980,
+        },
+      }] }));
+    }) as unknown as typeof fetch;
+
+    const result = await bboxFromOsmMunicipality('Diadema', 'SP', {
+      fetchImpl,
+      mirrors: [OVERPASS_MIRRORS[0], OVERPASS_MIRRORS[2]],
+      mirrorTimeoutMs: 50,
+      maxAttemptsPerMirror: 2,
+      retryBackoffMs: 1,
+    });
+
+    expect(calls).toEqual([
+      OVERPASS_MIRRORS[0],
+      OVERPASS_MIRRORS[2],
+    ]);
+    expect(result.bbox).not.toBeNull();
+  });
+
   it('406 e mirror travado permitem alcançar o terceiro', async () => {
     const calls: string[] = [];
     const fetchImpl = (async (url: string, init: any) => {
       calls.push(url);
-      if (calls.length === 1) {
+      if (url === OVERPASS_MIRRORS[0]) {
         return jsonResponse('recusado', { status: 406 });
       }
-      if (calls.length === 2) {
+      if (url === OVERPASS_MIRRORS[1]) {
         return new Promise((_resolve, reject) => {
           const fail = () => reject(new Error('abortado'));
           if (init.signal.aborted) fail();
@@ -776,10 +871,19 @@ describe('bboxFromOsmMunicipality — endurecimento e ambiguidade', () => {
     }) as unknown as typeof fetch;
 
     const result = await bboxFromOsmMunicipality('Diadema', 'SP', {
-      fetchImpl, mirrors: OVERPASS_MIRRORS, mirrorTimeoutMs: 30,
+      fetchImpl,
+      mirrors: OVERPASS_MIRRORS,
+      mirrorTimeoutMs: 30,
+      maxAttemptsPerMirror: 2,
+      retryBackoffMs: 1,
     });
 
-    expect(calls).toEqual([...OVERPASS_MIRRORS]);
+    expect(calls).toEqual([
+      OVERPASS_MIRRORS[0],
+      OVERPASS_MIRRORS[1],
+      OVERPASS_MIRRORS[1],
+      OVERPASS_MIRRORS[2],
+    ]);
     expect(result.ambiguous).toBe(false);
     expect(result.bbox).not.toBeNull();
   });
