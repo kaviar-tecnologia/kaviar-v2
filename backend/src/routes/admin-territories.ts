@@ -838,6 +838,11 @@ router.post('/:id/prepare-city/acquire', async (req: Request, res: Response) => 
       },
     });
   } catch (error: any) {
+    console.error('[prepare-city/acquire] erro inesperado', {
+      message: error?.message,
+      stack: error?.stack,
+    });
+
     return res.status(500).json({ success: false, error: error?.message || 'Erro na aquisição de dataset' });
   }
 });
