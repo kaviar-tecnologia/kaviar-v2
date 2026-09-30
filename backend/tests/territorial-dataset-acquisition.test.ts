@@ -456,7 +456,7 @@ describe('bbox municipal resolvido no caminho real (sem bbox injetado)', () => {
     }) as unknown as typeof fetch;
 
     const prisma = prismaNoGeofences({
-      id: 't1', name: 'Diadema', city_name: 'Diadema',
+      id: 't1', name: 'Cidade OSM Teste', city_name: 'Cidade OSM Teste',
       uf: 'SP', level: 'city',
     });
     const res = await acquireCityDataset({
