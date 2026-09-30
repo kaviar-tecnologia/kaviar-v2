@@ -19,7 +19,10 @@
  * Somente LEITURA. Não grava nada.
  */
 import type { CityBoundingBox } from './city-preparation.core';
-import { OVERPASS_MIRRORS } from './providers/openstreetmap-provider';
+import {
+  OVERPASS_MIRRORS,
+  OVERPASS_USER_AGENT,
+} from './providers/openstreetmap-provider';
 import { UF_TO_STATE_NAME } from './osm-geojson-normalizer';
 
 export type PrismaLike = any;
@@ -164,7 +167,11 @@ export async function bboxFromOsmMunicipality(
       try {
         const res: any = await fetchImpl(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Accept: 'application/json',
+            'User-Agent': OVERPASS_USER_AGENT,
+          },
           body: `data=${encodeURIComponent(query)}`,
           signal: local.signal,
           redirect: 'manual',

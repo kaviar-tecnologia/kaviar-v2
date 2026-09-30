@@ -32,6 +32,9 @@ export const OVERPASS_MIRRORS: readonly string[] = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ];
 
+export const OVERPASS_USER_AGENT =
+  'KAVIAR/1.0 (https://kaviar.com.br; contato@kaviar.com.br)';
+
 const ALLOWED_HOSTS = new Set(OVERPASS_MIRRORS.map((u) => new URL(u).host));
 
 export interface OpenStreetMapProviderConfig {
@@ -246,7 +249,11 @@ export class OpenStreetMapProvider implements TerritorialDatasetProvider {
     try {
       const res = await fetchImpl(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+          'User-Agent': OVERPASS_USER_AGENT,
+        },
         body: `data=${encodeURIComponent(query)}`,
         signal: controller.signal,
         redirect: 'manual', // não segue redirect para host arbitrário

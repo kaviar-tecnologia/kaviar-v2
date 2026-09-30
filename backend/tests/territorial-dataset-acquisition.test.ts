@@ -79,6 +79,27 @@ describe('OpenStreetMapProvider.fetchDataset — sucesso', () => {
     expect((ds.provenance as any).sourceVerified).toBeUndefined();
   });
 
+
+  it('envia User-Agent identificando a KAVIAR na consulta de bairros', async () => {
+    let seenHeaders: any = null;
+
+    const fetchImpl = (async (_url: string, init: any) => {
+      seenHeaders = init?.headers;
+      return jsonResponse(overpassJson([
+        suburbRelation(1, 'X', CITY, LAT),
+      ]));
+    }) as unknown as typeof fetch;
+
+    const provider = new OpenStreetMapProvider({ bbox: BBOX });
+    await provider.fetchDataset(
+      { city: 'Cariacica', uf: 'ES' },
+      { fetchImpl },
+    );
+
+    expect(seenHeaders?.['User-Agent']).toContain('KAVIAR/1.0');
+    expect(seenHeaders?.['User-Agent']).toContain('kaviar.com.br');
+  });
+
   it('a query usa cidade + UF (buildOverpassQuery com uf)', async () => {
     const fetchImpl = makeFetch([() => Promise.resolve(jsonResponse(overpassJson([suburbRelation(1, 'X', CITY, LAT)])))]);
     const provider = new OpenStreetMapProvider({ bbox: BBOX });
@@ -778,6 +799,36 @@ describe('bboxFromOsmMunicipality — endurecimento e ambiguidade', () => {
 
     expect(result.bbox).toBeNull();
     expect(calls).toBe(1);
+  });
+
+
+  it('envia User-Agent identificando a KAVIAR na consulta do bbox municipal', async () => {
+    let seenHeaders: any = null;
+
+    const fetchImpl = (async (_url: string, init: any) => {
+      seenHeaders = init?.headers;
+      return jsonResponse(JSON.stringify({ elements: [{
+        type: 'relation',
+        id: 298242,
+        bounds: {
+          minlon: -46.6520805,
+          minlat: -23.7391266,
+          maxlon: -46.5775772,
+          maxlat: -23.6575980,
+        },
+      }] }));
+    }) as unknown as typeof fetch;
+
+    const result = await bboxFromOsmMunicipality('Diadema', 'SP', {
+      fetchImpl,
+      mirrors: [OVERPASS_MIRRORS[0]],
+      mirrorTimeoutMs: 50,
+      maxAttemptsPerMirror: 1,
+    });
+
+    expect(result.bbox).not.toBeNull();
+    expect(seenHeaders?.['User-Agent']).toContain('KAVIAR/1.0');
+    expect(seenHeaders?.['User-Agent']).toContain('kaviar.com.br');
   });
 
   it('504 transitório recebe retry no mesmo mirror e depois aceita 200', async () => {
