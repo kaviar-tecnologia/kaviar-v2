@@ -832,7 +832,7 @@ router.post('/:id/prepare-city/acquire', async (req: Request, res: Response) => 
         s3: result.s3,
         checksum: result.checksum,
         // reforço explícito na resposta:
-        isOfficial: false,
+        isOfficial: result.provenance.isOfficial === true,
         sourceVerified: false,
         status: 'DRAFT',
       },
