@@ -1071,7 +1071,14 @@ router.post('/:ride_id/wait/start', authenticateDriver, async (req: Request, res
     if (ride.status !== 'in_progress') return res.status(400).json({ error: 'Operação não permitida no estado atual da corrida' });
     if (ride.wait_started_at) return res.status(400).json({ error: 'Espera já iniciada' });
 
-    await prisma.rides_v2.update({ where: { id: ride_id }, data: { wait_started_at: new Date() } });
+    const started = await prisma.rides_v2.updateMany({
+      where: {
+        id: ride_id, driver_id: driverId, status: 'in_progress',
+        wait_requested: true, wait_started_at: null,
+      },
+      data: { wait_started_at: new Date() },
+    });
+    if (started.count !== 1) return res.status(409).json({ error: 'WAIT_STATUS_CONFLICT' });
     console.log(`[WAIT_START] ride_id=${ride_id} driver_id=${driverId}`);
     res.json({ success: true });
   } catch (error: any) {
@@ -1090,10 +1097,21 @@ router.post('/:ride_id/wait/end', authenticateDriver, async (req: Request, res: 
 
     const ride = await prisma.rides_v2.findUnique({ where: { id: ride_id } });
     if (!ride || ride.driver_id !== driverId) return res.status(403).json({ error: 'Acesso negado' });
+    if (ride.status !== 'in_progress') {
+      return res.status(400).json({ error: 'Operação não permitida no estado atual da corrida' });
+    }
+    if (!ride.wait_requested) return res.status(400).json({ error: 'Espera não solicitada nesta corrida' });
     if (!ride.wait_started_at) return res.status(400).json({ error: 'Espera não foi iniciada' });
     if (ride.wait_ended_at) return res.status(400).json({ error: 'Espera já encerrada' });
 
-    await prisma.rides_v2.update({ where: { id: ride_id }, data: { wait_ended_at: new Date() } });
+    const ended = await prisma.rides_v2.updateMany({
+      where: {
+        id: ride_id, driver_id: driverId, status: 'in_progress',
+        wait_requested: true, wait_started_at: { not: null }, wait_ended_at: null,
+      },
+      data: { wait_ended_at: new Date() },
+    });
+    if (ended.count !== 1) return res.status(409).json({ error: 'WAIT_STATUS_CONFLICT' });
     console.log(`[WAIT_END] ride_id=${ride_id} driver_id=${driverId}`);
     res.json({ success: true });
   } catch (error: any) {
@@ -1178,16 +1196,38 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
     if (ride.status !== 'in_progress') {
       return res.status(400).json({ error: 'Operação não permitida no estado atual da corrida' });
     }
+    // A started wait must end before completion; otherwise the final economic
+    // amount is unknown. The conditional update below also closes the race.
+    if (ride.wait_requested && Boolean(ride.wait_started_at) !== Boolean(ride.wait_ended_at)) {
+      return res.status(409).json({ error: 'WAIT_COMPLETION_CONFLICT' });
+    }
 
     await prisma.$transaction(async (tx) => {
-      await tx.rides_v2.update({
-        where: { id: ride_id },
-        data: {
-          status: 'completed',
-          completed_at: new Date(),
-          updated_at: new Date()
-        }
+      const completionData = {
+        status: 'completed' as const,
+        completed_at: new Date(),
+        updated_at: new Date(),
+      };
+      // Compare-and-set is mandatory even for ordinary rides: a stale request
+      // must not complete a canceled/already completed ride or replay effects.
+      const completed = await tx.rides_v2.updateMany({
+        where: {
+          id: ride_id, driver_id: driverId, status: 'in_progress',
+          wait_requested: Boolean(ride.wait_requested),
+          ...(ride.wait_requested ? {
+            OR: [
+              { wait_started_at: null, wait_ended_at: null },
+              { wait_started_at: { not: null }, wait_ended_at: { not: null } },
+            ],
+          } : {}),
+        },
+        data: completionData,
       });
+      if (completed.count !== 1) {
+        throw Object.assign(new Error('WAIT_COMPLETION_CONFLICT'), {
+          code: 'WAIT_COMPLETION_CONFLICT',
+        });
+      }
 
       // Liberar motorista
       await tx.driver_status.update({
@@ -1208,52 +1248,33 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
       timestamp: new Date().toISOString()
     });
 
-    // Pricing: settle (fechar economia — idempotente)
-    let settlement: any = null;
+    // The official engine settles the locked fare, actual wait, driver earning
+    // and territorial credit in ONE economic transaction. Never write another
+    // wait adjustment outside the authoritative ride_settlements transaction.
+    let settlement: pricingEngine.SettlementResult | null = null;
     try {
-      settlement = await pricingEngine.settle(ride_id);
+      // The engine locks and reads the current interval itself. The route's
+      // earlier snapshot may precede a concurrent wait/end operation.
+      settlement = await pricingEngine.settle(
+        ride_id,
+        ride.wait_requested ? { waitRatePerMinute: config.wait.ratePerMin } : undefined,
+      );
     } catch (settleErr) {
       console.error(`[PRICING_SETTLE_FAILED] ride_id=${ride_id}`, settleErr);
+      return res.status(503).json({
+        success: false, error: 'PRICING_SETTLEMENT_UNCONFIRMED',
+      });
+    }
+    if (!settlement) {
+      console.error(`[PRICING_SETTLE_MISSING] ride_id=${ride_id}`);
+      return res.status(503).json({
+        success: false, error: 'PRICING_SETTLEMENT_UNCONFIRMED',
+      });
     }
 
-    // Wait charge: somar ao final_price após settle (apenas se espera foi encerrada)
-    let _shadowWaitCents = 0;
-    if (settlement && ride.wait_requested && ride.wait_started_at && ride.wait_ended_at) {
-      try {
-        const waitMinutes = Math.floor(
-          (ride.wait_ended_at.getTime() - ride.wait_started_at.getTime()) / 60000
-        );
-        const waitCharge = Math.round(waitMinutes * config.wait.ratePerMin * 100) / 100;
-        if (waitCharge > 0) {
-          _shadowWaitCents = Math.round(waitCharge * 100);
-          const newFinalPrice = Math.round((settlement.final_price + waitCharge) * 100) / 100;
-          const newDriverEarnings = Math.round((settlement.driver_earnings + waitCharge) * 100) / 100;
-          await prisma.$transaction([
-            prisma.rides_v2.update({
-              where: { id: ride_id },
-              data: { final_price: new Decimal(newFinalPrice), driver_earnings: new Decimal(newDriverEarnings) }
-            }),
-            prisma.$executeRaw`
-              UPDATE ride_settlements
-              SET final_price = ${newFinalPrice}, driver_earnings = ${newDriverEarnings}
-              WHERE ride_id = ${ride_id}
-            `,
-          ]);
-          settlement.final_price = newFinalPrice;
-          settlement.driver_earnings = newDriverEarnings;
-          // Crédito dobrado: espera real = serviço composto
-          const doubledCreditCost = Math.round(settlement.credit_cost * 2 * 100) / 100;
-          await prisma.$executeRaw`
-            UPDATE ride_settlements
-            SET credit_cost = ${doubledCreditCost}
-            WHERE ride_id = ${ride_id}
-          `;
-          settlement.credit_cost = doubledCreditCost;
-          console.log(`[WAIT_CHARGE] ride_id=${ride_id} wait_min=${waitMinutes} charge=${waitCharge} new_final=${newFinalPrice} credit_cost=${doubledCreditCost}`);
-        }
-      } catch (waitErr) {
-        console.error(`[WAIT_CHARGE_FAILED] ride_id=${ride_id}`, waitErr);
-      }
+    const _shadowWaitCents = settlement.wait_charge_cents ?? 0;
+    if (_shadowWaitCents > 0) {
+      console.log(`[WAIT_CHARGE] ride_id=${ride_id} wait_cents=${_shadowWaitCents} final=${settlement.final_price} credit_cost=${settlement.credit_cost}`);
     }
 
     // Partner commission: gerar comissão se motorista vinculado a parceiro territorial
@@ -1391,11 +1412,10 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
         }
         if (driver?.phone) {
           // Use v3/v4 if approved, fallback to v2
-          const hasWait = !!(ride.wait_requested && ride.wait_started_at && ride.wait_ended_at);
-          const waitMinutes = hasWait
-            ? Math.floor((ride.wait_ended_at!.getTime() - ride.wait_started_at!.getTime()) / 60000)
-            : 0;
-          const waitCharge = Math.round(waitMinutes * 0.50 * 100) / 100;
+          // Render the confirmed settlement amount; no stale route timestamps
+          // or separate hard-coded per-minute rate in a financial notification.
+          const hasWait = _shadowWaitCents > 0;
+          const waitCharge = _shadowWaitCents / 100;
           const basePrice = hasWait && waitCharge > 0
             ? String(Math.round((settlement.final_price - waitCharge) * 100) / 100)
             : price;
@@ -1438,6 +1458,9 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
     res.json({ success: true, credit: creditResult });
   } catch (error: any) {
     console.error('[RIDE_COMPLETE_ERROR]', error);
+    if (error?.code === 'WAIT_COMPLETION_CONFLICT') {
+      return res.status(409).json({ error: 'WAIT_COMPLETION_CONFLICT' });
+    }
     res.status(500).json({ error: 'Erro interno. Tente novamente.' });
   }
 });

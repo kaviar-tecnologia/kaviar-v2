@@ -182,4 +182,119 @@ describe('CARE-445: refine/settle official writers are single-client transaction
     expect(mocks.connect).toHaveBeenCalledTimes(1);
   });
 
+  it('includes the persisted two-minute wait in the SAME official settle transaction', async () => {
+    lockedRide = {
+      ...lockedRide, wait_requested: true,
+      wait_started_at: new Date('2026-09-29T12:00:00Z'),
+      wait_ended_at: new Date('2026-09-29T12:02:30Z'),
+    };
+    const result = await settle(id, { waitRatePerMinute: 0.50 });
+    expect(result).toMatchObject({
+      final_price: 32.24, fee_amount: 5.62, driver_earnings: 26.62,
+      credit_cost: 0, wait_charge_cents: 100,
+    });
+    const settlementWrite = mocks.txQuery.mock.calls.find(([sql]) =>
+      String(sql).trimStart().startsWith('UPDATE ride_settlements'));
+    const cacheWrite = mocks.txQuery.mock.calls.find(([sql]) =>
+      String(sql).trimStart().startsWith('UPDATE rides_v2'));
+    expect(settlementWrite?.[1]).toEqual([
+      id, 32.24, 'adjacent', 0, 'FLAT_FEE',
+      expect.any(Date), 18, 5.62, 26.62,
+    ]);
+    expect(cacheWrite?.[1]).toEqual([id, 32.24, 5.62, 26.62]);
+    expect(sqlLog().at(-1)).toBe('COMMIT');
+    expect(mocks.connect).toHaveBeenCalledTimes(1);
+    expect(mocks.query.mock.calls.map(([sql]) => String(sql))).not.toContain('BEGIN');
+  });
+
+  it('never calculates wait from untrusted request times if the locked ride no longer has valid wait evidence', async () => {
+    lockedRide = {
+      ...lockedRide, wait_requested: true,
+      wait_started_at: new Date('2026-09-29T12:05:00Z'),
+      wait_ended_at: new Date('2026-09-29T12:03:00Z'),
+    };
+    await expect(settle(id, { waitRatePerMinute: 0.50 }))
+      .rejects.toThrow('PRICING_WAIT_SNAPSHOT_INVALID');
+    expect(sqlLog().at(-1)).toBe('ROLLBACK');
+    expect(sqlLog().some(sql => sql.trimStart().startsWith('UPDATE '))).toBe(false);
+  });
+
+  it('does not double charge or double credit on a repeated completed wait settlement', async () => {
+    snapshot.settled_at = new Date();
+    snapshot.final_price = '32.24';
+    snapshot.driver_earnings = '26.62';
+    snapshot.credit_cost = 0;
+    snapshot.credit_match_type = 'FLAT_FEE';
+    lockedRide = {
+      ...lockedRide, wait_requested: true,
+      wait_started_at: new Date('2026-09-29T12:00:00Z'),
+      wait_ended_at: new Date('2026-09-29T12:02:30Z'),
+    };
+    const result = await settle(id, { waitRatePerMinute: 0.50 });
+    expect(result).toMatchObject({
+      final_price: 32.24, driver_earnings: 26.62, wait_charge_cents: 100,
+    });
+    expect(sqlLog().some(sql => sql.trimStart().startsWith('UPDATE '))).toBe(false);
+  });
+
+  it('blocks a forgotten wait rate instead of silently closing a started wait at base fare', async () => {
+    lockedRide = {
+      ...lockedRide, wait_requested: true,
+      wait_started_at: new Date('2026-09-29T12:00:00Z'),
+      wait_ended_at: null,
+    };
+    await expect(settle(id)).rejects.toThrow('PRICING_WAIT_RATE_REQUIRED');
+    expect(sqlLog().at(-1)).toBe('ROLLBACK');
+    expect(sqlLog().some(sql => sql.trimStart().startsWith('UPDATE '))).toBe(false);
+  });
+
+  it('a requested wait never started settles at the base fare with no doubled credit', async () => {
+    lockedRide = {
+      ...lockedRide, wait_requested: true, wait_started_at: null, wait_ended_at: null,
+    };
+    const result = await settle(id, { waitRatePerMinute: 0.50 });
+    expect(result).toMatchObject({
+      final_price: 31.24, fee_amount: 5.62, driver_earnings: 25.62,
+      credit_cost: 0, wait_charge_cents: 0,
+    });
+  });
+
+  it('no wait option keeps normal finalization unchanged for CAR/MOTO', async () => {
+    lockedRide = {
+      ...lockedRide, wait_requested: false, wait_started_at: null, wait_ended_at: null,
+    };
+    const result = await settle(id);
+    expect(result).toMatchObject({
+      final_price: 31.24, driver_earnings: 25.62, credit_cost: 0,
+    });
+    expect(result?.wait_charge_cents ?? 0).toBe(0);
+  });
+
+  it('doubles LOCAL territorial credit only once while preserving the historic fee rate', async () => {
+    vi.resetModules();
+    lockedRide = {
+      ...lockedRide, wait_requested: true,
+      wait_started_at: new Date('2026-09-29T12:00:00Z'),
+      wait_ended_at: new Date('2026-09-29T12:02:00Z'),
+    };
+    mocks.txQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM rides_v2') && sql.includes('FOR UPDATE')) return { rows: [lockedRide], rowCount: 1 };
+      if (sql.includes('FROM ride_settlements') && sql.includes('FOR UPDATE')) return { rows: [snapshot], rowCount: 1 };
+      if (sql.includes('feature_flags')) return { rows: [{ enabled: false }], rowCount: 1 };
+      if (sql.includes('pricing_profiles')) return { rows: [profile], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
+    const { settle: uncachedSettle } = await import('../src/services/pricing-engine');
+    const result = await uncachedSettle(id, { waitRatePerMinute: 0.50 });
+    expect(result).toMatchObject({
+      final_price: 32.24, fee_percent: 18, fee_amount: 5.62,
+      driver_earnings: 26.62, credit_cost: 2, credit_match_type: 'LOCAL',
+      wait_charge_cents: 100,
+    });
+    const updated = mocks.txQuery.mock.calls.find(([sql]) =>
+      String(sql).trimStart().startsWith('UPDATE ride_settlements'));
+    expect(updated?.[1]?.[3]).toBe(2);
+    expect(mocks.query.mock.calls.some(([sql]) => String(sql).includes('feature_flags'))).toBe(false);
+  });
+
 });
