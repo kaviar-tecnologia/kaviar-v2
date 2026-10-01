@@ -873,13 +873,12 @@ router.post('/:ride_id/cancel', authenticatePassenger, async (req: Request, res:
       return res.status(400).json({ error: 'Não é possível cancelar neste momento' });
     }
 
-    await prisma.rides_v2.update({
-      where: { id: ride_id },
-      data: {
-        status: 'canceled_by_passenger',
-        canceled_at: new Date()
-      }
+    const canceled = await prisma.rides_v2.updateMany({
+      where: { id: ride_id, passenger_id: passengerId,
+        status: { in: ['scheduled', 'requested', 'offered', 'accepted', 'arrived'] } },
+      data: { status: 'canceled_by_passenger', canceled_at: new Date() },
     });
+    if (canceled.count !== 1) return res.status(409).json({ error: 'RIDE_STATUS_CONFLICT' });
 
     // Limpar localização compartilhada do passageiro
     await prisma.passengers.update({ where: { id: passengerId }, data: { last_lat: null, last_lng: null, last_location_updated_at: null } });
@@ -942,8 +941,9 @@ router.post('/:ride_id/driver-cancel', authenticateDriver, async (req: Request, 
     if (canRedispatch) {
       // Redispatch: limpar ride e reabrir
       await prisma.$transaction(async (tx) => {
-        await tx.rides_v2.update({
-          where: { id: ride_id },
+        const reopened = await tx.rides_v2.updateMany({
+          where: { id: ride_id, driver_id: driverId,
+            status: { in: ['accepted', 'arrived'] } },
           data: {
             status: 'requested',
             driver_id: null,
@@ -952,8 +952,11 @@ router.post('/:ride_id/driver-cancel', authenticateDriver, async (req: Request, 
             driver_adjustment: null,
             adjusted_price: null,
             trip_details: { ...td, _redispatch_count: redispatchCount + 1 },
-          }
+          },
         });
+        if (reopened.count !== 1) {
+          throw Object.assign(new Error('RIDE_STATUS_CONFLICT'), { code: 'RIDE_STATUS_CONFLICT' });
+        }
         await tx.ride_offers.updateMany({
           where: { ride_id, driver_id: driverId, status: 'accepted' },
           data: { status: 'canceled' }
@@ -966,14 +969,25 @@ router.post('/:ride_id/driver-cancel', authenticateDriver, async (req: Request, 
 
       setImmediate(() => dispatcherService.dispatchRide(ride_id).catch(err => {
         console.error(`[REDISPATCH_ERROR] ride_id=${ride_id}`, err);
-        prisma.rides_v2.update({ where: { id: ride_id }, data: { status: 'canceled_by_driver', canceled_at: new Date() } })
-          .then(() => notifyRideCancelledToPassenger({ id: ride_id, passenger_id: ride.passenger_id }))
+        prisma.rides_v2.updateMany({
+          where: { id: ride_id, status: 'requested', driver_id: null },
+          data: { status: 'canceled_by_driver', canceled_at: new Date() },
+        })
+          .then((updated) => {
+            if (updated.count === 1) notifyRideCancelledToPassenger({ id: ride_id, passenger_id: ride.passenger_id });
+          })
           .catch(() => {});
       }));
     } else {
       // Limite de redispatch atingido — cancelar normalmente
       await prisma.$transaction(async (tx) => {
-        await tx.rides_v2.update({ where: { id: ride_id }, data: { status: 'canceled_by_driver', canceled_at: new Date() } });
+        const canceled = await tx.rides_v2.updateMany({
+          where: { id: ride_id, driver_id: driverId, status: { in: ['accepted', 'arrived'] } },
+          data: { status: 'canceled_by_driver', canceled_at: new Date() },
+        });
+        if (canceled.count !== 1) {
+          throw Object.assign(new Error('RIDE_STATUS_CONFLICT'), { code: 'RIDE_STATUS_CONFLICT' });
+        }
         await tx.driver_status.update({ where: { driver_id: driverId }, data: { availability: 'online' } });
       });
 
@@ -997,6 +1011,9 @@ router.post('/:ride_id/driver-cancel', authenticateDriver, async (req: Request, 
     res.json({ success: true });
   } catch (error: any) {
     console.error('[RIDE_DRIVER_CANCEL_ERROR]', error);
+    if (error?.code === 'RIDE_STATUS_CONFLICT') {
+      return res.status(409).json({ error: 'RIDE_STATUS_CONFLICT' });
+    }
     res.status(500).json({ error: 'Erro interno. Tente novamente.' });
   }
 });
@@ -1017,13 +1034,11 @@ router.post('/:ride_id/arrived', authenticateDriver, async (req: Request, res: R
       return res.status(400).json({ error: 'Operação não permitida no estado atual da corrida' });
     }
 
-    await prisma.rides_v2.update({
-      where: { id: ride_id },
-      data: {
-        status: 'arrived',
-        arrived_at: new Date()
-      }
+    const arrived = await prisma.rides_v2.updateMany({
+      where: { id: ride_id, driver_id: driverId, status: 'accepted' },
+      data: { status: 'arrived', arrived_at: new Date() },
     });
+    if (arrived.count !== 1) return res.status(409).json({ error: 'RIDE_STATUS_CONFLICT' });
 
     console.log(`[RIDE_STATUS_CHANGED] ride_id=${ride_id} status=arrived driver_id=${driverId}`);
 
@@ -1147,13 +1162,11 @@ router.post('/:ride_id/start', authenticateDriver, async (req: Request, res: Res
       }
     }
 
-    await prisma.rides_v2.update({
-      where: { id: ride_id },
-      data: {
-        status: 'in_progress',
-        started_at: new Date()
-      }
+    const started = await prisma.rides_v2.updateMany({
+      where: { id: ride_id, driver_id: driverId, status: 'arrived' },
+      data: { status: 'in_progress', started_at: new Date() },
     });
+    if (started.count !== 1) return res.status(409).json({ error: 'RIDE_STATUS_CONFLICT' });
 
     console.log(`[RIDE_STATUS_CHANGED] ride_id=${ride_id} status=in_progress driver_id=${driverId}`);
 
