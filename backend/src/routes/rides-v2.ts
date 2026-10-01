@@ -592,21 +592,102 @@ router.post('/:ride_id/adjustment-response', authenticatePassenger, async (req: 
         : null;
 
       await prisma.$transaction(async (tx) => {
-        await tx.ride_offers.update({
-          where: { id: offer.id },
-          data: { adjustment_status: 'accepted' }
-        });
-        await tx.rides_v2.update({
-          where: { id: ride_id },
-          data: { status: 'accepted', accepted_at: new Date() }
-        });
-        if (adjustedPrice !== null) {
-          await tx.$executeRaw`
-            UPDATE ride_settlements
-            SET locked_price = ${adjustedPrice}, locked_at = NOW()
-            WHERE ride_id = ${ride_id}
-          `;
+        // Lock the ride FIRST, as quote/refine/settle do. Re-read identity,
+        // status and economic inputs: the preflight request snapshot is stale
+        // as soon as a concurrent passenger response or cancellation starts.
+        const [lockedRide] = await tx.$queryRaw<Array<{
+          id: string; passenger_id: string; driver_id: string | null;
+          status: string; ride_type: string; service_category: string;
+          trip_details: unknown; quoted_price: Decimal | null; locked_price: Decimal | null;
+          platform_fee: Decimal | null; driver_earnings: Decimal | null;
+          pricing_profile_id: string | null; adjusted_price: Decimal | null;
+        }>>`
+          SELECT id, passenger_id, driver_id, status, ride_type, service_category,
+                 trip_details, quoted_price, locked_price, platform_fee,
+                 driver_earnings, pricing_profile_id, adjusted_price
+          FROM rides_v2 WHERE id = ${ride_id} FOR UPDATE
+        `;
+        const conflict = () => Object.assign(new Error('ADJUSTMENT_CONFLICT'), { code: 'ADJUSTMENT_CONFLICT' });
+        if (!lockedRide || lockedRide.passenger_id !== passengerId ||
+            lockedRide.status !== 'pending_adjustment' || lockedRide.driver_id !== ride.driver_id) {
+          throw conflict();
         }
+        if (isUnsupportedCareIntent(lockedRide)) {
+          throw Object.assign(new Error(CARE_UNAVAILABLE_CODE), { code: CARE_UNAVAILABLE_CODE });
+        }
+
+        const latestOffer = await tx.ride_offers.findUnique({ where: { id: offer.id } });
+        if (!latestOffer || latestOffer.ride_id !== ride_id ||
+            latestOffer.driver_id !== lockedRide.driver_id ||
+            latestOffer.status !== 'accepted' || latestOffer.adjustment_status !== 'pending' ||
+            latestOffer.driver_adjustment == null) {
+          throw conflict();
+        }
+
+        const [snapshot] = await tx.$queryRaw<Array<{
+          ride_id: string; pricing_profile_id: string; quoted_price: Decimal;
+          locked_price: Decimal; fee_percent: Decimal; fee_amount: Decimal;
+          driver_earnings: Decimal; quoted_at: Date; locked_at: Date | null;
+          settled_at: Date | null;
+        }>>`
+          SELECT ride_id, pricing_profile_id, quoted_price, locked_price,
+                 fee_percent, fee_amount, driver_earnings, quoted_at, locked_at, settled_at
+          FROM ride_settlements WHERE ride_id = ${ride_id} FOR UPDATE
+        `;
+        if (!snapshot || snapshot.settled_at ||
+            !hasOfficialLockedQuote({ ...lockedRide, settlement: snapshot })) {
+          throw conflict();
+        }
+
+        // Use the persisted rate and quoted base, never the client's amount,
+        // a new tariff formula, or a newly configured rate.
+        const basePrice = new Decimal(String(snapshot.quoted_price));
+        const adjustment = new Decimal(String(latestOffer.driver_adjustment));
+        const feePercent = new Decimal(String(snapshot.fee_percent));
+        if (!basePrice.isFinite() || !adjustment.isFinite() || adjustment.lte(0) ||
+            adjustment.decimalPlaces() > 2 || !feePercent.isFinite() ||
+            feePercent.lt(0) || feePercent.gt(100)) throw conflict();
+        const updatedPrice = basePrice.plus(adjustment);
+        if (!updatedPrice.isFinite() || updatedPrice.lte(0) ||
+            updatedPrice.gt('999999.99') || updatedPrice.decimalPlaces() > 2 ||
+            (lockedRide.adjusted_price != null &&
+             !updatedPrice.eq(new Decimal(String(lockedRide.adjusted_price))))) throw conflict();
+
+        const fee = updatedPrice.times(feePercent).div(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        const earnings = updatedPrice.minus(fee);
+        if (!fee.isFinite() || !earnings.isFinite() || earnings.lt(0) ||
+            !fee.plus(earnings).eq(updatedPrice) ||
+            adjustedPrice === null || Math.abs(adjustedPrice - updatedPrice.toNumber()) > 1e-7) {
+          throw conflict();
+        }
+
+        const offerUpdated = await tx.ride_offers.updateMany({
+          where: { id: latestOffer.id, ride_id, status: 'accepted', adjustment_status: 'pending' },
+          data: { adjustment_status: 'accepted' },
+        });
+        if (offerUpdated.count !== 1) throw conflict();
+
+        const economicUpdated = await tx.$executeRaw`
+          UPDATE ride_settlements
+          SET locked_price = ${updatedPrice}, locked_at = NOW(),
+              fee_amount = ${fee}, driver_earnings = ${earnings}
+          WHERE ride_id = ${ride_id} AND settled_at IS NULL
+            AND locked_price = ${snapshot.locked_price}
+        `;
+        if (economicUpdated !== 1) throw conflict();
+
+        const rideUpdated = await tx.rides_v2.updateMany({
+          where: {
+            id: ride_id, passenger_id: passengerId, driver_id: latestOffer.driver_id,
+            status: 'pending_adjustment',
+            ride_type: lockedRide.ride_type, service_category: lockedRide.service_category,
+          },
+          data: {
+            status: 'accepted', accepted_at: new Date(), adjusted_price: updatedPrice,
+            locked_price: updatedPrice, platform_fee: fee, driver_earnings: earnings,
+          },
+        });
+        if (rideUpdated.count !== 1) throw conflict();
       });
 
       console.log(`[ADJUSTMENT_ACCEPTED] ride_id=${ride_id} driver_id=${ride.driver_id} adjustment=${offer.driver_adjustment} adjusted_price=${adjustedPrice}`);
@@ -646,24 +727,48 @@ router.post('/:ride_id/adjustment-response', authenticatePassenger, async (req: 
     } else {
       // Passenger rejected adjustment — release driver, redispatch
       await prisma.$transaction(async (tx) => {
-        await tx.ride_offers.update({
-          where: { id: offer.id },
-          data: { adjustment_status: 'rejected' }
+        const [lockedRide] = await tx.$queryRaw<Array<{
+          id: string; passenger_id: string; driver_id: string | null;
+          status: string; ride_type: string; service_category: string; trip_details: unknown;
+        }>>`
+          SELECT id, passenger_id, driver_id, status, ride_type, service_category, trip_details
+          FROM rides_v2 WHERE id = ${ride_id} FOR UPDATE
+        `;
+        const conflict = () => Object.assign(new Error('ADJUSTMENT_CONFLICT'), { code: 'ADJUSTMENT_CONFLICT' });
+        if (!lockedRide || lockedRide.passenger_id !== passengerId ||
+            lockedRide.status !== 'pending_adjustment' || lockedRide.driver_id !== ride.driver_id) {
+          throw conflict();
+        }
+        if (isUnsupportedCareIntent(lockedRide)) {
+          throw Object.assign(new Error(CARE_UNAVAILABLE_CODE), { code: CARE_UNAVAILABLE_CODE });
+        }
+        const latestOffer = await tx.ride_offers.findUnique({ where: { id: offer.id } });
+        if (!latestOffer || latestOffer.ride_id !== ride_id ||
+            latestOffer.driver_id !== lockedRide.driver_id ||
+            latestOffer.status !== 'accepted' || latestOffer.adjustment_status !== 'pending') {
+          throw conflict();
+        }
+        const offerUpdated = await tx.ride_offers.updateMany({
+          where: { id: latestOffer.id, ride_id, status: 'accepted', adjustment_status: 'pending' },
+          data: { adjustment_status: 'rejected' },
         });
-        await tx.rides_v2.update({
-          where: { id: ride_id },
+        if (offerUpdated.count !== 1) throw conflict();
+        const rideUpdated = await tx.rides_v2.updateMany({
+          where: {
+            id: ride_id, passenger_id: passengerId, driver_id: latestOffer.driver_id,
+            status: 'pending_adjustment',
+            ride_type: lockedRide.ride_type, service_category: lockedRide.service_category,
+          },
           data: {
-            status: 'requested',
-            driver_id: null,
-            driver_adjustment: null,
-            adjusted_price: null,
-            accepted_at: null,
-          }
+            status: 'requested', driver_id: null, driver_adjustment: null,
+            adjusted_price: null, accepted_at: null,
+          },
         });
-        if (ride.driver_id) {
+        if (rideUpdated.count !== 1) throw conflict();
+        if (latestOffer.driver_id) {
           await tx.driver_status.update({
-            where: { driver_id: ride.driver_id },
-            data: { availability: 'online' }
+            where: { driver_id: latestOffer.driver_id },
+            data: { availability: 'online' },
           });
         }
       });
@@ -677,6 +782,12 @@ router.post('/:ride_id/adjustment-response', authenticatePassenger, async (req: 
     }
   } catch (error: any) {
     console.error('[ADJUSTMENT_RESPONSE_ERROR]', error);
+    if (error?.code === CARE_UNAVAILABLE_CODE) {
+      return res.status(403).json({ success: false, error: CARE_UNAVAILABLE_CODE });
+    }
+    if (error?.code === 'ADJUSTMENT_CONFLICT') {
+      return res.status(409).json({ success: false, error: 'ADJUSTMENT_CONFLICT' });
+    }
     res.status(500).json({ error: 'Erro interno. Tente novamente.' });
   }
 });
