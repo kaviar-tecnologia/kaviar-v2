@@ -13,6 +13,7 @@
  */
 import { prisma as defaultPrisma } from '../../lib/prisma';
 import { OpenStreetMapProvider, OVERPASS_MIRRORS } from './providers/openstreetmap-provider';
+import { OfficialArcGisProvider } from './providers/official-arcgis-provider';
 import {
   type TerritorialDatasetProvider,
   type AcquisitionOptions,
@@ -110,38 +111,74 @@ export async function acquireCityDataset(params: AcquireParams): Promise<Acquire
   });
 
   try {
-    // Resolve um bbox MUNICIPAL confiável (dado próprio/território ou limite OSM).
-    // Se não houver bbox confiável, NÃO adquire dataset persistível silenciosamente.
+    const ref = { city, uf };
+
+    // Uma fonte explicitamente injetada continua tendo precedência (testes/uso
+    // controlado). Sem injeção, tenta uma fonte oficial configurada para city/UF.
+    const officialProvider = params.provider
+      ? null
+      : new OfficialArcGisProvider();
+
+    const officialSupported = officialProvider
+      ? await officialProvider.supports(ref)
+      : false;
+
+    let provider: TerritorialDatasetProvider | null =
+      params.provider ?? (officialSupported ? officialProvider : null);
+
     let preferredMirror: string | undefined;
     let bbox = params.bbox ?? null;
-    if (!bbox) {
-      const resolved = await resolveMunicipalBBox(prisma, city, uf, {
-        territoryId: territory.id,
-        fetchImpl: params.acquisitionOptions?.fetchImpl,
-        signal,
-      });
-      if (signal.aborted) return abortResult();
-      if (resolved.code === 'MUNICIPAL_BBOX_AMBIGUOUS') {
-        return { ok: false, reason: 'Múltiplos limites municipais ambíguos para a cidade/UF.', code: 'MUNICIPAL_BBOX_AMBIGUOUS', city, uf };
-      }
-      bbox = resolved.bbox;
-      preferredMirror = resolved.sourceUrl;
+
+    // Fonte oficial configurada NÃO depende de OSM para ser selecionada.
+    // Para providers não-oficiais (inclusive OSM), mantém a guarda de bbox
+    // municipal confiável antes de permitir aquisição persistível.
+    if (!provider || !provider.isOfficial) {
       if (!bbox) {
-        return {
-          ok: false,
-          reason: 'BBox municipal confiável indisponível — aquisição recusada para evitar dataset da região errada.',
-          code: 'MUNICIPAL_BBOX_UNAVAILABLE',
-          city, uf,
-        };
+        const resolved = await resolveMunicipalBBox(prisma, city, uf, {
+          territoryId: territory.id,
+          fetchImpl: params.acquisitionOptions?.fetchImpl,
+          signal,
+        });
+
+        if (signal.aborted) return abortResult();
+
+        if (resolved.code === 'MUNICIPAL_BBOX_AMBIGUOUS') {
+          return {
+            ok: false,
+            reason: 'Múltiplos limites municipais ambíguos para a cidade/UF.',
+            code: 'MUNICIPAL_BBOX_AMBIGUOUS',
+            city,
+            uf,
+          };
+        }
+
+        bbox = resolved.bbox;
+        preferredMirror = resolved.sourceUrl;
+
+        if (!bbox) {
+          return {
+            ok: false,
+            reason: 'BBox municipal confiável indisponível — aquisição recusada para evitar dataset da região errada.',
+            code: 'MUNICIPAL_BBOX_UNAVAILABLE',
+            city,
+            uf,
+          };
+        }
       }
     }
 
     if (signal.aborted) return abortResult();
 
-    const mirrors = preferredMirror
-      ? [preferredMirror, ...OVERPASS_MIRRORS.filter(url => url !== preferredMirror)]
-      : undefined;
-    const provider = params.provider ?? new OpenStreetMapProvider({ bbox, mirrors });
+    // OSM é fallback apenas quando NÃO existe fonte oficial configurada.
+    // Se uma fonte oficial configurada falhar, o catch abaixo falha fechado:
+    // não há downgrade silencioso para dado comunitário.
+    if (!provider) {
+      const mirrors = preferredMirror
+        ? [preferredMirror, ...OVERPASS_MIRRORS.filter(url => url !== preferredMirror)]
+        : undefined;
+
+      provider = new OpenStreetMapProvider({ bbox, mirrors });
+    }
 
     let acquired;
     try {
@@ -151,7 +188,7 @@ export async function acquireCityDataset(params: AcquireParams): Promise<Acquire
       if (signal.aborted || err?.code === 'ACQUISITION_ABORTED') return abortResult();
       return {
         ok: false,
-        reason: `Falha na aquisição externa: ${err?.message ?? String(err)}`,
+        reason: `Falha na aquisição externa (${provider.id}): ${err?.message ?? String(err)}`,
         code: err?.code || 'ACQUISITION_FAILED',
         city, uf,
       };
