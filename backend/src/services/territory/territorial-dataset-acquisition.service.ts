@@ -23,11 +23,10 @@ import type { CityBoundingBox } from './city-preparation.core';
 
 /**
  * Deadline TOTAL padrão da aquisição (bbox + Overpass + retries/backoff).
- * A infraestrutura (ALB `kaviar-alb`) usa o idle timeout PADRÃO da AWS = 60s
- * (o provisionamento não altera `idle_timeout.timeout_seconds`). Portanto o
- * deadline total fica ABAIXO disso, com folga para parse/serialização/auditoria.
+ * O ALB de produção foi configurado para 120s em 29/09/2026.
+ * O deadline fica abaixo desse limite, com folga para resposta e auditoria.
  */
-export const ACQUISITION_TOTAL_DEADLINE_MS = 45_000;
+export const ACQUISITION_TOTAL_DEADLINE_MS = 90_000;
 
 export interface AcquireParams {
   territoryId: string;
