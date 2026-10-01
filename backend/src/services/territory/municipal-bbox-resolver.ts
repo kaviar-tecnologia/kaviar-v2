@@ -19,7 +19,10 @@
  * Somente LEITURA. Não grava nada.
  */
 import type { CityBoundingBox } from './city-preparation.core';
-import { OVERPASS_MIRRORS } from './providers/openstreetmap-provider';
+import {
+  OVERPASS_MIRRORS,
+  OVERPASS_USER_AGENT,
+} from './providers/openstreetmap-provider';
 import { UF_TO_STATE_NAME } from './osm-geojson-normalizer';
 
 export type PrismaLike = any;
@@ -34,6 +37,7 @@ export interface MunicipalBBoxResult {
   source: 'osm_municipality' | 'existing_coverage' | 'none';
   code: MunicipalBBoxCode;
   details?: string;
+  sourceUrl?: string;
 }
 
 const ALLOWED_HOSTS = new Set(OVERPASS_MIRRORS.map((u) => new URL(u).host));
@@ -41,6 +45,30 @@ const MAX_BOUNDS_BYTES = 2 * 1024 * 1024;   // 2 MB (resposta 'out bb;' é peque
 const MAX_BOUNDS_ELEMENTS = 200;            // limite de elementos retornados
 // Extensão máxima plausível de um município (graus). Rejeita bounds absurdos.
 const MAX_SPAN_DEG = 3.0;
+const BBOX_MIRROR_TIMEOUT_MS = 20_000;
+const BBOX_MAX_ATTEMPTS_PER_MIRROR = 2;
+const BBOX_RETRY_BACKOFF_MS = 500;
+
+async function bboxRetrySleep(ms: number, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return false;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve(true);
+    }, ms);
+    const onAbort = () => {
+      cleanup();
+      resolve(false);
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    // Fecha a janela entre a checagem inicial e o registro do listener.
+    if (signal?.aborted) onAbort();
+  });
+}
 
 export function expand(bbox: CityBoundingBox, marginDeg: number): CityBoundingBox {
   return {
@@ -106,59 +134,100 @@ export function buildMunicipalityBoundsQuery(city: string, uf?: string | null): 
 export async function bboxFromOsmMunicipality(
   city: string,
   uf: string | null,
-  opts: { fetchImpl?: typeof fetch; signal?: AbortSignal; mirrors?: readonly string[] } = {},
-): Promise<{ bbox: CityBoundingBox | null; ambiguous: boolean }> {
+  opts: {
+    fetchImpl?: typeof fetch;
+    signal?: AbortSignal;
+    mirrors?: readonly string[];
+    mirrorTimeoutMs?: number;
+    maxAttemptsPerMirror?: number;
+    retryBackoffMs?: number;
+  } = {},
+): Promise<{ bbox: CityBoundingBox | null; ambiguous: boolean; sourceUrl?: string }> {
   const fetchImpl = opts.fetchImpl ?? (globalThis.fetch as typeof fetch);
   if (typeof fetchImpl !== 'function') return { bbox: null, ambiguous: false };
   const mirrors = (opts.mirrors ?? OVERPASS_MIRRORS).filter((u) => ALLOWED_HOSTS.has(new URL(u).host));
   const query = buildMunicipalityBoundsQuery(city, uf);
+  const mirrorTimeoutMs = opts.mirrorTimeoutMs ?? BBOX_MIRROR_TIMEOUT_MS;
+
+  const maxAttempts = opts.maxAttemptsPerMirror ?? BBOX_MAX_ATTEMPTS_PER_MIRROR;
+  const retryBackoffMs = opts.retryBackoffMs ?? BBOX_RETRY_BACKOFF_MS;
 
   for (const url of mirrors) {
-    if (opts.signal?.aborted) return { bbox: null, ambiguous: false };
-    try {
-      const res: any = await fetchImpl(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
-        body: `data=${encodeURIComponent(query)}`,
-        signal: opts.signal,
-        redirect: 'manual',
-      } as any);
-
-      const status = res.status as number;
-      if (res.type === 'opaqueredirect' || (status >= 300 && status < 400)) continue;
-      if (status < 200 || status >= 300) continue;
-      const ct = (res.headers?.get?.('content-type') || '').toLowerCase();
-      if (!ct.includes('json') && !ct.includes('osm3s')) continue;
-
-      const declaredLen = Number(res.headers?.get?.('content-length') || 0);
-      if (declaredLen && declaredLen > MAX_BOUNDS_BYTES) continue;
-      const text: string = await res.text();
-      if (Buffer.byteLength(text, 'utf8') > MAX_BOUNDS_BYTES) continue;
-
-      let parsed: any;
-      try { parsed = JSON.parse(text); } catch { continue; }
-      const els = Array.isArray(parsed?.elements) ? parsed.elements : [];
-      if (els.length > MAX_BOUNDS_ELEMENTS) continue;
-
-      // Coleta bounds VÁLIDOS individuais.
-      const valid: CityBoundingBox[] = [];
-      for (const el of els) {
-        const b = el.bounds;
-        if (!b) continue;
-        const cand: CityBoundingBox = { minLon: b.minlon, maxLon: b.maxlon, minLat: b.minlat, maxLat: b.maxlat };
-        if (isValidBBox(cand)) valid.push(cand);
-      }
-      if (valid.length === 0) continue;
-
-      // AMBIGUIDADE: mais de uma relação municipal plausível → NÃO unir.
-      // (Partes contíguas da mesma relação retornam um único elemento com bounds.)
-      if (valid.length > 1) {
-        return { bbox: null, ambiguous: true };
-      }
-      return { bbox: valid[0], ambiguous: false };
-    } catch {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       if (opts.signal?.aborted) return { bbox: null, ambiguous: false };
-      // tenta próximo mirror
+
+      const local = new AbortController();
+      const forwardAbort = () => local.abort();
+      opts.signal?.addEventListener('abort', forwardAbort, { once: true });
+      if (opts.signal?.aborted) local.abort();
+      const timer = setTimeout(() => local.abort(), mirrorTimeoutMs);
+
+      let retryTransient = false;
+
+      try {
+        const res: any = await fetchImpl(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Accept: 'application/json',
+            'User-Agent': OVERPASS_USER_AGENT,
+          },
+          body: `data=${encodeURIComponent(query)}`,
+          signal: local.signal,
+          redirect: 'manual',
+        } as any);
+
+        const status = res.status as number;
+
+        if (res.type === 'opaqueredirect' || (status >= 300 && status < 400)) break;
+
+        if (status < 200 || status >= 300) {
+          retryTransient = status === 429 || status >= 500;
+        } else {
+          const ct = (res.headers?.get?.('content-type') || '').toLowerCase();
+          if (!ct.includes('json') && !ct.includes('osm3s')) break;
+
+          const declaredLen = Number(res.headers?.get?.('content-length') || 0);
+          if (declaredLen && declaredLen > MAX_BOUNDS_BYTES) break;
+
+          const text: string = await res.text();
+          if (Buffer.byteLength(text, 'utf8') > MAX_BOUNDS_BYTES) break;
+
+          let parsed: any;
+          try { parsed = JSON.parse(text); } catch { break; }
+
+          const els = Array.isArray(parsed?.elements) ? parsed.elements : [];
+          if (els.length > MAX_BOUNDS_ELEMENTS) break;
+
+          const valid: CityBoundingBox[] = [];
+          for (const el of els) {
+            const b = el.bounds;
+            if (!b) continue;
+            const cand: CityBoundingBox = {
+              minLon: b.minlon, maxLon: b.maxlon,
+              minLat: b.minlat, maxLat: b.maxlat,
+            };
+            if (isValidBBox(cand)) valid.push(cand);
+          }
+
+          if (valid.length === 0) break;
+          if (valid.length > 1) return { bbox: null, ambiguous: true };
+
+          return { bbox: valid[0], ambiguous: false, sourceUrl: url };
+        }
+      } catch {
+        if (opts.signal?.aborted) return { bbox: null, ambiguous: false };
+        // Timeout local / erro de rede: falha transitória.
+        retryTransient = true;
+      } finally {
+        clearTimeout(timer);
+        opts.signal?.removeEventListener('abort', forwardAbort);
+      }
+
+      if (!retryTransient || attempt >= maxAttempts) break;
+
+      const proceed = await bboxRetrySleep(retryBackoffMs, opts.signal);
+      if (!proceed) return { bbox: null, ambiguous: false };
     }
   }
   return { bbox: null, ambiguous: false };
@@ -176,7 +245,7 @@ export async function resolveMunicipalBBox(
   const osm = await bboxFromOsmMunicipality(city, uf, opts);
   if (opts.signal?.aborted) return { bbox: null, source: 'none', code: 'MUNICIPAL_BBOX_UNAVAILABLE', details: 'cancelado' };
   if (osm.ambiguous) return { bbox: null, source: 'none', code: 'MUNICIPAL_BBOX_AMBIGUOUS' };
-  if (osm.bbox) return { bbox: expand(osm.bbox, margin), source: 'osm_municipality', code: 'OK' };
+  if (osm.bbox) return { bbox: expand(osm.bbox, margin), source: 'osm_municipality', code: 'OK', sourceUrl: osm.sourceUrl };
 
   // 2) FALLBACK: cobertura existente (isolada por território).
   if (opts.territoryId) {
