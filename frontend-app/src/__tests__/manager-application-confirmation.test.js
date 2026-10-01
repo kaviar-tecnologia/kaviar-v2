@@ -9,7 +9,7 @@ const central = readFileSync(resolve(__dirname, '../pages/admin/WhatsAppCentral.
 describe('CRM manager application confirmation flow', () => {
   it('offers the official Twilio action only to super admin for a website manager application', () => {
     expect(crm).toContain("isSuperAdmin && selectedLead.lead_type === 'TERRITORIAL_MANAGER' && selectedLead.source === 'WEBSITE'");
-    expect(crm).toContain('Enviar confirmação oficial');
+    expect(crm).toContain('Enviar questionário inicial oficial');
     expect(crm).toContain('setApplicationInviteOpen(true)');
     expect(crm).toContain('Confirmar e enviar via Twilio');
   });
@@ -27,7 +27,7 @@ describe('CRM manager application confirmation flow', () => {
   });
 
   it('retains the manual WhatsApp link and prospect invitation in the Central', () => {
-    expect(crm).toContain('WhatsApp Gestor (manual)');
+    expect(crm).toContain('WhatsApp pessoal/manual');
     expect(central).toContain('Abrir WhatsApp manual');
     expect(central).toContain('Enviar convite oficial via Twilio');
     expect(central).toContain('Novo convite');

@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'backend/src/services/care/care-official-fare-evidence.ts'
+<<<<<<< ours
       - 'backend/src/services/care/care-pricing-transaction.ts'
       - 'backend/tests/care-06b-pricing-transaction.test.ts'
       - 'backend/tests/care-445-quote-atomicity.test.ts'
@@ -32,6 +33,8 @@ on:
       - 'backend/src/jobs/scheduled-dispatch.job.ts'
       - 'backend/tests/care-445-quote-atomicity.integration.test.ts'
       - 'backend/tests/care-06b-pricing-transaction.integration.test.ts'
+=======
+>>>>>>> theirs
       - 'backend/src/services/pricing-engine.ts'
       - 'backend/tests/care-06b-pricing-boundary.test.ts'
       - 'backend/tests/care-06b-official-fare-evidence.test.ts'
@@ -46,6 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
+<<<<<<< ours
       DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/care06b_disposable
       NODE_ENV: test
     services:
@@ -62,6 +66,10 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+=======
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/care06b_disposable
+      NODE_ENV: test
+>>>>>>> theirs
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -84,6 +92,7 @@ jobs:
           npx vitest run
           tests/care-06b-official-fare-evidence.test.ts
           tests/care-06b-pricing-boundary.test.ts
+<<<<<<< ours
           tests/care-06b-pricing-transaction.test.ts
           tests/care-445-quote-atomicity.test.ts
           tests/care-445-refine-settle-atomicity.test.ts
@@ -115,3 +124,8 @@ jobs:
         env:
           CARE_QUOTE_ATOMIC_INTEGRATION: '1'
         run: npx vitest run tests/care-445-quote-atomicity.integration.test.ts
+=======
+          tests/care-05b-fare-parity.test.ts
+          tests/care-03-eligibility.test.ts
+          tests/care-04-readiness-policy.test.ts
+>>>>>>> theirs
