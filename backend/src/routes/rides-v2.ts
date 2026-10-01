@@ -1326,6 +1326,13 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
           }
 
           const finalPriceCents = Math.round(settlement.final_price * 100);
+          const feeBaseCents = finalPriceCents - _shadowWaitCents;
+          const officialFeeCents = Math.round(settlement.fee_amount * 100);
+          if (!Number.isSafeInteger(finalPriceCents) || !Number.isSafeInteger(feeBaseCents) ||
+              feeBaseCents <= 0 || !Number.isSafeInteger(officialFeeCents) ||
+              calculateFeeCents(feeBaseCents) !== officialFeeCents) {
+            throw new Error('WALLET_FEE_BASE_INCONSISTENT');
+          }
           const reservedCents = estimateFeeCentsFromPrice(Number(ride.quoted_price || ride.locked_price || 0));
 
           // Resolve territory for split
@@ -1346,14 +1353,15 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
 
           const result = await settlementSvc.settleRide({
             rideId: ride_id, driverId, finalPriceCents: BigInt(finalPriceCents),
-            reservedCents: BigInt(reservedCents), territoryId: territoryId || undefined,
+            feeBaseCents: BigInt(feeBaseCents), reservedCents: BigInt(reservedCents), territoryId: territoryId || undefined,
           });
 
-          const feeCents = calculateFeeCents(finalPriceCents);
+          const feeCents = calculateFeeCents(feeBaseCents);
           creditResult = { cost: feeCents / 100, matchType: 'WALLET_V2', balance: 0 };
           console.log(`[WALLET_V2_SETTLE] ride=${ride_id} driver=${driverId} fee=${feeCents} collected=${result.collected}`);
         } catch (walletErr: any) {
           console.error(`[WALLET_V2_SETTLE_FAIL] ride=${ride_id} driver=${driverId}`, walletErr.message);
+          return res.status(503).json({ success: false, error: 'WALLET_SETTLEMENT_UNCONFIRMED' });
         }
       } else {
         // Modelo antigo (FEE_MODEL_FLAT_18 ou créditos fixos)

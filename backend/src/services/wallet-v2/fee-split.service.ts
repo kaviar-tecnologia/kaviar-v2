@@ -52,7 +52,8 @@ export interface FeeSplitSnapshot {
 export interface RecordSplitParams {
   rideId: string;
   driverId: string;
-  finalPriceCents: bigint;
+  finalPriceCents: bigint; // total, including wait
+  feeBaseCents?: bigint; // locked base for fee, defaults to total for legacy callers
   territoryId: string | null;
   managerId: string | null;
   managerAssignmentId: string | null;
@@ -102,7 +103,11 @@ export class FeeSplitService {
    */
   async recordSplitInClient(client: PoolClient, params: RecordSplitParams): Promise<FeeSplitSnapshot> {
     // Validate invariants using the provided rates (not global constants)
-    const split = this.calculateSplit(params.finalPriceCents, params.platformFeeRateBps, params.managerCommissionRateBps);
+    const feeBaseCents = params.feeBaseCents ?? params.finalPriceCents;
+    if (feeBaseCents <= 0n || feeBaseCents > params.finalPriceCents) {
+      throw new Error('INVARIANT: invalid fee base');
+    }
+    const split = this.calculateSplit(feeBaseCents, params.platformFeeRateBps, params.managerCommissionRateBps);
     if (params.feeCollectedCents < 0n) throw new Error('INVARIANT: feeCollectedCents must be >= 0');
     if (params.feePendingCents < 0n) throw new Error('INVARIANT: feePendingCents must be >= 0');
     if (params.feeCollectedCents + params.feePendingCents !== split.fee_amount_cents) {
@@ -187,6 +192,7 @@ export class FeeSplitService {
     if (
       existing.driverId !== params.driverId ||
       existing.finalPriceCents !== params.finalPriceCents ||
+      existing.feeAmountCents !== split.fee_amount_cents ||
       (existing.territoryId ?? null) !== (params.territoryId ?? null)
     ) {
       throw Object.assign(
