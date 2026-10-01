@@ -168,6 +168,11 @@ export default function CrmPage() {
   const [applicationInviteSending, setApplicationInviteSending] = useState(false);
   const [applicationInviteError, setApplicationInviteError] = useState('');
   const [managerPanelOpen, setManagerPanelOpen] = useState(false);
+  const [territories, setTerritories] = useState([]);
+  const [managerAccessOpen, setManagerAccessOpen] = useState(false);
+  const [managerAccessSaving, setManagerAccessSaving] = useState(false);
+  const [managerAccessError, setManagerAccessError] = useState('');
+  const [managerAccessForm, setManagerAccessForm] = useState({ territory_id: '', password: '' });
 
   const adminData = localStorage.getItem('kaviar_admin_data');
   const admin = adminData ? JSON.parse(adminData) : null;
@@ -251,6 +256,85 @@ export default function CrmPage() {
       if (data.success) { setStatusOpen(false); setSelectedLead({ ...selectedLead, status: newStatus }); fetchLeads(); fetchStats(); setSnack('Status atualizado!'); }
       else setSnack(data.error || 'Erro');
     } catch { setSnack('Erro'); }
+  };
+
+  const inferTerritoryForLead = (lead, list) => {
+    if (!lead || !Array.isArray(list)) return '';
+    if (lead.territory_id && list.some(t => t.id === lead.territory_id)) return lead.territory_id;
+    const source = `${lead.notes || ''} ${lead.name || ''}`.toLowerCase();
+    const clean = (value) => String(value || '').toLowerCase().split('—')[0].trim();
+    const match = list.find(t => {
+      const name = clean(t.name);
+      const city = clean(t.city_name);
+      return (name && source.includes(name)) || (city && source.includes(city));
+    });
+    return match?.id || '';
+  };
+
+  const openManagerAccessDialog = async () => {
+    if (!selectedLead) return;
+    setManagerAccessError('');
+    setManagerAccessForm({ territory_id: '', password: '' });
+    setManagerAccessOpen(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/territories`, { headers });
+      const data = await res.json();
+      if (!data.success) {
+        setManagerAccessError(data.error || 'Erro ao carregar territórios.');
+        return;
+      }
+      const active = (data.data || []).filter(t => t.is_active !== false);
+      setTerritories(active);
+      setManagerAccessForm(f => ({ ...f, territory_id: inferTerritoryForLead(selectedLead, active) }));
+    } catch {
+      setManagerAccessError('Erro de conexão ao carregar territórios.');
+    }
+  };
+
+  const handleCreateManagerAccess = async () => {
+    if (!selectedLead || managerAccessSaving) return;
+    if (!selectedLead.name || !selectedLead.email) {
+      setManagerAccessError('Nome e e-mail do candidato são obrigatórios.');
+      return;
+    }
+    if (!managerAccessForm.territory_id || !managerAccessForm.password) {
+      setManagerAccessError('Informe território e senha temporária.');
+      return;
+    }
+    setManagerAccessSaving(true);
+    setManagerAccessError('');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/territories/regional-admins`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          name: selectedLead.name,
+          email: selectedLead.email,
+          password: managerAccessForm.password,
+          territory_id: managerAccessForm.territory_id,
+          role_type: 'manager',
+          access_level: 'full',
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        const raw = data.error || data.message || '';
+        const message = raw.includes('Email já cadastrado')
+          ? 'Já existe acesso para este e-mail. Use Gestores/Operadores para redefinir senha ou envie as instruções de acesso.'
+          : (raw || 'Erro ao criar acesso da Gestora.');
+        setManagerAccessError(message);
+        return;
+      }
+      setManagerAccessOpen(false);
+      setManagerAccessForm({ territory_id: '', password: '' });
+      setSnack('Acesso de Gestora criado. Envie as instruções de login; documentos e contrato seguem pendentes.');
+      fetchLeads();
+      fetchStats();
+    } catch {
+      setManagerAccessError('Erro de conexão ao criar acesso da Gestora.');
+    } finally {
+      setManagerAccessSaving(false);
+    }
   };
 
   const handleApplicationInvite = async () => {
@@ -340,7 +424,7 @@ export default function CrmPage() {
   };
 
   const getWhatsAppLabel = (type) => {
-    if (type === 'manager') return 'WhatsApp Gestor (manual)';
+    if (type === 'manager') return 'WhatsApp pessoal/manual';
     if (type === 'driver') return 'WhatsApp Motorista';
     if (type === 'passenger') return 'WhatsApp Passageiro';
     return 'WhatsApp Contato';
@@ -717,7 +801,12 @@ export default function CrmPage() {
               </Button>
               {isSuperAdmin && selectedLead.lead_type === 'TERRITORIAL_MANAGER' && selectedLead.source === 'WEBSITE' && !['ACTIVE', 'LOST', 'REJECTED'].includes(selectedLead.status) && selectedLead.phone && (
                 <Button size="small" variant="contained" startIcon={<WhatsApp />} onClick={() => { setApplicationInviteError(''); setApplicationInviteOpen(true); }} sx={{ bgcolor: GOLD, color: '#090909', textTransform: 'none', '&:hover': { bgcolor: '#e0bf50' } }}>
-                  Enviar confirmação oficial
+                  Enviar questionário inicial oficial
+                </Button>
+              )}
+              {isSuperAdmin && selectedLead.lead_type === 'TERRITORIAL_MANAGER' && selectedLead.source === 'WEBSITE' && ['WAITING_DOCUMENTS','WAITING_CONTRACT','WAITING_APPROVAL'].includes(selectedLead.status) && selectedLead.email && (
+                <Button size="small" variant="contained" startIcon={<Assignment />} onClick={openManagerAccessDialog} sx={{ bgcolor: '#2563EB', color: '#fff', textTransform: 'none', '&:hover': { bgcolor: '#1D4ED8' } }}>
+                  Criar acesso da Gestora
                 </Button>
               )}
               {(isSuperAdmin || admin?.role === 'TERRITORIAL_MANAGER') && ['ACTIVE','INTERESTED','WAITING_DOCUMENTS','WAITING_CONTRACT','WAITING_APPROVAL'].includes(selectedLead.status) && ['LOCAL_BUSINESS','RESTAURANT','BAKERY','PIZZERIA','SNACK_BAR','MARKET','PHARMACY','PET_SHOP','BEAUTY_SALON','WORKSHOP'].includes(selectedLead.lead_type) && (
@@ -775,6 +864,52 @@ export default function CrmPage() {
           <Button disabled={applicationInviteSending} onClick={() => setApplicationInviteOpen(false)}>Cancelar</Button>
           <Button disabled={applicationInviteSending} variant="contained" onClick={handleApplicationInvite} sx={{ bgcolor: GOLD, color: '#090909' }}>
             {applicationInviteSending ? 'Enviando...' : 'Confirmar e enviar via Twilio'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Criar acesso da Gestora Territorial */}
+      <Dialog open={managerAccessOpen} onClose={() => !managerAccessSaving && setManagerAccessOpen(false)} maxWidth="sm" fullWidth PaperProps={darkDialogPaper}>
+        <DialogTitle sx={{ color: TEXT_PRIMARY, fontWeight: 700 }}>Criar acesso da Gestora</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '16px !important', ...darkInputSx }}>
+          <Alert severity="info">
+            Esta ação cria a conta TERRITORIAL_MANAGER e o perfil operacional inativo. Documentos, contrato v1.2 e ativação continuam pendentes.
+          </Alert>
+          {managerAccessError && <Alert severity="error">{managerAccessError}</Alert>}
+          <TextField label="Nome" size="small" value={selectedLead?.name || ''} disabled />
+          <TextField label="E-mail" size="small" value={selectedLead?.email || ''} disabled />
+          <FormControl size="small" fullWidth>
+            <InputLabel>Território</InputLabel>
+            <Select
+              value={managerAccessForm.territory_id}
+              label="Território"
+              onChange={e => setManagerAccessForm(f => ({ ...f, territory_id: e.target.value }))}
+            >
+              {territories.map(t => (
+                <MenuItem key={t.id} value={t.id}>
+                  {t.name} ({t.level}{t.uf ? ` · ${t.uf}` : ''})
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <TextField
+            label="Senha temporária"
+            size="small"
+            type="password"
+            value={managerAccessForm.password}
+            onChange={e => setManagerAccessForm(f => ({ ...f, password: e.target.value }))}
+            helperText="A Gestora deverá trocar a senha no primeiro acesso."
+          />
+        </DialogContent>
+        <DialogActions sx={{ borderTop: `1px solid ${CARD_BORDER}`, px: 3, py: 2 }}>
+          <Button disabled={managerAccessSaving} onClick={() => setManagerAccessOpen(false)} sx={{ color: TEXT_SECONDARY }}>Cancelar</Button>
+          <Button
+            disabled={managerAccessSaving || !managerAccessForm.territory_id || !managerAccessForm.password}
+            variant="contained"
+            onClick={handleCreateManagerAccess}
+            sx={{ bgcolor: '#2563EB', color: '#fff', fontWeight: 700, '&:hover': { bgcolor: '#1D4ED8' } }}
+          >
+            {managerAccessSaving ? 'Criando...' : 'Criar acesso'}
           </Button>
         </DialogActions>
       </Dialog>

@@ -50,7 +50,7 @@ describe('public manager application flow', () => {
     expect(crm).toContain("lead.lead_type === 'DRIVER' || lead.lead_type === 'PET_DRIVER'");
     expect(crm).toContain("lead.lead_type === 'PASSENGER' || lead.lead_type === 'PRIVATE_RIDE_CLIENT'");
     expect(crm).toContain("return 'contact'");
-    expect(crm).toContain('WhatsApp Gestor');
+    expect(crm).toContain('WhatsApp pessoal/manual');
     expect(crm).toContain('WhatsApp Motorista');
     expect(crm).toContain('WhatsApp Passageiro');
     expect(crm).toContain('WhatsApp Contato');
