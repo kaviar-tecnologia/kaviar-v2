@@ -4,6 +4,10 @@ import { prisma } from '../lib/prisma';
 import { allowReadAccess, authenticateAdmin, requireRole, requireSuperAdmin } from '../middlewares/auth';
 import { applyTerritoryScope } from '../middlewares/territory-scope';
 import { getMunicipalRegulation, MUNICIPAL_MODALITIES, normalizeCity, normalizeState } from '../services/municipal-regulation.service';
+import { auditCtx } from '../utils/audit';
+import {
+  assertCareSnapshot, CareAdminConflict, lockCareAdminRow, writeCareAdminAuditTx,
+} from '../services/care/care-admin-atomic';
 
 const router = Router();
 
@@ -24,6 +28,13 @@ const regulationRequirementSchema = z.object({
 });
 
 const VEHICLE_AGE_BASES = ['MANUFACTURE_YEAR', 'MODEL_YEAR', 'FIRST_REGISTRATION'] as const;
+const CARE_MUNICIPAL_MODALITIES = [
+  'CARE_ASSISTED',
+  'CARE_FOLDING_WHEELCHAIR',
+  'CARE_ADAPTED_WHEELCHAIR',
+] as const;
+const isCareMunicipalModality = (value: string | null | undefined): boolean =>
+  !!value && (CARE_MUNICIPAL_MODALITIES as readonly string[]).includes(value);
 
 const regulationCreateSchema = z.object({
   city: z.string().min(1),
@@ -41,8 +52,14 @@ const regulationCreateSchema = z.object({
   authorization_validity_months: z.number().int().optional().nullable(),
   responsible_agency: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
-  is_active: z.boolean().default(true),
+  is_active: z.boolean().optional(),
   requirements: z.array(regulationRequirementSchema).optional().default([]),
+});
+
+const careScopeReviewSchema = z.object({
+  decision: z.enum(['APPROVE', 'REVOKE']),
+  document_url: z.string().url().max(1000).optional(),
+  reason: z.string().min(3).max(2000).optional(),
 });
 
 const regulationPatchSchema = regulationCreateSchema.partial();
@@ -125,6 +142,14 @@ router.get('/municipal-regulations/:id', allowReadAccess, async (req: Request, r
 router.post('/municipal-regulations', MUNICIPAL_CONFIG_ROLE, async (req: Request, res: Response) => {
   try {
     const payload = regulationCreateSchema.parse(req.body);
+    const careMode = isCareMunicipalModality(payload.service_modality);
+    if (careMode && payload.is_active === true) {
+      return res.status(409).json({
+        success: false,
+        error: 'Modalidade CARE deve ser criada inativa e revisada documentalmente antes da ativação.',
+      });
+    }
+    const initialActive = payload.is_active ?? !careMode;
 
     const created = await prisma.$transaction(async (tx) => {
       const regulation = await tx.municipal_regulations.create({
@@ -144,7 +169,7 @@ router.post('/municipal-regulations', MUNICIPAL_CONFIG_ROLE, async (req: Request
           authorization_validity_months: payload.authorization_validity_months ?? null,
           responsible_agency: payload.responsible_agency || null,
           notes: payload.notes || null,
-          is_active: payload.is_active,
+          is_active: initialActive,
         },
       });
 
@@ -188,7 +213,53 @@ router.patch('/municipal-regulations/:id', MUNICIPAL_CONFIG_ROLE, async (req: Re
     const existing = await prisma.municipal_regulations.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ success: false, error: 'Regra municipal não encontrada.' });
 
+    const targetModality = payload.service_modality ?? existing.service_modality;
+    const targetActive = payload.is_active ?? existing.is_active;
+    if (isCareMunicipalModality(targetModality) && targetActive && existing.care_scope_verified !== true) {
+      return res.status(409).json({
+        success: false,
+        error: 'CARE_SCOPE_REVIEW_REQUIRED_BEFORE_ACTIVATION',
+      });
+    }
+
+    const careScopeSensitiveChange =
+      payload.requirements !== undefined ||
+      (payload.city !== undefined && normalizeCity(payload.city) !== existing.city) ||
+      (payload.state !== undefined && normalizeState(payload.state) !== existing.state) ||
+      (payload.service_modality !== undefined && payload.service_modality !== existing.service_modality) ||
+      (payload.regulation_status !== undefined && payload.regulation_status !== existing.regulation_status) ||
+      (payload.municipality_code !== undefined && (payload.municipality_code || null) !== existing.municipality_code) ||
+      (payload.law_number !== undefined && (payload.law_number || null) !== existing.law_number) ||
+      (payload.law_date !== undefined &&
+        (payload.law_date
+          ? (Number.isNaN(new Date(payload.law_date).getTime())
+              ? '__INVALID_DATE__'
+              : new Date(payload.law_date).toISOString().slice(0, 10))
+          : null) !==
+        (existing.law_date ? existing.law_date.toISOString().slice(0, 10) : null)) ||
+      (payload.law_document_url !== undefined && (payload.law_document_url || null) !== existing.law_document_url) ||
+      (payload.requires_city_approval !== undefined && payload.requires_city_approval !== existing.requires_city_approval) ||
+      (payload.requires_protocol !== undefined && payload.requires_protocol !== existing.requires_protocol) ||
+      (payload.max_vehicle_age_years !== undefined &&
+        payload.max_vehicle_age_years !== existing.max_vehicle_age_years) ||
+      (payload.vehicle_age_basis !== undefined &&
+        payload.vehicle_age_basis !== existing.vehicle_age_basis) ||
+      (payload.authorization_validity_months !== undefined &&
+        payload.authorization_validity_months !== existing.authorization_validity_months) ||
+      (payload.responsible_agency !== undefined && (payload.responsible_agency || null) !== existing.responsible_agency) ||
+      (payload.notes !== undefined && (payload.notes || null) !== existing.notes) ||
+      // A deactivation is a revocation, not a reversible pause retaining approval.
+      (payload.is_active === false && existing.care_scope_verified === true);
+
     const updated = await prisma.$transaction(async (tx) => {
+      const careWrite = isCareMunicipalModality(existing.service_modality) ||
+        isCareMunicipalModality(targetModality);
+      if (careWrite) {
+        await lockCareAdminRow(tx, 'regulation', existing.id);
+        const locked = await tx.municipal_regulations.findUnique({ where: { id: existing.id } });
+        if (!locked) throw new CareAdminConflict();
+        assertCareSnapshot(existing, locked);
+      }
       const data: any = {};
       if (payload.city !== undefined) data.city = normalizeCity(payload.city);
       if (payload.state !== undefined) data.state = normalizeState(payload.state);
@@ -206,6 +277,15 @@ router.patch('/municipal-regulations/:id', MUNICIPAL_CONFIG_ROLE, async (req: Re
       if (payload.responsible_agency !== undefined) data.responsible_agency = payload.responsible_agency;
       if (payload.notes !== undefined) data.notes = payload.notes;
       if (payload.is_active !== undefined) data.is_active = payload.is_active;
+
+      if (existing.care_scope_verified === true &&
+          isCareMunicipalModality(existing.service_modality) &&
+          careScopeSensitiveChange) {
+        data.care_scope_verified = false;
+        if (isCareMunicipalModality(targetModality)) {
+          data.is_active = false;
+        }
+      }
 
       await tx.municipal_regulations.update({
         where: { id: req.params.id },
@@ -230,10 +310,27 @@ router.patch('/municipal-regulations/:id', MUNICIPAL_CONFIG_ROLE, async (req: Re
         }
       }
 
-      return tx.municipal_regulations.findUnique({
+      const changed = await tx.municipal_regulations.findUnique({
         where: { id: req.params.id },
         include: { requirements: { orderBy: [{ sort_order: 'asc' }, { label: 'asc' }] } },
       });
+      if (careWrite && changed) {
+        const ctx = auditCtx(req);
+        await writeCareAdminAuditTx(tx, {
+          adminId: ctx.adminId, action: 'patch_care_municipal_scope',
+          entityType: 'municipal_regulation', entityId: existing.id,
+          oldValue: {
+            modality: existing.service_modality, active: existing.is_active,
+            verified: existing.care_scope_verified,
+          },
+          newValue: {
+            modality: changed.service_modality, active: changed.is_active,
+            verified: changed.care_scope_verified, changedFields: Object.keys(payload),
+          },
+          ipAddress: ctx.ip, userAgent: ctx.ua,
+        });
+      }
+      return changed;
     });
 
     res.json({ success: true, data: updated });
@@ -241,9 +338,83 @@ router.patch('/municipal-regulations/:id', MUNICIPAL_CONFIG_ROLE, async (req: Re
     if (error instanceof z.ZodError) {
       return res.status(400).json({ success: false, error: error.errors[0]?.message || 'Payload inválido.' });
     }
-
+    if (error instanceof CareAdminConflict) {
+      return res.status(409).json({ success: false, error: error.code });
+    }
     console.error('[MUNICIPAL_REGULATIONS_PATCH_ERROR]', error);
     res.status(500).json({ success: false, error: 'Erro ao atualizar regra municipal.' });
+  }
+});
+
+// POST /api/admin/municipal-regulations/:id/care-scope-review
+router.post('/municipal-regulations/:id/care-scope-review', MUNICIPAL_CONFIG_ROLE, async (req: Request, res: Response) => {
+  try {
+    const payload = careScopeReviewSchema.parse(req.body);
+    const existing = await prisma.municipal_regulations.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ success: false, error: 'Regra municipal não encontrada.' });
+    if (!isCareMunicipalModality(existing.service_modality)) {
+      return res.status(409).json({ success: false, error: 'Revisão CARE só se aplica às modalidades CARE.' });
+    }
+
+    const admin = (req as any).admin;
+    let data: any;
+    if (payload.decision === 'APPROVE') {
+      if (!payload.document_url) {
+        return res.status(400).json({ success: false, error: 'Documento oficial é obrigatório para aprovar o escopo CARE.' });
+      }
+      if (!['REGULATED', 'NOT_REGULATED'].includes(existing.regulation_status)) {
+        return res.status(409).json({ success: false, error: 'Defina a posição municipal como REGULATED ou NOT_REGULATED antes da revisão CARE.' });
+      }
+      data = {
+        care_scope_verified: true,
+        care_scope_verified_at: new Date(),
+        care_scope_verified_by_admin_id: admin.id,
+        care_scope_document_url: payload.document_url,
+      };
+    } else {
+      data = {
+        care_scope_verified: false,
+        is_active: false,
+      };
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await lockCareAdminRow(tx, 'regulation', existing.id);
+      const locked = await tx.municipal_regulations.findUnique({ where: { id: existing.id } });
+      if (!locked) throw new CareAdminConflict();
+      assertCareSnapshot(existing, locked);
+      if (!isCareMunicipalModality(locked.service_modality)) throw new CareAdminConflict();
+      if (payload.decision === 'APPROVE' &&
+          !['REGULATED', 'NOT_REGULATED'].includes(locked.regulation_status)) {
+        throw new CareAdminConflict('CARE_SCOPE_REVIEW_REQUIREMENTS_CHANGED');
+      }
+      const changed = await tx.municipal_regulations.update({
+        where: { id: locked.id },
+        data,
+        include: { requirements: { orderBy: [{ sort_order: 'asc' }, { label: 'asc' }] } },
+      });
+      const ctx = auditCtx(req);
+      await writeCareAdminAuditTx(tx, {
+        adminId: ctx.adminId,
+        action: payload.decision === 'APPROVE' ? 'approve_care_municipal_scope' : 'revoke_care_municipal_scope',
+        entityType: 'municipal_regulation', entityId: locked.id,
+        oldValue: { verified: locked.care_scope_verified, active: locked.is_active },
+        newValue: { verified: changed.care_scope_verified, active: changed.is_active },
+        reason: payload.reason, ipAddress: ctx.ip, userAgent: ctx.ua,
+      });
+      return changed;
+    });
+
+    return res.json({ success: true, data: updated });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: error.errors[0]?.message || 'Payload inválido.' });
+    }
+    if (error instanceof CareAdminConflict) {
+      return res.status(409).json({ success: false, error: error.code });
+    }
+    console.error('[MUNICIPAL_CARE_SCOPE_REVIEW_ERROR]', error);
+    return res.status(500).json({ success: false, error: 'Erro ao revisar escopo municipal CARE.' });
   }
 });
 

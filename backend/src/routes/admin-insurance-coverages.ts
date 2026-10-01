@@ -4,10 +4,30 @@ import { prisma } from '../lib/prisma';
 import { authenticateAdmin, requireRole } from '../middlewares/auth';
 import { applyTerritoryScope } from '../middlewares/territory-scope';
 import { requireTerritoryScope } from '../middlewares/require-territory-scope';
+import { auditCtx } from '../utils/audit';
+import {
+  assertCareSnapshot, CareAdminConflict, lockCareAdminRow, writeCareAdminAuditTx,
+} from '../services/care/care-admin-atomic';
 
 const router = Router();
 const ALLOWED_ROLES = ['SUPER_ADMIN', 'TERRITORIAL_MANAGER', 'TERRITORIAL_OPERATOR'];
-const MODALITIES = ['CAR_PASSENGER', 'MOTO_PASSENGER', 'MOTO_DELIVERY'] as const;
+const MODALITIES = [
+  'CAR_PASSENGER',
+  'MOTO_PASSENGER',
+  'MOTO_DELIVERY',
+  'CARE_ASSISTED',
+  'CARE_FOLDING_WHEELCHAIR',
+  'CARE_ADAPTED_WHEELCHAIR',
+] as const;
+const READINESS_MODALITIES = ['CAR_PASSENGER', 'MOTO_PASSENGER', 'MOTO_DELIVERY'] as const;
+const CARE_MODALITIES = [
+  'CARE_ASSISTED',
+  'CARE_FOLDING_WHEELCHAIR',
+  'CARE_ADAPTED_WHEELCHAIR',
+] as const;
+const isCareModality = (value: string | null | undefined): boolean =>
+  !!value && (CARE_MODALITIES as readonly string[]).includes(value);
+const CARE_REVIEW_ROLE = requireRole(['SUPER_ADMIN']);
 const COVERAGE_TYPES = ['APP', 'RC_F', 'PERSONAL_ACCIDENT', 'CARGO', 'OTHER'] as const;
 const STATUSES = ['DRAFT', 'ACTIVE', 'EXPIRED', 'SUSPENDED'] as const;
 
@@ -53,6 +73,10 @@ const createSchema = z.object({
 });
 
 const patchSchema = createSchema.partial();
+const careScopeReviewSchema = z.object({
+  decision: z.enum(['APPROVE', 'REVOKE']),
+  reason: z.string().min(3).max(2000).optional(),
+});
 
 router.get('/', async (req: Request, res: Response) => {
   try {
@@ -113,6 +137,15 @@ router.post('/', async (req: Request, res: Response) => {
     if (payload.territory_id && !inScope(admin, scope, payload.territory_id)) {
       return res.status(403).json({ success: false, error: 'Território fora do seu escopo.' });
     }
+    if (isCareModality(payload.modality) && !payload.territory_id) {
+      return res.status(400).json({ success: false, error: 'Cobertura CARE exige território específico.' });
+    }
+    if (isCareModality(payload.modality) && payload.status === 'ACTIVE') {
+      return res.status(409).json({
+        success: false,
+        error: 'CARE_SCOPE_REVIEW_REQUIRED_BEFORE_ACTIVATION',
+      });
+    }
 
     const created = await prisma.operational_insurance_coverages.create({
       data: {
@@ -167,6 +200,18 @@ router.patch('/:id', async (req: Request, res: Response) => {
     }
 
     const data: any = { ...parsed.data };
+    const targetModality = data.modality ?? existing.modality;
+    const targetStatus = data.status ?? existing.status;
+    const finalTerritory = data.territory_id !== undefined ? data.territory_id : existing.territory_id;
+    if (isCareModality(targetModality) && !finalTerritory) {
+      return res.status(400).json({ success: false, error: 'Cobertura CARE exige território específico.' });
+    }
+    if (isCareModality(targetModality) && targetStatus === 'ACTIVE' && existing.care_scope_verified !== true) {
+      return res.status(409).json({
+        success: false,
+        error: 'CARE_SCOPE_REVIEW_REQUIRED_BEFORE_ACTIVATION',
+      });
+    }
 
     if (data.valid_from !== undefined) {
       const date = toDateAtStart(new Date(data.valid_from));
@@ -186,20 +231,147 @@ router.patch('/:id', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'valid_until não pode ser menor que valid_from.' });
     }
 
+    const sensitiveFields = [
+      'territory_id', 'modality', 'provider_name', 'policy_number',
+      'coverage_type', 'coverage_description', 'coverage_amount_death',
+      'coverage_amount_disability', 'coverage_amount_medical',
+      'document_url', 'valid_from', 'valid_until', 'notes',
+    ];
+    // Suspending or expiring an already-reviewed CARE policy revokes its
+    // approval; reactivation then requires a fresh, explicit review.
+    const invalidatesCareReview = existing.care_scope_verified === true &&
+      isCareModality(existing.modality) &&
+      (sensitiveFields.some((field) => Object.prototype.hasOwnProperty.call(data, field) &&
+        String((data as any)[field] ?? '') !== String((existing as any)[field] ?? '')) ||
+       (data.status !== undefined && data.status !== 'ACTIVE' && data.status !== existing.status));
+    if (invalidatesCareReview) {
+      data.care_scope_verified = false;
+      if (isCareModality(targetModality) && targetStatus === 'ACTIVE') {
+        data.status = 'SUSPENDED';
+      }
+    }
+
     data.updated_by_admin_id = admin.id;
 
-    const updated = await prisma.operational_insurance_coverages.update({
+    const updateArgs = {
       where: { id: req.params.id },
       data,
       include: {
         territory: { select: { id: true, name: true, level: true, status: true } },
         updated_by_admin: { select: { id: true, name: true, email: true } },
       },
+    } as const;
+    const updated = isCareModality(existing.modality) || isCareModality(targetModality)
+      ? await prisma.$transaction(async (tx) => {
+          await lockCareAdminRow(tx, 'coverage', existing.id);
+          const locked = await tx.operational_insurance_coverages.findUnique({ where: { id: existing.id } });
+          if (!locked) throw new CareAdminConflict();
+          assertCareSnapshot(existing, locked);
+          const changed = await tx.operational_insurance_coverages.update(updateArgs);
+          const ctx = auditCtx(req);
+          await writeCareAdminAuditTx(tx, {
+            adminId: ctx.adminId,
+            action: 'patch_care_insurance_scope',
+            entityType: 'operational_insurance_coverage',
+            entityId: existing.id,
+            oldValue: { modality: existing.modality, status: existing.status, verified: existing.care_scope_verified },
+            newValue: {
+              modality: changed.modality, status: changed.status, verified: changed.care_scope_verified,
+              changedFields: Object.keys(parsed.data),
+            },
+            ipAddress: ctx.ip,
+            userAgent: ctx.ua,
+          });
+          return changed;
+        })
+      : await prisma.operational_insurance_coverages.update(updateArgs);
+
+    return res.json({ success: true, data: updated });
+  } catch (error) {
+    if (error instanceof CareAdminConflict) {
+      return res.status(409).json({ success: false, error: error.code });
+    }
+    return res.status(500).json({ success: false, error: 'Erro ao atualizar cobertura de seguro.' });
+  }
+});
+
+router.post('/:id/care-scope-review', CARE_REVIEW_ROLE, async (req: Request, res: Response) => {
+  try {
+    const admin = (req as any).admin;
+    const scope = (req as any).territoryScope;
+    const parsed = careScopeReviewSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: parsed.error.errors[0]?.message || 'Payload inválido.' });
+    }
+
+    const existing = await prisma.operational_insurance_coverages.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ success: false, error: 'Cobertura não encontrada.' });
+    if (!isCareModality(existing.modality)) {
+      return res.status(409).json({ success: false, error: 'Revisão CARE só se aplica às modalidades CARE.' });
+    }
+    if (!existing.territory_id || !inScope(admin, scope, existing.territory_id)) {
+      return res.status(403).json({ success: false, error: 'Território CARE fora do escopo administrativo.' });
+    }
+
+    const payload = parsed.data;
+    if (payload.decision === 'APPROVE') {
+      if (!existing.document_url?.trim() || !existing.policy_number?.trim() || !existing.provider_name?.trim()) {
+        return res.status(409).json({
+          success: false,
+          error: 'Documento, apólice e seguradora são obrigatórios antes da aprovação do escopo CARE.',
+        });
+      }
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await lockCareAdminRow(tx, 'coverage', existing.id);
+      const locked = await tx.operational_insurance_coverages.findUnique({ where: { id: existing.id } });
+      if (!locked) throw new CareAdminConflict();
+      assertCareSnapshot(existing, locked);
+      if (!isCareModality(locked.modality) || !locked.territory_id ||
+          !inScope(admin, scope, locked.territory_id)) throw new CareAdminConflict();
+      if (payload.decision === 'APPROVE' &&
+          (!locked.document_url?.trim() || !locked.policy_number?.trim() ||
+           !locked.provider_name?.trim() || locked.coverage_type !== 'APP' ||
+           locked.valid_from > locked.valid_until)) throw new CareAdminConflict('CARE_SCOPE_REVIEW_REQUIREMENTS_CHANGED');
+      const changed = await tx.operational_insurance_coverages.update({
+        where: { id: locked.id },
+        data: payload.decision === 'APPROVE'
+          ? {
+              care_scope_verified: true,
+              care_scope_verified_at: new Date(),
+              care_scope_verified_by_admin_id: admin.id,
+              updated_by_admin_id: admin.id,
+            }
+          : {
+              care_scope_verified: false,
+              status: locked.status === 'ACTIVE' ? 'SUSPENDED' : locked.status,
+              updated_by_admin_id: admin.id,
+            },
+        include: {
+          territory: { select: { id: true, name: true, level: true, status: true } },
+        },
+      });
+      const ctx = auditCtx(req);
+      await writeCareAdminAuditTx(tx, {
+        adminId: ctx.adminId,
+        action: payload.decision === 'APPROVE' ? 'approve_care_insurance_scope' : 'revoke_care_insurance_scope',
+        entityType: 'operational_insurance_coverage',
+        entityId: locked.id,
+        oldValue: { verified: locked.care_scope_verified, status: locked.status },
+        newValue: { verified: changed.care_scope_verified, status: changed.status },
+        reason: payload.reason,
+        ipAddress: ctx.ip, userAgent: ctx.ua,
+      });
+      return changed;
     });
 
     return res.json({ success: true, data: updated });
-  } catch {
-    return res.status(500).json({ success: false, error: 'Erro ao atualizar cobertura de seguro.' });
+  } catch (error) {
+    if (error instanceof CareAdminConflict) {
+      return res.status(409).json({ success: false, error: error.code });
+    }
+    return res.status(500).json({ success: false, error: 'Erro ao revisar escopo CARE da cobertura.' });
   }
 });
 
@@ -243,7 +415,7 @@ router.get('/readiness', async (req: Request, res: Response) => {
     const expiring = activeWindow.filter((item) => item.valid_until <= in30days);
 
     const byModality: Record<string, any> = {};
-    for (const modality of MODALITIES) {
+    for (const modality of READINESS_MODALITIES) {
       const modalityItems = activeWindow.filter((item) => item.modality === modality);
       const territoryWithCoverage = new Set(
         modalityItems.filter((item) => item.territory_id).map((item) => item.territory_id as string),
@@ -265,7 +437,7 @@ router.get('/readiness', async (req: Request, res: Response) => {
     const missingAlerts = [] as any[];
     const activeTerritories = territories.filter((t) => t.is_active);
     for (const territory of activeTerritories) {
-      for (const modality of MODALITIES) {
+      for (const modality of READINESS_MODALITIES) {
         const hasCoverage = activeWindow.some(
           (item) => item.modality === modality && (item.territory_id === territory.id || item.territory_id === null),
         );

@@ -72,11 +72,7 @@ describe('CARE-05A: verified existing territory is necessary, never sufficient',
     });
     expect(calls.neighborhood).toHaveBeenCalledTimes(1);
     expect(decision.territoryRegistryReviewed).toBe(true);
-    expect(decision.evidence).toEqual({
-      territoryEligible: false,
-      municipalAuthorized: false,
-      insuranceConfirmedForMode: false,
-    });
+    expect(decision.evidence).toBeNull();
     expect(decision.reasons).toEqual([
       'CARE_TERRITORY_SCOPE_NOT_VERIFIED',
       'CARE_MUNICIPAL_SCOPE_NOT_VERIFIED', 'CARE_INSURANCE_SCOPE_NOT_VERIFIED',
@@ -88,7 +84,7 @@ describe('CARE-05A: verified existing territory is necessary, never sufficient',
     s.ride.ride_type = 'normal';
     s.ride.service_category = 'CAR_NORMAL';
     const ordinary = await evaluate(mockDb(s).db);
-    expect(ordinary.evidence.territoryEligible).toBe(false);
+    expect(ordinary.evidence).toBeNull();
     expect(ordinary.reasons).toContain('CARE_RIDE_IDENTITY_INVALID');
 
     const orphan = fixture();
@@ -110,7 +106,7 @@ describe('CARE-05A: verified existing territory is necessary, never sufficient',
       const s = fixture();
       s.ride[field] = true;
       const r = await evaluate(mockDb(s).db);
-      expect(r.evidence.territoryEligible).toBe(false);
+      expect(r.evidence).toBeNull();
       expect(r.reasons).toContain('CARE_OUTSIDE_FALLBACK_NOT_AUTHORIZED');
     }
     const consent = fixture();
@@ -136,7 +132,7 @@ describe('CARE-05A: verified existing territory is necessary, never sufficient',
     s.driver.neighborhood_id = 'another-neighborhood';
     const { db, calls } = mockDb(s);
     const r = await evaluate(db);
-    expect(r.evidence.territoryEligible).toBe(false);
+    expect(r.evidence).toBeNull();
     expect(r.reasons).toContain('CARE_TERRITORY_MISMATCH');
     expect(calls.neighborhood).not.toHaveBeenCalled();
   });
@@ -156,7 +152,7 @@ describe('CARE-05A: verified existing territory is necessary, never sufficient',
       const s = fixture();
       variant(s);
       const r = await evaluate(mockDb(s).db);
-      expect(r.evidence.territoryEligible).toBe(false);
+      expect(r.evidence).toBeNull();
       expect(r.reasons).toContain('CARE_TERRITORY_REVIEW_REQUIRED');
     }
   });
@@ -189,19 +185,17 @@ describe('CARE-05A: verified existing territory is necessary, never sufficient',
     });
     const result = await evaluate(db);
     expect(result.territoryRegistryReviewed).toBe(true);
-    expect(result.evidence.territoryEligible).toBe(false);
+    expect(result.evidence).toBeNull();
     expect(result.reasons).toContain('CARE_TERRITORY_SCOPE_NOT_VERIFIED');
-    expect(result.evidence.municipalAuthorized).toBe(false);
-    expect(result.evidence.insuranceConfirmedForMode).toBe(false);
+    expect(result.evidence).toBeNull();
   });
 
   it('keeps generic APP or CAR permission from authorizing CARE', async () => {
     const { db } = mockDb();
     const result = await evaluate(db);
     expect(result.territoryRegistryReviewed).toBe(true);
-    expect(result.evidence.territoryEligible).toBe(false);
-    expect(result.evidence.municipalAuthorized).toBe(false);
-    expect(result.evidence.insuranceConfirmedForMode).toBe(false);
+    expect(result.evidence).toBeNull();
+    expect(result.evidence).toBeNull();
     expect(result.reasons).toContain('CARE_TERRITORY_SCOPE_NOT_VERIFIED');
     expect(result.reasons).toContain('CARE_MUNICIPAL_SCOPE_NOT_VERIFIED');
     expect(result.reasons).toContain('CARE_INSURANCE_SCOPE_NOT_VERIFIED');
@@ -212,11 +206,7 @@ describe('CARE-05A: verified existing territory is necessary, never sufficient',
     calls.ride.mockRejectedValue(new Error('simulated database error'));
     expect(await evaluate(db)).toEqual({
       territoryRegistryReviewed: false,
-      evidence: {
-        municipalAuthorized: false,
-        territoryEligible: false,
-        insuranceConfirmedForMode: false,
-      },
+      evidence: null,
       reasons: [
         'CARE_OPERATIONAL_LOOKUP_FAILED',
         'CARE_TERRITORY_SCOPE_NOT_VERIFIED',

@@ -4,6 +4,10 @@ import {
   type CareEligibilityResult,
   type CareRejectionCode,
 } from './care-eligibility';
+import {
+  isVerifiedCareScopeEvidence,
+  type VerifiedCareScopeEvidence,
+} from './care-verified-scope-evidence';
 
 /**
  * CARE-04C: read-only adapter for the existing rides_v2 lifecycle.
@@ -22,22 +26,19 @@ export type CareReadClient = Pick<
 >;
 
 /**
- * Mandatory evidence from backend-controlled municipal, territory and insurer
- * checks. No current source of verified CARE insurance is connected; callers
- * must pass false until that source is implemented and audited.
+ * Positive operational gates are no longer accepted as loose booleans.
+ * Only a scope bundle produced from the reviewed official municipal,
+ * territorial and insurance sources can satisfy them.
  */
-export interface CareExternalEvidence {
-  municipalAuthorized: boolean;
-  territoryEligible: boolean;
-  insuranceConfirmedForMode: boolean;
-}
+export type CareExternalEvidence = VerifiedCareScopeEvidence;
 
 export type CareRuntimeRejectionCode = CareRejectionCode
   | 'CARE_EVIDENCE_UNAVAILABLE'
   | 'CARE_RIDE_NOT_FOUND'
   | 'CARE_RIDE_CATEGORY_MISMATCH'
   | 'CARE_RIDE_NOT_DISPATCHABLE'
-  | 'CARE_PRICE_UNCONFIRMED';
+  | 'CARE_PRICE_UNCONFIRMED'
+  | 'CARE_SCOPE_EVIDENCE_MISMATCH';
 
 export interface CareRuntimeEligibilityResult {
   eligible: boolean;
@@ -123,6 +124,27 @@ export async function evaluateCareEligibilityFromDb(
       ['approved', 'active'].includes(normalizedDriverStatus) &&
       driver.deleted_at == null && driver.banned_at == null;
 
+    const normalizedPlate = (value: string | null | undefined) =>
+      typeof value === 'string' ? value.toUpperCase().replace(/[\s-]/g, '') : '';
+    const expectedMode = requirements ? modeCategory[String(requirements.mode)] : undefined;
+    const evidenceTime = externalEvidence?.verifiedAt instanceof Date
+      ? externalEvidence.verifiedAt.getTime()
+      : NaN;
+    const scopeMatches = isVerifiedCareScopeEvidence(externalEvidence) &&
+      !!ride && !!requirements && !!driver &&
+      externalEvidence.rideId === rideId &&
+      externalEvidence.driverId === driverId &&
+      externalEvidence.mode === expectedMode &&
+      externalEvidence.territoryId.trim().length > 0 &&
+      normalizedPlate(externalEvidence.vehiclePlate) === normalizedPlate(driver.vehicle_plate) &&
+      // A prior transaction's evidence cannot be replayed after revocation.
+      // Resolve in the same decision/transaction with the very same clock.
+      Number.isFinite(evidenceTime) && evidenceTime === now.getTime();
+
+    if (externalEvidence && !scopeMatches) {
+      reasons.push('CARE_SCOPE_EVIDENCE_MISMATCH');
+    }
+
     const decision: CareEligibilityResult = evaluateCareEligibility({
       requirements,
       qualification,
@@ -132,9 +154,9 @@ export async function evaluateCareEligibilityFromDb(
       trustedGates: {
         driverOperational,
         driverOnline: liveStatus?.availability === 'online',
-        municipalAuthorized: externalEvidence?.municipalAuthorized === true,
-        territoryEligible: externalEvidence?.territoryEligible === true,
-        insuranceConfirmedForMode: externalEvidence?.insuranceConfirmedForMode === true,
+        municipalAuthorized: scopeMatches,
+        territoryEligible: scopeMatches,
+        insuranceConfirmedForMode: scopeMatches,
       },
       now,
     });

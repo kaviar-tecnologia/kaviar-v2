@@ -1,0 +1,144 @@
+name: CARE-06A Official Scope Evidence
+
+on:
+  pull_request:
+    paths:
+      - 'backend/prisma/schema.prisma'
+      - 'backend/prisma/migrations/20260929115000_care_official_scope_evidence/**'
+      - 'backend/src/services/care/**'
+      - 'backend/src/services/municipal-regulation.service.ts'
+      - 'backend/src/routes/admin-municipal.ts'
+      - 'backend/src/routes/admin-insurance-coverages.ts'
+      - 'backend/src/routes/admin-driver-insurance.ts'
+      - 'backend/tests/care-04c-runtime-eligibility.test.ts'
+      - 'backend/tests/care-05a-operational-evidence.test.ts'
+      - 'backend/tests/care-06a-*.test.ts'
+      - 'docs/care/CARE-06A-official-scope-evidence.md'
+      - '.github/workflows/care-06a-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  official-scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://care06a_ci:ci_password@127.0.0.1:5432/care06a_disposable
+      NODE_ENV: test
+    services:
+      postgres:
+        image: postgis/postgis:15-3.4
+        env:
+          POSTGRES_DB: care06a_disposable
+          POSTGRES_USER: care06a_ci
+          POSTGRES_PASSWORD: ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U care06a_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install dependencies and generate Prisma client
+        working-directory: backend
+        run: npm ci
+      - name: Validate Prisma schema
+        working-directory: backend
+        run: npx prisma validate
+      - name: Typecheck backend
+        working-directory: backend
+        run: npx tsc --noEmit -p tsconfig.build.json
+      - name: Unit and provenance regressions
+        working-directory: backend
+        run: >-
+          npx vitest run
+          tests/care-06a-schema-contract.test.ts
+          tests/care-06a-verified-scope-evidence.test.ts
+          tests/care-06a-admin-scope-routes.test.ts
+          tests/municipal-regulation.service.test.ts
+          tests/care-05c-scope-evidence-audit.test.ts
+          tests/care-05b-fare-parity.test.ts
+          tests/care-05a-operational-evidence.test.ts
+          tests/care-04c-runtime-eligibility.test.ts
+          tests/care-04-readiness-policy.test.ts
+          tests/care-03-eligibility.test.ts
+      - name: Detect whether PR base already contains CARE-06A migration
+        id: base_migration
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if git cat-file -e "${BASE_SHA}:backend/prisma/migrations/20260929115000_care_official_scope_evidence/migration.sql" 2>/dev/null; then
+            echo "already_present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "already_present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build pre-CARE-06A disposable schema from PR base
+        if: github.event_name == 'pull_request' && steps.base_migration.outputs.already_present == 'false'
+        working-directory: backend
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git show "${BASE_SHA}:backend/prisma/schema.prisma" > prisma/schema.care06a-base.prisma
+          npx prisma db push --schema prisma/schema.care06a-base.prisma --accept-data-loss --skip-generate
+      - name: Build post-CARE-06A disposable schema for stacked PR
+        if: github.event_name == 'pull_request' && steps.base_migration.outputs.already_present == 'true'
+        working-directory: backend
+        run: npx prisma db push --skip-generate
+      - name: Apply CARE-06A migration to disposable pre-change database
+        if: github.event_name == 'pull_request' && steps.base_migration.outputs.already_present == 'false'
+        env:
+          PGPASSWORD: ci_password
+        run: |
+          set -euo pipefail
+          psql -U care06a_ci -h 127.0.0.1 -d care06a_disposable -v ON_ERROR_STOP=1 \
+            -f backend/prisma/migrations/20260929115000_care_official_scope_evidence/migration.sql
+      - name: Verify migrated columns and enum values
+        if: github.event_name == 'pull_request'
+        env:
+          PGPASSWORD: ci_password
+        run: |
+          set -euo pipefail
+          psql -U care06a_ci -h 127.0.0.1 -d care06a_disposable -v ON_ERROR_STOP=1 <<'SQL'
+          SELECT enumlabel
+          FROM pg_enum
+          WHERE enumtypid = '"MunicipalServiceModality"'::regtype
+            AND enumlabel IN ('CARE_ASSISTED','CARE_FOLDING_WHEELCHAIR','CARE_ADAPTED_WHEELCHAIR')
+          ORDER BY enumlabel;
+
+          SELECT column_name
+          FROM information_schema.columns
+          WHERE table_schema='public'
+            AND table_name IN ('municipal_regulations','operational_insurance_coverages','driver_insurance_enrollments')
+            AND column_name IN (
+              'care_scope_verified',
+              'care_scope_verified_at',
+              'care_scope_verified_by_admin_id',
+              'care_scope_document_url',
+              'operational_coverage_id',
+              'operational_coverage_linked_at',
+              'operational_coverage_linked_by_admin_id'
+            )
+          ORDER BY table_name, column_name;
+          SQL
+      - name: Prove CARE administrative locks and audit rollback in disposable PostgreSQL
+        if: github.event_name == 'pull_request'
+        working-directory: backend
+        env:
+          CARE_ADMIN_ATOMIC_INTEGRATION: '1'
+        run: npx vitest run tests/care-06a-admin-atomic.integration.test.ts
+
+      - name: Remove temporary base schema
+        if: always()
+        working-directory: backend
+        run: rm -f prisma/schema.care06a-base.prisma

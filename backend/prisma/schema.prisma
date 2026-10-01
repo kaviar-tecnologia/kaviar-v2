@@ -226,6 +226,9 @@ model admins {
   kaviar_group_posts_author   kaviar_group_posts[]            @relation("kaviar_group_posts_author_admin")
   insurance_coverages_created operational_insurance_coverages[] @relation("insurance_coverages_created_by")
   insurance_coverages_updated operational_insurance_coverages[] @relation("insurance_coverages_updated_by")
+  insurance_coverages_care_verified operational_insurance_coverages[] @relation("insurance_coverages_care_verified_by")
+  driver_insurance_coverage_links driver_insurance_enrollments[] @relation("driver_insurance_coverage_linked_by")
+  municipal_regulations_care_verified municipal_regulations[] @relation("municipal_regulations_care_verified_by")
   municipal_authorizations_submitted_admin municipal_authorizations[] @relation("municipal_authorizations_submitted_by_admin")
   municipal_authorizations_submitted_manager municipal_authorizations[] @relation("municipal_authorizations_submitted_by_manager")
   municipal_authorizations_approved municipal_authorizations[] @relation("municipal_authorizations_approved_by_admin")
@@ -1146,6 +1149,9 @@ enum MunicipalServiceModality {
   MOTO_DELIVERY
   TAXI
   VAN
+  CARE_ASSISTED
+  CARE_FOLDING_WHEELCHAIR
+  CARE_ADAPTED_WHEELCHAIR
 }
 
 enum MunicipalRegulationStatus {
@@ -1822,15 +1828,21 @@ model municipal_regulations {
   authorization_validity_months   Int?
   responsible_agency              String?
   notes                           String?
+  care_scope_verified             Boolean                     @default(false)
+  care_scope_verified_at          DateTime?
+  care_scope_verified_by_admin_id String?
+  care_scope_document_url         String?
   is_active                       Boolean                     @default(true)
   created_at                      DateTime                    @default(now())
   updated_at                      DateTime                    @updatedAt
 
   requirements                    municipal_regulation_requirements[]
   authorizations                  municipal_authorizations[]
+  care_scope_verified_by_admin    admins?                     @relation("municipal_regulations_care_verified_by", fields: [care_scope_verified_by_admin_id], references: [id], onDelete: SetNull)
 
   @@index([city, state])
   @@index([service_modality, is_active])
+  @@index([care_scope_verified])
 }
 
 model municipal_regulation_requirements {
@@ -2785,6 +2797,9 @@ model driver_insurance_enrollments {
   valid_until         DateTime  @db.Date
   cancelled_at        DateTime? @db.Date
   provider_reference  String?   @db.VarChar(120)
+  operational_coverage_id String?
+  operational_coverage_linked_at DateTime?
+  operational_coverage_linked_by_admin_id String?
   request_payload     Json
   provider_response   Json?
   last_error_code     String?   @db.VarChar(50)
@@ -2795,11 +2810,14 @@ model driver_insurance_enrollments {
   updated_at          DateTime  @updatedAt
 
   driver drivers @relation(fields: [driver_id], references: [id], onDelete: Cascade)
+  operational_coverage operational_insurance_coverages? @relation(fields: [operational_coverage_id], references: [id], onDelete: SetNull)
+  operational_coverage_linked_by_admin admins? @relation("driver_insurance_coverage_linked_by", fields: [operational_coverage_linked_by_admin_id], references: [id], onDelete: SetNull)
 
   @@unique([driver_id, provider, vehicle_plate, valid_from], name: "driver_provider_plate_valid_from", map: "ux_driver_insurance_provider_plate_from")
   @@index([driver_id])
   @@index([provider, status])
   @@index([provider_reference])
+  @@index([operational_coverage_id])
   @@index([valid_until])
   @@map("driver_insurance_enrollments")
 }
@@ -2820,6 +2838,9 @@ model operational_insurance_coverages {
   status                  String   @default("DRAFT") @db.VarChar(20) // DRAFT | ACTIVE | EXPIRED | SUSPENDED
   document_url            String?
   notes                   String?
+  care_scope_verified     Boolean  @default(false)
+  care_scope_verified_at  DateTime?
+  care_scope_verified_by_admin_id String?
   created_by_admin_id     String?
   updated_by_admin_id     String?
   created_at              DateTime @default(now())
@@ -2828,10 +2849,13 @@ model operational_insurance_coverages {
   territory               operational_territories? @relation(fields: [territory_id], references: [id], onDelete: SetNull)
   created_by_admin        admins? @relation("insurance_coverages_created_by", fields: [created_by_admin_id], references: [id], onDelete: SetNull)
   updated_by_admin        admins? @relation("insurance_coverages_updated_by", fields: [updated_by_admin_id], references: [id], onDelete: SetNull)
+  care_scope_verified_by_admin admins? @relation("insurance_coverages_care_verified_by", fields: [care_scope_verified_by_admin_id], references: [id], onDelete: SetNull)
+  driver_enrollments      driver_insurance_enrollments[]
 
   @@index([territory_id])
   @@index([modality])
   @@index([status])
+  @@index([care_scope_verified])
   @@index([valid_until])
 }
 

@@ -4,16 +4,107 @@ import {
   type CareReadClient,
   type CareExternalEvidence,
 } from '../src/services/care/care-runtime-eligibility';
+import {
+  resolveVerifiedCareScopeEvidence,
+  type CareScopeEvidenceClient,
+} from '../src/services/care/care-verified-scope-evidence';
 
 const now = new Date('2026-09-28T17:00:00.000Z');
 const review = new Date('2026-09-27T17:00:00.000Z');
 const validUntil = new Date('2026-10-28T17:00:00.000Z');
 
-const approvedEvidence = (): CareExternalEvidence => ({
-  municipalAuthorized: true,
-  territoryEligible: true,
-  insuranceConfirmedForMode: true,
-});
+async function approvedEvidence(): Promise<CareExternalEvidence> {
+  const scopeDb = {
+    rides_v2: {
+      findUnique: vi.fn().mockResolvedValue({
+        ride_type: 'care',
+        service_category: 'CARE_ASSISTED',
+        origin_neighborhood_id: 'synthetic-neighborhood',
+        origin_lat: -22.91,
+        origin_lng: -43.22,
+      }),
+    },
+    care_trip_requirements: {
+      findUnique: vi.fn().mockResolvedValue({ mode: 'ASSISTED', status: 'READY' }),
+    },
+    drivers: {
+      findUnique: vi.fn().mockResolvedValue({
+        vehicle_plate: 'ABC-1D23',
+        neighborhood_id: 'synthetic-neighborhood',
+      }),
+    },
+    neighborhoods: {
+      findUnique: vi.fn().mockResolvedValue({
+        id: 'synthetic-neighborhood',
+        city: 'Synthetic City',
+        is_active: true,
+        is_verified: true,
+        verified_at: review,
+        verified_by: 'synthetic-territory-reviewer',
+        territory_id: 'synthetic-territory',
+        territory: {
+          id: 'synthetic-territory',
+          uf: 'RJ',
+          city_name: 'Synthetic City',
+          is_active: true,
+          status: 'active',
+          coverage_status: 'COMPLETE',
+          coverage_reviewed_at: review,
+          coverage_reviewed_by: 'synthetic-territory-reviewer',
+        },
+      }),
+    },
+    municipal_regulations: {
+      findMany: vi.fn().mockResolvedValue([{
+        id: 'synthetic-regulation',
+        regulation_status: 'NOT_REGULATED',
+        requires_city_approval: false,
+        care_scope_verified: true,
+        care_scope_verified_at: review,
+        care_scope_verified_by_admin_id: 'synthetic-municipal-reviewer',
+        care_scope_document_url: 'https://example.invalid/care-municipal.pdf',
+      }]),
+    },
+    municipal_authorizations: { findFirst: vi.fn() },
+    operational_insurance_coverages: {
+      // Used solely to distinguish an absent official policy from a missing
+      // driver-to-policy link after the driver-scoped read finds no candidates.
+      findFirst: vi.fn().mockResolvedValue({ id: 'synthetic-coverage' }),
+    },
+    $queryRaw: vi.fn().mockResolvedValue([{ covered: true }]),
+    driver_insurance_enrollments: {
+      findMany: vi.fn().mockResolvedValue([{
+        id: 'synthetic-enrollment',
+        vehicle_plate: 'ABC-1D23',
+        provider_reference: 'POL-001',
+        operational_coverage_id: 'synthetic-coverage',
+        operational_coverage_linked_at: review,
+        operational_coverage_linked_by_admin_id: 'synthetic-link-reviewer',
+        valid_from: new Date('2026-09-01T00:00:00.000Z'),
+        valid_until: validUntil,
+        operational_coverage: {
+          id: 'synthetic-coverage',
+          provider_name: 'Synthetic Insurer',
+          policy_number: 'POL-001',
+          document_url: 'https://example.invalid/care-policy.pdf',
+          valid_from: new Date('2026-09-01T00:00:00.000Z'),
+          valid_until: validUntil,
+          care_scope_verified_at: review,
+          care_scope_verified_by_admin_id: 'synthetic-insurance-reviewer',
+        },
+      }]),
+    },
+  } as unknown as CareScopeEvidenceClient;
+
+  const result = await resolveVerifiedCareScopeEvidence(
+    scopeDb,
+    'synthetic-care-ride',
+    'synthetic-driver',
+    now,
+  );
+  if (!result.verified) throw new Error(`synthetic verified scope fixture failed: ${result.reasons.join(', ')}`);
+  return result.evidence;
+}
 
 const samples = () => ({
   ride: {
@@ -95,10 +186,16 @@ function mockedClient(s: ReturnType<typeof samples>) {
   return { db, calls };
 }
 
-const decide = (
+const decide = async (
   db: CareReadClient,
-  evidence: CareExternalEvidence | null | undefined = approvedEvidence(),
-) => evaluateCareEligibilityFromDb(db, 'synthetic-care-ride', 'synthetic-driver', evidence, now);
+  evidence?: CareExternalEvidence | null,
+) => evaluateCareEligibilityFromDb(
+  db,
+  'synthetic-care-ride',
+  'synthetic-driver',
+  evidence === undefined ? await approvedEvidence() : evidence,
+  now,
+);
 
 describe('CARE-04C read-only evidence adapter (synthetic objects only)', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -131,12 +228,35 @@ describe('CARE-04C read-only evidence adapter (synthetic objects only)', () => {
     expect(noScope.reasons).toEqual(expect.arrayContaining([
       'MUNICIPAL_AUTHORIZATION_MISSING', 'TERRITORY_NOT_ELIGIBLE', 'INSURANCE_NOT_CONFIRMED',
     ]));
-    for (const key of ['municipalAuthorized', 'territoryEligible', 'insuranceConfirmedForMode'] as const) {
-      const scope = approvedEvidence();
-      scope[key] = false;
+    const mismatches: Array<[string, Partial<Record<string, unknown>>]> = [
+      ['ride', { rideId: 'other-ride' }],
+      ['driver', { driverId: 'other-driver' }],
+      ['mode', { mode: 'CARE_ADAPTED_WHEELCHAIR' }],
+      ['plate', { vehiclePlate: 'ZZZ9Z99' }],
+      ['verification-time', { verifiedAt: new Date(now.getTime() + 1000) }],
+      ['stale-verification', { verifiedAt: new Date(now.getTime() - 1000) }],
+    ];
+    const issued = await approvedEvidence();
+    for (const [label, patch] of mismatches) {
+      const scope = { ...issued, ...patch } as CareExternalEvidence;
       const decision = await decide(db, scope);
-      expect(decision.eligible, key).toBe(false);
+      expect(decision.eligible, label).toBe(false);
+      expect(decision.reasons, label).toContain('CARE_SCOPE_EVIDENCE_MISMATCH');
     }
+
+    const forgedPlainObject = {
+      rideId: 'synthetic-care-ride',
+      driverId: 'synthetic-driver',
+      mode: 'CARE_ASSISTED',
+      territoryId: 'synthetic-territory',
+      city: 'Synthetic City',
+      state: 'RJ',
+      vehiclePlate: 'ABC1D23',
+      verifiedAt: now,
+    } as unknown as CareExternalEvidence;
+    const forgedDecision = await decide(db, forgedPlainObject);
+    expect(forgedDecision.eligible).toBe(false);
+    expect(forgedDecision.reasons).toContain('CARE_SCOPE_EVIDENCE_MISMATCH');
   });
 
   it('rejects CARE draft, missing requirements, and unreviewed trip', async () => {
@@ -217,10 +337,11 @@ describe('CARE-04C read-only evidence adapter (synthetic objects only)', () => {
 
   it('rejects blank IDs or invalid clock before reading the DB', async () => {
     const { db, calls } = mockedClient(samples());
-    expect(await evaluateCareEligibilityFromDb(db, '', 'synthetic-driver', approvedEvidence(), now))
+    const issued = await approvedEvidence();
+    expect(await evaluateCareEligibilityFromDb(db, '', 'synthetic-driver', issued, now))
       .toEqual({ eligible: false, reasons: ['CARE_EVIDENCE_UNAVAILABLE'] });
     expect(await evaluateCareEligibilityFromDb(
-      db, 'synthetic-care-ride', 'synthetic-driver', approvedEvidence(), new Date('invalid'),
+      db, 'synthetic-care-ride', 'synthetic-driver', issued, new Date('invalid'),
     )).toEqual({ eligible: false, reasons: ['CARE_EVIDENCE_UNAVAILABLE'] });
     for (const call of Object.values(calls)) expect(call).not.toHaveBeenCalled();
   });

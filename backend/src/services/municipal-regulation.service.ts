@@ -1,6 +1,15 @@
 import { prisma } from '../lib/prisma';
 
-export const MUNICIPAL_MODALITIES = ['CAR', 'MOTO_PASSENGER', 'MOTO_DELIVERY', 'TAXI', 'VAN'] as const;
+export const MUNICIPAL_MODALITIES = [
+  'CAR',
+  'MOTO_PASSENGER',
+  'MOTO_DELIVERY',
+  'TAXI',
+  'VAN',
+  'CARE_ASSISTED',
+  'CARE_FOLDING_WHEELCHAIR',
+  'CARE_ADAPTED_WHEELCHAIR',
+] as const;
 export type MunicipalModality = (typeof MUNICIPAL_MODALITIES)[number];
 export const MUNICIPAL_AUTHORIZATION_EXPIRING_SOON_DAYS = 30;
 export const MUNICIPAL_OPERATION_TIME_ZONE = 'America/Sao_Paulo';
@@ -101,6 +110,9 @@ export function mapServiceCategoryToMunicipalModality(serviceCategory: string | 
   if (serviceCategory === 'MOTO_PASSENGER') return 'MOTO_PASSENGER';
   if (serviceCategory === 'MOTO_DELIVERY') return 'MOTO_DELIVERY';
   if (serviceCategory.startsWith('MOTO_')) return 'MOTO_PASSENGER';
+  if (serviceCategory === 'CARE_ASSISTED') return 'CARE_ASSISTED';
+  if (serviceCategory === 'CARE_FOLDING_WHEELCHAIR') return 'CARE_FOLDING_WHEELCHAIR';
+  if (serviceCategory === 'CARE_ADAPTED_WHEELCHAIR') return 'CARE_ADAPTED_WHEELCHAIR';
   if (serviceCategory.startsWith('TAXI')) return 'TAXI';
   return 'CAR';
 }
