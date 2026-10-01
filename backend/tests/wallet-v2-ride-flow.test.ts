@@ -41,13 +41,15 @@ describe('Wallet V2 Ride Flow Logic', () => {
     expect(feeFinal).toBe(reservedCents);
   });
 
-  it('settle: fee final greater than reserve (wait charge increased price)', () => {
+  it('settle: wait raises total, not the fee reserved on the locked base', () => {
     const quotedPrice = 30;
-    const finalPrice = 35; // increased by wait charge
+    const finalPriceCents = 3500; // R$5 wait goes entirely to the driver
+    const waitChargeCents = 500;
+    const feeBaseCents = finalPriceCents - waitChargeCents;
     const reservedCents = estimateFeeCentsFromPrice(quotedPrice); // 540
-    const feeFinal = calculateFeeCents(finalPrice * 100); // 630
-    expect(feeFinal).toBeGreaterThan(reservedCents);
-    // Difference (90 cents) comes from available balance
+    const feeFinal = calculateFeeCents(feeBaseCents); // 540, not 630
+    expect(feeFinal).toBe(reservedCents);
+    expect(finalPriceCents - feeFinal).toBe(2960);
   });
 
   it('settle: fee final less than reserve (adjustment reduced price)', () => {

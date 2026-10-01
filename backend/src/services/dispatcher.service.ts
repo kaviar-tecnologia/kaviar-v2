@@ -7,6 +7,7 @@ import { canDriverOperateInMunicipality, mapServiceCategoryToMunicipalModality }
 import { resolveTerritory } from './territory-resolver.service';
 import { config } from '../config';
 import { isUnsupportedCareIntent, CARE_UNAVAILABLE_CODE } from './care/care-readiness-policy';
+import { hasOfficialLockedQuote, officialQuoteSettlementSelect } from './official-quote-readiness';
 import { evaluateCareEligibilityFromDb } from './care/care-runtime-eligibility';
 
 interface DriverCandidate {
@@ -106,7 +107,8 @@ export class DispatcherService {
       where: { id: rideId },
       include: {
         offers: true,
-        passenger: { select: { neighborhood_id: true, community_id: true } }
+        passenger: { select: { neighborhood_id: true, community_id: true } },
+        settlement: { select: officialQuoteSettlementSelect }
       }
     });
 
@@ -138,6 +140,26 @@ export class DispatcherService {
 
     if (ride.status !== 'requested' && ride.status !== 'offered') {
       console.log(`[DISPATCHER] Ride ${rideId} status=${ride.status}, skipping dispatch`);
+      return;
+    }
+
+    // Defense in depth: scheduled jobs, retries and direct dispatcher calls
+    // must not generate offers if the official quote/lock is absent or if
+    // the settlement and the operational cache disagree.
+    if (!hasOfficialLockedQuote(ride)) {
+      console.error(`[PRICING_DISPATCH_BLOCKED] ride_id=${rideId} reason=PRICING_QUOTE_UNAVAILABLE`);
+      await prisma.$transaction(async (tx) => {
+        const transitioned = await tx.rides_v2.updateMany({
+          where: { id: rideId, status: { in: ['requested', 'offered'] } },
+          data: { status: 'no_driver' },
+        });
+        if (transitioned.count === 1) {
+          await tx.ride_offers.updateMany({
+            where: { ride_id: rideId, status: 'pending' },
+            data: { status: 'canceled' },
+          });
+        }
+      });
       return;
     }
 
@@ -229,7 +251,12 @@ export class DispatcherService {
       // The conditional update below also checks identity/state at write time.
       const latestRide = await tx.rides_v2.findUnique({
         where: { id: rideId },
-        select: { status: true, service_category: true, ride_type: true, trip_details: true },
+        select: {
+          status: true, service_category: true, ride_type: true, trip_details: true,
+          id: true, pricing_profile_id: true, quoted_price: true, locked_price: true,
+          platform_fee: true, driver_earnings: true,
+          settlement: { select: officialQuoteSettlementSelect },
+        },
       });
       if (!latestRide || !['requested', 'offered'].includes(latestRide.status)) {
         throw new Error('Ride no longer dispatchable');
@@ -251,6 +278,9 @@ export class DispatcherService {
       if (latestRide.service_category !== ride.service_category ||
           latestRide.ride_type !== ride.ride_type) {
         throw new Error('Ride identity changed during dispatch');
+      }
+      if (!hasOfficialLockedQuote(latestRide)) {
+        throw new Error('PRICING_QUOTE_UNAVAILABLE');
       }
 
       const o = await tx.ride_offers.create({

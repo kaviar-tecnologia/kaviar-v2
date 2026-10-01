@@ -11,6 +11,7 @@ import { applyCreditDelta } from '../services/credit.service';
 import { shadowCalculate } from '../services/wallet-shadow.service';
 import { whatsappEvents } from '../modules/whatsapp';
 import * as pricingEngine from '../services/pricing-engine';
+import { hasOfficialLockedQuote, officialQuoteSettlementSelect } from '../services/official-quote-readiness';
 import { isMotoPassengerEnabled } from '../services/moto-passenger-flag.service';
 import { authenticatePassenger, authenticateDriver, requireAuth } from '../middlewares/auth';
 import { getPresignedUrl } from '../config/s3-upload';
@@ -254,9 +255,16 @@ router.post('/', authenticatePassenger, async (req: Request, res: Response) => {
         where: {
           passenger_id: passengerId,
           idempotency_key: idempotencyKey
-        }
+        },
+        include: { settlement: { select: officialQuoteSettlementSelect } },
       });
       if (existing) {
+        // An idempotency key cannot turn a stranded, unpriced ride into a
+        // successful booking. The official settlement, not the cache alone,
+        // must prove the quote and lock before acknowledging the old request.
+        if (!hasOfficialLockedQuote(existing) || existing.status === 'no_driver') {
+          return res.status(409).json({ success: false, error: 'PRICING_QUOTE_UNAVAILABLE' });
+        }
         return res.json({ success: true, data: { ride_id: existing.id, status: existing.status } });
       }
     }
@@ -348,7 +356,7 @@ router.post('/', authenticatePassenger, async (req: Request, res: Response) => {
     }
 
     // Pricing: quote + lock (V1: confirmação implícita)
-    let quoteResult: any = null;
+    let quoteResult: pricingEngine.QuoteResult | null = null;
     try {
       quoteResult = await pricingEngine.quote(
         ride.id, origin.lat, origin.lng, destination.lat, destination.lng,
@@ -358,8 +366,43 @@ router.post('/', authenticatePassenger, async (req: Request, res: Response) => {
           : null,
         service_category || 'CAR_NORMAL'
       );
+      const rawCents = quoteResult ? quoteResult.quoted_price * 100 : Number.NaN;
+      if (!quoteResult || !Number.isFinite(rawCents) || rawCents <= 0 ||
+          !Number.isSafeInteger(Math.round(rawCents)) ||
+          Math.abs(rawCents - Math.round(rawCents)) > 1e-7) {
+        throw new Error('PRICING_QUOTE_INVALID_RESULT');
+      }
+
+      // Confirm the durable, official snapshot before reporting success or
+      // scheduling dispatch. A successful callback alone is not enough.
+      const pricedRide = await prisma.rides_v2.findUnique({
+        where: { id: ride.id },
+        include: { settlement: { select: officialQuoteSettlementSelect } },
+      });
+      if (!hasOfficialLockedQuote(pricedRide) ||
+          Math.round(Number(pricedRide!.quoted_price) * 100) !==
+            Math.round(quoteResult.quoted_price * 100)) {
+        throw new Error('PRICING_QUOTE_SNAPSHOT_MISMATCH');
+      }
     } catch (priceErr) {
       console.error(`[PRICING_QUOTE_FAILED] ride_id=${ride.id}`, priceErr);
+      // Existing enum has no dedicated pricing_failure state. Park this
+      // unoffered ride in the non-dispatchable no_driver state, never fabricate
+      // a client success or imply that a COMMIT outcome was safely rolled back.
+      try {
+        await prisma.rides_v2.updateMany({
+          where: {
+            id: ride.id, passenger_id: passengerId,
+            status: { in: ['requested', 'scheduled'] },
+          },
+          data: { status: 'no_driver' },
+        });
+      } catch (cleanupErr) {
+        console.error(`[PRICING_FAIL_CLOSED_UPDATE_FAILED] ride_id=${ride.id}`, cleanupErr);
+      }
+      // Dispatcher and scheduled job also independently reject unpriced rows,
+      // including when the cleanup write itself failed.
+      return res.status(503).json({ success: false, error: 'PRICING_QUOTE_UNAVAILABLE' });
     }
 
     // Acionar dispatcher (async, não bloqueia resposta) — skip for scheduled rides
@@ -378,8 +421,8 @@ router.post('/', authenticatePassenger, async (req: Request, res: Response) => {
         ride_id: ride.id,
         status: scheduledDate ? 'scheduled' : ride.status,
         scheduled_for: scheduledDate?.toISOString() ?? null,
-        quoted_price: quoteResult?.quoted_price ?? null,
-        territory: quoteResult?.route_territory ?? null,
+        quoted_price: quoteResult.quoted_price,
+        territory: quoteResult.route_territory,
       }
     });
   } catch (error: any) {
@@ -408,6 +451,9 @@ router.post('/:ride_id/outside-fallback-consent', authenticatePassenger, async (
         is_homebound: true,
         outside_fallback_allowed: true,
         outside_fallback_consented_at: true,
+        pricing_profile_id: true, quoted_price: true, locked_price: true,
+        platform_fee: true, driver_earnings: true,
+        settlement: { select: officialQuoteSettlementSelect },
       }
     });
 
@@ -424,6 +470,10 @@ router.post('/:ride_id/outside-fallback-consent', authenticatePassenger, async (
         error: 'OUTSIDE_FALLBACK_NOT_AVAILABLE',
         status: ride.status,
       });
+    }
+
+    if (!hasOfficialLockedQuote(ride)) {
+      return res.status(409).json({ success: false, error: 'PRICING_QUOTE_UNAVAILABLE' });
     }
 
     const consentedAt =
@@ -542,21 +592,102 @@ router.post('/:ride_id/adjustment-response', authenticatePassenger, async (req: 
         : null;
 
       await prisma.$transaction(async (tx) => {
-        await tx.ride_offers.update({
-          where: { id: offer.id },
-          data: { adjustment_status: 'accepted' }
-        });
-        await tx.rides_v2.update({
-          where: { id: ride_id },
-          data: { status: 'accepted', accepted_at: new Date() }
-        });
-        if (adjustedPrice !== null) {
-          await tx.$executeRaw`
-            UPDATE ride_settlements
-            SET locked_price = ${adjustedPrice}, locked_at = NOW()
-            WHERE ride_id = ${ride_id}
-          `;
+        // Lock the ride FIRST, as quote/refine/settle do. Re-read identity,
+        // status and economic inputs: the preflight request snapshot is stale
+        // as soon as a concurrent passenger response or cancellation starts.
+        const [lockedRide] = await tx.$queryRaw<Array<{
+          id: string; passenger_id: string; driver_id: string | null;
+          status: string; ride_type: string; service_category: string;
+          trip_details: unknown; quoted_price: Decimal | null; locked_price: Decimal | null;
+          platform_fee: Decimal | null; driver_earnings: Decimal | null;
+          pricing_profile_id: string | null; adjusted_price: Decimal | null;
+        }>>`
+          SELECT id, passenger_id, driver_id, status, ride_type, service_category,
+                 trip_details, quoted_price, locked_price, platform_fee,
+                 driver_earnings, pricing_profile_id, adjusted_price
+          FROM rides_v2 WHERE id = ${ride_id} FOR UPDATE
+        `;
+        const conflict = () => Object.assign(new Error('ADJUSTMENT_CONFLICT'), { code: 'ADJUSTMENT_CONFLICT' });
+        if (!lockedRide || lockedRide.passenger_id !== passengerId ||
+            lockedRide.status !== 'pending_adjustment' || lockedRide.driver_id !== ride.driver_id) {
+          throw conflict();
         }
+        if (isUnsupportedCareIntent(lockedRide)) {
+          throw Object.assign(new Error(CARE_UNAVAILABLE_CODE), { code: CARE_UNAVAILABLE_CODE });
+        }
+
+        const latestOffer = await tx.ride_offers.findUnique({ where: { id: offer.id } });
+        if (!latestOffer || latestOffer.ride_id !== ride_id ||
+            latestOffer.driver_id !== lockedRide.driver_id ||
+            latestOffer.status !== 'accepted' || latestOffer.adjustment_status !== 'pending' ||
+            latestOffer.driver_adjustment == null) {
+          throw conflict();
+        }
+
+        const [snapshot] = await tx.$queryRaw<Array<{
+          ride_id: string; pricing_profile_id: string; quoted_price: Decimal;
+          locked_price: Decimal; fee_percent: Decimal; fee_amount: Decimal;
+          driver_earnings: Decimal; quoted_at: Date; locked_at: Date | null;
+          settled_at: Date | null;
+        }>>`
+          SELECT ride_id, pricing_profile_id, quoted_price, locked_price,
+                 fee_percent, fee_amount, driver_earnings, quoted_at, locked_at, settled_at
+          FROM ride_settlements WHERE ride_id = ${ride_id} FOR UPDATE
+        `;
+        if (!snapshot || snapshot.settled_at ||
+            !hasOfficialLockedQuote({ ...lockedRide, settlement: snapshot })) {
+          throw conflict();
+        }
+
+        // Use the persisted rate and quoted base, never the client's amount,
+        // a new tariff formula, or a newly configured rate.
+        const basePrice = new Decimal(String(snapshot.quoted_price));
+        const adjustment = new Decimal(String(latestOffer.driver_adjustment));
+        const feePercent = new Decimal(String(snapshot.fee_percent));
+        if (!basePrice.isFinite() || !adjustment.isFinite() || adjustment.lte(0) ||
+            adjustment.decimalPlaces() > 2 || !feePercent.isFinite() ||
+            feePercent.lt(0) || feePercent.gt(100)) throw conflict();
+        const updatedPrice = basePrice.plus(adjustment);
+        if (!updatedPrice.isFinite() || updatedPrice.lte(0) ||
+            updatedPrice.gt('999999.99') || updatedPrice.decimalPlaces() > 2 ||
+            (lockedRide.adjusted_price != null &&
+             !updatedPrice.eq(new Decimal(String(lockedRide.adjusted_price))))) throw conflict();
+
+        const fee = updatedPrice.times(feePercent).div(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        const earnings = updatedPrice.minus(fee);
+        if (!fee.isFinite() || !earnings.isFinite() || earnings.lt(0) ||
+            !fee.plus(earnings).eq(updatedPrice) ||
+            adjustedPrice === null || Math.abs(adjustedPrice - updatedPrice.toNumber()) > 1e-7) {
+          throw conflict();
+        }
+
+        const offerUpdated = await tx.ride_offers.updateMany({
+          where: { id: latestOffer.id, ride_id, status: 'accepted', adjustment_status: 'pending' },
+          data: { adjustment_status: 'accepted' },
+        });
+        if (offerUpdated.count !== 1) throw conflict();
+
+        const economicUpdated = await tx.$executeRaw`
+          UPDATE ride_settlements
+          SET locked_price = ${updatedPrice}, locked_at = NOW(),
+              fee_amount = ${fee}, driver_earnings = ${earnings}
+          WHERE ride_id = ${ride_id} AND settled_at IS NULL
+            AND locked_price = ${snapshot.locked_price}
+        `;
+        if (economicUpdated !== 1) throw conflict();
+
+        const rideUpdated = await tx.rides_v2.updateMany({
+          where: {
+            id: ride_id, passenger_id: passengerId, driver_id: latestOffer.driver_id,
+            status: 'pending_adjustment',
+            ride_type: lockedRide.ride_type, service_category: lockedRide.service_category,
+          },
+          data: {
+            status: 'accepted', accepted_at: new Date(), adjusted_price: updatedPrice,
+            locked_price: updatedPrice, platform_fee: fee, driver_earnings: earnings,
+          },
+        });
+        if (rideUpdated.count !== 1) throw conflict();
       });
 
       console.log(`[ADJUSTMENT_ACCEPTED] ride_id=${ride_id} driver_id=${ride.driver_id} adjustment=${offer.driver_adjustment} adjusted_price=${adjustedPrice}`);
@@ -596,24 +727,48 @@ router.post('/:ride_id/adjustment-response', authenticatePassenger, async (req: 
     } else {
       // Passenger rejected adjustment — release driver, redispatch
       await prisma.$transaction(async (tx) => {
-        await tx.ride_offers.update({
-          where: { id: offer.id },
-          data: { adjustment_status: 'rejected' }
+        const [lockedRide] = await tx.$queryRaw<Array<{
+          id: string; passenger_id: string; driver_id: string | null;
+          status: string; ride_type: string; service_category: string; trip_details: unknown;
+        }>>`
+          SELECT id, passenger_id, driver_id, status, ride_type, service_category, trip_details
+          FROM rides_v2 WHERE id = ${ride_id} FOR UPDATE
+        `;
+        const conflict = () => Object.assign(new Error('ADJUSTMENT_CONFLICT'), { code: 'ADJUSTMENT_CONFLICT' });
+        if (!lockedRide || lockedRide.passenger_id !== passengerId ||
+            lockedRide.status !== 'pending_adjustment' || lockedRide.driver_id !== ride.driver_id) {
+          throw conflict();
+        }
+        if (isUnsupportedCareIntent(lockedRide)) {
+          throw Object.assign(new Error(CARE_UNAVAILABLE_CODE), { code: CARE_UNAVAILABLE_CODE });
+        }
+        const latestOffer = await tx.ride_offers.findUnique({ where: { id: offer.id } });
+        if (!latestOffer || latestOffer.ride_id !== ride_id ||
+            latestOffer.driver_id !== lockedRide.driver_id ||
+            latestOffer.status !== 'accepted' || latestOffer.adjustment_status !== 'pending') {
+          throw conflict();
+        }
+        const offerUpdated = await tx.ride_offers.updateMany({
+          where: { id: latestOffer.id, ride_id, status: 'accepted', adjustment_status: 'pending' },
+          data: { adjustment_status: 'rejected' },
         });
-        await tx.rides_v2.update({
-          where: { id: ride_id },
+        if (offerUpdated.count !== 1) throw conflict();
+        const rideUpdated = await tx.rides_v2.updateMany({
+          where: {
+            id: ride_id, passenger_id: passengerId, driver_id: latestOffer.driver_id,
+            status: 'pending_adjustment',
+            ride_type: lockedRide.ride_type, service_category: lockedRide.service_category,
+          },
           data: {
-            status: 'requested',
-            driver_id: null,
-            driver_adjustment: null,
-            adjusted_price: null,
-            accepted_at: null,
-          }
+            status: 'requested', driver_id: null, driver_adjustment: null,
+            adjusted_price: null, accepted_at: null,
+          },
         });
-        if (ride.driver_id) {
+        if (rideUpdated.count !== 1) throw conflict();
+        if (latestOffer.driver_id) {
           await tx.driver_status.update({
-            where: { driver_id: ride.driver_id },
-            data: { availability: 'online' }
+            where: { driver_id: latestOffer.driver_id },
+            data: { availability: 'online' },
           });
         }
       });
@@ -627,6 +782,12 @@ router.post('/:ride_id/adjustment-response', authenticatePassenger, async (req: 
     }
   } catch (error: any) {
     console.error('[ADJUSTMENT_RESPONSE_ERROR]', error);
+    if (error?.code === CARE_UNAVAILABLE_CODE) {
+      return res.status(403).json({ success: false, error: CARE_UNAVAILABLE_CODE });
+    }
+    if (error?.code === 'ADJUSTMENT_CONFLICT') {
+      return res.status(409).json({ success: false, error: 'ADJUSTMENT_CONFLICT' });
+    }
     res.status(500).json({ error: 'Erro interno. Tente novamente.' });
   }
 });
@@ -712,13 +873,12 @@ router.post('/:ride_id/cancel', authenticatePassenger, async (req: Request, res:
       return res.status(400).json({ error: 'Não é possível cancelar neste momento' });
     }
 
-    await prisma.rides_v2.update({
-      where: { id: ride_id },
-      data: {
-        status: 'canceled_by_passenger',
-        canceled_at: new Date()
-      }
+    const canceled = await prisma.rides_v2.updateMany({
+      where: { id: ride_id, passenger_id: passengerId,
+        status: { in: ['scheduled', 'requested', 'offered', 'accepted', 'arrived'] } },
+      data: { status: 'canceled_by_passenger', canceled_at: new Date() },
     });
+    if (canceled.count !== 1) return res.status(409).json({ error: 'RIDE_STATUS_CONFLICT' });
 
     // Limpar localização compartilhada do passageiro
     await prisma.passengers.update({ where: { id: passengerId }, data: { last_lat: null, last_lng: null, last_location_updated_at: null } });
@@ -781,8 +941,9 @@ router.post('/:ride_id/driver-cancel', authenticateDriver, async (req: Request, 
     if (canRedispatch) {
       // Redispatch: limpar ride e reabrir
       await prisma.$transaction(async (tx) => {
-        await tx.rides_v2.update({
-          where: { id: ride_id },
+        const reopened = await tx.rides_v2.updateMany({
+          where: { id: ride_id, driver_id: driverId,
+            status: { in: ['accepted', 'arrived'] } },
           data: {
             status: 'requested',
             driver_id: null,
@@ -791,8 +952,11 @@ router.post('/:ride_id/driver-cancel', authenticateDriver, async (req: Request, 
             driver_adjustment: null,
             adjusted_price: null,
             trip_details: { ...td, _redispatch_count: redispatchCount + 1 },
-          }
+          },
         });
+        if (reopened.count !== 1) {
+          throw Object.assign(new Error('RIDE_STATUS_CONFLICT'), { code: 'RIDE_STATUS_CONFLICT' });
+        }
         await tx.ride_offers.updateMany({
           where: { ride_id, driver_id: driverId, status: 'accepted' },
           data: { status: 'canceled' }
@@ -805,14 +969,25 @@ router.post('/:ride_id/driver-cancel', authenticateDriver, async (req: Request, 
 
       setImmediate(() => dispatcherService.dispatchRide(ride_id).catch(err => {
         console.error(`[REDISPATCH_ERROR] ride_id=${ride_id}`, err);
-        prisma.rides_v2.update({ where: { id: ride_id }, data: { status: 'canceled_by_driver', canceled_at: new Date() } })
-          .then(() => notifyRideCancelledToPassenger({ id: ride_id, passenger_id: ride.passenger_id }))
+        prisma.rides_v2.updateMany({
+          where: { id: ride_id, status: 'requested', driver_id: null },
+          data: { status: 'canceled_by_driver', canceled_at: new Date() },
+        })
+          .then((updated) => {
+            if (updated.count === 1) notifyRideCancelledToPassenger({ id: ride_id, passenger_id: ride.passenger_id });
+          })
           .catch(() => {});
       }));
     } else {
       // Limite de redispatch atingido — cancelar normalmente
       await prisma.$transaction(async (tx) => {
-        await tx.rides_v2.update({ where: { id: ride_id }, data: { status: 'canceled_by_driver', canceled_at: new Date() } });
+        const canceled = await tx.rides_v2.updateMany({
+          where: { id: ride_id, driver_id: driverId, status: { in: ['accepted', 'arrived'] } },
+          data: { status: 'canceled_by_driver', canceled_at: new Date() },
+        });
+        if (canceled.count !== 1) {
+          throw Object.assign(new Error('RIDE_STATUS_CONFLICT'), { code: 'RIDE_STATUS_CONFLICT' });
+        }
         await tx.driver_status.update({ where: { driver_id: driverId }, data: { availability: 'online' } });
       });
 
@@ -836,6 +1011,9 @@ router.post('/:ride_id/driver-cancel', authenticateDriver, async (req: Request, 
     res.json({ success: true });
   } catch (error: any) {
     console.error('[RIDE_DRIVER_CANCEL_ERROR]', error);
+    if (error?.code === 'RIDE_STATUS_CONFLICT') {
+      return res.status(409).json({ error: 'RIDE_STATUS_CONFLICT' });
+    }
     res.status(500).json({ error: 'Erro interno. Tente novamente.' });
   }
 });
@@ -856,13 +1034,11 @@ router.post('/:ride_id/arrived', authenticateDriver, async (req: Request, res: R
       return res.status(400).json({ error: 'Operação não permitida no estado atual da corrida' });
     }
 
-    await prisma.rides_v2.update({
-      where: { id: ride_id },
-      data: {
-        status: 'arrived',
-        arrived_at: new Date()
-      }
+    const arrived = await prisma.rides_v2.updateMany({
+      where: { id: ride_id, driver_id: driverId, status: 'accepted' },
+      data: { status: 'arrived', arrived_at: new Date() },
     });
+    if (arrived.count !== 1) return res.status(409).json({ error: 'RIDE_STATUS_CONFLICT' });
 
     console.log(`[RIDE_STATUS_CHANGED] ride_id=${ride_id} status=arrived driver_id=${driverId}`);
 
@@ -910,7 +1086,14 @@ router.post('/:ride_id/wait/start', authenticateDriver, async (req: Request, res
     if (ride.status !== 'in_progress') return res.status(400).json({ error: 'Operação não permitida no estado atual da corrida' });
     if (ride.wait_started_at) return res.status(400).json({ error: 'Espera já iniciada' });
 
-    await prisma.rides_v2.update({ where: { id: ride_id }, data: { wait_started_at: new Date() } });
+    const started = await prisma.rides_v2.updateMany({
+      where: {
+        id: ride_id, driver_id: driverId, status: 'in_progress',
+        wait_requested: true, wait_started_at: null,
+      },
+      data: { wait_started_at: new Date() },
+    });
+    if (started.count !== 1) return res.status(409).json({ error: 'WAIT_STATUS_CONFLICT' });
     console.log(`[WAIT_START] ride_id=${ride_id} driver_id=${driverId}`);
     res.json({ success: true });
   } catch (error: any) {
@@ -929,10 +1112,21 @@ router.post('/:ride_id/wait/end', authenticateDriver, async (req: Request, res: 
 
     const ride = await prisma.rides_v2.findUnique({ where: { id: ride_id } });
     if (!ride || ride.driver_id !== driverId) return res.status(403).json({ error: 'Acesso negado' });
+    if (ride.status !== 'in_progress') {
+      return res.status(400).json({ error: 'Operação não permitida no estado atual da corrida' });
+    }
+    if (!ride.wait_requested) return res.status(400).json({ error: 'Espera não solicitada nesta corrida' });
     if (!ride.wait_started_at) return res.status(400).json({ error: 'Espera não foi iniciada' });
     if (ride.wait_ended_at) return res.status(400).json({ error: 'Espera já encerrada' });
 
-    await prisma.rides_v2.update({ where: { id: ride_id }, data: { wait_ended_at: new Date() } });
+    const ended = await prisma.rides_v2.updateMany({
+      where: {
+        id: ride_id, driver_id: driverId, status: 'in_progress',
+        wait_requested: true, wait_started_at: { not: null }, wait_ended_at: null,
+      },
+      data: { wait_ended_at: new Date() },
+    });
+    if (ended.count !== 1) return res.status(409).json({ error: 'WAIT_STATUS_CONFLICT' });
     console.log(`[WAIT_END] ride_id=${ride_id} driver_id=${driverId}`);
     res.json({ success: true });
   } catch (error: any) {
@@ -968,13 +1162,11 @@ router.post('/:ride_id/start', authenticateDriver, async (req: Request, res: Res
       }
     }
 
-    await prisma.rides_v2.update({
-      where: { id: ride_id },
-      data: {
-        status: 'in_progress',
-        started_at: new Date()
-      }
+    const started = await prisma.rides_v2.updateMany({
+      where: { id: ride_id, driver_id: driverId, status: 'arrived' },
+      data: { status: 'in_progress', started_at: new Date() },
     });
+    if (started.count !== 1) return res.status(409).json({ error: 'RIDE_STATUS_CONFLICT' });
 
     console.log(`[RIDE_STATUS_CHANGED] ride_id=${ride_id} status=in_progress driver_id=${driverId}`);
 
@@ -1014,85 +1206,86 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
       return res.status(403).json({ error: 'Acesso negado' });
     }
 
-    if (ride.status !== 'in_progress') {
+    // An explicit retry may reconcile a ride already marked completed after
+    // pricing COMMIT acknowledgement was lost or a downstream fee failed.
+    // Never re-run the operational transition on replay.
+    const isRecovery = ride.status === 'completed';
+    if (!isRecovery && ride.status !== 'in_progress') {
       return res.status(400).json({ error: 'Operação não permitida no estado atual da corrida' });
     }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.rides_v2.update({
-        where: { id: ride_id },
-        data: {
-          status: 'completed',
+    if (!isRecovery) {
+      if (ride.wait_requested && Boolean(ride.wait_started_at) !== Boolean(ride.wait_ended_at)) {
+        return res.status(409).json({ error: 'WAIT_COMPLETION_CONFLICT' });
+      }
+
+      await prisma.$transaction(async (tx) => {
+        const completionData = {
+          status: 'completed' as const,
           completed_at: new Date(),
-          updated_at: new Date()
+          updated_at: new Date(),
+        };
+        // Compare-and-set for ordinary and wait rides alike. A stale caller
+        // must not overwrite cancel/completed or repeat operational effects.
+        const completed = await tx.rides_v2.updateMany({
+          where: {
+            id: ride_id, driver_id: driverId, status: 'in_progress',
+            wait_requested: Boolean(ride.wait_requested),
+            ...(ride.wait_requested ? {
+              OR: [
+                { wait_started_at: null, wait_ended_at: null },
+                { wait_started_at: { not: null }, wait_ended_at: { not: null } },
+              ],
+            } : {}),
+          },
+          data: completionData,
+        });
+        if (completed.count !== 1) {
+          throw Object.assign(new Error('WAIT_COMPLETION_CONFLICT'), {
+            code: 'WAIT_COMPLETION_CONFLICT',
+          });
         }
+
+        await tx.driver_status.update({
+          where: { driver_id: driverId },
+          data: { availability: 'online' },
+        });
+        await tx.passengers.update({
+          where: { id: ride.passenger_id },
+          data: { last_lat: null, last_lng: null, last_location_updated_at: null },
+        });
       });
 
-      // Liberar motorista
-      await tx.driver_status.update({
-        where: { driver_id: driverId },
-        data: { availability: 'online' }
-      });
-
-      // Limpar localização compartilhada do passageiro
-      await tx.passengers.update({ where: { id: ride.passenger_id }, data: { last_lat: null, last_lng: null, last_location_updated_at: null } });
-    });
-
-    console.log(`[RIDE_STATUS_CHANGED] ride_id=${ride_id} status=completed driver_id=${driverId}`);
-
-    // SSE: notificar passageiro imediatamente
-    realTimeService.emitToRide(ride_id, {
-      type: 'ride.status.changed',
-      status: 'completed',
-      timestamp: new Date().toISOString()
-    });
-
-    // Pricing: settle (fechar economia — idempotente)
-    let settlement: any = null;
-    try {
-      settlement = await pricingEngine.settle(ride_id);
-    } catch (settleErr) {
-      console.error(`[PRICING_SETTLE_FAILED] ride_id=${ride_id}`, settleErr);
+      console.log(`[RIDE_STATUS_CHANGED] ride_id=${ride_id} status=completed driver_id=${driverId}`);
     }
 
-    // Wait charge: somar ao final_price após settle (apenas se espera foi encerrada)
-    let _shadowWaitCents = 0;
-    if (settlement && ride.wait_requested && ride.wait_started_at && ride.wait_ended_at) {
-      try {
-        const waitMinutes = Math.floor(
-          (ride.wait_ended_at.getTime() - ride.wait_started_at.getTime()) / 60000
-        );
-        const waitCharge = Math.round(waitMinutes * config.wait.ratePerMin * 100) / 100;
-        if (waitCharge > 0) {
-          _shadowWaitCents = Math.round(waitCharge * 100);
-          const newFinalPrice = Math.round((settlement.final_price + waitCharge) * 100) / 100;
-          const newDriverEarnings = Math.round((settlement.driver_earnings + waitCharge) * 100) / 100;
-          await prisma.$transaction([
-            prisma.rides_v2.update({
-              where: { id: ride_id },
-              data: { final_price: new Decimal(newFinalPrice), driver_earnings: new Decimal(newDriverEarnings) }
-            }),
-            prisma.$executeRaw`
-              UPDATE ride_settlements
-              SET final_price = ${newFinalPrice}, driver_earnings = ${newDriverEarnings}
-              WHERE ride_id = ${ride_id}
-            `,
-          ]);
-          settlement.final_price = newFinalPrice;
-          settlement.driver_earnings = newDriverEarnings;
-          // Crédito dobrado: espera real = serviço composto
-          const doubledCreditCost = Math.round(settlement.credit_cost * 2 * 100) / 100;
-          await prisma.$executeRaw`
-            UPDATE ride_settlements
-            SET credit_cost = ${doubledCreditCost}
-            WHERE ride_id = ${ride_id}
-          `;
-          settlement.credit_cost = doubledCreditCost;
-          console.log(`[WAIT_CHARGE] ride_id=${ride_id} wait_min=${waitMinutes} charge=${waitCharge} new_final=${newFinalPrice} credit_cost=${doubledCreditCost}`);
-        }
-      } catch (waitErr) {
-        console.error(`[WAIT_CHARGE_FAILED] ride_id=${ride_id}`, waitErr);
-      }
+    // The official engine settles the locked fare, actual wait, driver earning
+    // and territorial credit in ONE economic transaction. Never write another
+    // wait adjustment outside the authoritative ride_settlements transaction.
+    let settlement: pricingEngine.SettlementResult | null = null;
+    try {
+      // The engine locks and reads the current interval itself. The route's
+      // earlier snapshot may precede a concurrent wait/end operation.
+      settlement = await pricingEngine.settle(
+        ride_id,
+        ride.wait_requested ? { waitRatePerMinute: config.wait.ratePerMin } : undefined,
+      );
+    } catch (settleErr) {
+      console.error(`[PRICING_SETTLE_FAILED] ride_id=${ride_id}`, settleErr);
+      return res.status(503).json({
+        success: false, error: 'PRICING_SETTLEMENT_UNCONFIRMED',
+      });
+    }
+    if (!settlement) {
+      console.error(`[PRICING_SETTLE_MISSING] ride_id=${ride_id}`);
+      return res.status(503).json({
+        success: false, error: 'PRICING_SETTLEMENT_UNCONFIRMED',
+      });
+    }
+
+    const _shadowWaitCents = settlement.wait_charge_cents ?? 0;
+    if (_shadowWaitCents > 0) {
+      console.log(`[WAIT_CHARGE] ride_id=${ride_id} wait_cents=${_shadowWaitCents} final=${settlement.final_price} credit_cost=${settlement.credit_cost}`);
     }
 
     // Partner commission: gerar comissão se motorista vinculado a parceiro territorial
@@ -1127,6 +1320,7 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
         }
       } catch (partnerErr) {
         console.error(`[PARTNER_COMMISSION_FAILED] ride_id=${ride_id}`, partnerErr);
+        return res.status(503).json({ success: false, error: 'RIDE_FINANCIAL_EFFECTS_UNCONFIRMED' });
       }
     }
 
@@ -1144,6 +1338,13 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
           }
 
           const finalPriceCents = Math.round(settlement.final_price * 100);
+          const feeBaseCents = finalPriceCents - _shadowWaitCents;
+          const officialFeeCents = Math.round(settlement.fee_amount * 100);
+          if (!Number.isSafeInteger(finalPriceCents) || !Number.isSafeInteger(feeBaseCents) ||
+              feeBaseCents <= 0 || !Number.isSafeInteger(officialFeeCents) ||
+              calculateFeeCents(feeBaseCents) !== officialFeeCents) {
+            throw new Error('WALLET_FEE_BASE_INCONSISTENT');
+          }
           const reservedCents = estimateFeeCentsFromPrice(Number(ride.quoted_price || ride.locked_price || 0));
 
           // Resolve territory for split
@@ -1164,14 +1365,15 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
 
           const result = await settlementSvc.settleRide({
             rideId: ride_id, driverId, finalPriceCents: BigInt(finalPriceCents),
-            reservedCents: BigInt(reservedCents), territoryId: territoryId || undefined,
+            feeBaseCents: BigInt(feeBaseCents), reservedCents: BigInt(reservedCents), territoryId: territoryId || undefined,
           });
 
-          const feeCents = calculateFeeCents(finalPriceCents);
+          const feeCents = calculateFeeCents(feeBaseCents);
           creditResult = { cost: feeCents / 100, matchType: 'WALLET_V2', balance: 0 };
           console.log(`[WALLET_V2_SETTLE] ride=${ride_id} driver=${driverId} fee=${feeCents} collected=${result.collected}`);
         } catch (walletErr: any) {
           console.error(`[WALLET_V2_SETTLE_FAIL] ride=${ride_id} driver=${driverId}`, walletErr.message);
+          return res.status(503).json({ success: false, error: 'WALLET_SETTLEMENT_UNCONFIRMED' });
         }
       } else {
         // Modelo antigo (FEE_MODEL_FLAT_18 ou créditos fixos)
@@ -1184,6 +1386,7 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
             console.log(`[FEE_DEBITED] ride_id=${ride_id} driver_id=${driverId} fee=${settlement.fee_amount} balance=${delta.balance}`);
           } catch (feeErr) {
             console.error(`[FEE_DEBIT_FAILED] ride_id=${ride_id} driver_id=${driverId}`, feeErr);
+            return res.status(503).json({ success: false, error: 'RIDE_FINANCIAL_EFFECTS_UNCONFIRMED' });
           }
         } else if (process.env.CREDIT_CONSUME_ENABLED === 'true') {
           try {
@@ -1192,6 +1395,7 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
             console.log(`[CREDIT_CONSUMED] ride_id=${ride_id} driver_id=${driverId} cost=${settlement.credit_cost} type=${settlement.credit_match_type} balance=${delta.balance}`);
           } catch (creditErr) {
             console.error(`[CREDIT_CONSUME_FAILED] ride_id=${ride_id} driver_id=${driverId}`, creditErr);
+            return res.status(503).json({ success: false, error: 'RIDE_FINANCIAL_EFFECTS_UNCONFIRMED' });
           }
         }
       }
@@ -1208,8 +1412,18 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
       }).catch(err => console.error(`[SHADOW_CATCH] ride=${ride_id}`, err));
     }
 
-    // WhatsApp: notificar passageiro e motorista que corrida concluiu
-    if (process.env.WA_RIDE_COMPLETE_ENABLED === 'true' && settlement) {
+    // Emit the completed status only after confirmed economic effects.
+    // Replay must not duplicate an already emitted completion event.
+    if (!isRecovery) {
+      realTimeService.emitToRide(ride_id, {
+        type: 'ride.status.changed', status: 'completed',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    // Completion messages are at-most-once on the original request; the durable
+    // notification outbox remains a separate launch gate for interrupted requests.
+    if (!isRecovery && process.env.WA_RIDE_COMPLETE_ENABLED === 'true' && settlement) {
       try {
         const [passenger, driver] = await Promise.all([
           prisma.passengers.findUnique({ where: { id: ride.passenger_id }, select: { phone: true, name: true } }),
@@ -1230,11 +1444,10 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
         }
         if (driver?.phone) {
           // Use v3/v4 if approved, fallback to v2
-          const hasWait = !!(ride.wait_requested && ride.wait_started_at && ride.wait_ended_at);
-          const waitMinutes = hasWait
-            ? Math.floor((ride.wait_ended_at!.getTime() - ride.wait_started_at!.getTime()) / 60000)
-            : 0;
-          const waitCharge = Math.round(waitMinutes * 0.50 * 100) / 100;
+          // Render the confirmed settlement amount; no stale route timestamps
+          // or separate hard-coded per-minute rate in a financial notification.
+          const hasWait = _shadowWaitCents > 0;
+          const waitCharge = _shadowWaitCents / 100;
           const basePrice = hasWait && waitCharge > 0
             ? String(Math.round((settlement.final_price - waitCharge) * 100) / 100)
             : price;
@@ -1277,6 +1490,9 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
     res.json({ success: true, credit: creditResult });
   } catch (error: any) {
     console.error('[RIDE_COMPLETE_ERROR]', error);
+    if (error?.code === 'WAIT_COMPLETION_CONFLICT') {
+      return res.status(409).json({ error: 'WAIT_COMPLETION_CONFLICT' });
+    }
     res.status(500).json({ error: 'Erro interno. Tente novamente.' });
   }
 });

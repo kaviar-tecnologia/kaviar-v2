@@ -130,6 +130,18 @@ function ride(overrides: Record<string, any> = {}) {
     is_homebound: true,
     outside_fallback_allowed: false,
     outside_fallback_consented_at: null,
+    pricing_profile_id: 'profile-1',
+    quoted_price: '23.00',
+    locked_price: '23.00',
+    platform_fee: '4.14',
+    driver_earnings: '18.86',
+    settlement: {
+      ride_id: 'ride-1', pricing_profile_id: 'profile-1',
+      quoted_price: '23.00', locked_price: '23.00',
+      fee_amount: '4.14', driver_earnings: '18.86',
+      quoted_at: new Date('2026-09-29T12:00:00Z'),
+      locked_at: new Date('2026-09-29T12:00:00Z'),
+    },
     ...overrides,
   };
 }
@@ -196,6 +208,19 @@ describe('POST /api/v2/rides/:ride_id/outside-fallback-consent', () => {
     expect(res.status).toBe(409);
     expect(res.body.error).toBe('OUTSIDE_FALLBACK_NOT_AVAILABLE');
     expect(res.body.status).toBe('requested');
+    expect(prismaMock.rides_v2.updateMany).not.toHaveBeenCalled();
+    expect(dispatchRideMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects unpriced no_driver retry before recording consent or dispatching', async () => {
+    prismaMock.rides_v2.findUnique.mockResolvedValueOnce(ride({
+      settlement: null, quoted_price: null, locked_price: null,
+    }));
+    const res = await request(app)
+      .post('/api/v2/rides/ride-1/outside-fallback-consent')
+      .send({ accept: true });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('PRICING_QUOTE_UNAVAILABLE');
     expect(prismaMock.rides_v2.updateMany).not.toHaveBeenCalled();
     expect(dispatchRideMock).not.toHaveBeenCalled();
   });

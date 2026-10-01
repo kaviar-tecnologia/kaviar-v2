@@ -2,6 +2,7 @@ import { prisma } from '../lib/prisma';
 import { dispatcherService } from '../services/dispatcher.service';
 import { whatsappEvents } from '../modules/whatsapp';
 import { withSchedulerLock } from '../lib/scheduler-lock';
+import { hasOfficialLockedQuote, officialQuoteSettlementSelect } from '../services/official-quote-readiness';
 
 const LOCK_KEY = 'kaviar:scheduled_dispatch_job';
 const DISPATCH_AHEAD_MINUTES = 10;
@@ -21,11 +22,24 @@ export function startScheduledDispatchJob() {
         const now = Date.now();
         const rides = await prisma.rides_v2.findMany({
           where: { status: 'scheduled', scheduled_for: { lte: new Date(now + REMINDER_AHEAD_MINUTES * 60_000) } },
-          include: { passenger: { select: { phone: true, name: true } } }
+          include: {
+            passenger: { select: { phone: true, name: true } },
+            settlement: { select: officialQuoteSettlementSelect },
+          }
         });
 
         for (const ride of rides) {
           if (!ride.scheduled_for) continue;
+          // Never present an unpriced scheduled ride as 'searching', or move
+          // it into a dispatchable state. The dispatcher rechecks independently.
+          if (!hasOfficialLockedQuote(ride)) {
+            console.error(`[SCHEDULED_PRICING_BLOCKED] ride_id=${ride.id} reason=PRICING_QUOTE_UNAVAILABLE`);
+            await prisma.rides_v2.updateMany({
+              where: { id: ride.id, status: 'scheduled' },
+              data: { status: 'no_driver' },
+            });
+            continue;
+          }
           const td = (ride.trip_details as any) || {};
           const msUntil = ride.scheduled_for.getTime() - now;
           const timeStr = fmtTime(ride.scheduled_for);
@@ -49,7 +63,11 @@ export function startScheduledDispatchJob() {
           // Aviso 2 + dispatch: <=10min antes
           if (msUntil <= DISPATCH_AHEAD_MINUTES * 60_000) {
             console.log(`[SCHEDULED_DISPATCH] ride_id=${ride.id} scheduled_for=${ride.scheduled_for.toISOString()}`);
-            await prisma.rides_v2.update({ where: { id: ride.id }, data: { status: 'requested' } });
+            const transitioned = await prisma.rides_v2.updateMany({
+              where: { id: ride.id, status: 'scheduled' },
+              data: { status: 'requested' },
+            });
+            if (transitioned.count !== 1) continue;
 
             if (ride.passenger?.phone && !td._wa_searching_sent) {
               whatsappEvents.rideScheduledSearching(ride.passenger.phone, {

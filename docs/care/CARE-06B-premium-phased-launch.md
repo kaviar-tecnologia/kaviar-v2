@@ -87,6 +87,30 @@ objetivas no escritor oficial e persistir quote/lock/settlement sob transação
 coerente; nunca remover este bloqueio antes da revisão separada de CARE-04A
 e dos demais requisitos operacionais e externos. A Issue #436 continua aberta.
 
+## CARE-06B: uma conexão por transação (etapa 3, prova isolada)
+
+`withCarePricingTransaction` faz `BEGIN`, trabalho, `COMMIT` e, se
+necessário, `ROLLBACK` em **um único PoolClient reservado**; libera o
+cliente após o término e o descarta quando o rollback não é confiável.
+Um PostgreSQL de CI descartável (`care06b_disposable`, loopback e flag
+explícita) comprova: mesmo `pg_backend_pid()` durante duas gravações,
+rollback integral se a segunda operação falhar e bloqueio de gravação
+concorrente sob `FOR UPDATE`. Testes unitários cobrem falhas de BEGIN,
+COMMIT, ROLLBACK e aquisição do cliente.
+
+Não chamamos essa primitiva de `quote()`, `refine()`, `settle()`,
+rotas, aceite ou dispatcher em produção: a proteção CARE-04A segue
+incondicional. Não migramos a execução atual CAR/MOTO para essa primitiva.
+O teste sintético comprova as **propriedades da transação**, não o ciclo
+positivo `rides_v2` / `ride_settlements`, nem autorização securitária.
+
+**Falta #436:** conferir estado da corrida e todos os gates dentro da
+transação de escrita; derivar a cotação CARE da fórmula/profile `CAR_NORMAL`
+com mesma rota/tempo; persistir o snapshot oficial com integridade e
+idempotência; proteger ajustes/refine/settle; provar disputa e rollback sobre
+registros oficiais reais no DB descartável, mais regressão CAR/MOTO/Premium.
+Sem essa ligação, transação genérica não torna CARE disponível.
+
 ## Release
 
 CARE-04A permanece incondicional: criação/estimativa, dispatcher, oferta, aceite

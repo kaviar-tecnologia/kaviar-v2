@@ -4,6 +4,37 @@ on:
   pull_request:
     paths:
       - 'backend/src/services/care/care-official-fare-evidence.ts'
+<<<<<<< ours
+      - 'backend/src/services/care/care-pricing-transaction.ts'
+      - 'backend/tests/care-06b-pricing-transaction.test.ts'
+      - 'backend/tests/care-445-quote-atomicity.test.ts'
+      - 'backend/tests/care-445-refine-settle-atomicity.test.ts'
+      - 'backend/tests/care-445-premium-adjustment.test.ts'
+      - 'backend/tests/care-445-wait-finalization-boundary.test.ts'
+      - 'backend/tests/care-445-wait-timestamp-race.test.ts'
+      - 'backend/tests/care-445-wallet-wait-fee-base.test.ts'
+      - 'backend/tests/care-445-completion-replay.test.ts'
+      - 'backend/tests/care-445-lifecycle-cas.test.ts'
+      - 'backend/tests/wallet-v2-ride-flow.test.ts'
+      - 'backend/tests/wallet-shadow.test.ts'
+      - 'backend/src/services/wallet-v2/wallet-settlement.service.ts'
+      - 'backend/src/services/wallet-v2/fee-split.service.ts'
+      - 'backend/src/services/wallet-shadow.service.ts'
+      - 'backend/tests/wait-charge-accounting.test.ts'
+      - 'backend/tests/flat-fee-consistency.test.ts'
+      - 'backend/src/services/official-quote-readiness.ts'
+      - 'backend/tests/care-445-official-quote-readiness.test.ts'
+      - 'backend/tests/care-445-create-dispatch-gate.test.ts'
+      - 'backend/tests/care-445-scheduled-quote-gate.test.ts'
+      - 'backend/tests/dispatcher-attempt-windows.test.ts'
+      - 'backend/tests/rides-v2-outside-fallback-consent.test.ts'
+      - 'backend/src/routes/rides-v2.ts'
+      - 'backend/src/services/dispatcher.service.ts'
+      - 'backend/src/jobs/scheduled-dispatch.job.ts'
+      - 'backend/tests/care-445-quote-atomicity.integration.test.ts'
+      - 'backend/tests/care-06b-pricing-transaction.integration.test.ts'
+=======
+>>>>>>> theirs
       - 'backend/src/services/pricing-engine.ts'
       - 'backend/tests/care-06b-pricing-boundary.test.ts'
       - 'backend/tests/care-06b-official-fare-evidence.test.ts'
@@ -18,8 +49,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
+<<<<<<< ours
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/care06b_disposable
+      NODE_ENV: test
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: care06b_disposable
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d care06b_disposable"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+=======
       DATABASE_URL: postgresql://ci:ci@localhost:5432/care06b_disposable
       NODE_ENV: test
+>>>>>>> theirs
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -42,6 +92,40 @@ jobs:
           npx vitest run
           tests/care-06b-official-fare-evidence.test.ts
           tests/care-06b-pricing-boundary.test.ts
+<<<<<<< ours
+          tests/care-06b-pricing-transaction.test.ts
+          tests/care-445-quote-atomicity.test.ts
+          tests/care-445-refine-settle-atomicity.test.ts
+          tests/care-445-premium-adjustment.test.ts
+          tests/care-445-wait-finalization-boundary.test.ts
+          tests/care-445-wait-timestamp-race.test.ts
+          tests/care-445-wallet-wait-fee-base.test.ts
+          tests/care-445-completion-replay.test.ts
+          tests/care-445-lifecycle-cas.test.ts
+          tests/wallet-v2-ride-flow.test.ts
+          tests/wallet-shadow.test.ts
+          tests/wait-charge-accounting.test.ts
+          tests/flat-fee-consistency.test.ts
+          tests/care-445-official-quote-readiness.test.ts
+          tests/care-445-create-dispatch-gate.test.ts
+          tests/care-445-scheduled-quote-gate.test.ts
+          tests/dispatcher-attempt-windows.test.ts
+          tests/rides-v2-outside-fallback-consent.test.ts
           tests/care-05b-fare-parity.test.ts
           tests/care-03-eligibility.test.ts
           tests/care-04-readiness-policy.test.ts
+      - name: Prove atomic commit, rollback and row lock on disposable PostgreSQL
+        working-directory: backend
+        env:
+          CARE_PRICING_ATOMIC_INTEGRATION: '1'
+        run: npx vitest run tests/care-06b-pricing-transaction.integration.test.ts
+      - name: Prove official quote table atomicity and two-caller idempotency in disposable PostgreSQL
+        working-directory: backend
+        env:
+          CARE_QUOTE_ATOMIC_INTEGRATION: '1'
+        run: npx vitest run tests/care-445-quote-atomicity.integration.test.ts
+=======
+          tests/care-05b-fare-parity.test.ts
+          tests/care-03-eligibility.test.ts
+          tests/care-04-readiness-policy.test.ts
+>>>>>>> theirs
