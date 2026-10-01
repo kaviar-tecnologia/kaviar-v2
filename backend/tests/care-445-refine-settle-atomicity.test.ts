@@ -139,9 +139,33 @@ describe('CARE-445: refine/settle official writers are single-client transaction
     snapshot.driver_earnings = '26.55';
     snapshot.credit_cost = 1;
     snapshot.credit_match_type = 'LOCAL';
+    lockedRide = { ...lockedRide, final_price: '31.24', platform_fee: '4.69', driver_earnings: '26.55' };
     const result = await settle(id);
     expect(result).toMatchObject({ fee_percent: 15, fee_amount: 4.69, driver_earnings: 26.55 });
     expect(sqlLog().some(sql => sql.trimStart().startsWith('UPDATE '))).toBe(false);
+  });
+
+  it('refuses replay of a settled row when the operational cache is absent or divergent', async () => {
+    snapshot.settled_at = new Date();
+    snapshot.final_price = '31.24';
+    snapshot.credit_cost = 0;
+    snapshot.credit_match_type = 'FLAT_FEE';
+    lockedRide = { ...lockedRide, final_price: null, platform_fee: null, driver_earnings: null };
+    await expect(settle(id)).rejects.toThrow('PRICING_SETTLEMENT_SNAPSHOT_INCONSISTENT');
+    expect(sqlLog().at(-1)).toBe('ROLLBACK');
+    lockedRide = { ...lockedRide, final_price: '31.24', platform_fee: '5.62', driver_earnings: '25.61' };
+    await expect(settle(id)).rejects.toThrow('PRICING_SETTLEMENT_SNAPSHOT_INCONSISTENT');
+  });
+
+  it('refuses replay of a settled row when the ride status or base changed', async () => {
+    snapshot.settled_at = new Date();
+    snapshot.final_price = '31.24';
+    snapshot.credit_cost = 0;
+    snapshot.credit_match_type = 'FLAT_FEE';
+    lockedRide = { ...lockedRide, final_price: '31.24', platform_fee: '5.62', driver_earnings: '25.62', status: 'canceled_by_passenger' };
+    await expect(settle(id)).rejects.toThrow('PRICING_SETTLEMENT_SNAPSHOT_INCONSISTENT');
+    lockedRide = { ...lockedRide, status: 'completed', locked_price: '30.24' };
+    await expect(settle(id)).rejects.toThrow('PRICING_SETTLEMENT_SNAPSHOT_INCONSISTENT');
   });
 
   it('refuses missing ride, zero-row economic update and inconsistent locked snapshot', async () => {
@@ -226,7 +250,7 @@ describe('CARE-445: refine/settle official writers are single-client transaction
     snapshot.credit_cost = 0;
     snapshot.credit_match_type = 'FLAT_FEE';
     lockedRide = {
-      ...lockedRide, wait_requested: true,
+      ...lockedRide, final_price: '32.24', platform_fee: '5.62', driver_earnings: '26.62', wait_requested: true,
       wait_started_at: new Date('2026-09-29T12:00:00Z'),
       wait_ended_at: new Date('2026-09-29T12:02:30Z'),
     };

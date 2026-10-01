@@ -466,7 +466,8 @@ describe('Flat Fee Single Source — Old Snapshot Idempotency', () => {
     poolMock.query.mockImplementation((sql: string) => {
       if (sql.includes('FROM rides_v2') && sql.includes('FOR UPDATE')) {
         return { rows: [{ id: 'synthetic', ride_type: 'normal', service_category: 'CAR_NORMAL',
-          trip_details: null, status: 'completed', locked_price: '31.24' }] };
+          trip_details: null, status: 'completed', locked_price: '31.24',
+          final_price: '31.24', platform_fee: '4.69', driver_earnings: '26.55' }] };
       }
       if (sql.includes('ride_settlements') && sql.includes('SELECT')) {
         return {
@@ -509,7 +510,8 @@ describe('Flat Fee Single Source — Old Snapshot Idempotency', () => {
     poolMock.query.mockImplementation((sql: string) => {
       if (sql.includes('FROM rides_v2') && sql.includes('FOR UPDATE')) {
         return { rows: [{ id: 'synthetic', ride_type: 'normal', service_category: 'CAR_NORMAL',
-          trip_details: null, status: 'completed', locked_price: '31.24' }] };
+          trip_details: null, status: 'completed', locked_price: '31.24',
+          final_price: '31.24', platform_fee: '5.62', driver_earnings: '25.62' }] };
       }
       if (sql.includes('ride_settlements') && sql.includes('SELECT')) {
         return {

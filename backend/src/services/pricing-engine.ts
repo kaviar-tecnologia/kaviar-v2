@@ -577,7 +577,7 @@ export async function settle(
     settlement: SettlementResult | null; fee_source: string | null;
   }> => {
     const rideRow = await tx.query(
-      'SELECT ride_type, service_category, trip_details, status, locked_price, wait_requested, wait_started_at, wait_ended_at FROM rides_v2 WHERE id = $1 FOR UPDATE',
+      'SELECT ride_type, service_category, trip_details, status, locked_price, final_price, platform_fee, driver_earnings, wait_requested, wait_started_at, wait_ended_at FROM rides_v2 WHERE id = $1 FOR UPDATE',
       [rideId]
     );
     const ride = rideRow.rows[0];
@@ -598,6 +598,27 @@ export async function settle(
     // Historical settlements are immutable, including their original fee
     // configuration. A repeated completion never charges twice.
     if (s.settled_at) {
+      // A lost COMMIT acknowledgement may cause a replay. Never interpret a
+      // persisted settlement as confirmed if its operational cache or ride
+      // lifecycle no longer agrees. Read only: historical economics immutable.
+      const amounts = [
+        Number(s.locked_price), Number(ride.locked_price),
+        Number(s.final_price), Number(ride.final_price),
+        Number(s.fee_amount), Number(ride.platform_fee),
+        Number(s.driver_earnings), Number(ride.driver_earnings),
+      ];
+      if (ride.status !== 'completed' ||
+          [ride.locked_price, ride.final_price, ride.platform_fee, ride.driver_earnings,
+           s.locked_price, s.final_price, s.fee_amount, s.driver_earnings].some(value => value == null) ||
+          amounts.some(value => !Number.isFinite(value)) ||
+          Number(s.locked_price) <= 0 || Number(s.final_price) <= 0 ||
+          round2(Number(s.locked_price)) !== round2(Number(ride.locked_price)) ||
+          round2(Number(s.final_price)) !== round2(Number(ride.final_price)) ||
+          round2(Number(s.fee_amount)) !== round2(Number(ride.platform_fee)) ||
+          round2(Number(s.driver_earnings)) !== round2(Number(ride.driver_earnings)) ||
+          round2(Number(s.fee_amount) + Number(s.driver_earnings)) !== round2(Number(s.final_price))) {
+        throw new Error('PRICING_SETTLEMENT_SNAPSHOT_INCONSISTENT');
+      }
       const historical: SettlementResult = {
         final_price: Number(s.final_price),
         fee_percent: Number(s.fee_percent),
