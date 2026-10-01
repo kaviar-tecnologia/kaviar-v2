@@ -6,7 +6,7 @@ const { queryMock, directionsMock, floorMock, territoryMock } = vi.hoisted(() =>
   floorMock: vi.fn(),
   territoryMock: vi.fn(),
 }));
-vi.mock('../src/db', () => ({ pool: { query: queryMock } }));
+vi.mock('../src/db', () => ({ pool: { query: queryMock, connect: vi.fn(async () => ({ query: queryMock, release: vi.fn() })) } }));
 vi.mock('../src/services/google-directions.service', () => ({ getRouteDistance: directionsMock }));
 vi.mock('../src/services/territory-floor.service', () => ({ getFloorForRoute: floorMock }));
 vi.mock('../src/services/territory-resolver.service', () => ({ resolveTerritory: territoryMock }));

@@ -20,6 +20,7 @@ import { getFloorForRoute } from './territory-floor.service';
 import { getRouteDistance } from './google-directions.service';
 import { PLATFORM_FEE_PERCENT } from './finance/territory/monetary';
 import { CARE_UNAVAILABLE_CODE, isUnsupportedCareIntent } from './care/care-readiness-policy';
+import { withCarePricingTransaction } from './care/care-pricing-transaction';
 
 // --- Fee model flat 18% feature flag ---
 
@@ -405,10 +406,37 @@ export async function quote(rideId: string, originLat: number, originLng: number
 
   const now = new Date();
 
-  // Insert settlement + update rides_v2 cache (single transaction)
-  await pool.query('BEGIN');
-  try {
-    await pool.query(
+  // CARE-445: one checked-out connection for the actual official economic
+  // records. External routing and tariff calculations above remain unchanged.
+  // Recheck the persisted ride and its settlement under a row lock: a second
+  // concurrent quote must return the committed first quote, not overwrite it.
+  const concurrentSnapshot = await withCarePricingTransaction(pool, async (tx): Promise<QuoteResult | null> => {
+    const lockedRide = await tx.query(
+      'SELECT ride_type, service_category, trip_details FROM rides_v2 WHERE id = $1 FOR UPDATE',
+      [rideId]
+    );
+    if (!lockedRide.rows[0]) throw new Error('PRICING_RIDE_NOT_FOUND');
+    if (isUnsupportedCareIntent(lockedRide.rows[0])) {
+      throw Object.assign(new Error(CARE_UNAVAILABLE_CODE), { code: CARE_UNAVAILABLE_CODE });
+    }
+
+    const alreadyQuoted = await tx.query(
+      'SELECT * FROM ride_settlements WHERE ride_id = $1', [rideId]
+    );
+    if (alreadyQuoted.rows[0]) {
+      const s = alreadyQuoted.rows[0];
+      return {
+        quoted_price: Number(s.quoted_price),
+        route_territory: s.route_territory,
+        fee_percent: Number(s.fee_percent),
+        fee_amount: Number(s.fee_amount),
+        driver_earnings: Number(s.driver_earnings),
+        distance_km: Number(s.distance_km),
+        pricing_profile_slug: s.pricing_profile_slug,
+      };
+    }
+
+    await tx.query(
       `INSERT INTO ride_settlements (
         ride_id, pricing_profile_id, pricing_profile_slug,
         origin_neighborhood_id, origin_neighborhood,
@@ -425,25 +453,22 @@ export async function quote(rideId: string, originLat: number, originLng: number
         resolvedDestId, destRes.neighborhood?.name || null,
         route_territory, distance_km,
         profile.base_fare, profile.per_km, profile.per_minute, profile.minimum_fare,
-        quoted_price, quoted_price, // V1: locked = quoted (confirmação implícita)
-        fee_percent, fee_amount, driver_earnings,
-        now, now, // V1: locked_at = quoted_at (confirmação implícita)
+        quoted_price, quoted_price, // V1: locked = quoted
+        fee_percent, fee_amount, driver_earnings, now, now,
       ]
     );
 
-    await pool.query(
+    const updated = await tx.query(
       `UPDATE rides_v2 SET
         pricing_profile_id = $2, quoted_price = $3, locked_price = $4,
         platform_fee = $5, driver_earnings = $6, territory_match = $7
        WHERE id = $1`,
       [rideId, profile.id, quoted_price, quoted_price, fee_amount, driver_earnings, route_territory]
     );
-
-    await pool.query('COMMIT');
-  } catch (err) {
-    await pool.query('ROLLBACK');
-    throw err;
-  }
+    if (updated.rowCount !== 1) throw new Error('PRICING_RIDE_CACHE_UPDATE_FAILED');
+    return null;
+  });
+  if (concurrentSnapshot) return concurrentSnapshot;
 
   console.log(`[PRICING_QUOTE] ride=${rideId} profile=${profile.slug} dist=${distance_km}km dur=${duration_min.toFixed(1)}min price=${quoted_price} territory=${route_territory} effective_fee=${fee_percent}% profile_fee=${pricing_profile_fee_percent}% fee_source=${fee_source} source=${pricing_source}${floor_applied ? ` FLOOR_APPLIED(${floor_id})` : ''}`);
 
