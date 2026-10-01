@@ -5,7 +5,10 @@ const { prismaMock } = vi.hoisted(() => ({
     rides_v2: {
       findUnique: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     },
+    ride_offers: { updateMany: vi.fn(), create: vi.fn() },
+    $transaction: vi.fn(),
     driver_status: {
       findMany: vi.fn(),
     },
@@ -64,6 +67,18 @@ function baseRide(overrides: Record<string, any> = {}) {
     outside_fallback_allowed: true,
     outside_fallback_consented_at: consentedAt,
     offers: [],
+    ride_type: 'normal',
+    service_category: 'CAR_NORMAL',
+    pricing_profile_id: 'profile-window',
+    quoted_price: '23.00', locked_price: '23.00',
+    platform_fee: '4.14', driver_earnings: '18.86',
+    settlement: {
+      ride_id: 'ride-window', pricing_profile_id: 'profile-window',
+      quoted_price: '23.00', locked_price: '23.00',
+      fee_amount: '4.14', driver_earnings: '18.86',
+      quoted_at: new Date('2026-09-16T02:00:00Z'),
+      locked_at: new Date('2026-09-16T02:00:00Z'),
+    },
     passenger: {
       neighborhood_id: 'home-neighborhood',
       community_id: 'home-community',
@@ -76,6 +91,39 @@ describe('dispatcher attempt windows', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     prismaMock.rides_v2.update.mockResolvedValue({});
+    prismaMock.rides_v2.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.ride_offers.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.$transaction.mockImplementation(async (fn: any) => fn(prismaMock));
+  });
+
+  it('blocks missing settlement before finding a driver or creating an offer', async () => {
+    prismaMock.rides_v2.findUnique.mockResolvedValueOnce(baseRide({ settlement: null }));
+    const dispatcher = new DispatcherService();
+    const findCandidates = vi.spyOn(dispatcher as any, 'findCandidates').mockResolvedValue([]);
+    await dispatcher.dispatchRide('ride-window');
+    expect(findCandidates).not.toHaveBeenCalled();
+    expect(prismaMock.rides_v2.updateMany).toHaveBeenCalledWith({
+      where: { id: 'ride-window', status: { in: ['requested', 'offered'] } },
+      data: { status: 'no_driver' },
+    });
+    expect(prismaMock.ride_offers.updateMany).toHaveBeenCalledWith({
+      where: { ride_id: 'ride-window', status: 'pending' },
+      data: { status: 'canceled' },
+    });
+  });
+
+  it('rechecks the official lock in the offer transaction if pricing changes mid-dispatch', async () => {
+    prismaMock.rides_v2.findUnique
+      .mockResolvedValueOnce(baseRide())
+      .mockResolvedValueOnce({ ...baseRide(), settlement: null });
+    const dispatcher = new DispatcherService();
+    const findCandidates = vi.spyOn(dispatcher as any, 'findCandidates').mockResolvedValue([{
+      driver_id: 'driver-1', distance_km: 1, score: 1,
+      same_community: true, same_neighborhood: true,
+    }]);
+    await expect(dispatcher.dispatchRide('ride-window')).rejects.toThrow('PRICING_QUOTE_UNAVAILABLE');
+    expect(findCandidates).toHaveBeenCalledTimes(1);
+    expect(prismaMock.ride_offers.create).not.toHaveBeenCalled();
   });
 
   it('não deixa 5 falhas anteriores ao consentimento consumirem a nova janela', async () => {

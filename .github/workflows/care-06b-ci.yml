@@ -7,6 +7,15 @@ on:
       - 'backend/src/services/care/care-pricing-transaction.ts'
       - 'backend/tests/care-06b-pricing-transaction.test.ts'
       - 'backend/tests/care-445-quote-atomicity.test.ts'
+      - 'backend/src/services/official-quote-readiness.ts'
+      - 'backend/tests/care-445-official-quote-readiness.test.ts'
+      - 'backend/tests/care-445-create-dispatch-gate.test.ts'
+      - 'backend/tests/care-445-scheduled-quote-gate.test.ts'
+      - 'backend/tests/dispatcher-attempt-windows.test.ts'
+      - 'backend/tests/rides-v2-outside-fallback-consent.test.ts'
+      - 'backend/src/routes/rides-v2.ts'
+      - 'backend/src/services/dispatcher.service.ts'
+      - 'backend/src/jobs/scheduled-dispatch.job.ts'
       - 'backend/tests/care-445-quote-atomicity.integration.test.ts'
       - 'backend/tests/care-06b-pricing-transaction.integration.test.ts'
       - 'backend/src/services/pricing-engine.ts'
@@ -63,6 +72,11 @@ jobs:
           tests/care-06b-pricing-boundary.test.ts
           tests/care-06b-pricing-transaction.test.ts
           tests/care-445-quote-atomicity.test.ts
+          tests/care-445-official-quote-readiness.test.ts
+          tests/care-445-create-dispatch-gate.test.ts
+          tests/care-445-scheduled-quote-gate.test.ts
+          tests/dispatcher-attempt-windows.test.ts
+          tests/rides-v2-outside-fallback-consent.test.ts
           tests/care-05b-fare-parity.test.ts
           tests/care-03-eligibility.test.ts
           tests/care-04-readiness-policy.test.ts
