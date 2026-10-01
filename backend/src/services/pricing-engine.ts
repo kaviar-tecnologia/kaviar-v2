@@ -28,11 +28,13 @@ let cachedFlatFeeFlag: { value: boolean; fetchedAt: number } | null = null;
 let cachedFlatFeePercent: { id: string; percent: number; fetchedAt: number } | null = null;
 const FLAG_CACHE_TTL = 60_000;
 
-export async function isFlatFeeEnabled(): Promise<boolean> {
+export async function isFlatFeeEnabled(queryRunner: Pick<typeof pool, 'query'> = pool): Promise<boolean> {
   if (cachedFlatFeeFlag && Date.now() - cachedFlatFeeFlag.fetchedAt < FLAG_CACHE_TTL) return cachedFlatFeeFlag.value;
   let enabled = false;
   try {
-    const r = await pool.query(`SELECT enabled FROM feature_flags WHERE key = 'FEE_MODEL_FLAT_18' LIMIT 1`);
+    // Under a pricing transaction, use the checked-out client. Querying the
+    // shared pool while all clients are reserved can starve the pool.
+    const r = await queryRunner.query(`SELECT enabled FROM feature_flags WHERE key = 'FEE_MODEL_FLAT_18' LIMIT 1`);
     enabled = r.rows[0]?.enabled === true;
   } catch {
     enabled = process.env.FEE_MODEL_FLAT_18 === 'true';
@@ -83,8 +85,9 @@ export async function resolveEffectivePlatformFeePercent(
   profile: PricingProfile,
   territory: TerritoryType,
   homebound = false,
+  queryRunner: Pick<typeof pool, 'query'> = pool,
 ): Promise<{ percent: number; source: 'flat_constant' | 'territorial' }> {
-  const flatActive = await isFlatFeeEnabled();
+  const flatActive = await isFlatFeeEnabled(queryRunner);
   if (flatActive) {
     return { percent: PLATFORM_FEE_PERCENT, source: 'flat_constant' };
   }
@@ -482,149 +485,177 @@ export async function quote(rideId: string, originLat: number, originLng: number
 export async function refine(rideId: string, driverNeighborhoodId: string | null,
   driverNeighborhoodName: string | null
 ): Promise<void> {
+  // A preliminary read is not a write authorization. Revalidate the persisted
+  // ride and its settlement under locks on the decisive connection.
   await assertNotCarePricingRide(rideId);
-  const row = await pool.query(
-    'SELECT * FROM ride_settlements WHERE ride_id = $1', [rideId]
-  );
-  if (!row.rows[0]) {
-    console.error(`[PRICING_REFINE] No settlement for ride=${rideId}`);
-    return;
-  }
 
-  const s = row.rows[0];
+  const result = await withCarePricingTransaction(pool, async (tx) => {
+    const rideRow = await tx.query(
+      'SELECT ride_type, service_category, trip_details, is_homebound, status, locked_price FROM rides_v2 WHERE id = $1 FOR UPDATE',
+      [rideId]
+    );
+    const ride = rideRow.rows[0];
+    if (!ride) throw new Error('PRICING_RIDE_NOT_FOUND');
+    if (isUnsupportedCareIntent(ride)) {
+      throw Object.assign(new Error(CARE_UNAVAILABLE_CODE), { code: CARE_UNAVAILABLE_CODE });
+    }
 
-  // Idempotência: já refinado
-  if (s.refined_at) return;
+    const row = await tx.query(
+      'SELECT * FROM ride_settlements WHERE ride_id = $1 FOR UPDATE', [rideId]
+    );
+    const s = row.rows[0];
+    if (!s) {
+      console.error(`[PRICING_REFINE] No settlement for ride=${rideId}`);
+      return null;
+    }
 
-  // Resolve profile for fee lookup
-  const profile = await pool.query('SELECT * FROM pricing_profiles WHERE id = $1', [s.pricing_profile_id]);
-  if (!profile.rows[0]) return;
-  const p = toProfile(profile.rows[0]);
+    // Never re-rate an already refined/closed snapshot after the lock.
+    if (s.refined_at || s.settled_at) return null;
+    if (!['accepted', 'arrived', 'started', 'in_progress', 'completed'].includes(ride.status)) {
+      throw new Error('PRICING_REFINE_RIDE_NOT_ACCEPTED');
+    }
 
-  // Check if ride is homebound
-  const rideRow = await pool.query('SELECT is_homebound FROM rides_v2 WHERE id = $1', [rideId]);
-  const isHomebound = rideRow.rows[0]?.is_homebound === true;
+    const profile = await tx.query('SELECT * FROM pricing_profiles WHERE id = $1', [s.pricing_profile_id]);
+    if (!profile.rows[0]) throw new Error('PRICING_PROFILE_NOT_FOUND');
+    const p = toProfile(profile.rows[0]);
+    const locked = Number(s.locked_price);
+    if (!Number.isFinite(locked) || locked <= 0 ||
+        !Number.isFinite(Number(ride.locked_price)) ||
+        round2(Number(ride.locked_price)) !== round2(locked)) {
+      throw new Error('PRICING_SETTLEMENT_SNAPSHOT_INCONSISTENT');
+    }
 
-  const driver_territory = classifyWithDriver(
-    driverNeighborhoodId, s.origin_neighborhood_id, s.dest_neighborhood_id
-  );
-  const pricing_profile_fee_percent = feeForTerritory(p, driver_territory, isHomebound);
-  const { percent: fee_percent, source: fee_source } = await resolveEffectivePlatformFeePercent(p, driver_territory, isHomebound);
-  const locked = Number(s.locked_price);
-  const fee_amount = round2(locked * fee_percent / 100);
-  const driver_earnings = round2(locked - fee_amount);
+    const isHomebound = ride.is_homebound === true;
+    const driver_territory = classifyWithDriver(
+      driverNeighborhoodId, s.origin_neighborhood_id, s.dest_neighborhood_id
+    );
+    const pricing_profile_fee_percent = feeForTerritory(p, driver_territory, isHomebound);
+    const { percent: fee_percent, source: fee_source } =
+      await resolveEffectivePlatformFeePercent(p, driver_territory, isHomebound, tx);
+    const fee_amount = round2(locked * fee_percent / 100);
+    const driver_earnings = round2(locked - fee_amount);
 
-  await pool.query('BEGIN');
-  try {
-    await pool.query(
+    const updated = await tx.query(
       `UPDATE ride_settlements SET
         driver_neighborhood_id = $2, driver_neighborhood = $3,
         driver_territory = $4, fee_percent = $5, fee_amount = $6,
         driver_earnings = $7, refined_at = $8
-       WHERE ride_id = $1 AND refined_at IS NULL`,
+       WHERE ride_id = $1 AND refined_at IS NULL AND settled_at IS NULL`,
       [rideId, driverNeighborhoodId, driverNeighborhoodName,
        driver_territory, fee_percent, fee_amount, driver_earnings, new Date()]
     );
+    if (updated.rowCount !== 1) throw new Error('PRICING_REFINE_UPDATE_FAILED');
 
-    await pool.query(
+    const cache = await tx.query(
       `UPDATE rides_v2 SET platform_fee = $2, driver_earnings = $3, territory_match = $4
        WHERE id = $1`,
       [rideId, fee_amount, driver_earnings, driver_territory]
     );
+    if (cache.rowCount !== 1) throw new Error('PRICING_RIDE_CACHE_UPDATE_FAILED');
+    return { driver_territory, fee_percent, fee_amount, driver_earnings,
+      pricing_profile_fee_percent, fee_source, isHomebound };
+  });
 
-    await pool.query('COMMIT');
-  } catch (err) {
-    await pool.query('ROLLBACK');
-    throw err;
+  if (result) {
+    console.log(`[PRICING_REFINE] ride=${rideId} driver_territory=${result.driver_territory} effective_fee=${result.fee_percent}% profile_fee=${result.pricing_profile_fee_percent}% fee_source=${result.fee_source} earnings=${result.driver_earnings} homebound=${result.isHomebound}`);
   }
-
-  console.log(`[PRICING_REFINE] ride=${rideId} driver_territory=${driver_territory} effective_fee=${fee_percent}% profile_fee=${pricing_profile_fee_percent}% fee_source=${fee_source} earnings=${driver_earnings} homebound=${isHomebound}`);
 }
-
 /**
  * settle() — Fecha economia no complete. Idempotente.
  * Retorna dados para consumo de crédito e notificações.
  */
 export async function settle(rideId: string): Promise<SettlementResult | null> {
   await assertNotCarePricingRide(rideId);
-  const row = await pool.query(
-    'SELECT * FROM ride_settlements WHERE ride_id = $1', [rideId]
-  );
-  if (!row.rows[0]) {
-    console.error(`[PRICING_SETTLE] No settlement for ride=${rideId}`);
-    return null;
-  }
 
-  const s = row.rows[0];
-
-  // Idempotência: já settled
-  if (s.settled_at) {
-    return {
-      final_price: Number(s.final_price),
-      fee_percent: Number(s.fee_percent),
-      fee_amount: Number(s.fee_amount),
-      driver_earnings: Number(s.driver_earnings),
-      credit_cost: Number(s.credit_cost),
-      credit_match_type: s.credit_match_type,
-      settlement_territory: s.settlement_territory,
-    };
-  }
-
-  const profile = await pool.query('SELECT * FROM pricing_profiles WHERE id = $1', [s.pricing_profile_id]);
-  if (!profile.rows[0]) return null;
-  const p = toProfile(profile.rows[0]);
-
-  // settlement_territory = driver_territory se refinado, senão route_territory
-  const settlement_territory: TerritoryType = s.driver_territory || s.route_territory;
-  const final_price = Number(s.locked_price); // V1: final = locked
-
-  // Fee model: resolve effective rate (single source of truth — PLATFORM_FEE_RATE_BPS)
-  const { percent: effective_fee_percent, source: fee_source } = await resolveEffectivePlatformFeePercent(p, settlement_territory);
-
-  let fee_percent: number, fee_amount: number, driver_earnings: number;
-  let credit_cost: number, credit_match_type: string;
-
-  if (fee_source === 'flat_constant') {
-    // ═══ FLAT MODE: use constant rate and validate snapshot ═══
-    fee_percent = effective_fee_percent;
-
-    // Validate that the persisted fee_percent (set by quote/refine) matches the flat rate.
-    // If the snapshot shows a different rate, this indicates a data integrity issue
-    // (e.g., the ride was quoted before flat mode was enabled, or a bug).
-    const persistedFeePercent = Number(s.fee_percent);
-    if (persistedFeePercent !== fee_percent && persistedFeePercent > 0) {
-      throw Object.assign(
-        new Error(
-          `SETTLE_FEE_SNAPSHOT_MISMATCH: ride=${rideId} persisted_fee_percent=${persistedFeePercent} ` +
-          `effective_fee_percent=${fee_percent} source=${fee_source}. ` +
-          `The ride was quoted with a different rate than the current flat mode rate. ` +
-          `This settlement is blocked to prevent inconsistent charges.`
-        ),
-        { code: 'SETTLE_FEE_SNAPSHOT_MISMATCH' }
-      );
+  // The official ride lock serializes quote, refine, and settle for this ride.
+  // A second caller must observe the first caller's committed snapshot.
+  const result = await withCarePricingTransaction(pool, async (tx): Promise<{
+    settlement: SettlementResult | null; fee_source: string | null;
+  }> => {
+    const rideRow = await tx.query(
+      'SELECT ride_type, service_category, trip_details, status, locked_price FROM rides_v2 WHERE id = $1 FOR UPDATE',
+      [rideId]
+    );
+    const ride = rideRow.rows[0];
+    if (!ride) throw new Error('PRICING_RIDE_NOT_FOUND');
+    if (isUnsupportedCareIntent(ride)) {
+      throw Object.assign(new Error(CARE_UNAVAILABLE_CODE), { code: CARE_UNAVAILABLE_CODE });
     }
 
-    fee_amount = round2(final_price * fee_percent / 100);
-    driver_earnings = round2(final_price - fee_amount);
-    credit_cost = 0;
-    credit_match_type = 'FLAT_FEE';
-  } else {
-    // ═══ TERRITORIAL MODE: use persisted snapshot from quote/refine ═══
-    // The fee_percent, fee_amount, and driver_earnings were calculated at quote/refine time
-    // using the pricing profile rates valid at that moment. We preserve those values to avoid
-    // retroactively changing the economics of a ride if the profile is updated later.
-    fee_percent = Number(s.fee_percent);
-    fee_amount = Number(s.fee_amount);
-    driver_earnings = Number(s.driver_earnings);
+    const row = await tx.query(
+      'SELECT * FROM ride_settlements WHERE ride_id = $1 FOR UPDATE', [rideId]
+    );
+    if (!row.rows[0]) {
+      console.error(`[PRICING_SETTLE] No settlement for ride=${rideId}`);
+      return { settlement: null, fee_source: null };
+    }
+    const s = row.rows[0];
 
-    const cr = creditForTerritory(p, settlement_territory);
-    credit_cost = cr.cost;
-    credit_match_type = cr.matchType;
-  }
+    // Historical settlements are immutable, including their original fee
+    // configuration. A repeated completion never charges twice.
+    if (s.settled_at) {
+      return { settlement: {
+        final_price: Number(s.final_price),
+        fee_percent: Number(s.fee_percent),
+        fee_amount: Number(s.fee_amount),
+        driver_earnings: Number(s.driver_earnings),
+        credit_cost: Number(s.credit_cost),
+        credit_match_type: s.credit_match_type,
+        settlement_territory: s.settlement_territory,
+      }, fee_source: 'persisted' };
+    }
+    if (ride.status !== 'completed') throw new Error('PRICING_SETTLE_RIDE_NOT_COMPLETED');
 
-  await pool.query('BEGIN');
-  try {
-    await pool.query(
+    const profile = await tx.query('SELECT * FROM pricing_profiles WHERE id = $1', [s.pricing_profile_id]);
+    if (!profile.rows[0]) throw new Error('PRICING_PROFILE_NOT_FOUND');
+    const p = toProfile(profile.rows[0]);
+    const settlement_territory: TerritoryType = s.driver_territory || s.route_territory;
+    const final_price = Number(s.locked_price);
+    const cacheLocked = Number(ride.locked_price);
+    const snapshotFee = Number(s.fee_amount);
+    const snapshotEarnings = Number(s.driver_earnings);
+    // The pending adjustment flow must update its official and cache snapshots
+    // atomically before settle. Never silently finalize mismatched amounts.
+    if (![final_price, cacheLocked, snapshotFee, snapshotEarnings].every(Number.isFinite) ||
+        final_price <= 0 || round2(final_price) !== round2(cacheLocked) ||
+        round2(snapshotFee + snapshotEarnings) !== round2(final_price)) {
+      throw new Error('PRICING_SETTLEMENT_SNAPSHOT_INCONSISTENT');
+    }
+
+    const { percent: effective_fee_percent, source: fee_source } =
+      await resolveEffectivePlatformFeePercent(p, settlement_territory, false, tx);
+    let fee_percent: number, fee_amount: number, driver_earnings: number;
+    let credit_cost: number, credit_match_type: string;
+
+    if (fee_source === 'flat_constant') {
+      // Preserve the existing flat 18% source and fail-closed mismatch rule.
+      fee_percent = effective_fee_percent;
+      const persistedFeePercent = Number(s.fee_percent);
+      if (persistedFeePercent !== fee_percent && persistedFeePercent > 0) {
+        throw Object.assign(
+          new Error(
+            `SETTLE_FEE_SNAPSHOT_MISMATCH: ride=${rideId} persisted_fee_percent=${persistedFeePercent} ` +
+            `effective_fee_percent=${fee_percent} source=${fee_source}. ` +
+            `The ride was quoted with a different rate than the current flat mode rate. ` +
+            `This settlement is blocked to prevent inconsistent charges.`
+          ), { code: 'SETTLE_FEE_SNAPSHOT_MISMATCH' }
+        );
+      }
+      fee_amount = round2(final_price * fee_percent / 100);
+      driver_earnings = round2(final_price - fee_amount);
+      credit_cost = 0;
+      credit_match_type = 'FLAT_FEE';
+    } else {
+      // Never re-rate territorial rides using a newly configured profile.
+      fee_percent = Number(s.fee_percent);
+      fee_amount = snapshotFee;
+      driver_earnings = snapshotEarnings;
+      const cr = creditForTerritory(p, settlement_territory);
+      credit_cost = cr.cost;
+      credit_match_type = cr.matchType;
+    }
+
+    const updated = await tx.query(
       `UPDATE ride_settlements SET
         final_price = $2, settlement_territory = $3,
         credit_cost = $4, credit_match_type = $5, settled_at = $6,
@@ -633,18 +664,20 @@ export async function settle(rideId: string): Promise<SettlementResult | null> {
       [rideId, final_price, settlement_territory, credit_cost, credit_match_type, new Date(),
        fee_percent, fee_amount, driver_earnings]
     );
+    if (updated.rowCount !== 1) throw new Error('PRICING_SETTLEMENT_UPDATE_FAILED');
 
-    await pool.query(
+    const cache = await tx.query(
       `UPDATE rides_v2 SET final_price = $2, platform_fee = $3, driver_earnings = $4 WHERE id = $1`,
       [rideId, final_price, fee_amount, driver_earnings]
     );
+    if (cache.rowCount !== 1) throw new Error('PRICING_RIDE_CACHE_UPDATE_FAILED');
 
-    await pool.query('COMMIT');
-  } catch (err) {
-    await pool.query('ROLLBACK');
-    throw err;
+    return { settlement: { final_price, fee_percent, fee_amount, driver_earnings,
+      credit_cost, credit_match_type, settlement_territory }, fee_source };
+  });
+
+  if (result.settlement && result.fee_source !== 'persisted') {
+    console.log(`[PRICING_SETTLE] ride=${rideId} final=${result.settlement.final_price} territory=${result.settlement.settlement_territory} effective_fee=${result.settlement.fee_percent}% fee_source=${result.fee_source} credit=${result.settlement.credit_cost}(${result.settlement.credit_match_type})`);
   }
-
-  console.log(`[PRICING_SETTLE] ride=${rideId} final=${final_price} territory=${settlement_territory} effective_fee=${fee_percent}% fee_source=${fee_source} credit=${credit_cost}(${credit_match_type})`);
-  return { final_price, fee_percent, fee_amount, driver_earnings, credit_cost, credit_match_type, settlement_territory };
+  return result.settlement;
 }
