@@ -234,8 +234,6 @@ router.patch('/operators/:id', async (req: Request, res: Response) => {
           error: 'Status contratual do Gestor Territorial é controlado exclusivamente pelo fluxo formal v1.2.',
           required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
         });
-          required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
-        });
       }
       if (
         Object.prototype.hasOwnProperty.call(fields, 'terms_version') ||
@@ -311,7 +309,7 @@ router.patch('/operators/:id', async (req: Request, res: Response) => {
         if (cs !== 'signed' || version !== TERRITORIAL_MANAGER_CONTRACT_VERSION || !existing.contract_url || !existing.contract_reviewed_at) {
           return res.status(409).json({
             success: false,
-            error: 'Gestor Territorial só pode ser ativado após contrato formal v1.2 aprovado e PDF vinculado.'
+            error: 'Gestor Territorial só pode ser ativado após contrato formal v1.2 aprovado e PDF vinculado.',
             required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
           });
         }
@@ -651,7 +649,7 @@ router.post('/operators/:id/contract', rejectManualManagerContractUpload, upload
     if (operator.relationship_type === 'territorial_manager') {
       return res.status(409).json({
         success: false,
-        error: 'Gestor Territorial deve usar o fluxo formal v1.2 de submissão e revisão; upload direto de contrato não é permitido.'
+        error: 'Gestor Territorial deve usar o fluxo formal v1.2 de submissão e revisão; upload direto de contrato não é permitido.',
         required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
       });
     }
@@ -701,7 +699,7 @@ router.post('/operators/:id/contract-template', rejectManualManagerContractUploa
     if (operator.relationship_type === 'territorial_manager') {
       return res.status(409).json({
         success: false,
-        error: 'Para Gestor Territorial, gere sempre a minuta canônica v1.2 pelo gerador automático; upload manual de modelo não é permitido.'
+        error: 'Para Gestor Territorial, gere sempre a minuta canônica v1.2 pelo gerador automático; upload manual de modelo não é permitido.',
         required_contract_version: TERRITORIAL_MANAGER_CONTRACT_VERSION,
       });
     }

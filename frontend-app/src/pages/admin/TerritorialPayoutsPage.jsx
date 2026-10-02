@@ -869,25 +869,33 @@ export default function TerritorialPayoutsPage() {
           <Typography variant="body2" sx={{ color: '#9CA3AF', mb: 2 }}>Confirme cada item antes de verificar:</Typography>
           {(verifyTarget?.relationship_type === 'territorial_manager' ? [
             'Conferi a identidade do Gestor Territorial.',
-<Button
-  onClick={() => verifyTarget.document_status === 'verified'
-    ? handleRegularizeTerms(verifyTarget.id)
-    : handleVerify(verifyTarget.id)}
-  disabled={
-    !verifyChecks.every(Boolean) ||
-    (verifyTarget?.relationship_type === 'territorial_manager' &&
-     verifyTarget?.document_status === 'verified')
-  }
-  variant="contained"
-  sx={{ bgcolor: '#059669', '&:hover': { bgcolor: '#047857' } }}
->
-  {verifyTarget?.relationship_type === 'territorial_manager' &&
-   verifyTarget?.document_status === 'verified'
-    ? 'Documentos já verificados'
-    : verifyTarget?.document_status === 'verified'
-      ? 'Confirmar Regularização'
-      : 'Confirmar Verificação'}
-</Button>
+            'Conferi CPF/CNPJ e responsável legal, quando aplicável.',
+            'Conferi a titularidade dos dados financeiros, quando cadastrados; sem Pix não há repasse.',
+            'Conferi que o Gestor está vinculado ao território correto.',
+            'A verificação documental não formaliza o contrato v1.2.',
+            'A verificação documental não ativa participação financeira.',
+            'O Gestor utilizará o fluxo canônico de contrato v1.2.',
+            'A Ativação Financeira dependerá de assignment elegível separado.',
+          ] : [
+            'Conferi a identidade do operador.',
+            'Conferi CPF/CNPJ e responsável legal, quando aplicável.',
+            'Conferi que o Pix pertence ao operador cadastrado.',
+            'Conferi que este operador está vinculado ao território correto.',
+            'O operador aceitou o Termo de Responsabilidade do Operador Territorial.',
+            'O operador aceitou as regras de confidencialidade e uso correto de dados do KAVIAR.',
+            'O operador entende que repasse depende de aprovação manual da matriz/SUPER_ADMIN.',
+            'Para PJ/Associação, contrato/termo está assinado ou registrado.',
+          ]).map((label, i) => (
+            <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1, cursor: 'pointer' }} onClick={() => { const c = [...verifyChecks]; c[i] = !c[i]; setVerifyChecks(c); }}>
+              <input type="checkbox" checked={verifyChecks[i]} readOnly style={{ marginTop: 3, accentColor: '#B8942E' }} />
+              <Typography variant="body2" sx={{ color: verifyChecks[i] ? '#E5E7EB' : '#6B7280' }}>{label}</Typography>
+            </Box>
+          ))}
+          <Alert severity="info" sx={{ mt: 2, bgcolor: 'rgba(37,99,235,0.05)', border: '1px solid rgba(37,99,235,0.2)' }}>Este é um registro interno de aceite/conferência feito pelo SUPER_ADMIN. Não substitui assinatura digital formal, contrato jurídico ou orientação contábil.</Alert>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setVerifyOpen(false)} sx={{ color: '#9CA3AF' }}>Cancelar</Button>
+          <Button onClick={() => verifyTarget.document_status === 'verified' ? handleRegularizeTerms(verifyTarget.id) : handleVerify(verifyTarget.id)} disabled={!verifyChecks.every(Boolean)} variant="contained" sx={{ bgcolor: '#059669', '&:hover': { bgcolor: '#047857' } }}>{verifyTarget?.relationship_type === 'territorial_manager' ? (verifyTarget?.document_status === 'verified' ? 'Contrato v1.2 necessário' : 'Confirmar verificação documental') : (verifyTarget?.document_status === 'verified' ? 'Confirmar Regularização' : 'Confirmar Verificação')}</Button>
         </DialogActions>
       </Dialog>
 
