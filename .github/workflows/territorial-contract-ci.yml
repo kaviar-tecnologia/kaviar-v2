@@ -11,35 +11,21 @@ on:
       - 'backend/src/services/contracts/**'
       - 'backend/tests/contract-template.test.ts'
       - 'backend/tests/territorial-manager-contract-v1_2.test.ts'
-<<<<<<< HEAD
       - 'backend/tests/territorial-manager-profile-state.test.ts'
-=======
       - 'backend/tests/territorial-v1_2-system-alignment.test.ts'
->>>>>>> 00128fd5 (ci(contracts): cover v1.2 system alignment)
       - 'frontend-app/src/pages/admin/TerritorialPayoutsPage.jsx'
       - 'frontend-app/src/pages/admin/MyContractPage.jsx'
       - 'frontend-app/src/pages/admin/ManagerFinance.jsx'
       - 'frontend-app/src/pages/admin/ManagerHome.jsx'
-<<<<<<< HEAD
-      - 'frontend-app/src/pages/admin/RegionalAdminsPage.jsx'
-      - 'frontend-app/src/pages/admin/TerritoryDetailPage.jsx'
-      - 'frontend-app/src/pages/admin/ComercialGestorPage.jsx'
-      - 'frontend-app/src/components/admin/DriverMunicipalRegularizationCard.jsx'
-      - 'backend/src/routes/admin-manager-finance.ts'
-      - 'backend/src/routes/admin-territories.ts'
-      - 'backend/src/routes/admin-regulatory-consultation.ts'
-      - 'docs/contratos/**'
-      - 'docs/comercial/*.md'
-=======
       - 'frontend-app/src/pages/admin/ComercialGestorPage.jsx'
       - 'frontend-app/src/pages/admin/RegionalAdminsPage.jsx'
       - 'frontend-app/src/pages/admin/TerritoryDetailPage.jsx'
       - 'frontend-app/src/components/admin/DriverMunicipalRegularizationCard.jsx'
       - 'docs/contratos/**'
       - 'docs/comercial/**'
->>>>>>> 00128fd5 (ci(contracts): cover v1.2 system alignment)
       - 'docs/contrato-gestor-territorial-v1.md'
       - 'docs/territorial/gestor-territorial-kaviar-modelo-comercial-v1.1.md'
+      - '.github/workflows/territorial-contract-ci.yml'
 
 permissions:
   contents: read
@@ -78,12 +64,9 @@ jobs:
           npx vitest run \
             tests/contract-template.test.ts \
             tests/territorial-manager-contract-v1_2.test.ts \
-<<<<<<< HEAD
             tests/territorial-manager-profile-state.test.ts \
-            tests/regional-admins-status.test.ts
-=======
+            tests/regional-admins-status.test.ts \
             tests/territorial-v1_2-system-alignment.test.ts
->>>>>>> 00128fd5 (ci(contracts): cover v1.2 system alignment)
 
       - name: Build backend
         run: cd backend && npm run build
