@@ -42,8 +42,8 @@ jobs:
             exit 1
           fi
 
-          if [ "$DEPLOY_SHA" != "01db7dacaa34756e6a4cad30469a1fc427425eb2" ]; then
-            echo "::error::INVALID_SAFE_RELEASE_SHA expected=01db7dacaa34756e6a4cad30469a1fc427425eb2 got=$DEPLOY_SHA"
+          if [ "$DEPLOY_SHA" != "30e9367d267f6bf2f538ad975aec939767bec494" ]; then
+            echo "::error::INVALID_SAFE_RELEASE_SHA expected=30e9367d267f6bf2f538ad975aec939767bec494 got=$DEPLOY_SHA"
             exit 1
           fi
 
