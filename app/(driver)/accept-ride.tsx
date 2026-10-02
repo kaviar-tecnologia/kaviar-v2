@@ -110,6 +110,7 @@ export default function AcceptRide() {
   const creditValue = creditEstimated * 2.00;
   const passengers = (ride?.trip_details as any)?.passengers || 1;
   const hasLuggage = !!(ride?.trip_details as any)?.has_luggage;
+  const publicAssistedRide = !!(ride?.trip_details as any)?.public_assisted_ride;
   const passengersExtra = Math.max(0, passengers - 1) * 1.00;
   const luggageExtra = hasLuggage ? 1.00 : 0;
   const protectionTotal = creditValue + passengersExtra + luggageExtra;
@@ -168,6 +169,13 @@ export default function AcceptRide() {
             <Text style={s.badgeSub}>Corrida fora do seu território principal</Text>
           </View>
         ) : null}
+
+        {publicAssistedRide && (
+          <View style={[s.badge, { backgroundColor: '#e3f2fd', marginTop: 2 }]}>
+            <Text style={[s.badgeText, { color: '#1565c0' }]}>💙 Acompanhamento solicitado</Text>
+            <Text style={s.badgeSub}>Corrida normal. Passageiro pode precisar de apoio simples, não médico.</Text>
+          </View>
+        )}
 
         <Text style={s.sectionLabel}>Origem</Text>
         <Text style={s.address}>{ride?.origin_text || 'Não informada'}</Text>
