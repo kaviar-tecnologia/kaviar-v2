@@ -15,6 +15,8 @@ router.use(applyTerritoryScope);
 router.use(requireTerritoryScope);
 
 // ─── GET /api/admin/manager/finance/summary ──────────────────────────────────
+// Source of truth for v1.2: Wallet V2 territory_ledger + ride_fee_splits.
+// This intentionally does not use territory_finance_rules for current manager economics.
 router.get('/summary', async (req: Request, res: Response) => {
   try {
     const admin = (req as any).admin;
@@ -31,14 +33,24 @@ router.get('/summary', async (req: Request, res: Response) => {
     since.setDate(since.getDate() - days);
     since.setHours(0, 0, 0, 0);
 
-    const managerId = admin.role === 'TERRITORIAL_MANAGER' ? admin.id : null;
+    const isManager = admin.role === 'TERRITORIAL_MANAGER';
+    const managerId = isManager ? admin.id : null;
+    const managerFilter: any = managerId ? { manager_id: managerId } : { manager_id: { not: null } };
+
     const ledgerWhere: any = {
       territory_id: { in: territoryIds },
       created_at: { gte: since },
-      ...(managerId ? { manager_id: managerId } : { manager_id: { not: null } }),
+      ...managerFilter,
     };
 
-    const [platformAgg, managerAgg, recognizedRides, activeAssignments, managerProfile] = await Promise.all([
+    const [
+      platformAgg,
+      shareAgg,
+      recognizedEntries,
+      splitAgg,
+      activeAssignments,
+      managerProfile,
+    ] = await Promise.all([
       prisma.territory_ledger.aggregate({
         where: { ...ledgerWhere, entry_type: 'platform_fee' },
         _sum: { amount_cents: true },
@@ -47,17 +59,28 @@ router.get('/summary', async (req: Request, res: Response) => {
         where: { ...ledgerWhere, entry_type: 'fee_share' },
         _sum: { amount_cents: true },
       }),
-      prisma.ride_fee_splits.count({
+      prisma.territory_ledger.findMany({
+        where: {
+          ...ledgerWhere,
+          entry_type: 'fee_share',
+          reference_type: 'ride',
+          reference_id: { not: null },
+        },
+        select: { reference_id: true },
+        distinct: ['reference_id'],
+      }),
+      prisma.ride_fee_splits.aggregate({
         where: {
           territory_id: { in: territoryIds },
           recognized_at: { gte: since },
-          ...(managerId ? { manager_id: managerId } : { manager_id: { not: null } }),
+          ...managerFilter,
         },
+        _sum: { final_price_cents: true },
       }),
-      managerId
+      isManager
         ? prisma.territory_manager_assignments.findMany({
             where: {
-              admin_id: managerId,
+              admin_id: admin.id,
               territory_id: { in: territoryIds },
               status: 'active',
               started_at: { lte: new Date() },
@@ -66,9 +89,9 @@ router.get('/summary', async (req: Request, res: Response) => {
             select: { id: true, territory_id: true, status: true, started_at: true, ended_at: true },
           })
         : Promise.resolve([]),
-      managerId
+      isManager
         ? prisma.operator_profiles.findUnique({
-            where: { admin_id: managerId },
+            where: { admin_id: admin.id },
             select: {
               relationship_type: true,
               is_active: true,
@@ -85,14 +108,18 @@ router.get('/summary', async (req: Request, res: Response) => {
     ]);
 
     const platformFeeCents = platformAgg._sum.amount_cents || 0n;
-    const managerShareCents = managerAgg._sum.amount_cents || 0n;
-    const profileEligibility = managerId
+    const managerShareCents = shareAgg._sum.amount_cents || 0n;
+    const grossCents = splitAgg._sum.final_price_cents || 0n;
+
+    const profileEligibility = isManager
       ? evaluateTerritorialManagerFinancialProfile(managerProfile)
       : null;
-    const financialActivationActive = managerId
+
+    const financialActivationActive = isManager
       ? activeAssignments.length > 0 && profileEligibility?.eligible === true
       : null;
-    const financialActivationReason = managerId && !financialActivationActive
+
+    const financialActivationReason = isManager && !financialActivationActive
       ? (profileEligibility?.eligible === false
           ? financialEligibilityReasonLabel(profileEligibility.reason)
           : 'Sem assignment ativo')
@@ -102,21 +129,35 @@ router.get('/summary', async (req: Request, res: Response) => {
       success: true,
       data: {
         period,
-        rides_completed: recognizedRides,
-        gross_estimated: null,
+        source: 'wallet_v2_territory_ledger',
+        contract_version: 'v1.2',
+        recognized_operations: recognizedEntries.length,
+        rides_completed: recognizedEntries.length,
+        gross_estimated: Number(grossCents) / 100,
         platform_fee: Number(platformFeeCents) / 100,
         regional_estimated: Number(managerShareCents) / 100,
-        partner_commissions: 0,
+        manager_share_recognized: Number(managerShareCents) / 100,
         net_estimated: Number(managerShareCents) / 100,
+        partner_commissions: 0,
         has_rule: true,
         regional_percent: 40,
-        source: 'wallet_v2_territory_ledger',
+        manager_share_percent: 40,
+        platform_fee_percent: 18,
+        financial_activation: isManager
+          ? {
+              active: financialActivationActive === true,
+              reason: financialActivationReason,
+              assignment_ids: activeAssignments.map(a => a.id),
+              territory_ids: activeAssignments.map(a => a.territory_id),
+            }
+          : null,
         financial_activation_active: financialActivationActive,
         financial_activation_reason: financialActivationReason,
         active_assignment_ids: activeAssignments.map(a => a.id),
         note: financialActivationActive === false
           ? `Sem Ativação Financeira elegível${financialActivationReason ? `: ${financialActivationReason}` : ''}. Valores eventualmente exibidos no período são históricos já reconhecidos antes do bloqueio/desativação.`
           : 'Participação reconhecida pelo Wallet V2. Somente assignment ativo + perfil totalmente elegível v1.2 geram 40%; caso contrário, 0% ao gestor.',
+        disclaimer: 'Valores financeiros reconhecidos no Wallet V2. Somente lançamentos com manager_id do Gestor e assignment elegível entram na participação; Área de Sombra não gera participação ao Gestor.',
       },
     });
   } catch (error: any) {
@@ -173,6 +214,7 @@ router.get('/payouts', async (req: Request, res: Response) => {
         approved_at: cycle.approved_at,
         source: 'wallet_v2_payout_cycle',
       })),
+      meta: { source: 'wallet_v2_payout_cycle' },
     });
   } catch (error: any) {
     console.error('[MANAGER_FINANCE_PAYOUTS]', error.message);
@@ -237,6 +279,7 @@ router.get('/rules', async (req: Request, res: Response) => {
           },
         }),
       ]);
+
       const eligibility = evaluateTerritorialManagerFinancialProfile(profile);
       financialActivationActive = activeAssignments > 0 && eligibility.eligible;
       financialActivationReason = financialActivationActive
@@ -247,12 +290,15 @@ router.get('/rules', async (req: Request, res: Response) => {
     res.json({
       success: true,
       data: {
+        source: 'contract_v1.2_wallet_v2',
+        contract_version: 'v1.2',
+        platform_fee_percent: 18,
+        manager_share_percent: 40,
         matrix_share_percent: 60,
         regional_share_percent: 40,
         partner_commission_percent: 0,
         valid_from: null,
         description: 'Regra contratual v1.2: 40% somente com assignment ativo e perfil totalmente elegível; qualquer gate pendente = 0% ao Gestor e 100% da Taxa da Plataforma para a KAVIAR.',
-        source: 'contract_v1.2_wallet_v2',
         financial_activation_active: financialActivationActive,
         financial_activation_reason: financialActivationReason,
       },
