@@ -424,7 +424,7 @@ function FinanceTab({ territoryId, token }) {
       <Box sx={{ mb: 3, p: 2, bgcolor: 'rgba(255,255,255,0.02)', borderRadius: 2, border: '1px solid rgba(184,148,46,0.15)' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
           <Typography variant="subtitle1" sx={{ color: '#C8A84E', fontWeight: 700 }}>📐 Regras Financeiras Legadas — Simulação</Typography>
-          <Chip label="Somente leitura — Wallet V2" size="small" sx={{ color: '#92400E', bgcolor: '#FEF3C7', fontWeight: 600 }} />
+          <Chip label="Somente leitura — não rege o v1.2" size="small" sx={{ color: '#92400E', bgcolor: '#FEF3C7', fontWeight: 600 }} />
         </Box>
         {rules.filter(r => r.is_active).map(r => (
           <Box key={r.id} sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
