@@ -185,6 +185,14 @@ export async function acquireCityDataset(params: AcquireParams): Promise<Acquire
       // bbox + signal por chamada (o deadline total governa mirrors/retries/backoff).
       acquired = await provider.fetchDataset({ city, uf }, { ...(params.acquisitionOptions ?? {}), bbox, signal });
     } catch (err: any) {
+      console.error('[territorial-acquisition] provider failure', {
+        provider: provider.id,
+        message: err?.message,
+        name: err?.name,
+        cause: err?.cause,
+        stack: err?.stack,
+      });
+
       if (signal.aborted || err?.code === 'ACQUISITION_ABORTED') return abortResult();
       return {
         ok: false,
