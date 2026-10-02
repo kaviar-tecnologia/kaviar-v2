@@ -667,14 +667,6 @@ export default function TerritorialPayoutsPage() {
                     <TableCell sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                       <Button size="small" onClick={() => openDetailModal(o)} sx={{ color: '#6B7280' }}>Detalhes</Button>
                       {o.document_status === 'pending' && <Button size="small" onClick={() => openVerifyModal(o)} sx={{ color: '#059669' }}>Verificar</Button>}
-'Conferi a identidade do Gestor Territorial.',
-'Conferi CPF/CNPJ e representante legal, quando aplicável.',
-'Conferi a titularidade dos dados financeiros, quando cadastrados; sem Pix não há repasse.',
-'Conferi que o Gestor está vinculado ao território correto.',
-'Estou apenas verificando documentos; esta etapa não assina nem dispensa o Contrato v1.2.',
-'As obrigações de confidencialidade e LGPD serão formalizadas no Contrato v1.2 e Anexo LGPD.',
-'O Gestor entende que participação depende de Ativação Financeira e assignment elegível.',
-'O Contrato v1.2 será gerado, assinado, submetido e revisado pelo fluxo formal.'
                     </TableCell>
                   </TableRow>
                 )})}
