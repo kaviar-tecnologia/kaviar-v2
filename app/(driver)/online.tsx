@@ -801,6 +801,16 @@ export default function DriverOnline() {
             </View>
             <Text style={styles.offerPassenger} numberOfLines={1}>Passageiro: {(pendingOffer as any).passenger_name || 'Nao informado'}</Text>
 
+            {(pendingOffer.ride as any).trip_details?.public_assisted_ride && (
+              <View style={styles.offerAssistedBadge}>
+                <Ionicons name="heart-outline" size={14} color="#1565c0" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.offerAssistedTitle}>Acompanhamento solicitado</Text>
+                  <Text style={styles.offerAssistedText}>Corrida normal. Passageiro pode precisar de apoio simples, não médico.</Text>
+                </View>
+              </View>
+            )}
+
             {(pendingOffer.ride as any).trip_details && (
               <View style={styles.offerGroup}>
                 <Ionicons name="people-outline" size={14} color={COLORS.textPrimary} />
@@ -1116,6 +1126,9 @@ const styles = StyleSheet.create({
   offerMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
   offerMetaText: { fontSize: 13, color: COLORS.textMuted },
   offerPassenger: { fontSize: 14, color: COLORS.textSecondary, marginBottom: 16 },
+  offerAssistedBadge: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: '#e3f2fd', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10, marginBottom: 12, borderWidth: 1, borderColor: '#90caf9' },
+  offerAssistedTitle: { fontSize: 13, fontWeight: '800', color: '#1565c0' },
+  offerAssistedText: { fontSize: 12, color: '#1565c0', marginTop: 2 },
   offerGroup: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.surfaceLight, borderRadius: 8, paddingVertical: 6, paddingHorizontal: 10, marginBottom: 16, alignSelf: 'flex-start', borderWidth: 1, borderColor: COLORS.border },
   offerGroupText: { fontSize: 13, fontWeight: '600', color: COLORS.textPrimary },
   offerButtons: { flexDirection: 'row' },
