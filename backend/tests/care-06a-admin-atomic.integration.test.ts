@@ -37,9 +37,17 @@ describe.skipIf(!disposable)('CARE-06A — real PostgreSQL row locks and mandato
         admin_id TEXT NOT NULL, action TEXT NOT NULL,
         entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
         old_value JSONB, new_value JSONB, reason TEXT,
-        ip_address TEXT, user_agent TEXT, created_at TIMESTAMPTZ DEFAULT now(),
-        CONSTRAINT care06a_ci_audit_failure CHECK (action <> 'reject_atomic_test')
+        ip_address TEXT, user_agent TEXT, created_at TIMESTAMPTZ DEFAULT now()
       )`);
+    await prisma.$executeRawUnsafe(`
+      DELETE FROM admin_audit_logs WHERE action IN ('reject_atomic_test', 'allow_atomic_test')`);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE admin_audit_logs
+      DROP CONSTRAINT IF EXISTS care06a_ci_audit_failure`);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE admin_audit_logs
+      ADD CONSTRAINT care06a_ci_audit_failure
+      CHECK (action <> 'reject_atomic_test')`);
   });
 
   afterAll(async () => {
