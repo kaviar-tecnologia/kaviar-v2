@@ -226,6 +226,14 @@ export default function PassengerMap() {
       return;
     }
 
+    if (service === 'care_assisted') {
+      setSelectedService('care_assisted');
+      setSelectedVehicle('car');
+      setMotoConsented(false);
+      setWizardStep(2);
+      return;
+    }
+
     if (!motoServiceSelectable) return;
 
     setSelectedService('moto_passenger');
@@ -534,6 +542,7 @@ export default function PassengerMap() {
     apiClient.post('/api/v2/rides/estimate', {
       origin: { lat: origin.lat, lng: origin.lng },
       destination: { lat: destination.lat, lng: destination.lng },
+      ...(selectedService === 'care_assisted' ? { service_category: 'CARE_ASSISTED' } : {}),
       ...(postWaitDest ? { post_wait_destination: { lat: postWaitDest.lat, lng: postWaitDest.lng } } : {}),
       ...(waitEstimatedMin ? { wait_estimated_min: waitEstimatedMin } : {}),
     }).then(r => setEstimate(r.data?.data || null))
@@ -816,6 +825,7 @@ export default function PassengerMap() {
         wait_requested: waitEstimatedMin !== null,
         wait_estimated_min: waitEstimatedMin ?? undefined,
         post_wait_destination: waitEstimatedMin !== null && postWaitDest ? postWaitDest : undefined,
+        ...(selectedService === 'care_assisted' ? { service_category: 'CARE_ASSISTED' } : {}),
         ...(selectedVehicle === 'moto' && motoConsented ? { service_category: 'MOTO_PASSENGER', passenger_moto_consent: true } : {}),
       });
       const rideData = await passengerApi.getRide(result.ride_id);
@@ -834,6 +844,7 @@ export default function PassengerMap() {
           wait_requested: waitEstimatedMin !== null,
           wait_estimated_min: waitEstimatedMin ?? undefined,
           post_wait_destination: waitEstimatedMin !== null && postWaitDest ? postWaitDest : undefined,
+          ...(selectedService === 'care_assisted' ? { service_category: 'CARE_ASSISTED' } : {}),
           ...(selectedVehicle === 'moto' && motoConsented ? { service_category: 'MOTO_PASSENGER', passenger_moto_consent: true } : {}),
         };
         await enqueue({ method: 'POST' as const, url: 'https://api.kaviar.com.br/api/v2/rides', body });
