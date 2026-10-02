@@ -2,8 +2,8 @@
  * CARE-04: central containment for legacy rides_v2 entry points.
  *
  * CARE eligibility is not yet connected to transactional booking, dispatch and
- * acceptance. This gate keeps official/structured CARE unavailable while allowing
- * one controlled public-assisted category to run operationally as CAR_NORMAL.
+ * acceptance. This gate is deliberately unconditional: a frontend flag must
+ * never turn a non-CAR_NORMAL booking into a regular ride by accident.
  *
  * Once the operational integration is complete, replace this policy with a
  * single typed CARE flow that uses the existing dispatcher/acceptance service.
@@ -12,9 +12,6 @@
 
 const careCategoryPattern =
   /^(?:CARE|KAVIAR_CARE|CAR_CARE|CAR_WHEELCHAIR|CAR_ADAPTED|ELDERLY_ASSISTANCE|ACOMPANHAMENTO_ATIVO|WHEELCHAIR|ADAPTED_WHEELCHAIR|FOLDING_WHEELCHAIR)(?:_|$)/;
-
-const publicAssistedCategoryPattern =
-  /^(?:ELDERLY_ASSISTANCE|ACOMPANHAMENTO_ATIVO|CARE_ASSISTED)$/;
 
 const careIntentKeys = new Set([
   'care',
@@ -41,38 +38,6 @@ const normalizeCategory = (value: unknown): string =>
 const hasCareCategory = (value: unknown): boolean =>
   careCategoryPattern.test(normalizeCategory(value));
 
-const hasPublicAssistedCategory = (value: unknown): boolean =>
-  publicAssistedCategoryPattern.test(normalizeCategory(value));
-
-export function isPublicAssistedRideIntent(input: unknown): boolean {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return false;
-
-  const request = input as Record<string, unknown>;
-
-  // Liberação pública controlada: somente o campo canônico service_category
-  // pode pedir CARE assistido público. Aliases continuam bloqueados para
-  // evitar bypass quando service_category vier como CAR_NORMAL.
-  if (!hasPublicAssistedCategory(request.service_category)) return false;
-
-  const aliasFields = [
-    request.serviceCategory,
-    request.service_type,
-    request.serviceType,
-    request.ride_type,
-    request.type,
-  ];
-
-  if (aliasFields.some(hasCareCategory)) return false;
-
-  // CARE público assistido não pode carregar requisitos estruturados de CARE,
-  // cadeira de rodas, veículo adaptado, evidência, modo médico ou flags especiais.
-  if (hasStructuredCareKeys(request) || hasStructuredCareKeys(request.trip_details)) {
-    return false;
-  }
-
-  return true;
-}
-
 const hasStructuredCareKeys = (value: unknown): boolean => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   return Object.keys(value).some(key => careIntentKeys.has(key));
@@ -81,30 +46,18 @@ const hasStructuredCareKeys = (value: unknown): boolean => {
 /** Catches explicit CARE intent, even when sent under CAR_NORMAL. */
 export function isUnsupportedCareIntent(input: unknown): boolean {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return false;
-
   const request = input as Record<string, unknown>;
-  const publicAssisted = isPublicAssistedRideIntent(request);
-
-  if (hasCareCategory(request.service_category) && !hasPublicAssistedCategory(request.service_category)) {
-    return true;
-  }
-
-  const aliasFields = [
+  if ([
+    request.service_category,
     request.serviceCategory,
     request.service_type,
     request.serviceType,
     request.ride_type,
     request.type,
-  ];
+  ].some(hasCareCategory)) return true;
 
-  if (aliasFields.some(hasCareCategory)) return true;
-
-  if (hasStructuredCareKeys(request) || hasStructuredCareKeys(request.trip_details)) {
-    return !publicAssisted;
-  }
-
+  if (hasStructuredCareKeys(request) || hasStructuredCareKeys(request.trip_details)) return true;
   return false;
 }
-
 
 export const CARE_UNAVAILABLE_CODE = 'CARE_SERVICE_NOT_AVAILABLE' as const;

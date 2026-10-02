@@ -11,23 +11,13 @@ const read = (relative: string) => readFileSync(resolve(process.cwd(), relative)
 describe('CARE-04 central backend readiness gate', () => {
   it('blocks recognized CARE categories, independent of case and separators', () => {
     for (const service_category of [
-      'CARE', 'KAVIAR-CARE-ADAPTED', 'CAR_CARE',
-      'FOLDING_WHEELCHAIR',
+      'CARE', 'care_assisted', 'KAVIAR-CARE-ADAPTED', 'CAR_CARE',
+      'ELDERLY_ASSISTANCE', 'ACOMPANHAMENTO_ATIVO', 'FOLDING_WHEELCHAIR',
       'ADAPTED_WHEELCHAIR', 'CAR_ADAPTED',
     ]) {
       expect(isUnsupportedCareIntent({ service_category }), service_category).toBe(true);
     }
     expect(CARE_UNAVAILABLE_CODE).toBe('CARE_SERVICE_NOT_AVAILABLE');
-  });
-
-  it('allows public assisted only through canonical service_category without structured CARE requirements', () => {
-    for (const service_category of ['CARE_ASSISTED', 'ELDERLY_ASSISTANCE', 'ACOMPANHAMENTO_ATIVO']) {
-      expect(isUnsupportedCareIntent({ service_category }), service_category).toBe(false);
-    }
-
-    expect(isUnsupportedCareIntent({ service_category: 'CAR_NORMAL', serviceCategory: 'CARE_ASSISTED' })).toBe(true);
-    expect(isUnsupportedCareIntent({ service_category: 'CARE_ASSISTED', care_mode: 'ASSISTED' })).toBe(true);
-    expect(isUnsupportedCareIntent({ service_category: 'CARE_ASSISTED', trip_details: { wheelchair_mode: 'folding' } })).toBe(true);
   });
 
   it('blocks CARE intent under aliases even when service_category is CAR_NORMAL', () => {
@@ -70,24 +60,24 @@ describe('CARE-04 central backend readiness gate', () => {
     expect(isUnsupportedCareIntent({ service_category: 'CAR_NORMAL', trip_details: { notes: 'cadeira de rodas' } })).toBe(false);
     // The real CARE UI must send a structured mode; free-text notes are
     // not a capability/qualification contract and cannot enable CARE.
-    expect(isUnsupportedCareIntent({ service_category: 'CARE_ASSISTED', trip_details: { notes: 'none' } })).toBe(false);
+    expect(isUnsupportedCareIntent({ service_category: 'CARE_ASSISTED', trip_details: { notes: 'none' } })).toBe(true);
   });
 
   it('guards estimate and create before any quoted price or persisted ride', () => {
     const code = read('src/routes/rides-v2.ts');
     const estimate = code.slice(code.indexOf("router.post('/estimate'"), code.indexOf("router.get('/active'"));
     const create = code.slice(code.indexOf("router.post('/', authenticatePassenger"), code.indexOf("router.post('/:ride_id/outside-fallback-consent'"));
-    expect(estimate.indexOf('if (!publicAssistedRide && isUnsupportedCareIntent(req.body))')).toBeGreaterThan(-1);
-    expect(estimate.indexOf('if (!publicAssistedRide && isUnsupportedCareIntent(req.body))')).toBeLessThan(estimate.indexOf('getRouteDistance('));
-    expect(create.indexOf('if (!publicAssistedRide && isUnsupportedCareIntent(req.body))')).toBeGreaterThan(-1);
+    expect(estimate.indexOf('if (isUnsupportedCareIntent(req.body))')).toBeGreaterThan(-1);
+    expect(estimate.indexOf('if (isUnsupportedCareIntent(req.body))')).toBeLessThan(estimate.indexOf('getRouteDistance('));
+    expect(create.indexOf('if (isUnsupportedCareIntent(req.body))')).toBeGreaterThan(-1);
     // CARE-04B delegates the existing create call to one shared creation boundary.
     // Guard must still execute before the boundary, not just before the old literal.
     const creationBoundary = create.indexOf('createRideWithRequirements(') >= 0
       ? create.indexOf('createRideWithRequirements(')
       : create.indexOf('rides_v2.create(');
     expect(creationBoundary).toBeGreaterThan(-1);
-    expect(create.indexOf('if (!publicAssistedRide && isUnsupportedCareIntent(req.body))')).toBeLessThan(creationBoundary);
-    expect(create.indexOf('if (!publicAssistedRide && isUnsupportedCareIntent(req.body))')).toBeLessThan(create.indexOf('idempotencyKey'));
+    expect(create.indexOf('if (isUnsupportedCareIntent(req.body))')).toBeLessThan(creationBoundary);
+    expect(create.indexOf('if (isUnsupportedCareIntent(req.body))')).toBeLessThan(create.indexOf('idempotencyKey'));
     expect(estimate).toContain("res.status(403).json({ success: false, error: CARE_UNAVAILABLE_CODE })");
     expect(create).toContain("res.status(403).json({ success: false, error: CARE_UNAVAILABLE_CODE })");
     // Price-adjustment acceptance bypasses acceptOfferInternal; explicitly
