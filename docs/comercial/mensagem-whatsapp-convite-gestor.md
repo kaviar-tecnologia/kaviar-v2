@@ -11,12 +11,12 @@ O KAVIAR está selecionando Gestores Territoriais Fundadores para apoiar a opera
 
 Funciona assim:
 • Sem taxa obrigatória de ativação nesta versão
-• Programa piloto/pré-ativação: até 90 dias, sem participação territorial até formalização e ativação
+• Programa piloto pré-contratual: até 90 dias, quando aplicável, sem participação territorial nem Ativação Financeira antes da formalização v1.2
 • Território: 1 bairro/comunidade
 • Você capta motoristas e parceiros pelo painel
 • Participação: 40% da Taxa da Plataforma Elegível nas operações elegíveis do território formalmente atribuído, durante Ativação Financeira válida
 
-É uma autorização operacional de parceria autônoma; não há compra de bairro, sistema ou exclusividade permanente.
+É uma parceria operacional autônoma. O piloto, quando houver, não cria Ativação Financeira; a participação econômica depende do Contrato v1.2 e de assignment financeiro elegível.
 
 Quer saber mais? Posso te explicar como funciona.
 
@@ -34,7 +34,7 @@ Abriu vaga de Gestor Territorial Fundador para bairros do RJ.
 
 Resumo rápido:
 ✅ Sem taxa obrigatória de ativação nesta versão
-✅ Programa piloto/pré-ativação de até 90 dias
+✅ Piloto pré-contratual de até 90 dias, quando aplicável, sem Ativação Financeira automática
 ✅ Você atua como apoio territorial no seu bairro pelo painel
 ✅ Indica motoristas, parceiros, Pet
 ✅ 40% da Taxa da Plataforma Elegível corresponde à participação do gestor nas operações elegíveis do território formalmente atribuído, conforme contrato
@@ -56,7 +56,7 @@ Estamos buscando parceiros de confiança para atuar como Gestores Territoriais e
 
 O gestor ajuda a trazer motoristas e parceiros locais para a plataforma, acompanha a operação pelo painel e pode participar economicamente das operações elegíveis do território formalmente atribuído, conforme contrato e apuração.
 
-O modelo prevê programa piloto/pré-ativação de até 90 dias, sem taxa obrigatória de ativação nesta versão e sem participação territorial antes da formalização contratual v1.2 e da Ativação Financeira.
+O modelo é uma parceria operacional territorial, sem taxa obrigatória de ativação nesta versão, com eventual piloto pré-contratual de até 90 dias. Não há participação territorial antes da formalização contratual v1.2 e da Ativação Financeira válida.
 
 Posso explicar melhor se tiver interesse. Seria uma boa conversa para a comunidade.
 
