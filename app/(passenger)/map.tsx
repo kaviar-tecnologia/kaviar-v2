@@ -226,6 +226,14 @@ export default function PassengerMap() {
       return;
     }
 
+    if (service === 'care_assisted') {
+      setSelectedService('care_assisted');
+      setSelectedVehicle('car');
+      setMotoConsented(false);
+      setWizardStep(2);
+      return;
+    }
+
     if (!motoServiceSelectable) return;
 
     setSelectedService('moto_passenger');
@@ -816,6 +824,13 @@ export default function PassengerMap() {
         wait_requested: waitEstimatedMin !== null,
         wait_estimated_min: waitEstimatedMin ?? undefined,
         post_wait_destination: waitEstimatedMin !== null && postWaitDest ? postWaitDest : undefined,
+        ...(selectedService === 'care_assisted' ? {
+          trip_details: {
+            public_assisted_ride: true,
+            public_assisted_source: 'PASSENGER_APP',
+            public_assisted_non_medical: true,
+          },
+        } : {}),
         ...(selectedVehicle === 'moto' && motoConsented ? { service_category: 'MOTO_PASSENGER', passenger_moto_consent: true } : {}),
       });
       const rideData = await passengerApi.getRide(result.ride_id);
@@ -834,6 +849,13 @@ export default function PassengerMap() {
           wait_requested: waitEstimatedMin !== null,
           wait_estimated_min: waitEstimatedMin ?? undefined,
           post_wait_destination: waitEstimatedMin !== null && postWaitDest ? postWaitDest : undefined,
+          ...(selectedService === 'care_assisted' ? {
+          trip_details: {
+            public_assisted_ride: true,
+            public_assisted_source: 'PASSENGER_APP',
+            public_assisted_non_medical: true,
+          },
+        } : {}),
           ...(selectedVehicle === 'moto' && motoConsented ? { service_category: 'MOTO_PASSENGER', passenger_moto_consent: true } : {}),
         };
         await enqueue({ method: 'POST' as const, url: 'https://api.kaviar.com.br/api/v2/rides', body });

@@ -7,7 +7,7 @@ import { COLORS } from '../../config/colors';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type SelectableService = 'car' | 'moto_passenger';
+export type SelectableService = 'car' | 'moto_passenger' | 'care_assisted';
 
 interface ServiceSelectorProps {
   /** Price estimate for CAR_NORMAL, already calculated */
@@ -162,6 +162,17 @@ export function ServiceSelector({
           ctaLabel="Selecionar Carro"
           selected={selectedService === 'car'}
           onPress={() => onSelect('car')}
+        />
+
+        {/* 1B. CARE / Acompanhamento ───────────────────────────────────── */}
+        <ActiveCard
+          icon={<Ionicons name="heart-circle-outline" size={26} color={selectedService === 'care_assisted' ? COLORS.primary : COLORS.textMuted} />}
+          title="CARE / Acompanhamento"
+          description="Corrida em carro comum para consultas, compromissos e apoio não médico."
+          price={estimatePrice !== null ? fmt(estimatePrice) : null}
+          ctaLabel="Selecionar CARE"
+          selected={selectedService === 'care_assisted'}
+          onPress={() => onSelect('care_assisted')}
         />
 
         {/* 2. Moto Passageiro ──────────────────────────────────────────── */}
