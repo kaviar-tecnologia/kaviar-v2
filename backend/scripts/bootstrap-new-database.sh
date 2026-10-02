@@ -106,6 +106,8 @@ allowed_drop_indexes = {
   "municipal_regulatory_driver_protocols_case_driver_null_modality",
   "municipal_regulatory_driver_protocols_case_driver_null_modality_cycle_key",
   "municipal_authorizations_open_manual_draft_key",
+  "driver_insurance_enrollments_coverage_linked_by_admin_idx",
+  "inbound_email_messages_trashed_at_idx",
 }
 
 allowed_drop_views = {
@@ -134,6 +136,34 @@ allowed_uuid_text_defaults = {
   "financial_provider_events",
   "financial_recurring_obligations",
   "knowledge_articles",
+}
+
+allowed_timestamp_alterations = {
+  "driver_insurance_enrollments.operational_coverage_linked_at",
+  "municipal_regulations.care_scope_verified_at",
+  "operational_insurance_coverages.care_scope_verified_at",
+}
+
+allowed_drop_defaults = {
+  "ar_place_partner_change_requests.updated_at",
+  "financial_business_units.updated_at",
+  "financial_entity_territory_assignments.updated_at",
+  "inbound_email_folders.updated_at",
+}
+
+allowed_rename_foreign_keys = {
+  "ar_place_partner_change_requests.ar_place_partner_change_requests_submitted_by_partner_user_id_f->ar_place_partner_change_requests_submitted_by_partner_user_fkey",
+  "driver_insurance_enrollments.driver_insurance_enrollments_coverage_linked_by_admin_fkey->driver_insurance_enrollments_operational_coverage_linked_b_fkey",
+  "finance_official_statement_archives.finance_official_archive_account_id_fkey->finance_official_statement_archives_account_id_fkey",
+  "finance_official_statement_archives.finance_official_archive_legal_entity_id_fkey->finance_official_statement_archives_legal_entity_id_fkey",
+  "municipal_regulations.municipal_regulations_care_verified_by_admin_fkey->municipal_regulations_care_scope_verified_by_admin_id_fkey",
+  "operational_insurance_coverages.operational_insurance_coverages_care_verified_by_admin_fkey->operational_insurance_coverages_care_scope_verified_by_adm_fkey",
+}
+
+allowed_rename_indexes = {
+  "financial_entity_territory_assignments_effective_idx->financial_entity_territory_assignments_effective_from_effec_idx",
+  "financial_entity_territory_assignments_entity_active_idx->financial_entity_territory_assignments_legal_entity_id_is_a_idx",
+  "financial_entity_territory_assignments_territory_active_idx->financial_entity_territory_assignments_territory_id_is_acti_idx",
 }
 
 allowed_add_foreign_keys = set()
@@ -201,6 +231,58 @@ for stmt in raw_statements:
       recognized.append(("ALTER DEFAULT UUID::TEXT", table_name))
       continue
     unknown.append(("ALTER DEFAULT UUID::TEXT", table_name, clean))
+    continue
+
+  m = re.match(
+    r'^ALTER TABLE\s+"([^"]+)"\s+ALTER COLUMN\s+"([^"]+)"\s+SET DATA TYPE TIMESTAMP\(3\)\s*;$',
+    clean,
+    re.I,
+  )
+  if m:
+    key = f"{m.group(1)}.{m.group(2)}"
+    if key in allowed_timestamp_alterations:
+      recognized.append(("ALTER TIMESTAMP(3)", key))
+      continue
+    unknown.append(("ALTER TIMESTAMP(3)", key, clean))
+    continue
+
+  m = re.match(
+    r'^ALTER TABLE\s+"([^"]+)"\s+ALTER COLUMN\s+"([^"]+)"\s+DROP DEFAULT\s*;$',
+    clean,
+    re.I,
+  )
+  if m:
+    key = f"{m.group(1)}.{m.group(2)}"
+    if key in allowed_drop_defaults:
+      recognized.append(("DROP DEFAULT", key))
+      continue
+    unknown.append(("DROP DEFAULT", key, clean))
+    continue
+
+  m = re.match(
+    r'^ALTER TABLE\s+"([^"]+)"\s+RENAME CONSTRAINT\s+"([^"]+)"\s+TO\s+"([^"]+)"\s*;$',
+    clean,
+    re.I,
+  )
+  if m:
+    key = f"{m.group(1)}.{m.group(2)}->{m.group(3)}"
+    if key in allowed_rename_foreign_keys:
+      recognized.append(("RENAME FOREIGN KEY", key))
+      continue
+    unknown.append(("RENAME FOREIGN KEY", key, clean))
+    continue
+
+  m = re.match(
+    r'^ALTER INDEX\s+"([^"]+)"\s+RENAME TO\s+"([^"]+)"\s*;$',
+    clean,
+    re.I,
+  )
+  if m:
+    key = f"{m.group(1)}->{m.group(2)}"
+    if key in allowed_rename_indexes:
+      recognized.append(("RENAME INDEX", key))
+      continue
+    unknown.append(("RENAME INDEX", key, clean))
     continue
 
   m = re.match(r'^ALTER TABLE\s+"([^"]+)"\s+ADD CONSTRAINT\s+"([^"]+)"\s+FOREIGN KEY\s*\(.+\)\s+REFERENCES\s+"[^"]+"\s*\("?[^\)"]+"?\).+;$', clean, re.I | re.S)
