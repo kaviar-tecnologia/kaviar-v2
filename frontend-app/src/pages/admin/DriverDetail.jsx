@@ -28,6 +28,7 @@ import { DriverReputationCard } from '../../components/admin/DriverReputationCar
 import { DriverFinancialCard } from '../../components/admin/DriverFinancialCard';
 import { DriverEditCard } from '../../components/admin/DriverEditCard';
 import { DriverMunicipalRegularizationCard } from '../../components/admin/DriverMunicipalRegularizationCard';
+import { DriverCareCapabilitiesCard } from '../../components/admin/DriverCareCapabilitiesCard';
 import { formatDate } from '../../utils/formatDate';
 
 
@@ -587,6 +588,11 @@ export default function AdminDriverDetail() {
       {/* Driver Edit Card */}
       <Box sx={{ mt: 3 }}>
         <DriverEditCard driverId={id} driver={driver} onUpdated={loadDriver} />
+      </Box>
+
+      {/* CARE Administrative Capabilities */}
+      <Box sx={{ mt: 3 }}>
+        <DriverCareCapabilitiesCard driverId={id} />
       </Box>
 
       {/* Driver Financial Summary */}
