@@ -40,7 +40,7 @@ const isSuperAdmin = () => {
 
 export default function DriversManagement() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -56,8 +56,12 @@ export default function DriversManagement() {
   });
 
   useEffect(() => {
+    const params = new URLSearchParams();
+    if (currentTab) params.set('status', currentTab);
+    if (careFilter) params.set('care', careFilter);
+    setSearchParams(params, { replace: true });
     fetchDrivers(currentTab);
-  }, [currentTab, careFilter]);
+  }, [currentTab, careFilter, setSearchParams]);
 
   const fetchDrivers = async (status) => {
     try {
@@ -233,15 +237,40 @@ export default function DriversManagement() {
       )}
 
       <Box sx={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3,
-        bgcolor: '#0d1117', borderRadius: 2, border: '1px solid #1a2332',
-        boxShadow: '0 2px 12px rgba(0,0,0,0.2)', px: 2, py: 1,
+        display: 'flex',
+        flexDirection: { xs: 'column', md: 'row' },
+        justifyContent: 'space-between',
+        alignItems: { xs: 'stretch', md: 'center' },
+        gap: 2,
+        mb: 3,
+        bgcolor: '#0d1117',
+        borderRadius: 2,
+        border: '1px solid #1a2332',
+        boxShadow: '0 2px 12px rgba(0,0,0,0.2)',
+        px: 2,
+        py: 1.5,
       }}>
         <Tabs
           value={currentTab}
           onChange={(e, newValue) => setCurrentTab(newValue)}
+          variant="scrollable"
+          scrollButtons="auto"
+          allowScrollButtonsMobile
           sx={{
-            '& .MuiTab-root': { color: '#7a8a9a', fontWeight: 600, fontSize: 13, textTransform: 'none', minHeight: 44 },
+            flex: '1 1 auto',
+            minWidth: 0,
+            maxWidth: '100%',
+            '& .MuiTabs-scroller': { overflowX: 'auto !important' },
+            '& .MuiTab-root': {
+              color: '#7a8a9a',
+              fontWeight: 600,
+              fontSize: 13,
+              textTransform: 'none',
+              minHeight: 44,
+              minWidth: 'auto',
+              px: { xs: 1, sm: 2 },
+              flexShrink: 0,
+            },
             '& .Mui-selected': { color: '#FFD700 !important' },
             '& .MuiTabs-indicator': { bgcolor: '#FFD700', height: 2 },
           }}
@@ -252,8 +281,16 @@ export default function DriversManagement() {
           <Tab label="Todos" value="" />
         </Tabs>
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <FormControl size="small" sx={{ minWidth: 240 }}>
+        <Box sx={{
+          display: 'flex',
+          alignItems: { xs: 'stretch', sm: 'center' },
+          gap: 1,
+          flexWrap: 'wrap',
+          justifyContent: { xs: 'flex-start', md: 'flex-end' },
+          width: { xs: '100%', md: 'auto' },
+          flex: '0 0 auto',
+        }}>
+          <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 260 }, maxWidth: { xs: '100%', sm: 340 } }}>
             <InputLabel sx={{ color: '#7a8a9a' }}>Capacidades CARE</InputLabel>
             <Select
               value={careFilter}
@@ -441,7 +478,7 @@ export default function DriversManagement() {
       {drivers.length === 0 && !loading && (
         <Box sx={{ textAlign: 'center', py: 4 }}>
           <Typography color="text.secondary">
-            Nenhum motorista encontrado nesta categoria.
+            {careFilter ? 'Nenhum motorista encontrado para este filtro CARE.' : 'Nenhum motorista encontrado nesta categoria.'}
           </Typography>
         </Box>
       )}

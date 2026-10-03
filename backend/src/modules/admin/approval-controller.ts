@@ -176,11 +176,38 @@ export class ApprovalController {
   // GET /api/admin/drivers - FONTE ÚNICA (Aprovação + Gerenciamento)
   getDrivers = async (req: Request, res: Response) => {
     try {
-      const { status } = req.query;
-      
+      const { status, vehicle_type } = req.query;
+      const care = typeof req.query.care === 'string' ? req.query.care : undefined;
+
+      if (vehicle_type && !['CAR', 'MOTORCYCLE'].includes(String(vehicle_type))) {
+        return res.status(400).json({
+          success: false,
+          error: 'vehicle_type inválido. Use CAR ou MOTORCYCLE.'
+        });
+      }
+
+      const allowedCareFilters = new Set([
+        'registered',
+        'qualification_pending',
+        'qualification_verified',
+        'vehicle_pending',
+        'vehicle_verified',
+        'all_verified'
+      ]);
+
+      if (care && !allowedCareFilters.has(care)) {
+        return res.status(400).json({
+          success: false,
+          error: 'care inválido. Use registered, qualification_pending, qualification_verified, vehicle_pending, vehicle_verified ou all_verified.'
+        });
+      }
+
       const where: any = { deleted_at: null };
       if (status) {
-        where.status = status;
+        where.status = String(status);
+      }
+      if (vehicle_type) {
+        where.vehicle_type = String(vehicle_type);
       }
 
       // Territory scope filter (injected by route handler for TERRITORIAL_OPERATOR/MANAGER)
@@ -194,6 +221,87 @@ export class ApprovalController {
         // Território sem bairros: filtrar via relação neighborhoods.territory_id
         // Exclui drivers sem neighborhood (neighborhood_id null)
         where.neighborhoods = { territory_id: { in: scopeTerritoryFilter } };
+      }
+
+      if (care) {
+        const applyCareDriverIds = (ids: string[]) => {
+          const uniqueCareDriverIds = Array.from(new Set(ids.filter(Boolean)));
+
+          if (uniqueCareDriverIds.length === 0) {
+            where.id = '__DENY__';
+            return;
+          }
+
+          if (where.id && typeof where.id === 'object' && Array.isArray(where.id.in)) {
+            const currentIds = new Set(where.id.in);
+            const intersection = uniqueCareDriverIds.filter(id => currentIds.has(id));
+            where.id = intersection.length > 0 ? { in: intersection } : '__DENY__';
+            return;
+          }
+
+          where.id = { in: uniqueCareDriverIds };
+        };
+
+        if (care === 'registered') {
+          const [qualifications, vehicles] = await Promise.all([
+            prisma.care_driver_qualifications.findMany({ select: { driver_id: true } }),
+            prisma.care_vehicle_capabilities.findMany({ select: { driver_id: true } })
+          ]);
+
+          applyCareDriverIds([
+            ...qualifications.map(q => q.driver_id),
+            ...vehicles.map(v => v.driver_id)
+          ]);
+        } else if (care === 'qualification_pending') {
+          const qualifications = await prisma.care_driver_qualifications.findMany({
+            where: { status: 'PENDING' },
+            select: { driver_id: true }
+          });
+
+          applyCareDriverIds(qualifications.map(q => q.driver_id));
+        } else if (care === 'qualification_verified') {
+          const qualifications = await prisma.care_driver_qualifications.findMany({
+            where: { status: 'VERIFIED' },
+            select: { driver_id: true }
+          });
+
+          applyCareDriverIds(qualifications.map(q => q.driver_id));
+        } else if (care === 'vehicle_pending') {
+          const vehicles = await prisma.care_vehicle_capabilities.findMany({
+            where: { status: 'PENDING' },
+            select: { driver_id: true }
+          });
+
+          applyCareDriverIds(vehicles.map(v => v.driver_id));
+        } else if (care === 'vehicle_verified') {
+          const vehicles = await prisma.care_vehicle_capabilities.findMany({
+            where: { status: 'VERIFIED' },
+            select: { driver_id: true }
+          });
+
+          applyCareDriverIds(vehicles.map(v => v.driver_id));
+        } else if (care === 'all_verified') {
+          const qualifications = await prisma.care_driver_qualifications.findMany({
+            where: { status: 'VERIFIED' },
+            select: { driver_id: true }
+          });
+
+          const qualificationDriverIds = qualifications.map(q => q.driver_id);
+
+          if (qualificationDriverIds.length === 0) {
+            applyCareDriverIds([]);
+          } else {
+            const vehicles = await prisma.care_vehicle_capabilities.findMany({
+              where: {
+                status: 'VERIFIED',
+                driver_id: { in: qualificationDriverIds }
+              },
+              select: { driver_id: true }
+            });
+
+            applyCareDriverIds(vehicles.map(v => v.driver_id));
+          }
+        }
       }
 
       const drivers = await prisma.drivers.findMany({
@@ -225,29 +333,58 @@ export class ApprovalController {
         orderBy: { created_at: 'desc' }
       });
 
+      const driverIds = drivers.map(d => d.id);
+      const [careQualifications, careVehicles] = driverIds.length > 0
+        ? await Promise.all([
+            prisma.care_driver_qualifications.findMany({
+              where: { driver_id: { in: driverIds } },
+              select: { driver_id: true, status: true }
+            }),
+            prisma.care_vehicle_capabilities.findMany({
+              where: { driver_id: { in: driverIds } },
+              select: { driver_id: true, status: true }
+            })
+          ])
+        : [[], []];
+
+      const careQualificationByDriver = new Map(careQualifications.map(q => [q.driver_id, q]));
+      const careVehicleByDriver = new Map(careVehicles.map(v => [v.driver_id, v]));
+
       // Normalize para frontend (camelCase + ISO dates)
-      const normalized = drivers.map(d => ({
-        id: d.id,
-        name: d.name,
-        email: d.email,
-        phone: d.phone,
-        status: d.status,
-        documentCpf: d.document_cpf,
-        documentRg: d.document_rg,
-        documentCnh: d.document_cnh,
-        vehiclePlate: d.vehicle_plate,
-        vehicleModel: d.vehicle_model,
-        vehicleColor: d.vehicle_color ?? null,
-        vehicleType: d.vehicle_type,
-        neighborhoodId: d.neighborhood_id,
-        neighborhoods: d.neighborhoods || null,
-        communityId: d.community_id,
-        pendingReason: d.pending_reason ?? null,
-        createdAt: d.created_at?.toISOString() ?? null,
-        updatedAt: d.updated_at?.toISOString(),
-        approvedAt: d.approved_at?.toISOString() || null,
-        rejectedAt: d.rejected_at?.toISOString() || null
-      }));
+      const normalized = drivers.map(d => {
+        const careQualification = careQualificationByDriver.get(d.id) || null;
+        const careVehicle = careVehicleByDriver.get(d.id) || null;
+
+        return {
+          id: d.id,
+          name: d.name,
+          email: d.email,
+          phone: d.phone,
+          status: d.status,
+          documentCpf: d.document_cpf,
+          documentRg: d.document_rg,
+          documentCnh: d.document_cnh,
+          vehiclePlate: d.vehicle_plate,
+          vehicleModel: d.vehicle_model,
+          vehicleColor: d.vehicle_color ?? null,
+          vehicleType: d.vehicle_type,
+          neighborhoodId: d.neighborhood_id,
+          neighborhoods: d.neighborhoods || null,
+          communityId: d.community_id,
+          pendingReason: d.pending_reason ?? null,
+          createdAt: d.created_at?.toISOString() ?? null,
+          updatedAt: d.updated_at?.toISOString(),
+          approvedAt: d.approved_at?.toISOString() || null,
+          rejectedAt: d.rejected_at?.toISOString() || null,
+          careSummary: {
+            hasQualification: !!careQualification,
+            qualificationStatus: careQualification?.status || null,
+            hasVehicle: !!careVehicle,
+            vehicleStatus: careVehicle?.status || null,
+            allVerified: careQualification?.status === 'VERIFIED' && careVehicle?.status === 'VERIFIED'
+          }
+        };
+      });
 
       res.json({
         success: true,
