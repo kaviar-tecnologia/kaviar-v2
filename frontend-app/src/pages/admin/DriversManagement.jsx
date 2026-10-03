@@ -23,7 +23,11 @@ import {
   IconButton,
   Grid,
   Card,
-  CardContent
+  CardContent,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem
 } from '@mui/material';
 import { CheckCircle, Cancel, Block, Visibility, Restore, Replay, Archive, WhatsApp } from '@mui/icons-material';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -41,6 +45,7 @@ export default function DriversManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [currentTab, setCurrentTab] = useState(searchParams.get('status') || 'approved');
+  const [careFilter, setCareFilter] = useState(searchParams.get('care') || '');
   const [neighborhoodMetrics, setNeighborhoodMetrics] = useState([]);
   const [showMetrics, setShowMetrics] = useState(false);
   const [actionDialog, setActionDialog] = useState({ 
@@ -52,13 +57,18 @@ export default function DriversManagement() {
 
   useEffect(() => {
     fetchDrivers(currentTab);
-  }, [currentTab]);
+  }, [currentTab, careFilter]);
 
   const fetchDrivers = async (status) => {
     try {
       setLoading(true);
       const token = localStorage.getItem('kaviar_admin_token');
-      const response = await fetch(`${API_BASE_URL}/api/admin/drivers${status ? `?status=${status}` : ''}`, {
+      const params = new URLSearchParams();
+      if (status) params.set('status', status);
+      if (careFilter) params.set('care', careFilter);
+      const queryString = params.toString();
+
+      const response = await fetch(`${API_BASE_URL}/api/admin/drivers${queryString ? `?${queryString}` : ''}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -179,6 +189,22 @@ export default function DriversManagement() {
     }
   };
 
+  const getCareBadge = (careSummary) => {
+    if (!careSummary?.hasQualification && !careSummary?.hasVehicle) {
+      return <Chip label="Sem CARE" size="small" variant="outlined" sx={{ borderColor: '#334155', color: '#94a3b8' }} />;
+    }
+
+    if (careSummary.allVerified) {
+      return <Chip label="CARE verificado" size="small" color="success" />;
+    }
+
+    if (careSummary.qualificationStatus === 'VERIFIED' || careSummary.vehicleStatus === 'VERIFIED') {
+      return <Chip label="CARE parcial" size="small" color="info" variant="outlined" />;
+    }
+
+    return <Chip label="CARE pendente" size="small" color="warning" variant="outlined" />;
+  };
+
   const getMunicipalBadge = (municipalSummary) => {
     const status = municipalSummary?.status;
     if (!status) return null;
@@ -225,7 +251,31 @@ export default function DriversManagement() {
           <Tab label="Rejeitados" value="rejected" />
           <Tab label="Todos" value="" />
         </Tabs>
-        
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <FormControl size="small" sx={{ minWidth: 240 }}>
+            <InputLabel sx={{ color: '#7a8a9a' }}>Capacidades CARE</InputLabel>
+            <Select
+              value={careFilter}
+              label="Capacidades CARE"
+              onChange={(e) => setCareFilter(e.target.value)}
+              sx={{
+                color: '#c0c8d0',
+                '.MuiOutlinedInput-notchedOutline': { borderColor: '#2a3a4a' },
+                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#FFD700' },
+                '.MuiSvgIcon-root': { color: '#c0c8d0' },
+              }}
+            >
+              <MenuItem value="">Todos</MenuItem>
+              <MenuItem value="registered">Com cadastro CARE</MenuItem>
+              <MenuItem value="qualification_pending">Qualificação pendente</MenuItem>
+              <MenuItem value="qualification_verified">Qualificação verificada</MenuItem>
+              <MenuItem value="vehicle_pending">Veículo pendente</MenuItem>
+              <MenuItem value="vehicle_verified">Veículo verificado</MenuItem>
+              <MenuItem value="all_verified">Qualificação + veículo verificados</MenuItem>
+            </Select>
+          </FormControl>
+
         <Button 
           variant="outlined" 
           onClick={fetchNeighborhoodMetrics}
@@ -237,6 +287,7 @@ export default function DriversManagement() {
         >
           {showMetrics ? 'Ocultar Métricas' : 'Ver Métricas por Bairro'}
         </Button>
+        </Box>
       </Box>
 
       {showMetrics && neighborhoodMetrics.length > 0 && (
@@ -276,6 +327,7 @@ export default function DriversManagement() {
               <TableCell>Regularização Municipal</TableCell>
               <TableCell>Premium Turismo</TableCell>
               <TableCell>Cadastro</TableCell>
+              <TableCell>CARE</TableCell>
               <TableCell>Ações</TableCell>
             </TableRow>
           </TableHead>
@@ -308,6 +360,9 @@ export default function DriversManagement() {
                 </TableCell>
                 <TableCell>
                   {formatDate(driver.createdAt)}
+                </TableCell>
+                <TableCell>
+                  {getCareBadge(driver.careSummary)}
                 </TableCell>
                 <TableCell>
                   <Box sx={{ display: 'flex', gap: 1 }}>
