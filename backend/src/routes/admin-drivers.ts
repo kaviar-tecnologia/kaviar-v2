@@ -162,6 +162,7 @@ router.get('/drivers', allowReadAccess, applyTerritoryScope, requireTerritorySco
   try {
     const status = req.query.status as string;
     const vehicle_type = req.query.vehicle_type as string;
+    const care = req.query.care as string | undefined;
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
@@ -169,6 +170,22 @@ router.get('/drivers', allowReadAccess, applyTerritoryScope, requireTerritorySco
     // Validate vehicle_type if provided
     if (vehicle_type && !['CAR', 'MOTORCYCLE'].includes(vehicle_type)) {
       return res.status(400).json({ success: false, error: 'vehicle_type inválido. Use CAR ou MOTORCYCLE.' });
+    }
+
+    const allowedCareFilters = new Set([
+      'registered',
+      'qualification_pending',
+      'qualification_verified',
+      'vehicle_pending',
+      'vehicle_verified',
+      'all_verified'
+    ]);
+
+    if (care && !allowedCareFilters.has(care)) {
+      return res.status(400).json({
+        success: false,
+        error: 'care inválido. Use registered, qualification_pending, qualification_verified, vehicle_pending, vehicle_verified ou all_verified.'
+      });
     }
 
     const where: any = {
@@ -191,6 +208,82 @@ router.get('/drivers', allowReadAccess, applyTerritoryScope, requireTerritorySco
       } else {
         // Scope vazio: não retornar nada (deny-by-default)
         where.id = '__DENY__';
+      }
+    }
+
+    if (care) {
+      const applyCareDriverIds = (ids: string[]) => {
+        if (where.id === '__DENY__') return;
+
+        const uniqueCareDriverIds = Array.from(new Set(ids.filter(Boolean)));
+
+        if (uniqueCareDriverIds.length === 0) {
+          where.id = '__DENY__';
+          return;
+        }
+
+        where.id = { in: uniqueCareDriverIds };
+      };
+
+      if (care === 'registered') {
+        const [qualifications, vehicles] = await Promise.all([
+          prisma.care_driver_qualifications.findMany({ select: { driver_id: true } }),
+          prisma.care_vehicle_capabilities.findMany({ select: { driver_id: true } })
+        ]);
+
+        applyCareDriverIds([
+          ...qualifications.map(q => q.driver_id),
+          ...vehicles.map(v => v.driver_id)
+        ]);
+      } else if (care === 'qualification_pending') {
+        const qualifications = await prisma.care_driver_qualifications.findMany({
+          where: { status: 'PENDING' },
+          select: { driver_id: true }
+        });
+
+        applyCareDriverIds(qualifications.map(q => q.driver_id));
+      } else if (care === 'qualification_verified') {
+        const qualifications = await prisma.care_driver_qualifications.findMany({
+          where: { status: 'VERIFIED' },
+          select: { driver_id: true }
+        });
+
+        applyCareDriverIds(qualifications.map(q => q.driver_id));
+      } else if (care === 'vehicle_pending') {
+        const vehicles = await prisma.care_vehicle_capabilities.findMany({
+          where: { status: 'PENDING' },
+          select: { driver_id: true }
+        });
+
+        applyCareDriverIds(vehicles.map(v => v.driver_id));
+      } else if (care === 'vehicle_verified') {
+        const vehicles = await prisma.care_vehicle_capabilities.findMany({
+          where: { status: 'VERIFIED' },
+          select: { driver_id: true }
+        });
+
+        applyCareDriverIds(vehicles.map(v => v.driver_id));
+      } else if (care === 'all_verified') {
+        const qualifications = await prisma.care_driver_qualifications.findMany({
+          where: { status: 'VERIFIED' },
+          select: { driver_id: true }
+        });
+
+        const qualificationDriverIds = qualifications.map(q => q.driver_id);
+
+        if (qualificationDriverIds.length === 0) {
+          applyCareDriverIds([]);
+        } else {
+          const vehicles = await prisma.care_vehicle_capabilities.findMany({
+            where: {
+              status: 'VERIFIED',
+              driver_id: { in: qualificationDriverIds }
+            },
+            select: { driver_id: true }
+          });
+
+          applyCareDriverIds(vehicles.map(v => v.driver_id));
+        }
       }
     }
 
@@ -233,6 +326,23 @@ router.get('/drivers', allowReadAccess, applyTerritoryScope, requireTerritorySco
       prisma.drivers.count({ where })
     ]);
 
+    const driverIds = drivers.map(d => d.id);
+    const [careQualifications, careVehicles] = driverIds.length > 0
+      ? await Promise.all([
+          prisma.care_driver_qualifications.findMany({
+            where: { driver_id: { in: driverIds } },
+            select: { driver_id: true, status: true }
+          }),
+          prisma.care_vehicle_capabilities.findMany({
+            where: { driver_id: { in: driverIds } },
+            select: { driver_id: true, status: true }
+          })
+        ])
+      : [[], []];
+
+    const careQualificationByDriver = new Map(careQualifications.map(q => [q.driver_id, q]));
+    const careVehicleByDriver = new Map(careVehicles.map(v => [v.driver_id, v]));
+
     // Normalize para camelCase (frontend compatibility)
     const admin = (req as any).admin;
     const isTerritorial = admin.role === 'TERRITORIAL_OPERATOR' || admin.role === 'TERRITORIAL_MANAGER';
@@ -251,6 +361,16 @@ router.get('/drivers', allowReadAccess, applyTerritoryScope, requireTerritorySco
         vehiclePlate: d.vehicle_plate,
         vehicleType: d.vehicle_type,
         neighborhoods: d.neighborhoods,
+      };
+
+      const careQualification = careQualificationByDriver.get(d.id) || null;
+      const careVehicle = careVehicleByDriver.get(d.id) || null;
+      base.careSummary = {
+        hasQualification: !!careQualification,
+        qualificationStatus: careQualification?.status || null,
+        hasVehicle: !!careVehicle,
+        vehicleStatus: careVehicle?.status || null,
+        allVerified: careQualification?.status === 'VERIFIED' && careVehicle?.status === 'VERIFIED'
       };
 
       const latestMunicipal = d.municipal_authorizations?.[0] || null;
