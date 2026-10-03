@@ -233,6 +233,20 @@ export default function DriversManagement() {
     return { label: 'Regularização municipal pendente', color: 'default' };
   };
 
+  const tableHeaderCellSx = {
+    color: '#cbd5e1',
+    fontWeight: 800,
+    fontSize: 13,
+    borderBottom: '1px solid #334155',
+    bgcolor: '#111827'
+  };
+
+  const detailLabelSx = {
+    color: '#a7b7c8',
+    fontWeight: 800,
+    letterSpacing: 0.2
+  };
+
   return (
     <Box sx={{ p: 3 }}>
       <Typography variant="h4" sx={{ mb: 3, fontWeight: 'bold', color: '#f0f4f8' }}>
@@ -375,11 +389,11 @@ export default function DriversManagement() {
         <Table sx={{ width: '100%', tableLayout: 'fixed' }}>
           <TableHead>
             <TableRow>
-              <TableCell sx={{ width: '30%' }}>Motorista</TableCell>
-              <TableCell sx={{ width: '22%' }}>Local / Status</TableCell>
-              <TableCell sx={{ width: '18%' }}>CARE</TableCell>
-              <TableCell sx={{ width: '12%' }}>Cadastro</TableCell>
-              <TableCell sx={{ width: '18%' }} align="right">Ações</TableCell>
+              <TableCell sx={{ ...tableHeaderCellSx, width: '30%' }}>Motorista</TableCell>
+              <TableCell sx={{ ...tableHeaderCellSx, width: '22%' }}>Local / Status</TableCell>
+              <TableCell sx={{ ...tableHeaderCellSx, width: '18%' }}>CARE</TableCell>
+              <TableCell sx={{ ...tableHeaderCellSx, width: '12%' }}>Cadastro</TableCell>
+              <TableCell sx={{ ...tableHeaderCellSx, width: '18%' }} align="right">Ações</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -389,7 +403,16 @@ export default function DriversManagement() {
 
               return (
                 <Fragment key={driver.id}>
-                  <TableRow hover sx={{ '& > *': { borderBottom: expanded ? 'none' : undefined } }}>
+                  <TableRow
+                    hover
+                    sx={{
+                      bgcolor: '#0d1117',
+                      '&:hover': { bgcolor: '#111827' },
+                      '& > *': {
+                        borderBottom: expanded ? 'none' : '1px solid #334155'
+                      }
+                    }}
+                  >
                     <TableCell>
                       <Typography sx={{ fontWeight: 700, color: '#f0f4f8' }} noWrap title={driver.name}>
                         {driver.name}
@@ -507,7 +530,7 @@ export default function DriversManagement() {
                   </TableRow>
 
                   <TableRow>
-                    <TableCell colSpan={5} sx={{ py: 0, bgcolor: '#090e17' }}>
+                    <TableCell colSpan={5} sx={{ py: 0, bgcolor: '#0f172a', borderBottom: '1px solid #334155' }}>
                       <Collapse in={expanded} timeout="auto" unmountOnExit>
                         <Box
                           sx={{
@@ -515,25 +538,27 @@ export default function DriversManagement() {
                             display: 'grid',
                             gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
                             gap: 2,
-                            borderTop: '1px solid #1a2332'
+                            bgcolor: '#111827',
+                            borderTop: '1px solid #334155',
+                            borderRadius: '0 0 12px 12px'
                           }}
                         >
                           <Box>
-                            <Typography variant="caption" sx={{ color: '#7a8a9a' }}>Email</Typography>
+                            <Typography variant="caption" sx={detailLabelSx}>Email</Typography>
                             <Typography variant="body2" sx={{ color: '#c0c8d0', wordBreak: 'break-word' }}>
                               {driver.email || 'Sem email'}
                             </Typography>
                           </Box>
 
                           <Box>
-                            <Typography variant="caption" sx={{ color: '#7a8a9a' }}>Bairro / Território</Typography>
+                            <Typography variant="caption" sx={detailLabelSx}>Bairro / Território</Typography>
                             <Typography variant="body2" sx={{ color: '#c0c8d0' }}>
                               {driver.neighborhoods?.name || 'Não definido'}
                             </Typography>
                           </Box>
 
                           <Box>
-                            <Typography variant="caption" sx={{ color: '#7a8a9a' }}>Regularização Municipal</Typography>
+                            <Typography variant="caption" sx={detailLabelSx}>Regularização Municipal</Typography>
                             <Box sx={{ mt: 0.5 }}>
                               {municipalBadge ? (
                                 <Chip label={municipalBadge.label} color={municipalBadge.color} size="small" variant="outlined" />
@@ -544,25 +569,25 @@ export default function DriversManagement() {
                           </Box>
 
                           <Box>
-                            <Typography variant="caption" sx={{ color: '#7a8a9a' }}>Premium Turismo</Typography>
+                            <Typography variant="caption" sx={detailLabelSx}>Premium Turismo</Typography>
                             <Box sx={{ mt: 0.5 }}>
                               {driver.premium_tourism_status === 'active' ? (
                                 <Chip label="Ativo" color="success" size="small" />
                               ) : (
-                                <Chip label="Inativo" color="default" size="small" />
+                                <Chip label="Inativo" size="small" sx={{ bgcolor: '#1f2937', color: '#cbd5e1', border: '1px solid #334155' }} />
                               )}
                             </Box>
                           </Box>
 
                           <Box>
-                            <Typography variant="caption" sx={{ color: '#7a8a9a' }}>CARE</Typography>
+                            <Typography variant="caption" sx={detailLabelSx}>CARE</Typography>
                             <Box sx={{ mt: 0.5 }}>
                               {getCareBadge(driver.careSummary)}
                             </Box>
                           </Box>
 
                           <Box>
-                            <Typography variant="caption" sx={{ color: '#7a8a9a' }}>Cadastro</Typography>
+                            <Typography variant="caption" sx={detailLabelSx}>Cadastro</Typography>
                             <Typography variant="body2" sx={{ color: '#c0c8d0' }}>
                               {formatDate(driver.createdAt)}
                             </Typography>
@@ -579,8 +604,8 @@ export default function DriversManagement() {
       </TableContainer>
 
       {drivers.length === 0 && !loading && (
-        <Box sx={{ textAlign: 'center', py: 4 }}>
-          <Typography color="text.secondary">
+        <Box sx={{ textAlign: 'center', py: 4, mt: 1, bgcolor: '#0d1117', border: '1px solid #1a2332', borderRadius: 2 }}>
+          <Typography sx={{ color: '#cbd5e1', fontWeight: 700 }}>
             {careFilter ? 'Nenhum motorista encontrado para este filtro CARE.' : 'Nenhum motorista encontrado nesta categoria.'}
           </Typography>
         </Box>
