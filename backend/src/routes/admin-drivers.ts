@@ -16,6 +16,75 @@ import { getDriverFinancialSummary } from '../services/financial-summary.service
 const router = Router();
 const approvalController = new ApprovalController();
 
+const careQualificationStatusSchema = z.enum(['PENDING', 'VERIFIED', 'REJECTED', 'SUSPENDED', 'EXPIRED']);
+
+const careCapabilityUpdateSchema = z.object({
+  qualification: z.object({
+    status: careQualificationStatusSchema.optional(),
+    assisted_training_verified: z.boolean().optional(),
+    folding_training_verified: z.boolean().optional(),
+    adapted_training_verified: z.boolean().optional(),
+    valid_until: z.string().datetime().nullable().optional()
+  }).optional(),
+  vehicle: z.object({
+    status: careQualificationStatusSchema.optional(),
+    folding_storage_verified: z.boolean().optional(),
+    ramp_or_lift_verified: z.boolean().optional(),
+    wheelchair_restraint_verified: z.boolean().optional(),
+    occupant_restraint_verified: z.boolean().optional(),
+    adaptation_document_verified: z.boolean().optional(),
+    wheelchair_capacity: z.number().int().min(0).max(8).optional(),
+    companion_seats: z.number().int().min(0).max(32).optional(),
+    inspection_valid_until: z.string().datetime().nullable().optional()
+  }).optional()
+}).refine(v => v.qualification || v.vehicle, {
+  message: 'Informe qualification ou vehicle'
+});
+
+async function getScopedDriverForAdmin(req: Request, driverId: string) {
+  const admin = (req as any).admin;
+  const scope = (req as any).territoryScope;
+  const isTerritorial = admin?.role === 'TERRITORIAL_OPERATOR' || admin?.role === 'TERRITORIAL_MANAGER';
+
+  if (isTerritorial && (!scope || !scope.neighborhoodIds || scope.neighborhoodIds.length === 0)) {
+    return null;
+  }
+
+  const driver = await prisma.drivers.findUnique({
+    where: { id: driverId },
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      neighborhood_id: true,
+      vehicle_plate: true,
+      vehicle_model: true,
+      vehicle_color: true,
+      vehicle_type: true,
+      deleted_at: true,
+      banned_at: true
+    }
+  });
+
+  if (!driver) return null;
+
+  if (isTerritorial && (!driver.neighborhood_id || !scope.neighborhoodIds.includes(driver.neighborhood_id))) {
+    return null;
+  }
+
+  return driver;
+}
+
+function parseNullableDate(value: string | null | undefined): Date | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  return new Date(value);
+}
+
+function pruneUndefined<T extends Record<string, unknown>>(value: T): Partial<T> {
+  return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as Partial<T>;
+}
+
 // Aplicar autenticação admin em todas as rotas
 router.use(authenticateAdmin);
 
@@ -332,6 +401,189 @@ router.get('/drivers/:id', allowReadAccess, applyTerritoryScope, async (req: Req
       error: 'Erro ao buscar motorista',
       requestId
     });
+  }
+});
+
+// GET /api/admin/drivers/:id/care-capabilities
+// Preparação CARE oficial: leitura administrativa, sem habilitar reserva/dispatch/pricing CARE.
+router.get('/drivers/:id/care-capabilities', allowReadAccess, applyTerritoryScope, async (req: Request, res: Response) => {
+  const requestId = (req as any).requestId || req.headers['x-request-id'] || 'unknown';
+
+  try {
+    const { id } = req.params;
+    const driver = await getScopedDriverForAdmin(req, id);
+
+    if (!driver) {
+      return res.status(404).json({ success: false, error: 'Motorista não encontrado', requestId });
+    }
+
+    const [qualification, vehicle] = await Promise.all([
+      prisma.care_driver_qualifications.findUnique({ where: { driver_id: id } }),
+      prisma.care_vehicle_capabilities.findUnique({ where: { driver_id: id } })
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        driver,
+        qualification,
+        vehicle,
+        officialCareEnabled: false,
+        note: 'Cadastro preparatório. Não habilita CARE_ASSISTED, dispatcher, pricing ou aceite oficial.'
+      }
+    });
+  } catch (error: any) {
+    console.error(JSON.stringify({
+      ts: new Date().toISOString(),
+      level: 'error',
+      requestId,
+      path: req.path,
+      driverId: req.params.id,
+      error: error?.message || String(error),
+      stack: error?.stack
+    }));
+
+    res.status(500).json({ success: false, error: 'Erro ao buscar capacidade CARE', requestId });
+  }
+});
+
+// PATCH /api/admin/drivers/:id/care-capabilities
+// Preparação CARE oficial: grava qualificação/capacidade auditável, mas NÃO libera fluxo CARE.
+router.patch('/drivers/:id/care-capabilities', requireSuperAdmin, async (req: Request, res: Response) => {
+  const requestId = (req as any).requestId || req.headers['x-request-id'] || 'unknown';
+
+  try {
+    const { id } = req.params;
+    const adminId = (req as any).admin?.id || (req as any).userId || 'admin';
+    const body = careCapabilityUpdateSchema.parse(req.body);
+
+    const driver = await prisma.drivers.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        vehicle_plate: true,
+        vehicle_type: true,
+        deleted_at: true,
+        banned_at: true
+      }
+    });
+
+    if (!driver) {
+      return res.status(404).json({ success: false, error: 'Motorista não encontrado', requestId });
+    }
+
+    const now = new Date();
+
+    const result = await prisma.$transaction(async (tx) => {
+      const qualification = body.qualification
+        ? await tx.care_driver_qualifications.upsert({
+            where: { driver_id: id },
+            create: {
+              driver_id: id,
+              status: body.qualification.status || 'PENDING',
+              assisted_training_verified: body.qualification.assisted_training_verified ?? false,
+              folding_training_verified: body.qualification.folding_training_verified ?? false,
+              adapted_training_verified: body.qualification.adapted_training_verified ?? false,
+              valid_until: parseNullableDate(body.qualification.valid_until),
+              verified_at: body.qualification.status === 'VERIFIED' ? now : null,
+              verified_by_admin_id: body.qualification.status === 'VERIFIED' ? adminId : null
+            },
+            update: pruneUndefined({
+              status: body.qualification.status,
+              assisted_training_verified: body.qualification.assisted_training_verified,
+              folding_training_verified: body.qualification.folding_training_verified,
+              adapted_training_verified: body.qualification.adapted_training_verified,
+              valid_until: parseNullableDate(body.qualification.valid_until),
+              verified_at: body.qualification.status === 'VERIFIED' ? now : undefined,
+              verified_by_admin_id: body.qualification.status === 'VERIFIED' ? adminId : undefined
+            })
+          })
+        : await tx.care_driver_qualifications.findUnique({ where: { driver_id: id } });
+
+      const vehicle = body.vehicle
+        ? await tx.care_vehicle_capabilities.upsert({
+            where: { driver_id: id },
+            create: {
+              driver_id: id,
+              plate_snapshot: driver.vehicle_plate,
+              status: body.vehicle.status || 'PENDING',
+              folding_storage_verified: body.vehicle.folding_storage_verified ?? false,
+              ramp_or_lift_verified: body.vehicle.ramp_or_lift_verified ?? false,
+              wheelchair_restraint_verified: body.vehicle.wheelchair_restraint_verified ?? false,
+              occupant_restraint_verified: body.vehicle.occupant_restraint_verified ?? false,
+              adaptation_document_verified: body.vehicle.adaptation_document_verified ?? false,
+              wheelchair_capacity: body.vehicle.wheelchair_capacity ?? 0,
+              companion_seats: body.vehicle.companion_seats ?? 0,
+              inspection_valid_until: parseNullableDate(body.vehicle.inspection_valid_until),
+              verified_at: body.vehicle.status === 'VERIFIED' ? now : null,
+              verified_by_admin_id: body.vehicle.status === 'VERIFIED' ? adminId : null
+            },
+            update: pruneUndefined({
+              plate_snapshot: driver.vehicle_plate,
+              status: body.vehicle.status,
+              folding_storage_verified: body.vehicle.folding_storage_verified,
+              ramp_or_lift_verified: body.vehicle.ramp_or_lift_verified,
+              wheelchair_restraint_verified: body.vehicle.wheelchair_restraint_verified,
+              occupant_restraint_verified: body.vehicle.occupant_restraint_verified,
+              adaptation_document_verified: body.vehicle.adaptation_document_verified,
+              wheelchair_capacity: body.vehicle.wheelchair_capacity,
+              companion_seats: body.vehicle.companion_seats,
+              inspection_valid_until: parseNullableDate(body.vehicle.inspection_valid_until),
+              verified_at: body.vehicle.status === 'VERIFIED' ? now : undefined,
+              verified_by_admin_id: body.vehicle.status === 'VERIFIED' ? adminId : undefined
+            })
+          })
+        : await tx.care_vehicle_capabilities.findUnique({ where: { driver_id: id } });
+
+      return { qualification, vehicle };
+    });
+
+    await createAuditLog({
+      adminId,
+      adminEmail: (req as any).admin?.email,
+      action: 'CARE_CAPABILITIES_UPDATE',
+      entityType: 'driver',
+      entityId: id,
+      newValue: {
+        officialCareEnabled: false,
+        changedQualification: !!body.qualification,
+        changedVehicle: !!body.vehicle
+      },
+      reason: 'Preparação administrativa CARE; não habilita CARE oficial',
+      ipAddress: req.ip
+    }).catch(() => {});
+
+    res.json({
+      success: true,
+      data: {
+        driver,
+        qualification: result.qualification,
+        vehicle: result.vehicle,
+        officialCareEnabled: false,
+        note: 'Cadastro preparatório salvo. CARE_ASSISTED oficial continua bloqueado.'
+      }
+    });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        error: error.errors[0]?.message || 'Payload inválido',
+        requestId
+      });
+    }
+
+    console.error(JSON.stringify({
+      ts: new Date().toISOString(),
+      level: 'error',
+      requestId,
+      path: req.path,
+      driverId: req.params.id,
+      error: error?.message || String(error),
+      stack: error?.stack
+    }));
+
+    res.status(500).json({ success: false, error: 'Erro ao salvar capacidade CARE', requestId });
   }
 });
 
