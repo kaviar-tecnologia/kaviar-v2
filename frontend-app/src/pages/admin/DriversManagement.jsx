@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { Fragment, useState, useEffect } from 'react';
 import { API_BASE_URL } from '../../config/api';
 import {
   Box,
@@ -27,7 +27,8 @@ import {
   FormControl,
   InputLabel,
   Select,
-  MenuItem
+  MenuItem,
+  Collapse
 } from '@mui/material';
 import { CheckCircle, Cancel, Block, Visibility, Restore, Replay, Archive, WhatsApp } from '@mui/icons-material';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -46,6 +47,7 @@ export default function DriversManagement() {
   const [error, setError] = useState('');
   const [currentTab, setCurrentTab] = useState(searchParams.get('status') || 'approved');
   const [careFilter, setCareFilter] = useState(searchParams.get('care') || '');
+  const [expandedDrivers, setExpandedDrivers] = useState({});
   const [neighborhoodMetrics, setNeighborhoodMetrics] = useState([]);
   const [showMetrics, setShowMetrics] = useState(false);
   const [actionDialog, setActionDialog] = useState({ 
@@ -160,6 +162,13 @@ export default function DriversManagement() {
 
   const openActionDialog = (driver, action) => {
     setActionDialog({ open: true, driver, action, reason: '' });
+  };
+
+  const toggleDriverDetails = (driverId) => {
+    setExpandedDrivers((prev) => ({
+      ...prev,
+      [driverId]: !prev[driverId]
+    }));
   };
 
   const getStatusColor = (status) => {
@@ -353,124 +362,218 @@ export default function DriversManagement() {
         </Paper>
       )}
 
-      <TableContainer component={Paper}>
-        <Table>
+      <TableContainer
+        component={Paper}
+        sx={{
+          overflowX: 'visible',
+          bgcolor: '#0d1117',
+          border: '1px solid #1a2332',
+          borderRadius: 2,
+          boxShadow: '0 2px 12px rgba(0,0,0,0.2)'
+        }}
+      >
+        <Table sx={{ width: '100%', tableLayout: 'fixed' }}>
           <TableHead>
             <TableRow>
-              <TableCell>Nome</TableCell>
-              <TableCell>Email</TableCell>
-              <TableCell>Bairro</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Regularização Municipal</TableCell>
-              <TableCell>Premium Turismo</TableCell>
-              <TableCell>Cadastro</TableCell>
-              <TableCell>CARE</TableCell>
-              <TableCell>Ações</TableCell>
+              <TableCell sx={{ width: '30%' }}>Motorista</TableCell>
+              <TableCell sx={{ width: '22%' }}>Local / Status</TableCell>
+              <TableCell sx={{ width: '18%' }}>CARE</TableCell>
+              <TableCell sx={{ width: '12%' }}>Cadastro</TableCell>
+              <TableCell sx={{ width: '18%' }} align="right">Ações</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {drivers.map((driver) => (
-              <TableRow key={driver.id}>
-                <TableCell>{driver.name}</TableCell>
-                <TableCell>{driver.email}</TableCell>
-                <TableCell>{driver.neighborhoods?.name || 'Não definido'}</TableCell>
-                <TableCell>
-                  <Chip
-                    label={getStatusText(driver.status)}
-                    color={getStatusColor(driver.status)}
-                    size="small"
-                  />
-                </TableCell>
-                <TableCell>
-                  {(() => {
-                    const badge = getMunicipalBadge(driver.municipalSummary);
-                    if (!badge) return '—';
-                    return <Chip label={badge.label} color={badge.color} size="small" variant="outlined" />;
-                  })()}
-                </TableCell>
-                <TableCell>
-                  {driver.premium_tourism_status === 'active' ? (
-                    <Chip label="Ativo" color="success" size="small" />
-                  ) : (
-                    <Chip label="Inativo" color="default" size="small" />
-                  )}
-                </TableCell>
-                <TableCell>
-                  {formatDate(driver.createdAt)}
-                </TableCell>
-                <TableCell>
-                  {getCareBadge(driver.careSummary)}
-                </TableCell>
-                <TableCell>
-                  <Box sx={{ display: 'flex', gap: 1 }}>
-                    {isSuperAdmin() && driver.status === 'pending' && (
-                      <>
-                        <IconButton
-                          size="small"
-                          color="success"
-                          onClick={() => openActionDialog(driver, 'approved')}
-                          title="Aprovar"
-                        >
-                          <CheckCircle />
-                        </IconButton>
-                        <IconButton
-                          size="small"
-                          color="error"
-                          onClick={() => openActionDialog(driver, 'rejected')}
-                          title="Rejeitar"
-                        >
-                          <Cancel />
-                        </IconButton>
-                      </>
-                    )}
-                    {isSuperAdmin() && driver.status === 'rejected' && (
-                      <>
+            {drivers.map((driver) => {
+              const expanded = Boolean(expandedDrivers[driver.id]);
+              const municipalBadge = getMunicipalBadge(driver.municipalSummary);
+
+              return (
+                <Fragment key={driver.id}>
+                  <TableRow hover sx={{ '& > *': { borderBottom: expanded ? 'none' : undefined } }}>
+                    <TableCell>
+                      <Typography sx={{ fontWeight: 700, color: '#f0f4f8' }} noWrap title={driver.name}>
+                        {driver.name}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#7a8a9a' }} noWrap title={driver.email}>
+                        {driver.email || 'Sem email'}
+                      </Typography>
+                    </TableCell>
+
+                    <TableCell>
+                      <Typography variant="body2" sx={{ color: '#c0c8d0', mb: 0.75 }} noWrap>
+                        {driver.neighborhoods?.name || 'Não definido'}
+                      </Typography>
+                      <Chip
+                        label={getStatusText(driver.status)}
+                        color={getStatusColor(driver.status)}
+                        size="small"
+                      />
+                    </TableCell>
+
+                    <TableCell>
+                      {getCareBadge(driver.careSummary)}
+                    </TableCell>
+
+                    <TableCell>
+                      <Typography variant="body2" sx={{ color: '#c0c8d0' }} noWrap>
+                        {formatDate(driver.createdAt)}
+                      </Typography>
+                    </TableCell>
+
+                    <TableCell align="right">
+                      <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap' }}>
                         <Button
                           size="small"
-                          variant="outlined"
-                          color="primary"
-                          startIcon={<Replay sx={{ fontSize: 16 }} />}
-                          onClick={() => openActionDialog(driver, 'reopen')}
-                          sx={{ textTransform: 'none', fontSize: 11 }}
+                          variant={expanded ? 'contained' : 'outlined'}
+                          onClick={() => toggleDriverDetails(driver.id)}
+                          sx={{ textTransform: 'none', fontSize: 11, minWidth: 78 }}
                         >
-                          Reabrir
+                          {expanded ? 'Fechar' : 'Detalhes'}
                         </Button>
+
+                        {isSuperAdmin() && driver.status === 'pending' && (
+                          <>
+                            <IconButton
+                              size="small"
+                              color="success"
+                              onClick={() => openActionDialog(driver, 'approved')}
+                              title="Aprovar"
+                            >
+                              <CheckCircle fontSize="small" />
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => openActionDialog(driver, 'rejected')}
+                              title="Rejeitar"
+                            >
+                              <Cancel fontSize="small" />
+                            </IconButton>
+                          </>
+                        )}
+
+                        {isSuperAdmin() && driver.status === 'rejected' && (
+                          <>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              color="primary"
+                              startIcon={<Replay sx={{ fontSize: 16 }} />}
+                              onClick={() => openActionDialog(driver, 'reopen')}
+                              sx={{ textTransform: 'none', fontSize: 11 }}
+                            >
+                              Reabrir
+                            </Button>
+                            <IconButton
+                              size="small"
+                              onClick={() => openActionDialog(driver, 'archive')}
+                              title="Arquivar"
+                            >
+                              <Archive fontSize="small" />
+                            </IconButton>
+                          </>
+                        )}
+
+                        {isSuperAdmin() && driver.status === 'suspended' && (
+                          <IconButton
+                            size="small"
+                            color="success"
+                            onClick={() => openActionDialog(driver, 'approved')}
+                            title="Reativar"
+                          >
+                            <Restore fontSize="small" />
+                          </IconButton>
+                        )}
+
                         <IconButton
                           size="small"
-                          onClick={() => openActionDialog(driver, 'archive')}
-                          title="Arquivar"
+                          color="info"
+                          title="Ver página completa"
+                          onClick={() => navigate(`/admin/drivers/${driver.id}`)}
                         >
-                          <Archive fontSize="small" />
+                          <Visibility fontSize="small" />
                         </IconButton>
-                      </>
-                    )}
-                    {isSuperAdmin() && driver.status === 'suspended' && (
-                      <>
+
                         <IconButton
                           size="small"
-                          color="success"
-                          onClick={() => openActionDialog(driver, 'approved')}
-                          title="Reativar"
+                          title="Falar com motorista"
+                          onClick={() => openWhatsAppContact(driver.phone)}
+                          sx={{ color: '#25D366' }}
                         >
-                          <Restore />
+                          <WhatsApp fontSize="small" />
                         </IconButton>
-                      </>
-                    )}
-                    <IconButton
-                      size="small"
-                      color="info"
-                      title="Ver detalhes"
-                      onClick={() => navigate(`/admin/drivers/${driver.id}`)}
-                    >
-                      <Visibility />
-                    </IconButton>
-                    <Button size="small" variant="outlined" startIcon={<WhatsApp fontSize="small" />} onClick={() => openWhatsAppContact(driver.phone)} sx={{ borderColor: '#25D36666', color: '#25D366', textTransform: 'none', fontSize: 11, whiteSpace: 'nowrap' }}>
-                      Falar com motorista
-                    </Button>
-                  </Box>
-                </TableCell>
-              </TableRow>
-            ))}
+                      </Box>
+                    </TableCell>
+                  </TableRow>
+
+                  <TableRow>
+                    <TableCell colSpan={5} sx={{ py: 0, bgcolor: '#090e17' }}>
+                      <Collapse in={expanded} timeout="auto" unmountOnExit>
+                        <Box
+                          sx={{
+                            p: 2,
+                            display: 'grid',
+                            gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
+                            gap: 2,
+                            borderTop: '1px solid #1a2332'
+                          }}
+                        >
+                          <Box>
+                            <Typography variant="caption" sx={{ color: '#7a8a9a' }}>Email</Typography>
+                            <Typography variant="body2" sx={{ color: '#c0c8d0', wordBreak: 'break-word' }}>
+                              {driver.email || 'Sem email'}
+                            </Typography>
+                          </Box>
+
+                          <Box>
+                            <Typography variant="caption" sx={{ color: '#7a8a9a' }}>Bairro / Território</Typography>
+                            <Typography variant="body2" sx={{ color: '#c0c8d0' }}>
+                              {driver.neighborhoods?.name || 'Não definido'}
+                            </Typography>
+                          </Box>
+
+                          <Box>
+                            <Typography variant="caption" sx={{ color: '#7a8a9a' }}>Regularização Municipal</Typography>
+                            <Box sx={{ mt: 0.5 }}>
+                              {municipalBadge ? (
+                                <Chip label={municipalBadge.label} color={municipalBadge.color} size="small" variant="outlined" />
+                              ) : (
+                                <Typography variant="body2" sx={{ color: '#c0c8d0' }}>—</Typography>
+                              )}
+                            </Box>
+                          </Box>
+
+                          <Box>
+                            <Typography variant="caption" sx={{ color: '#7a8a9a' }}>Premium Turismo</Typography>
+                            <Box sx={{ mt: 0.5 }}>
+                              {driver.premium_tourism_status === 'active' ? (
+                                <Chip label="Ativo" color="success" size="small" />
+                              ) : (
+                                <Chip label="Inativo" color="default" size="small" />
+                              )}
+                            </Box>
+                          </Box>
+
+                          <Box>
+                            <Typography variant="caption" sx={{ color: '#7a8a9a' }}>CARE</Typography>
+                            <Box sx={{ mt: 0.5 }}>
+                              {getCareBadge(driver.careSummary)}
+                            </Box>
+                          </Box>
+
+                          <Box>
+                            <Typography variant="caption" sx={{ color: '#7a8a9a' }}>Cadastro</Typography>
+                            <Typography variant="body2" sx={{ color: '#c0c8d0' }}>
+                              {formatDate(driver.createdAt)}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      </Collapse>
+                    </TableCell>
+                  </TableRow>
+                </Fragment>
+              );
+            })}
           </TableBody>
         </Table>
       </TableContainer>
