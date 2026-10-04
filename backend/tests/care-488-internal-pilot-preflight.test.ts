@@ -172,14 +172,16 @@ describe('CARE-488 internal pilot composed preflight', () => {
     });
   });
 
-  it('does not wire the preflight into runtime routes or readiness policy yet', () => {
-    const rides = readFileSync('src/routes/rides-v2.ts', 'utf8');
+  it('keeps readiness policy independent and preflight hard-blocked', () => {
     const readiness = readFileSync('src/services/care/care-readiness-policy.ts', 'utf8');
+    const preflight = readFileSync('src/services/care/care-internal-pilot-preflight.ts', 'utf8');
 
-    expect(rides).not.toContain('getCareInternalPilotPreflightDecision');
-    expect(rides).not.toContain('care-internal-pilot-preflight');
     expect(readiness).not.toContain('getCareInternalPilotPreflightDecision');
     expect(readiness).not.toContain('CARE_INTERNAL_PILOT');
     expect(readiness).toContain('CARE_OFFICIAL_BLOCKED_PENDING_INTEGRATION');
+
+    expect(preflight).toContain('canProceed: false');
+    expect(preflight).not.toContain('canProceed: true');
+    expect(preflight).toContain('CARE_UNAVAILABLE_CODE');
   });
 });

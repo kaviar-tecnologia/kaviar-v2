@@ -106,19 +106,23 @@ describe('CARE-04 central backend readiness gate', () => {
     const code = read('src/routes/rides-v2.ts');
     const estimate = code.slice(code.indexOf("router.post('/estimate'"), code.indexOf("router.get('/active'"));
     const create = code.slice(code.indexOf("router.post('/', authenticatePassenger"), code.indexOf("router.post('/:ride_id/outside-fallback-consent'"));
-    expect(estimate.indexOf('if (isUnsupportedCareIntent(req.body))')).toBeGreaterThan(-1);
-    expect(estimate.indexOf('if (isUnsupportedCareIntent(req.body))')).toBeLessThan(estimate.indexOf('getRouteDistance('));
-    expect(create.indexOf('if (isUnsupportedCareIntent(req.body))')).toBeGreaterThan(-1);
+    expect(estimate.indexOf('if (await rejectBlockedCareIntent(req, res))')).toBeGreaterThan(-1);
+    expect(estimate.indexOf('if (await rejectBlockedCareIntent(req, res))')).toBeLessThan(estimate.indexOf('getRouteDistance('));
+    expect(create.indexOf('if (await rejectBlockedCareIntent(req, res))')).toBeGreaterThan(-1);
     // CARE-04B delegates the existing create call to one shared creation boundary.
     // Guard must still execute before the boundary, not just before the old literal.
     const creationBoundary = create.indexOf('createRideWithRequirements(') >= 0
       ? create.indexOf('createRideWithRequirements(')
       : create.indexOf('rides_v2.create(');
     expect(creationBoundary).toBeGreaterThan(-1);
-    expect(create.indexOf('if (isUnsupportedCareIntent(req.body))')).toBeLessThan(creationBoundary);
-    expect(create.indexOf('if (isUnsupportedCareIntent(req.body))')).toBeLessThan(create.indexOf('idempotencyKey'));
-    expect(estimate).toContain("res.status(403).json({ success: false, error: CARE_UNAVAILABLE_CODE })");
-    expect(create).toContain("res.status(403).json({ success: false, error: CARE_UNAVAILABLE_CODE })");
+    expect(create.indexOf('if (await rejectBlockedCareIntent(req, res))')).toBeLessThan(creationBoundary);
+    expect(create.indexOf('if (await rejectBlockedCareIntent(req, res))')).toBeLessThan(create.indexOf('idempotencyKey'));
+    const helper = code.slice(
+      code.indexOf('async function rejectBlockedCareIntent'),
+      code.indexOf('// 5.0 Estimativa'),
+    );
+    expect(helper).toContain("res.status(403).json({ success: false, error: CARE_UNAVAILABLE_CODE })");
+    expect(helper).toContain('getCareInternalPilotPreflightDecision(');
     // Price-adjustment acceptance bypasses acceptOfferInternal; explicitly
     // guard this second acceptance path before settlement/status changes.
     const adjustment = code.slice(code.indexOf("router.post('/:ride_id/adjustment-response'"), code.indexOf("router.get('/history'"));
