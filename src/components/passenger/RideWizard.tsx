@@ -16,6 +16,7 @@ type ScheduleOption = 'now' | '15min' | '30min' | 'custom';
 const SERVICE_LABELS: Record<string, string> = {
   car: '🚗 Carro KAVIAR',
   moto_passenger: '🏍 Moto Passageiro',
+  care_assisted: '🧓 CARE / Acompanhamento',
 };
 
 interface Props {

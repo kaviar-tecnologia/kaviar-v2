@@ -30,6 +30,7 @@ import { KaviarHub } from '../../src/components/passenger/KaviarHub';
 import { MotoAcceptModal } from '../../src/components/moto/MotoAcceptModal';
 import { MotoUnavailableModal } from '../../src/components/moto/MotoUnavailableModal';
 import { MOTO_FLAGS } from '../../src/config/moto.config';
+import { CARE_FLAGS } from '../../src/config/care.config';
 
 import { ENV } from '../../src/config/env';
 import { apiClient } from '../../src/api/client';
@@ -207,6 +208,7 @@ export default function PassengerMap() {
   const motoUnavailableText = motoServiceAvailable && motoEstimatePrice === null
     ? 'Preço da Moto Passageiro indisponível no momento.'
     : undefined;
+  const carePublicRequestEnabled = CARE_FLAGS.publicRequestEnabled;
 
   // Se navegou da Home com vehicle=moto (já aceitou termos)
   useEffect(() => {
@@ -227,6 +229,17 @@ export default function PassengerMap() {
     }
 
     if (service === 'care_assisted') {
+      if (!carePublicRequestEnabled) {
+        Alert.alert(
+          'KAVIAR Care em implantação',
+          'A solicitação automática do CARE ainda não está disponível. Por enquanto, escolha Carro KAVIAR.'
+        );
+        setSelectedService('car');
+        setSelectedVehicle('car');
+        setMotoConsented(false);
+        return;
+      }
+
       setSelectedService('care_assisted');
       setSelectedVehicle('car');
       setMotoConsented(false);
@@ -813,6 +826,17 @@ export default function PassengerMap() {
   };
 
   const submitRide = async () => {
+    if (selectedService === 'care_assisted' && !carePublicRequestEnabled) {
+      Alert.alert(
+        'KAVIAR Care em implantação',
+        'A solicitação automática do CARE ainda não está disponível. Por enquanto, escolha Carro KAVIAR.'
+      );
+      setSelectedService('car');
+      setSelectedVehicle('car');
+      setWizardStep(1);
+      return;
+    }
+
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setLoading(true);
     try {
@@ -824,7 +848,7 @@ export default function PassengerMap() {
         wait_requested: waitEstimatedMin !== null,
         wait_estimated_min: waitEstimatedMin ?? undefined,
         post_wait_destination: waitEstimatedMin !== null && postWaitDest ? postWaitDest : undefined,
-        ...(selectedService === 'care_assisted' ? {
+        ...(carePublicRequestEnabled && selectedService === 'care_assisted' ? {
           trip_details: {
             public_assisted_ride: true,
             public_assisted_source: 'PASSENGER_APP',
@@ -849,7 +873,7 @@ export default function PassengerMap() {
           wait_requested: waitEstimatedMin !== null,
           wait_estimated_min: waitEstimatedMin ?? undefined,
           post_wait_destination: waitEstimatedMin !== null && postWaitDest ? postWaitDest : undefined,
-          ...(selectedService === 'care_assisted' ? {
+          ...(carePublicRequestEnabled && selectedService === 'care_assisted' ? {
           trip_details: {
             public_assisted_ride: true,
             public_assisted_source: 'PASSENGER_APP',
@@ -1135,6 +1159,7 @@ export default function PassengerMap() {
                 motoEstimatePrice={motoEstimatePrice}
                 motoAvailable={motoServiceSelectable}
                 motoUnavailableText={motoUnavailableText}
+                carePublicRequestEnabled={carePublicRequestEnabled}
                 onSelect={handleSelectService}
                 onSelectSharedRides={handleSelectSharedRides}
                 selectedService={selectedService}

@@ -18,7 +18,9 @@ interface ServiceSelectorProps {
   motoAvailable: boolean;
   /** Optional custom message when Moto Passageiro is not selectable */
   motoUnavailableText?: string;
-  /** Called only for selectable services (car, moto_passenger) */
+  /** Whether CARE public request is selectable. Defaults false until official release. */
+  carePublicRequestEnabled?: boolean;
+  /** Called only for selectable services */
   onSelect: (service: SelectableService) => void;
   /** Called when passenger chooses Corridas Compartilhadas */
   onSelectSharedRides: () => void;
@@ -139,6 +141,7 @@ export function ServiceSelector({
   motoEstimatePrice,
   motoAvailable,
   motoUnavailableText,
+  carePublicRequestEnabled = false,
   onSelect,
   onSelectSharedRides,
   selectedService,
@@ -165,15 +168,25 @@ export function ServiceSelector({
         />
 
         {/* 1B. CARE / Acompanhamento ───────────────────────────────────── */}
-        <ActiveCard
-          icon={<Ionicons name="heart-circle-outline" size={26} color={selectedService === 'care_assisted' ? COLORS.primary : COLORS.textMuted} />}
-          title="CARE / Acompanhamento"
-          description="Corrida em carro comum para consultas, compromissos e apoio não médico."
-          price={estimatePrice !== null ? fmt(estimatePrice) : null}
-          ctaLabel="Selecionar CARE"
-          selected={selectedService === 'care_assisted'}
-          onPress={() => onSelect('care_assisted')}
-        />
+        {carePublicRequestEnabled ? (
+          <ActiveCard
+            icon={<Ionicons name="heart-circle-outline" size={26} color={selectedService === 'care_assisted' ? COLORS.primary : COLORS.textMuted} />}
+            title="CARE / Acompanhamento"
+            description="Corrida em carro comum para consultas, compromissos e apoio não médico."
+            price={estimatePrice !== null ? fmt(estimatePrice) : null}
+            ctaLabel="Selecionar CARE"
+            selected={selectedService === 'care_assisted'}
+            onPress={() => onSelect('care_assisted')}
+          />
+        ) : (
+          <DisabledCard
+            icon={<Ionicons name="heart-outline" size={26} color={COLORS.textMuted} />}
+            title="KAVIAR Care"
+            description="Atendimento especial para quem precisa de mais cuidado no deslocamento."
+            statusText="Em implantação."
+            ctaLabel="Indisponível no momento"
+          />
+        )}
 
         {/* 2. Moto Passageiro ──────────────────────────────────────────── */}
         {motoAvailable ? (
@@ -217,14 +230,6 @@ export function ServiceSelector({
           ctaLabel="Indisponível no momento"
         />
 
-        {/* 6. KAVIAR Care ──────────────────────────────────────────────── */}
-        <DisabledCard
-          icon={<Ionicons name="heart-outline" size={26} color={COLORS.textMuted} />}
-          title="KAVIAR Care"
-          description="Atendimento especial para quem precisa de mais cuidado no deslocamento."
-          statusText="Em implantação."
-          ctaLabel="Indisponível no momento"
-        />
 
         {/* Bottom padding inside scroll */}
         <View style={{ height: 8 }} />
