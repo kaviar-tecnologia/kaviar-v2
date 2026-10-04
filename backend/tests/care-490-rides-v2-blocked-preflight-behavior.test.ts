@@ -343,6 +343,61 @@ describe('CARE-490 rides-v2 blocked preflight behavior', () => {
     expect(dispatchRideMock).not.toHaveBeenCalled();
   });
 
+  it('still blocks CARE estimate when official flags are true and passenger is allowlisted', async () => {
+    const careFlagEnv = [
+      'CARE_PUBLIC_REQUEST_ENABLED',
+      'CARE_OFFICIAL_ENABLED',
+      'CARE_DISPATCH_ENABLED',
+      'CARE_DRIVER_ACCEPTANCE_ENABLED',
+      'CARE_AUDIT_STRICT_ENABLED',
+    ] as const;
+
+    const previousEnv: Partial<Record<(typeof careFlagEnv)[number], string>> = {};
+    for (const key of careFlagEnv) {
+      previousEnv[key] = process.env[key];
+      process.env[key] = 'true';
+    }
+
+    try {
+      prismaMock.feature_flag_allowlist.findUnique.mockResolvedValue({ id: 'allowlist-row' });
+
+      const res = await request(app)
+        .post('/api/v2/rides/estimate')
+        .send(careBody());
+
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({
+        success: false,
+        error: 'CARE_SERVICE_NOT_AVAILABLE',
+      });
+
+      expect(prismaMock.feature_flag_allowlist.findUnique).toHaveBeenCalledWith({
+        where: {
+          key_passenger_id: {
+            key: 'CARE_INTERNAL_PILOT',
+            passenger_id: 'passenger-session',
+          },
+        },
+        select: { id: true },
+      });
+
+      expect(getRouteDistanceMock).not.toHaveBeenCalled();
+      expect(resolveProfileMock).not.toHaveBeenCalled();
+      expect(quoteMock).not.toHaveBeenCalled();
+      expect(createRideWithRequirementsMock).not.toHaveBeenCalled();
+      expect(dispatchRideMock).not.toHaveBeenCalled();
+    } finally {
+      for (const key of careFlagEnv) {
+        const previous = previousEnv[key];
+        if (previous === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = previous;
+        }
+      }
+    }
+  });
+
   it('preserves normal estimate flow without querying CARE_INTERNAL_PILOT allowlist', async () => {
     const res = await request(app)
       .post('/api/v2/rides/estimate')
