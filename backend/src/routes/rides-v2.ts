@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { dispatcherService } from '../services/dispatcher.service';
 import { isUnsupportedCareIntent, CARE_UNAVAILABLE_CODE } from '../services/care/care-readiness-policy';
+import { getCareInternalPilotPreflightDecision } from '../services/care/care-internal-pilot-preflight';
 import { createRideWithRequirements } from '../services/care/care-ride-create';
 import { resolveTerritory } from '../services/territory-resolver.service';
 import { Decimal } from '@prisma/client/runtime/library';
@@ -82,13 +83,26 @@ const getVehiclePhotoUrl = async (driverId: string | null | undefined): Promise<
 
 const router = Router();
 
+async function rejectBlockedCareIntent(req: Request, res: Response): Promise<boolean> {
+  const decision = await getCareInternalPilotPreflightDecision(
+    prisma,
+    req.body,
+    (req as any).passengerId,
+  );
+
+  if (decision.unsupported) {
+    res.status(403).json({ success: false, error: CARE_UNAVAILABLE_CODE });
+    return true;
+  }
+
+  return false;
+}
+
 // 5.0 Estimativa de preço (sem criar corrida)
 router.post('/estimate', authenticatePassenger, async (req: Request, res: Response) => {
   try {
-    // Same central CARE gate as ride creation: no pseudo-CAR_NORMAL estimate.
-    if (isUnsupportedCareIntent(req.body)) {
-      return res.status(403).json({ success: false, error: CARE_UNAVAILABLE_CODE });
-    }
+    // Same central CARE gate as ride creation, now with blocked internal-pilot preflight.
+    if (await rejectBlockedCareIntent(req, res)) return;
     const { origin, destination, post_wait_destination, wait_estimated_min, service_category } = req.body;
     if (!origin?.lat || !origin?.lng || !destination?.lat || !destination?.lng) {
       return res.status(400).json({ error: 'Origem ou destino inválido' });
@@ -216,9 +230,7 @@ router.post('/', authenticatePassenger, async (req: Request, res: Response) => {
   try {
     // Reject before idempotency lookup, pricing, persistence or async dispatch.
     // Frontend-hidden CARE is not equivalent to backend-disabled CARE.
-    if (isUnsupportedCareIntent(req.body)) {
-      return res.status(403).json({ success: false, error: CARE_UNAVAILABLE_CODE });
-    }
+    if (await rejectBlockedCareIntent(req, res)) return;
     const passengerId = (req as any).passengerId;
     const { origin, destination, type = 'normal', trip_details, scheduled_for, wait_requested = false, wait_estimated_min, post_wait_destination, service_category, passenger_moto_consent } = req.body;
     const idempotencyKey = req.headers['idempotency-key'] as string;

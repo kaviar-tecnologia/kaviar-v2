@@ -351,7 +351,7 @@ describe('CARE-04C read-only evidence adapter (synthetic objects only)', () => {
     const route = readFileSync('src/routes/rides-v2.ts', 'utf8');
     const dispatch = readFileSync('src/services/dispatcher.service.ts', 'utf8');
     const acceptance = readFileSync('src/services/offer-acceptance.service.ts', 'utf8');
-    expect(route).toContain('if (isUnsupportedCareIntent(req.body))');
+    expect(route).toContain('if (await rejectBlockedCareIntent(req, res))');
     expect(dispatch).toContain('if (isUnsupportedCareIntent({');
     expect(acceptance).toContain('if (isUnsupportedCareIntent({');
     // CARE-04D stages the read-only adapter behind the unconditional gate

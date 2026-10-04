@@ -182,7 +182,7 @@ describe('CARE-04B common atomic creation boundary', () => {
     const source = readFileSync('src/routes/rides-v2.ts', 'utf8');
     expect(source).toContain('const ride = await createRideWithRequirements({');
     expect(source).not.toContain('const ride = await prisma.rides_v2.create({');
-    expect(source.indexOf('if (isUnsupportedCareIntent(req.body))')).toBeLessThan(
+    expect(source.indexOf('if (await rejectBlockedCareIntent(req, res))')).toBeLessThan(
       source.indexOf('const ride = await createRideWithRequirements({'),
     );
   });
