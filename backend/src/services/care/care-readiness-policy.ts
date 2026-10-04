@@ -10,6 +10,25 @@
  * Do NOT add a second dispatcher or a client-controlled bypass.
  */
 
+import {
+  CareOfficialFlagState,
+  readCareOfficialFlags,
+} from './care-feature-flags';
+
+export const CARE_UNAVAILABLE_CODE = 'CARE_SERVICE_NOT_AVAILABLE' as const;
+
+export type CareReadinessReason =
+  | 'NO_CARE_INTENT'
+  | 'CARE_OFFICIAL_BLOCKED_PENDING_INTEGRATION';
+
+export interface CareReadinessDecision {
+  isCareIntent: boolean;
+  unsupported: boolean;
+  code: typeof CARE_UNAVAILABLE_CODE | null;
+  reason: CareReadinessReason;
+  flags: CareOfficialFlagState;
+}
+
 const careCategoryPattern =
   /^(?:CARE|KAVIAR_CARE|CAR_CARE|CAR_WHEELCHAIR|CAR_ADAPTED|ELDERLY_ASSISTANCE|ACOMPANHAMENTO_ATIVO|WHEELCHAIR|ADAPTED_WHEELCHAIR|FOLDING_WHEELCHAIR)(?:_|$)/;
 
@@ -44,9 +63,10 @@ const hasStructuredCareKeys = (value: unknown): boolean => {
 };
 
 /** Catches explicit CARE intent, even when sent under CAR_NORMAL. */
-export function isUnsupportedCareIntent(input: unknown): boolean {
+export function isCareIntent(input: unknown): boolean {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return false;
   const request = input as Record<string, unknown>;
+
   if ([
     request.service_category,
     request.serviceCategory,
@@ -60,4 +80,40 @@ export function isUnsupportedCareIntent(input: unknown): boolean {
   return false;
 }
 
-export const CARE_UNAVAILABLE_CODE = 'CARE_SERVICE_NOT_AVAILABLE' as const;
+/**
+ * Returns the explicit CARE readiness decision.
+ *
+ * Feature flags are exposed for observability and future rollout control, but
+ * they do not bypass containment in this PR. The official CARE flow still needs
+ * reviewed transactional booking, dispatcher, pricing and driver acceptance.
+ */
+export function getCareReadinessDecision(
+  input: unknown,
+  env: Record<string, string | undefined> = process.env,
+): CareReadinessDecision {
+  const careIntent = isCareIntent(input);
+  const flags = readCareOfficialFlags(env);
+
+  if (!careIntent) {
+    return {
+      isCareIntent: false,
+      unsupported: false,
+      code: null,
+      reason: 'NO_CARE_INTENT',
+      flags,
+    };
+  }
+
+  return {
+    isCareIntent: true,
+    unsupported: true,
+    code: CARE_UNAVAILABLE_CODE,
+    reason: 'CARE_OFFICIAL_BLOCKED_PENDING_INTEGRATION',
+    flags,
+  };
+}
+
+/** Catches explicit CARE intent, even when sent under CAR_NORMAL. */
+export function isUnsupportedCareIntent(input: unknown): boolean {
+  return getCareReadinessDecision(input).unsupported;
+}

@@ -3,8 +3,13 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   CARE_UNAVAILABLE_CODE,
+  getCareReadinessDecision,
   isUnsupportedCareIntent,
 } from '../src/services/care/care-readiness-policy';
+import {
+  areCareOfficialReleaseFlagsEnabled,
+  readCareOfficialFlags,
+} from '../src/services/care/care-feature-flags';
 
 const read = (relative: string) => readFileSync(resolve(process.cwd(), relative), 'utf8');
 
@@ -18,6 +23,40 @@ describe('CARE-04 central backend readiness gate', () => {
       expect(isUnsupportedCareIntent({ service_category }), service_category).toBe(true);
     }
     expect(CARE_UNAVAILABLE_CODE).toBe('CARE_SERVICE_NOT_AVAILABLE');
+  });
+
+  it('centralizes CARE official flags without allowing an env-only bypass', () => {
+    const enabledEnv = {
+      CARE_ADMIN_ENABLED: 'true',
+      CARE_PUBLIC_REQUEST_ENABLED: 'true',
+      CARE_OFFICIAL_ENABLED: 'true',
+      CARE_DISPATCH_ENABLED: 'true',
+      CARE_DRIVER_ACCEPTANCE_ENABLED: 'true',
+      CARE_AUDIT_STRICT_ENABLED: 'true',
+    };
+
+    expect(readCareOfficialFlags(enabledEnv)).toMatchObject({
+      CARE_ADMIN_ENABLED: true,
+      CARE_PUBLIC_REQUEST_ENABLED: true,
+      CARE_OFFICIAL_ENABLED: true,
+      CARE_DISPATCH_ENABLED: true,
+      CARE_DRIVER_ACCEPTANCE_ENABLED: true,
+      CARE_AUDIT_STRICT_ENABLED: true,
+    });
+    expect(areCareOfficialReleaseFlagsEnabled(enabledEnv)).toBe(true);
+
+    const decision = getCareReadinessDecision(
+      { service_category: 'CARE_ASSISTED' },
+      enabledEnv,
+    );
+
+    expect(decision).toMatchObject({
+      isCareIntent: true,
+      unsupported: true,
+      code: CARE_UNAVAILABLE_CODE,
+      reason: 'CARE_OFFICIAL_BLOCKED_PENDING_INTEGRATION',
+    });
+    expect(isUnsupportedCareIntent({ service_category: 'CARE_ASSISTED' })).toBe(true);
   });
 
   it('blocks CARE intent under aliases even when service_category is CAR_NORMAL', () => {
