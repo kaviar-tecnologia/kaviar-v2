@@ -275,3 +275,59 @@ export async function writeCareEligibilityShadowAuditTx(
       ${input.userAgent ?? null}
     )`;
 }
+
+export type CareEligibilityShadowAuditCallerClient =
+  CareReadClient & CareEligibilityShadowAuditWriteClient;
+
+export interface CareEligibilityShadowAuditCallerInput extends CareEligibilityShadowInput {
+  adminId: unknown;
+  reason?: string;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+export interface CareEligibilityShadowAuditCallerResult {
+  decision: CareEligibilityShadowDecision;
+  auditWritten: true;
+  operationAllowed: false;
+  dispatchAllowed: false;
+  acceptanceAllowed: false;
+  walletAllowed: false;
+  publicCode: typeof CARE_UNAVAILABLE_CODE;
+}
+
+/**
+ * CARE-499: explicit internal caller for CARE eligibility shadow audit traces.
+ *
+ * This function is intentionally not wired to routes, dispatcher, offer
+ * acceptance, pricing, wallet, mobile or production flags. A future caller must
+ * invoke it explicitly inside a controlled transaction/client boundary.
+ *
+ * Persistence errors are not swallowed: when the audit trace is mandatory for a
+ * caller, failure aborts the caller's transaction just like CARE admin audit.
+ */
+export async function evaluateAndWriteCareEligibilityShadowAuditTx(
+  tx: CareEligibilityShadowAuditCallerClient,
+  input: CareEligibilityShadowAuditCallerInput,
+  env: Record<string, string | undefined> = process.env,
+): Promise<CareEligibilityShadowAuditCallerResult> {
+  const decision = await evaluateCareEligibilityShadowMode(tx, input, env);
+
+  await writeCareEligibilityShadowAuditTx(tx, {
+    adminId: input.adminId,
+    decision,
+    reason: input.reason,
+    ipAddress: input.ipAddress,
+    userAgent: input.userAgent,
+  });
+
+  return {
+    decision,
+    auditWritten: true,
+    operationAllowed: false,
+    dispatchAllowed: false,
+    acceptanceAllowed: false,
+    walletAllowed: false,
+    publicCode: CARE_UNAVAILABLE_CODE,
+  };
+}
