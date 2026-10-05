@@ -2,7 +2,14 @@ import { Router, Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { authenticateAdmin, requireSuperAdmin } from '../middlewares/auth';
-import { CARE_UNAVAILABLE_CODE } from '../services/care/care-readiness-policy';
+import {
+  CARE_UNAVAILABLE_CODE,
+  getCareReadinessDecision,
+} from '../services/care/care-readiness-policy';
+import {
+  areCareOfficialReleaseFlagsEnabled,
+  readCareOfficialFlags,
+} from '../services/care/care-feature-flags';
 import {
   CARE_ELIGIBILITY_SHADOW_AUDIT_ACTION,
   CARE_ELIGIBILITY_SHADOW_AUDIT_ENTITY_TYPE,
@@ -17,6 +24,54 @@ const router = Router();
 router.use(authenticateAdmin, requireSuperAdmin);
 
 const DEFAULT_REASON = 'ADMIN_CARE_SHADOW_AUDIT_HARNESS';
+
+const CARE_READINESS_REPORT_VERSION = 'care-readiness-admin-report-v1' as const;
+
+const CARE_REQUIRED_RELEASE_FLAGS = [
+  'CARE_PUBLIC_REQUEST_ENABLED',
+  'CARE_OFFICIAL_ENABLED',
+  'CARE_DISPATCH_ENABLED',
+  'CARE_DRIVER_ACCEPTANCE_ENABLED',
+  'CARE_AUDIT_STRICT_ENABLED',
+] as const;
+
+function buildCareReadinessBlockers(
+  flags: ReturnType<typeof readCareOfficialFlags>,
+  releaseFlagsEnabled: boolean,
+) {
+  const missingReleaseFlags = CARE_REQUIRED_RELEASE_FLAGS.filter((key) => !flags[key]);
+
+  return [
+    {
+      code: 'CARE_OFFICIAL_FLOW_NOT_IMPLEMENTED',
+      blocking: true,
+      severity: 'critical',
+      detail: 'Official CARE transactional booking, dispatch and driver acceptance remain intentionally blocked.',
+    },
+    {
+      code: 'CARE_PUBLIC_POLICY_STILL_BLOCKED',
+      blocking: true,
+      severity: 'critical',
+      detail: CARE_UNAVAILABLE_CODE,
+    },
+    ...missingReleaseFlags.map((flag) => ({
+      code: `${flag}_FALSE`,
+      flag,
+      blocking: true,
+      severity: 'critical',
+      detail: 'Required release flag is not enabled.',
+    })),
+    ...(releaseFlagsEnabled
+      ? [{
+          code: 'CARE_RELEASE_FLAGS_TRUE_BUT_POLICY_BLOCKED',
+          blocking: true,
+          severity: 'critical',
+          detail: 'Even with release flags true, the current readiness policy remains fail-closed.',
+        }]
+      : []),
+  ];
+}
+
 
 function normalizeRequiredId(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -109,6 +164,94 @@ function serializeHarnessResult(result: CareShadowAuditHarnessResult) {
   };
 }
 
+
+
+/**
+ * CARE-504: read-only SUPER_ADMIN readiness report for CARE.
+ *
+ * This endpoint only reports flags, hard-block policy state and recent shadow
+ * audit evidence. It does not trigger the harness, does not create CARE rides,
+ * does not dispatch, does not accept offers, does not price, does not touch
+ * wallet, does not mutate flags and does not enable public CARE.
+ */
+router.get('/readiness', async (req: Request, res: Response) => {
+  try {
+    const auditLimit = parseBoundedInt(req.query.auditLimit ?? req.query.limit, 5, 0, 20);
+    const flags = readCareOfficialFlags();
+    const releaseFlagsEnabled = areCareOfficialReleaseFlagsEnabled();
+    const policyDecision = getCareReadinessDecision({ service_category: 'CARE' });
+    const blockers = buildCareReadinessBlockers(flags, releaseFlagsEnabled);
+    const missingReleaseFlags = CARE_REQUIRED_RELEASE_FLAGS.filter((key) => !flags[key]);
+
+    const latestAuditLogs = auditLimit > 0
+      ? await prisma.$queryRaw<CareShadowAuditLogRow[]>(Prisma.sql`
+          SELECT
+            id,
+            admin_id AS "adminId",
+            admin_email AS "adminEmail",
+            action,
+            entity_type AS "entityType",
+            entity_id AS "entityId",
+            old_value AS "oldValue",
+            new_value AS "newValue",
+            reason,
+            ip_address AS "ipAddress",
+            user_agent AS "userAgent",
+            created_at AS "createdAt"
+          FROM admin_audit_logs
+          WHERE action = ${CARE_ELIGIBILITY_SHADOW_AUDIT_ACTION}
+            AND entity_type = ${CARE_ELIGIBILITY_SHADOW_AUDIT_ENTITY_TYPE}
+          ORDER BY created_at DESC, id DESC
+          LIMIT ${auditLimit}
+        `)
+      : [];
+
+    const totals = await prisma.$queryRaw<Array<{ total: number | bigint }>>(Prisma.sql`
+      SELECT COUNT(*)::int AS total
+      FROM admin_audit_logs
+      WHERE action = ${CARE_ELIGIBILITY_SHADOW_AUDIT_ACTION}
+        AND entity_type = ${CARE_ELIGIBILITY_SHADOW_AUDIT_ENTITY_TYPE}
+    `);
+
+    return res.json({
+      success: true,
+      data: {
+        version: CARE_READINESS_REPORT_VERSION,
+        readOnly: true,
+        careShadow: true,
+        publicCode: CARE_UNAVAILABLE_CODE,
+        releaseReady: false,
+        releaseFlagsEnabled,
+        publicCareAvailable: false,
+        officialCareAvailable: false,
+        operationAllowed: false,
+        dispatchAllowed: false,
+        acceptanceAllowed: false,
+        walletAllowed: false,
+        flags,
+        requiredReleaseFlags: CARE_REQUIRED_RELEASE_FLAGS,
+        missingReleaseFlags,
+        policyDecision: {
+          ...policyDecision,
+          code: CARE_UNAVAILABLE_CODE,
+          unsupported: true,
+          reason: 'CARE_OFFICIAL_BLOCKED_PENDING_INTEGRATION',
+        },
+        blockers,
+        shadowAudit: {
+          total: Number(totals[0]?.total ?? 0),
+          latestLimit: auditLimit,
+          latest: latestAuditLogs.map(serializeAuditLog),
+        },
+      },
+    });
+  } catch (_err) {
+    return res.status(500).json({
+      success: false,
+      error: 'CARE_READINESS_REPORT_FAILED',
+    });
+  }
+});
 
 /**
  * CARE-503: read-only SUPER_ADMIN audit trail for CARE shadow decisions.
