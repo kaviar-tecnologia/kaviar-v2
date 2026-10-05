@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { parseCareBooleanFlag } from './care-feature-flags';
 import { CARE_UNAVAILABLE_CODE } from './care-readiness-policy';
 import {
@@ -187,4 +188,90 @@ export async function evaluateCareEligibilityShadowMode(
       ['CARE_SHADOW_EVALUATION_EXCEPTION'],
     );
   }
+}
+
+export const CARE_ELIGIBILITY_SHADOW_AUDIT_ACTION = 'CARE_ELIGIBILITY_SHADOW_DECISION' as const;
+export const CARE_ELIGIBILITY_SHADOW_AUDIT_ENTITY_TYPE = 'care_eligibility_shadow' as const;
+
+export type CareEligibilityShadowAuditWriteClient = Pick<Prisma.TransactionClient, '$executeRaw'>;
+
+export interface CareEligibilityShadowAuditWriteInput {
+  adminId: unknown;
+  decision: CareEligibilityShadowDecision;
+  reason?: string;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+const normalizeAuditText = (value: unknown, fallback: string, max = 500): string => {
+  if (typeof value !== 'string') return fallback;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed.slice(0, max) : fallback;
+};
+
+export function buildCareEligibilityShadowAuditPayload(
+  decision: CareEligibilityShadowDecision,
+): Record<string, unknown> {
+  return {
+    version: 'care-eligibility-shadow-v1',
+    kind: decision.auditEvent.kind,
+    rideId: decision.auditEvent.rideId,
+    driverId: decision.auditEvent.driverId,
+    evaluatedAt: decision.auditEvent.evaluatedAt,
+    shadowEnabled: decision.auditEvent.shadowEnabled,
+    status: decision.status,
+    eligibilityEligible: decision.auditEvent.eligibilityEligible,
+    operationAllowed: false,
+    dispatchAllowed: false,
+    acceptanceAllowed: false,
+    walletAllowed: false,
+    publicCode: CARE_UNAVAILABLE_CODE,
+    reasons: decision.auditEvent.reasons,
+  };
+}
+
+/**
+ * CARE-498: controlled audit trace for CARE eligibility shadow decisions.
+ *
+ * This writer is explicit-only and transactional: the caller must provide the
+ * transaction/client boundary. It does not evaluate eligibility, does not open
+ * public CARE, does not create rides, does not dispatch, does not accept offers,
+ * does not price, does not touch wallet and does not swallow persistence errors.
+ *
+ * Payload intentionally stores only official technical identifiers and decision
+ * metadata. No clinical notes, documents, provider payloads, passenger profile
+ * data or free-text medical content should be added here.
+ */
+export async function writeCareEligibilityShadowAuditTx(
+  tx: CareEligibilityShadowAuditWriteClient,
+  input: CareEligibilityShadowAuditWriteInput,
+): Promise<void> {
+  const adminId = normalizeId(input.adminId);
+  if (!adminId) {
+    throw new Error('CARE_SHADOW_AUDIT_ACTOR_INVALID');
+  }
+
+  const event = input.decision.auditEvent;
+  const entityId = normalizeAuditText(event.rideId, 'unknown-care-shadow-ride', 200);
+  const reason = normalizeAuditText(
+    input.reason,
+    event.reasons.join(',') || 'CARE_SHADOW_DECISION',
+    500,
+  );
+  const payload = buildCareEligibilityShadowAuditPayload(input.decision);
+
+  await tx.$executeRaw`
+    INSERT INTO admin_audit_logs
+      (admin_id, action, entity_type, entity_id, old_value, new_value, reason, ip_address, user_agent)
+    VALUES (
+      ${adminId},
+      ${CARE_ELIGIBILITY_SHADOW_AUDIT_ACTION},
+      ${CARE_ELIGIBILITY_SHADOW_AUDIT_ENTITY_TYPE},
+      ${entityId},
+      ${null}::jsonb,
+      ${JSON.stringify(payload)}::jsonb,
+      ${reason},
+      ${input.ipAddress ?? null},
+      ${input.userAgent ?? null}
+    )`;
 }
