@@ -1,0 +1,113 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+const repoRoot = resolve(process.cwd(), '..');
+
+const readRepoFile = (path: string) =>
+  readFileSync(resolve(repoRoot, path), 'utf8');
+
+const readBackendFile = (path: string) =>
+  readFileSync(resolve(process.cwd(), path), 'utf8');
+
+const normalize = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\x00-\x7F]/g, '')
+    .toLowerCase();
+
+describe('CARE-517 RJ / Fernanda / Aparecido pilot evidence', () => {
+  const doc = readRepoFile('docs/care/CARE-517-rj-fernanda-aparecido-pilot-evidence.md');
+  const plainDoc = normalize(doc);
+
+  it('records the corrected read-only pilot composition', () => {
+    expect(plainDoc).toContain('territorio candidato: rio de janeiro');
+    expect(plainDoc).toContain('gestora territorial candidata: fernanda');
+    expect(plainDoc).toContain('motorista candidato: aparecido');
+    expect(plainDoc).toContain('paula nao entra como gestora deste piloto');
+    expect(plainDoc).toContain('tambau fica descartado');
+    expect(plainDoc).toContain('ausencia de motorista disponivel');
+  });
+
+  it('keeps CARE fail-closed and non-operational', () => {
+    [
+      'CARE_SERVICE_NOT_AVAILABLE',
+      'CARE_REQUIREMENTS_MISSING',
+      'releaseReady=false',
+      'publicCareAvailable=false',
+      'officialCareAvailable=false',
+      'operationAllowed=false',
+      'dispatchAllowed=false',
+      'acceptanceAllowed=false',
+      'walletAllowed=false',
+    ].forEach((marker) => {
+      expect(doc).toContain(marker);
+    });
+
+    expect(plainDoc).toContain('nao autoriza care real');
+    expect(plainDoc).toContain('nao habilita care publico/oficial');
+  });
+
+  it('requires read-only evidence before any pilot operation', () => {
+    [
+      'territorio exato do aparecido',
+      'vinculo territorial da fernanda',
+      'cadastro do aparecido como motorista',
+      'status ativo do motorista',
+      'documentos do motorista',
+      'veiculo cadastrado',
+      'seguro app aplicavel',
+      'regulacao municipal/local',
+      'pricing sem discriminacao',
+      'dispatcher somente simulado',
+      'aceite somente simulado',
+      'wallet guard sem movimentacao',
+      'rollback operacional documentado',
+    ].forEach((pendingEvidence) => {
+      expect(plainDoc).toContain(pendingEvidence);
+    });
+  });
+
+  it('keeps the decision pending', () => {
+    expect(plainDoc).toContain('resultado atual: `pendente`');
+    expect(plainDoc).toContain('a decisao atual permanece `pendente`');
+    expect(plainDoc).toContain('care permanece fail-closed');
+  });
+
+  it('forbids production, deploy, dispatch, acceptance, wallet and payment effects', () => {
+    [
+      'alterar producao',
+      'fazer deploy',
+      'criar corrida care real',
+      'chamar dispatcher real',
+      'permitir aceite real',
+      'cobrar tarifa care',
+      'movimentar wallet',
+      'fazer repasse',
+    ].forEach((forbiddenEffect) => {
+      expect(plainDoc).toContain(forbiddenEffect);
+    });
+  });
+
+  it('matches current fail-closed runtime evidence', () => {
+    const readinessPolicy = readBackendFile('src/services/care/care-readiness-policy.ts');
+    const adminShadowRoute = readBackendFile('src/routes/admin-care-shadow.ts');
+    const ridesV2Route = readBackendFile('src/routes/rides-v2.ts');
+
+    expect(readinessPolicy).toContain('CARE_SERVICE_NOT_AVAILABLE');
+    expect(readinessPolicy).toContain('CARE_UNAVAILABLE_CODE');
+
+    expect(adminShadowRoute).toMatch(/operationAllowed:\s*false/);
+    expect(adminShadowRoute).toMatch(/dispatchAllowed:\s*false/);
+    expect(adminShadowRoute).toMatch(/acceptanceAllowed:\s*false/);
+    expect(adminShadowRoute).toMatch(/walletAllowed:\s*false/);
+
+    const blockedCareIntentIndex = ridesV2Route.indexOf('rejectBlockedCareIntent');
+    const transactionalCreateIndex = ridesV2Route.lastIndexOf('createRideWithRequirements');
+
+    expect(blockedCareIntentIndex).toBeGreaterThanOrEqual(0);
+    expect(transactionalCreateIndex).toBeGreaterThanOrEqual(0);
+    expect(blockedCareIntentIndex).toBeLessThan(transactionalCreateIndex);
+  });
+});
