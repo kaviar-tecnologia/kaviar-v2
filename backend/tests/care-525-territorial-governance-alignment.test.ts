@@ -28,23 +28,27 @@ const auditDoc = fs.readFileSync(
 );
 
 describe('CARE-525 — territorial governance alignment audit', () => {
-  it('characterizes administrative coverage governance as city-level', () => {
-    expect(adminAi).toContain("level: 'city'");
+  it('implements explicit city/region coverage governance without changing the state machine', () => {
+    expect(adminAi).toContain("['city', 'region'].includes(territory.level)");
+    expect(adminAi).toContain("territory.level === 'region'");
     expect(adminAi).toContain('coverage_status: target_status');
     expect(adminAi).toContain('coverage_reviewed_at: reviewedAt');
     expect(adminAi).toContain('coverage_reviewed_by: reviewedBy');
-    expect(adminAi).toContain('child.parent_id = ${territory.id}');
-    expect(adminAi).toContain("child.level = 'region'");
+    expect(adminAi).toContain('resolveCoverageTransition');
+    expect(adminAi).toContain('COVERAGE_GEOFENCE_INCOMPLETE');
+    expect(adminAi).toContain('COVERAGE_REVIEW_INCOMPLETE');
   });
 
-  it('characterizes current governance COMPLETE guard as only requiring at least one official neighborhood', () => {
-    expect(adminAi).toContain('officialNeighborhoods === 0');
-    expect(adminAi).toContain('COVERAGE_WITHOUT_OFFICIAL_NEIGHBORHOODS');
-
-    const coverageRoute = adminAi.split("'/territory/coverage/status'")[1] || '';
-    expect(coverageRoute).not.toContain('ST_IsValid');
-    expect(coverageRoute).not.toContain('ST_SRID');
-    expect(coverageRoute).not.toContain('neighborhood_geofences');
+  it('requires valid regional geofences and reviewed neighborhoods before COMPLETE', () => {
+    expect(adminAi).toContain('ST_IsValid(ng.geom)');
+    expect(adminAi).toContain('ST_SRID(ng.geom) = 4326');
+    expect(adminAi).toContain('verified_neighborhoods');
+    expect(adminAi).toContain(
+      'stats.valid_geofences !== stats.official_neighborhoods',
+    );
+    expect(adminAi).toContain(
+      'stats.verified_neighborhoods !== stats.official_neighborhoods',
+    );
   });
 
   it('characterizes CARE operational evidence as reading coverage from the neighborhood direct territory', () => {
@@ -85,15 +89,13 @@ describe('CARE-525 — territorial governance alignment audit', () => {
     );
   });
 
-  it('documents the preferred correction without weakening fail-closed controls', () => {
-    expect(auditDoc).toContain('manter a governança municipal');
-    expect(auditDoc).toContain('resolver o ancestral municipal no CARE');
-    expect(auditDoc).toContain('bairro continua sendo evidência específica');
-    expect(auditDoc).toContain('COMPLETE deve ser fail-closed');
-    expect(auditDoc).toContain('preservar ST_Covers');
-    expect(auditDoc).toContain(
-      'Nenhuma destas mudanças é implementada neste PR de auditoria.',
-    );
+  it('documents the authorized branch implementation without weakening fail-closed controls', () => {
+    expect(auditDoc).toContain('Implementação autorizada na branch — 07/10/2026');
+    expect(auditDoc).toContain('revisão auditável de bairro/geofence');
+    expect(auditDoc).toContain('Governança regional de coverage_status');
+    expect(auditDoc).toContain('Os resolvers CARE não foram afrouxados');
+    expect(auditDoc).toContain('não fazer merge');
+    expect(auditDoc).toContain('não fazer deploy');
   });
 
   it('keeps insurance and municipal evidence independent from territorial coverage', () => {
@@ -235,6 +237,45 @@ describe('CARE-525 — territorial governance alignment audit', () => {
     expect(auditDoc).toContain(
       'Não usar atualização SQL direta dos oito bairros como solução operacional',
     );
+  });
+
+
+  it('adds a read-only regional coverage readiness endpoint', () => {
+    expect(adminAi).toContain(
+      "'/territory/coverage/:territoryId/readiness'",
+    );
+    expect(adminAi).toContain('can_submit_review');
+    expect(adminAi).toContain('can_complete');
+    expect(adminAi).toContain('official_neighborhoods');
+    expect(adminAi).toContain('valid_geofences');
+    expect(adminAi).toContain('verified_neighborhoods');
+  });
+
+  it('adds explicit audited neighborhood geofence review with compare-and-set', () => {
+    expect(adminAi).toContain(
+      "'/territory/neighborhoods/:id/review'",
+    );
+    expect(adminAi).toContain('VERIFICAR_BAIRRO_GEOFENCE');
+    expect(adminAi).toContain('REABRIR_BAIRRO_GEOFENCE');
+    expect(adminAi).toContain('expected_verified');
+    expect(adminAi).toContain('COVERAGE_NOT_AWAITING_REVIEW');
+    expect(adminAi).toContain('NEIGHBORHOOD_GEOFENCE_NOT_VERIFIABLE');
+    expect(adminAi).toContain(
+      "action: verified\n          ? 'territory_neighborhood_geofence_verify'",
+    );
+    expect(adminAi).toContain('is_verified: expected_verified');
+  });
+
+  it('keeps neighborhood review isolated from CARE activation and financial flows', () => {
+    const reviewRoute =
+      adminAi.split("'/territory/neighborhoods/:id/review'")[1]
+        ?.split("router.post(\n  '/territory/coverage/status'")[0] || '';
+
+    expect(reviewRoute).not.toContain('CARE_OFFICIAL_ENABLED');
+    expect(reviewRoute).not.toContain('CARE_DISPATCH_ENABLED');
+    expect(reviewRoute).not.toContain('wallet');
+    expect(reviewRoute).not.toContain('payment');
+    expect(reviewRoute).not.toContain('rides_v2.create');
   });
 
 });
