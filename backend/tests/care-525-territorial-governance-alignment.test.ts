@@ -188,4 +188,24 @@ describe('CARE-525 — territorial governance alignment audit', () => {
     );
   });
 
+
+  it('records the preferred regional coverage model for the CARE pilot', () => {
+    expect(auditDoc).toContain('Reavaliação arquitetural — escopo regional para o piloto CARE');
+    expect(auditDoc).toContain(
+      '`city.coverage_status`: completude municipal',
+    );
+    expect(auditDoc).toContain(
+      '`region.coverage_status`: completude operacional daquela região',
+    );
+    expect(auditDoc).toContain(
+      'A proposta anterior de fazer o CARE herdar obrigatoriamente o `coverage_status` do ancestral municipal não é mais a opção preferencial',
+    );
+    expect(auditDoc).toContain(
+      'generalizar a governança de cobertura para um território explícito `city` ou `region`',
+    );
+    expect(auditDoc).toContain(
+      'para `region`, considerar apenas bairros vinculados àquela região',
+    );
+  });
+
 });
