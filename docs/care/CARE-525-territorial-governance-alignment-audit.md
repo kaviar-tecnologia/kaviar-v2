@@ -402,3 +402,18 @@ A auditoria do histórico do repositório encontrou evidência adicional de que 
 Essa evidência histórica não prova, sozinha, qual script gerou os registros atuais de `neighborhoods` em 13/06/2026, mas reforça que **Mata Machado, Furnas e Tijuquinha não devem ser promovidos automaticamente como BAIRRO_OFICIAL**.
 
 O fato de Furnas, Mata Machado, Morro do Banco e Tijuquinha terem exatamente o mesmo `created_at = 2026-06-13T02:30:26.724Z` no banco atual indica forte probabilidade de carga em lote. A origem exata dessa carga ainda deve ser identificada antes de qualquer mutação.
+
+
+## Regra de domínio KAVIAR — Tijuquinha
+
+Para o modelo territorial operacional da KAVIAR, **Tijuquinha deve ser tratada como comunidade da Zona Oeste vinculada à Barra da Tijuca**, e não como bairro oficial autônomo nem como região `Tijuca`.
+
+Essa regra de domínio foi confirmada pelo proprietário do projeto durante a auditoria CARE-525.
+
+Consequências para a correção futura:
+
+- o registro atual de Tijuquinha em `neighborhoods` com `area_type=BAIRRO_OFICIAL` é incompatível com o modelo desejado;
+- o vínculo atual com o território regional `Tijuca` também é incompatível;
+- a correção não deve criar uma geofence de **bairro oficial** para Tijuquinha apenas para satisfazer o gate CARE;
+- antes de qualquer mutação, devem ser auditadas todas as referências ao ID atual e definido o registro canônico de comunidade/localidade sob Barra da Tijuca;
+- qualquer divergência entre a classificação operacional da KAVIAR e nomenclatura de fontes municipais deve ficar explícita no mapeamento, sem ser resolvida por inferência silenciosa.
