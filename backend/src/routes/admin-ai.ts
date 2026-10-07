@@ -24,6 +24,11 @@ import {
   resolveCoverageNotes,
   resolveCoverageTransition,
 } from '../services/ai/kaviar-ai.territory-coverage-governance';
+import {
+  CareAdminConflict,
+  lockCareAdminRow,
+  writeCareAdminAuditTx,
+} from '../services/care/care-admin-atomic';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 
@@ -829,12 +834,605 @@ router.post('/territory/landing/enable', allowExecutiveConfirmedAction, async (r
 
 
 // ── Territorial: Governança da cobertura territorial ────────────────────────
+
+type CoverageScopeStats = {
+  official_neighborhoods: number;
+  valid_geofences: number;
+  verified_neighborhoods: number;
+};
+
+async function getCoverageScopeStats(
+  db: Pick<typeof prisma, '$queryRaw'>,
+  territory: {
+    id: string;
+    level: string;
+    city_name: string | null;
+    name: string;
+    uf: string | null;
+  }
+): Promise<CoverageScopeStats> {
+  if (territory.level === 'region') {
+    const rows = await db.$queryRaw<Array<CoverageScopeStats>>`
+      SELECT
+        COUNT(*)::int AS official_neighborhoods,
+        COUNT(*) FILTER (
+          WHERE ng.geom IS NOT NULL
+            AND ST_IsValid(ng.geom)
+            AND ST_SRID(ng.geom) = 4326
+        )::int AS valid_geofences,
+        COUNT(*) FILTER (
+          WHERE n.is_verified = true
+            AND n.verified_at IS NOT NULL
+            AND n.verified_at <= NOW()
+            AND NULLIF(BTRIM(n.verified_by), '') IS NOT NULL
+        )::int AS verified_neighborhoods
+      FROM neighborhoods n
+      LEFT JOIN neighborhood_geofences ng
+        ON ng.neighborhood_id = n.id
+      WHERE n.is_active = true
+        AND n.area_type = 'BAIRRO_OFICIAL'
+        AND n.territory_id = ${territory.id}
+    `;
+
+    return rows[0] ?? {
+      official_neighborhoods: 0,
+      valid_geofences: 0,
+      verified_neighborhoods: 0,
+    };
+  }
+
+  const canonicalCity = territory.city_name || territory.name;
+
+  const rows = await db.$queryRaw<Array<CoverageScopeStats>>`
+    SELECT
+      COUNT(*)::int AS official_neighborhoods,
+      COUNT(*) FILTER (
+        WHERE ng.geom IS NOT NULL
+          AND ST_IsValid(ng.geom)
+          AND ST_SRID(ng.geom) = 4326
+      )::int AS valid_geofences,
+      COUNT(*) FILTER (
+        WHERE n.is_verified = true
+          AND n.verified_at IS NOT NULL
+          AND n.verified_at <= NOW()
+          AND NULLIF(BTRIM(n.verified_by), '') IS NOT NULL
+      )::int AS verified_neighborhoods
+    FROM neighborhoods n
+    LEFT JOIN neighborhood_geofences ng
+      ON ng.neighborhood_id = n.id
+    WHERE n.is_active = true
+      AND n.area_type = 'BAIRRO_OFICIAL'
+      AND (
+        n.territory_id = ${territory.id}
+
+        OR n.territory_id IN (
+          SELECT child.id
+          FROM operational_territories child
+          WHERE child.parent_id = ${territory.id}
+            AND child.level = 'region'
+        )
+
+        OR (
+          n.territory_id IS NULL
+          AND LOWER(n.city) = LOWER(${canonicalCity})
+          AND (
+            SELECT COUNT(DISTINCT UPPER(same_city.uf))
+            FROM operational_territories same_city
+            WHERE same_city.level = 'city'
+              AND LOWER(
+                COALESCE(same_city.city_name, same_city.name)
+              ) = LOWER(${canonicalCity})
+          ) = 1
+        )
+      )
+  `;
+
+  return rows[0] ?? {
+    official_neighborhoods: 0,
+    valid_geofences: 0,
+    verified_neighborhoods: 0,
+  };
+}
+
+async function resolveCoverageTerritory(input: {
+  territoryId?: unknown;
+  city?: unknown;
+  uf?: unknown;
+}) {
+  const explicitTerritoryId =
+    typeof input.territoryId === 'string'
+      ? input.territoryId.trim()
+      : '';
+
+  if (explicitTerritoryId) {
+    const territory = await prisma.operational_territories.findUnique({
+      where: { id: explicitTerritoryId },
+      include: { parent: true },
+    });
+
+    if (!territory) return null;
+
+    if (!['city', 'region'].includes(territory.level)) {
+      throw Object.assign(
+        new Error('A cobertura só pode ser governada em nível city ou region.'),
+        { statusCode: 422, code: 'COVERAGE_SCOPE_LEVEL_UNSUPPORTED' }
+      );
+    }
+
+    if (territory.level === 'region') {
+      if (territory.is_active !== true || territory.status !== 'active') {
+        throw Object.assign(
+          new Error('Região precisa estar ativa para governança de cobertura.'),
+          { statusCode: 409, code: 'COVERAGE_REGION_INACTIVE' }
+        );
+      }
+
+      if (
+        !territory.parent ||
+        territory.parent.level !== 'city' ||
+        territory.parent.is_active !== true ||
+        territory.parent.status !== 'active'
+      ) {
+        throw Object.assign(
+          new Error('Região precisa ter município-pai ativo e inequívoco.'),
+          { statusCode: 409, code: 'COVERAGE_REGION_PARENT_INVALID' }
+        );
+      }
+
+      const parentCity =
+        (territory.parent.city_name || territory.parent.name).trim();
+      const regionCity = territory.city_name?.trim() || '';
+      const regionUf = territory.uf?.trim().toUpperCase() || '';
+      const parentUf = territory.parent.uf?.trim().toUpperCase() || '';
+
+      if (
+        !regionCity ||
+        regionCity.toLocaleLowerCase('pt-BR') !==
+          parentCity.toLocaleLowerCase('pt-BR') ||
+        !regionUf ||
+        !parentUf ||
+        regionUf !== parentUf
+      ) {
+        throw Object.assign(
+          new Error(
+            'Identidade municipal da região precisa coincidir com o município-pai.'
+          ),
+          { statusCode: 409, code: 'COVERAGE_REGION_CITY_IDENTITY_INVALID' }
+        );
+      }
+    }
+
+    return territory;
+  }
+
+  const city =
+    typeof input.city === 'string'
+      ? input.city.trim()
+      : '';
+  const uf =
+    typeof input.uf === 'string'
+      ? input.uf.trim().toUpperCase()
+      : '';
+
+  if (!city || uf.length !== 2) {
+    throw Object.assign(
+      new Error('city e uf (2 letras) são obrigatórios quando territory_id não é informado.'),
+      { statusCode: 400, code: 'COVERAGE_SCOPE_REQUIRED' }
+    );
+  }
+
+  return prisma.operational_territories.findFirst({
+    where: {
+      level: 'city',
+      uf,
+      OR: [
+        {
+          city_name: {
+            equals: city,
+            mode: 'insensitive',
+          },
+        },
+        {
+          name: {
+            equals: city,
+            mode: 'insensitive',
+          },
+        },
+      ],
+    },
+    orderBy: [
+      { is_active: 'desc' },
+      { created_at: 'desc' },
+    ],
+    include: { parent: true },
+  });
+}
+
+router.get(
+  '/territory/coverage/:territoryId/readiness',
+  requireSuperAdmin,
+  async (req: Request, res: Response) => {
+    try {
+      const territory = await resolveCoverageTerritory({
+        territoryId: req.params.territoryId,
+      });
+
+      if (!territory) {
+        return res.status(404).json({
+          success: false,
+          error: 'Território não encontrado.',
+        });
+      }
+
+      if (!isCoverageStatus(territory.coverage_status)) {
+        return res.status(409).json({
+          success: false,
+          error: 'Estado atual da cobertura territorial é inválido.',
+        });
+      }
+
+      const stats = await getCoverageScopeStats(prisma, territory);
+
+      const neighborhoods =
+        territory.level === 'region'
+          ? await prisma.neighborhoods.findMany({
+              where: {
+                territory_id: territory.id,
+                is_active: true,
+                area_type: 'BAIRRO_OFICIAL',
+              },
+              orderBy: { name: 'asc' },
+              select: {
+                id: true,
+                name: true,
+                is_verified: true,
+                verified_at: true,
+                verified_by: true,
+              },
+            })
+          : [];
+
+      return res.json({
+        success: true,
+        data: {
+          territory_id: territory.id,
+          territory_name: territory.name,
+          territory_level: territory.level,
+          city: territory.city_name || territory.parent?.city_name || territory.name,
+          uf: territory.uf || territory.parent?.uf || null,
+          coverage_status: territory.coverage_status,
+          coverage_reviewed_at: territory.coverage_reviewed_at,
+          coverage_reviewed_by: territory.coverage_reviewed_by,
+          ...stats,
+          can_submit_review:
+            stats.official_neighborhoods > 0 &&
+            stats.valid_geofences === stats.official_neighborhoods,
+          can_complete:
+            stats.official_neighborhoods > 0 &&
+            stats.valid_geofences === stats.official_neighborhoods &&
+            stats.verified_neighborhoods === stats.official_neighborhoods,
+          neighborhoods,
+        },
+      });
+    } catch (error: any) {
+      const statusCode =
+        Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+
+      return res.status(statusCode).json({
+        success: false,
+        code: error?.code,
+        error:
+          statusCode === 500
+            ? 'Erro ao consultar prontidão da cobertura territorial.'
+            : error.message,
+      });
+    }
+  }
+);
+
+router.patch(
+  '/territory/neighborhoods/:id/review',
+  requireSuperAdmin,
+  async (req: Request, res: Response) => {
+    try {
+      const neighborhoodId = String(req.params.id || '').trim();
+      const {
+        territory_id,
+        expected_verified,
+        verified,
+        confirmation,
+        notes,
+      } = req.body ?? {};
+
+      if (
+        !neighborhoodId ||
+        typeof territory_id !== 'string' ||
+        !territory_id.trim() ||
+        typeof expected_verified !== 'boolean' ||
+        typeof verified !== 'boolean'
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            'territory_id, expected_verified e verified são obrigatórios.',
+        });
+      }
+
+      if (expected_verified === verified) {
+        return res.status(409).json({
+          success: false,
+          code: 'NEIGHBORHOOD_REVIEW_INVALID_TRANSITION',
+          error: 'A revisão precisa alterar o estado atual do bairro.',
+        });
+      }
+
+      const requiredConfirmation = verified
+        ? 'VERIFICAR_BAIRRO_GEOFENCE'
+        : 'REABRIR_BAIRRO_GEOFENCE';
+
+      if (confirmation !== requiredConfirmation) {
+        return res.status(400).json({
+          success: false,
+          error: `Confirmação ${requiredConfirmation} obrigatória.`,
+        });
+      }
+
+      const normalizedNotes =
+        typeof notes === 'string' ? notes.trim() : '';
+
+      if (normalizedNotes.length > 1000) {
+        return res.status(400).json({
+          success: false,
+          error: 'notes deve ter no máximo 1000 caracteres.',
+        });
+      }
+
+      if (!verified && !normalizedNotes) {
+        return res.status(400).json({
+          success: false,
+          error: 'Motivo obrigatório para reabrir a revisão do bairro.',
+        });
+      }
+
+      const ctx = auditCtx(req);
+      const normalizedTerritoryId = territory_id.trim();
+
+      const result = await prisma.$transaction(async (tx) => {
+        // Serialize neighborhood review with regional COMPLETE/reopen decisions.
+        await lockCareAdminRow(tx, 'territory', normalizedTerritoryId);
+        await lockCareAdminRow(tx, 'neighborhood', neighborhoodId);
+
+        const [territory, neighborhood] = await Promise.all([
+          tx.operational_territories.findUnique({
+            where: { id: normalizedTerritoryId },
+          }),
+          tx.neighborhoods.findUnique({
+            where: { id: neighborhoodId },
+          }),
+        ]);
+
+        if (!territory) {
+          throw Object.assign(new Error('Território não encontrado.'), {
+            statusCode: 404,
+            code: 'COVERAGE_TERRITORY_NOT_FOUND',
+          });
+        }
+
+        if (!neighborhood) {
+          throw Object.assign(new Error('Bairro não encontrado.'), {
+            statusCode: 404,
+            code: 'NEIGHBORHOOD_NOT_FOUND',
+          });
+        }
+
+        if (
+          neighborhood.is_active !== true ||
+          neighborhood.area_type !== 'BAIRRO_OFICIAL'
+        ) {
+          throw Object.assign(
+            new Error('Somente bairro oficial ativo pode ser revisado.'),
+            { statusCode: 422, code: 'NEIGHBORHOOD_NOT_REVIEWABLE' }
+          );
+        }
+
+        if (
+          neighborhood.territory_id !== normalizedTerritoryId ||
+          !['city', 'region'].includes(territory.level)
+        ) {
+          throw Object.assign(
+            new Error('Bairro não pertence ao território informado.'),
+            { statusCode: 409, code: 'NEIGHBORHOOD_TERRITORY_MISMATCH' }
+          );
+        }
+
+        if (
+          territory.is_active !== true ||
+          territory.status !== 'active'
+        ) {
+          throw Object.assign(
+            new Error('Território do bairro precisa estar ativo.'),
+            { statusCode: 409, code: 'NEIGHBORHOOD_TERRITORY_INACTIVE' }
+          );
+        }
+
+        if (territory.coverage_status !== 'AWAITING_REVIEW') {
+          throw Object.assign(
+            new Error(
+              'A cobertura do território precisa estar em AWAITING_REVIEW para revisar bairros.'
+            ),
+            { statusCode: 409, code: 'COVERAGE_NOT_AWAITING_REVIEW' }
+          );
+        }
+
+        if (neighborhood.is_verified !== expected_verified) {
+          throw Object.assign(
+            new Error(
+              'O estado de revisão do bairro mudou. Consulte novamente antes de confirmar.'
+            ),
+            {
+              statusCode: 409,
+              code: 'NEIGHBORHOOD_REVIEW_CONFLICT',
+              currentVerified: neighborhood.is_verified,
+            }
+          );
+        }
+
+        let geofenceEvidence: {
+          id: string;
+          source: string | null;
+          has_geom: boolean;
+          geom_valid: boolean;
+          srid: number | null;
+        } | null = null;
+
+        if (verified) {
+          const geofenceRows = await tx.$queryRaw<Array<{
+            id: string;
+            source: string | null;
+            has_geom: boolean;
+            geom_valid: boolean;
+            srid: number | null;
+          }>>`
+            SELECT
+              ng.id,
+              ng.source,
+              (ng.geom IS NOT NULL) AS has_geom,
+              CASE
+                WHEN ng.geom IS NOT NULL THEN ST_IsValid(ng.geom)
+                ELSE false
+              END AS geom_valid,
+              CASE
+                WHEN ng.geom IS NOT NULL THEN ST_SRID(ng.geom)
+                ELSE NULL
+              END AS srid
+            FROM neighborhood_geofences ng
+            WHERE ng.neighborhood_id = ${neighborhood.id}
+            LIMIT 1
+          `;
+
+          geofenceEvidence = geofenceRows[0] ?? null;
+
+          if (
+            !geofenceEvidence ||
+            geofenceEvidence.has_geom !== true ||
+            geofenceEvidence.geom_valid !== true ||
+            geofenceEvidence.srid !== 4326 ||
+            !geofenceEvidence.source?.trim()
+          ) {
+            throw Object.assign(
+              new Error(
+                'Geofence do bairro precisa existir, ser válida, usar SRID 4326 e ter fonte identificada.'
+              ),
+              {
+                statusCode: 422,
+                code: 'NEIGHBORHOOD_GEOFENCE_NOT_VERIFIABLE',
+              }
+            );
+          }
+        }
+
+        const verifiedAt = verified ? new Date() : null;
+        const verifiedBy = verified ? ctx.adminId : null;
+
+        const changed = await tx.neighborhoods.updateMany({
+          where: {
+            id: neighborhood.id,
+            territory_id: normalizedTerritoryId,
+            is_active: true,
+            area_type: 'BAIRRO_OFICIAL',
+            is_verified: expected_verified,
+          },
+          data: {
+            is_verified: verified,
+            verified_at: verifiedAt,
+            verified_by: verifiedBy,
+            updated_at: new Date(),
+          },
+        });
+
+        if (changed.count !== 1) {
+          throw new CareAdminConflict('NEIGHBORHOOD_REVIEW_CONFLICT');
+        }
+
+        await writeCareAdminAuditTx(tx, {
+          adminId: ctx.adminId,
+          action: verified
+            ? 'territory_neighborhood_geofence_verify'
+            : 'territory_neighborhood_geofence_reopen',
+          entityType: 'neighborhood',
+          entityId: neighborhood.id,
+          oldValue: {
+            is_verified: neighborhood.is_verified,
+            verified_at: neighborhood.verified_at,
+            verified_by: neighborhood.verified_by,
+          },
+          newValue: {
+            is_verified: verified,
+            verified_at: verifiedAt,
+            verified_by: verifiedBy,
+            territory_id: neighborhood.territory_id,
+            territory_level: territory.level,
+            geofence_id: geofenceEvidence?.id ?? null,
+            geofence_source: geofenceEvidence?.source ?? null,
+            source: 'chat_kaviar',
+          },
+          reason: normalizedNotes || undefined,
+          ipAddress: ctx.ip,
+          userAgent: ctx.ua,
+        });
+
+        return {
+          id: neighborhood.id,
+          name: neighborhood.name,
+          territory_id: neighborhood.territory_id,
+          territory_level: territory.level,
+          is_verified: verified,
+          verified_at: verifiedAt,
+          verified_by: verifiedBy,
+          geofence_id: geofenceEvidence?.id ?? null,
+          geofence_source: geofenceEvidence?.source ?? null,
+        };
+      });
+
+      return res.json({ success: true, data: result });
+    } catch (error: any) {
+      if (error instanceof CareAdminConflict) {
+        return res.status(409).json({
+          success: false,
+          code: error.code,
+          error: error.code,
+        });
+      }
+
+      const statusCode =
+        Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+
+      console.error(
+        '[KAVIAR_AI_NEIGHBORHOOD_REVIEW]',
+        error?.message || error
+      );
+
+      return res.status(statusCode).json({
+        success: false,
+        code: error?.code,
+        current_verified: error?.currentVerified,
+        error:
+          statusCode === 500
+            ? 'Erro ao revisar bairro/geofence.'
+            : error.message,
+      });
+    }
+  }
+);
+
+
 router.post(
   '/territory/coverage/status',
   requireSuperAdmin,
   async (req: Request, res: Response) => {
     try {
       const {
+        territory_id,
         city,
         uf,
         expected_status,
@@ -842,18 +1440,6 @@ router.post(
         confirmation,
         notes,
       } = req.body ?? {};
-
-      if (
-        typeof city !== 'string' ||
-        typeof uf !== 'string' ||
-        !city.trim() ||
-        uf.trim().length !== 2
-      ) {
-        return res.status(400).json({
-          success: false,
-          error: 'city e uf (2 letras) são obrigatórios.',
-        });
-      }
 
       if (
         !isCoverageStatus(expected_status) ||
@@ -865,8 +1451,6 @@ router.post(
         });
       }
 
-      const normalizedCity = city.trim();
-      const normalizedUf = uf.trim().toUpperCase();
       const normalizedNotes =
         typeof notes === 'string' ? notes.trim() : '';
 
@@ -877,225 +1461,260 @@ router.post(
         });
       }
 
-      const territory = await prisma.operational_territories.findFirst({
-        where: {
-          level: 'city',
-          uf: normalizedUf,
-          OR: [
-            {
-              city_name: {
-                equals: normalizedCity,
-                mode: 'insensitive',
-              },
-            },
-            {
-              name: {
-                equals: normalizedCity,
-                mode: 'insensitive',
-              },
-            },
-          ],
-        },
-        orderBy: [
-          { is_active: 'desc' },
-          { created_at: 'desc' },
-        ],
+      const territory = await resolveCoverageTerritory({
+        territoryId: territory_id,
+        city,
+        uf,
       });
 
       if (!territory) {
         return res.status(404).json({
           success: false,
-          error: `Território ${normalizedCity}/${normalizedUf} não encontrado.`,
-        });
-      }
-
-      if (!isCoverageStatus(territory.coverage_status)) {
-        return res.status(409).json({
-          success: false,
-          error: 'Estado atual da cobertura territorial é inválido.',
-        });
-      }
-
-      const currentStatus = territory.coverage_status;
-
-      // Protege confirmação feita sobre informação antiga.
-      if (currentStatus !== expected_status) {
-        return res.status(409).json({
-          success: false,
-          code: 'COVERAGE_STATUS_CONFLICT',
-          error:
-            `A cobertura mudou de ${expected_status} para ${currentStatus}. ` +
-            'Consulte novamente antes de confirmar.',
-          current_status: currentStatus,
-        });
-      }
-
-      const transition = resolveCoverageTransition(
-        currentStatus,
-        target_status
-      );
-
-      if (!transition) {
-        return res.status(409).json({
-          success: false,
-          code: 'COVERAGE_INVALID_TRANSITION',
-          error:
-            `Transição de ${currentStatus} para ${target_status} não permitida.`,
-        });
-      }
-
-      if (confirmation !== transition.confirmation) {
-        return res.status(400).json({
-          success: false,
-          error:
-            `Confirmação ${transition.confirmation} obrigatória.`,
-        });
-      }
-
-      if (transition.requiresReason && !normalizedNotes) {
-        return res.status(400).json({
-          success: false,
-          error: 'Motivo obrigatório para reabrir uma cobertura homologada.',
-        });
-      }
-
-      const canonicalCity = territory.city_name || normalizedCity;
-
-      const neighborhoodRows = await prisma.$queryRaw<
-        Array<{ official_neighborhoods: number }>
-      >`
-        SELECT COUNT(*)::int AS official_neighborhoods
-        FROM neighborhoods n
-        WHERE n.is_active = true
-          AND n.area_type = 'BAIRRO_OFICIAL'
-          AND (
-            n.territory_id = ${territory.id}
-
-            OR n.territory_id IN (
-              SELECT child.id
-              FROM operational_territories child
-              WHERE child.parent_id = ${territory.id}
-                AND child.level = 'region'
-            )
-
-            OR (
-              n.territory_id IS NULL
-              AND LOWER(n.city) = LOWER(${canonicalCity})
-              AND (
-                SELECT COUNT(DISTINCT UPPER(same_city.uf))
-                FROM operational_territories same_city
-                WHERE same_city.level = 'city'
-                  AND LOWER(
-                    COALESCE(same_city.city_name, same_city.name)
-                  ) = LOWER(${canonicalCity})
-              ) = 1
-            )
-          )
-      `;
-
-      const officialNeighborhoods =
-        neighborhoodRows[0]?.official_neighborhoods ?? 0;
-
-      const requiresLoadedCoverage =
-        (
-          currentStatus === 'NOT_LOADED' &&
-          target_status === 'AWAITING_REVIEW'
-        ) ||
-        target_status === 'COMPLETE';
-
-      if (requiresLoadedCoverage && officialNeighborhoods === 0) {
-        return res.status(422).json({
-          success: false,
-          code: 'COVERAGE_WITHOUT_OFFICIAL_NEIGHBORHOODS',
-          error:
-            'Não é possível revisar/homologar cobertura sem bairros oficiais ativos.',
+          error: 'Território não encontrado.',
         });
       }
 
       const ctx = auditCtx(req);
 
-      const nextNotes = resolveCoverageNotes(
-        territory.coverage_notes,
-        normalizedNotes
-      );
+      const result = await prisma.$transaction(async (tx) => {
+        // Serializes regional status changes with neighborhood review writes.
+        await lockCareAdminRow(tx, 'territory', territory.id);
 
-      const reviewedAt =
-        target_status === 'COMPLETE' ? new Date() : null;
+        const lockedTerritory =
+          await tx.operational_territories.findUnique({
+            where: { id: territory.id },
+            include: { parent: true },
+          });
 
-      const reviewedBy =
-        target_status === 'COMPLETE' ? ctx.adminId : null;
+        if (!lockedTerritory) {
+          throw Object.assign(new Error('Território não encontrado.'), {
+            statusCode: 404,
+            code: 'COVERAGE_TERRITORY_NOT_FOUND',
+          });
+        }
 
-      // Compare-and-set: evita sobrescrever alteração concorrente.
-      const changed =
-        await prisma.operational_territories.updateMany({
-          where: {
-            id: territory.id,
-            coverage_status: expected_status,
+        if (!isCoverageStatus(lockedTerritory.coverage_status)) {
+          throw Object.assign(
+            new Error('Estado atual da cobertura territorial é inválido.'),
+            { statusCode: 409, code: 'COVERAGE_STATUS_INVALID' }
+          );
+        }
+
+        const currentStatus = lockedTerritory.coverage_status;
+
+        if (currentStatus !== expected_status) {
+          throw Object.assign(
+            new Error(
+              `A cobertura mudou de ${expected_status} para ${currentStatus}. Consulte novamente antes de confirmar.`
+            ),
+            {
+              statusCode: 409,
+              code: 'COVERAGE_STATUS_CONFLICT',
+              currentStatus,
+            }
+          );
+        }
+
+        const transition = resolveCoverageTransition(
+          currentStatus,
+          target_status
+        );
+
+        if (!transition) {
+          throw Object.assign(
+            new Error(
+              `Transição de ${currentStatus} para ${target_status} não permitida.`
+            ),
+            { statusCode: 409, code: 'COVERAGE_INVALID_TRANSITION' }
+          );
+        }
+
+        if (confirmation !== transition.confirmation) {
+          throw Object.assign(
+            new Error(
+              `Confirmação ${transition.confirmation} obrigatória.`
+            ),
+            { statusCode: 400, code: 'COVERAGE_CONFIRMATION_REQUIRED' }
+          );
+        }
+
+        if (transition.requiresReason && !normalizedNotes) {
+          throw Object.assign(
+            new Error(
+              'Motivo obrigatório para reabrir uma cobertura homologada.'
+            ),
+            { statusCode: 400, code: 'COVERAGE_REOPEN_REASON_REQUIRED' }
+          );
+        }
+
+        const stats = await getCoverageScopeStats(
+          tx as Pick<typeof prisma, '$queryRaw'>,
+          lockedTerritory
+        );
+
+        const requiresLoadedCoverage =
+          (
+            currentStatus === 'NOT_LOADED' &&
+            target_status === 'AWAITING_REVIEW'
+          ) ||
+          target_status === 'COMPLETE';
+
+        if (
+          requiresLoadedCoverage &&
+          stats.official_neighborhoods === 0
+        ) {
+          throw Object.assign(
+            new Error(
+              'Não é possível revisar/homologar cobertura sem bairros oficiais ativos.'
+            ),
+            {
+              statusCode: 422,
+              code: 'COVERAGE_WITHOUT_OFFICIAL_NEIGHBORHOODS',
+            }
+          );
+        }
+
+        if (
+          lockedTerritory.level === 'region' &&
+          requiresLoadedCoverage &&
+          stats.valid_geofences !== stats.official_neighborhoods
+        ) {
+          throw Object.assign(
+            new Error(
+              'Todos os bairros oficiais ativos da região precisam ter geofence válida em SRID 4326.'
+            ),
+            {
+              statusCode: 422,
+              code: 'COVERAGE_GEOFENCE_INCOMPLETE',
+              stats,
+            }
+          );
+        }
+
+        if (
+          lockedTerritory.level === 'region' &&
+          target_status === 'COMPLETE' &&
+          stats.verified_neighborhoods !== stats.official_neighborhoods
+        ) {
+          throw Object.assign(
+            new Error(
+              'Todos os bairros oficiais ativos da região precisam estar revisados antes da homologação.'
+            ),
+            {
+              statusCode: 422,
+              code: 'COVERAGE_REVIEW_INCOMPLETE',
+              stats,
+            }
+          );
+        }
+
+        const nextNotes = resolveCoverageNotes(
+          lockedTerritory.coverage_notes,
+          normalizedNotes
+        );
+
+        const reviewedAt =
+          target_status === 'COMPLETE' ? new Date() : null;
+
+        const reviewedBy =
+          target_status === 'COMPLETE' ? ctx.adminId : null;
+
+        const changed =
+          await tx.operational_territories.updateMany({
+            where: {
+              id: lockedTerritory.id,
+              coverage_status: expected_status,
+            },
+            data: {
+              coverage_status: target_status,
+              coverage_reviewed_at: reviewedAt,
+              coverage_reviewed_by: reviewedBy,
+              coverage_notes: nextNotes,
+            },
+          });
+
+        if (changed.count !== 1) {
+          throw new CareAdminConflict('COVERAGE_STATUS_CONFLICT');
+        }
+
+        await writeCareAdminAuditTx(tx, {
+          adminId: ctx.adminId,
+          action: transition.auditAction,
+          entityType: 'operational_territory',
+          entityId: lockedTerritory.id,
+          oldValue: {
+            coverage_status: currentStatus,
+            coverage_reviewed_at:
+              lockedTerritory.coverage_reviewed_at,
+            coverage_reviewed_by:
+              lockedTerritory.coverage_reviewed_by,
+            coverage_notes: lockedTerritory.coverage_notes,
           },
-          data: {
+          newValue: {
             coverage_status: target_status,
             coverage_reviewed_at: reviewedAt,
             coverage_reviewed_by: reviewedBy,
             coverage_notes: nextNotes,
+            territory_level: lockedTerritory.level,
+            official_neighborhoods: stats.official_neighborhoods,
+            valid_geofences: stats.valid_geofences,
+            verified_neighborhoods: stats.verified_neighborhoods,
+            source: 'chat_kaviar',
           },
+          reason: normalizedNotes || undefined,
+          ipAddress: ctx.ip,
+          userAgent: ctx.ua,
         });
 
-      if (changed.count !== 1) {
+        return {
+          territory_id: lockedTerritory.id,
+          territory_name: lockedTerritory.name,
+          territory_level: lockedTerritory.level,
+          city:
+            lockedTerritory.city_name ||
+            lockedTerritory.parent?.city_name ||
+            lockedTerritory.name,
+          uf: lockedTerritory.uf || lockedTerritory.parent?.uf || null,
+          previous_status: currentStatus,
+          coverage_status: target_status,
+          official_neighborhoods: stats.official_neighborhoods,
+          valid_geofences: stats.valid_geofences,
+          verified_neighborhoods: stats.verified_neighborhoods,
+          coverage_reviewed_at: reviewedAt,
+          coverage_reviewed_by: reviewedBy,
+          coverage_notes: nextNotes,
+        };
+      });
+
+      return res.json({ success: true, data: result });
+    } catch (error: any) {
+      if (error instanceof CareAdminConflict) {
         return res.status(409).json({
           success: false,
-          code: 'COVERAGE_STATUS_CONFLICT',
-          error:
-            'A cobertura foi alterada por outra operação. Consulte novamente.',
+          code: error.code,
+          error: error.code,
         });
       }
 
-      await audit({
-        adminId: ctx.adminId,
-        adminEmail: ctx.adminEmail,
-        action: transition.auditAction,
-        entityType: 'operational_territory',
-        entityId: territory.id,
-        oldValue: {
-          coverage_status: currentStatus,
-          coverage_reviewed_at: territory.coverage_reviewed_at,
-          coverage_reviewed_by: territory.coverage_reviewed_by,
-          coverage_notes: territory.coverage_notes,
-        },
-        newValue: {
-          coverage_status: target_status,
-          coverage_reviewed_at: reviewedAt,
-          coverage_reviewed_by: reviewedBy,
-          coverage_notes: nextNotes,
-          official_neighborhoods: officialNeighborhoods,
-          source: 'chat_kaviar',
-        },
-        reason: normalizedNotes || undefined,
-        ipAddress: ctx.ip,
-      });
+      const statusCode =
+        Number.isInteger(error?.statusCode) ? error.statusCode : 500;
 
-      return res.json({
-        success: true,
-        data: {
-          territory_id: territory.id,
-          city: canonicalCity,
-          uf: territory.uf || normalizedUf,
-          previous_status: currentStatus,
-          coverage_status: target_status,
-          official_neighborhoods: officialNeighborhoods,
-          coverage_reviewed_at: reviewedAt,
-          coverage_reviewed_by: reviewedBy,
-          coverage_notes: nextNotes,
-        },
-      });
-    } catch (error: any) {
       console.error(
         '[KAVIAR_AI_COVERAGE_STATUS]',
         error?.message || error
       );
 
-      return res.status(500).json({
+      return res.status(statusCode).json({
         success: false,
-        error: 'Erro ao atualizar governança da cobertura territorial.',
+        code: error?.code,
+        current_status: error?.currentStatus,
+        official_neighborhoods: error?.stats?.official_neighborhoods,
+        valid_geofences: error?.stats?.valid_geofences,
+        verified_neighborhoods: error?.stats?.verified_neighborhoods,
+        error:
+          statusCode === 500
+            ? 'Erro ao atualizar governança da cobertura territorial.'
+            : error.message,
       });
     }
   }

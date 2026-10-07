@@ -1283,7 +1283,7 @@ describe('Chat KAVIAR — liberação segura de landing', () => {
   it('não ativa o território ao liberar landing', () => {
     const section =
       routeSrc.split("'/territory/landing/enable'")[1]
-        ?.split('export default router')[0] || '';
+        ?.split('// ── Territorial: Governança da cobertura territorial')[0] || '';
 
     expect(section).toContain('landing_enabled: true');
     expect(section).not.toContain("status: 'active'");
@@ -1399,7 +1399,7 @@ describe('cobertura territorial — governança Fase 2C', () => {
       'COVERAGE_WITHOUT_OFFICIAL_NEIGHBORHOODS'
     );
     expect(routeSrc).toContain(
-      'officialNeighborhoods === 0'
+      'stats.official_neighborhoods === 0'
     );
   });
 
