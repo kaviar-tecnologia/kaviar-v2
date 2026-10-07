@@ -142,4 +142,17 @@ describe('CARE-525 — territorial governance alignment audit', () => {
     );
   });
 
+
+  it('records the KAVIAR domain rule for Tijuquinha', () => {
+    expect(auditDoc).toContain(
+      'Tijuquinha deve ser tratada como comunidade da Zona Oeste vinculada à Barra da Tijuca',
+    );
+    expect(auditDoc).toContain(
+      'o vínculo atual com o território regional `Tijuca` também é incompatível',
+    );
+    expect(auditDoc).toContain(
+      'não deve criar uma geofence de **bairro oficial** para Tijuquinha',
+    );
+  });
+
 });
