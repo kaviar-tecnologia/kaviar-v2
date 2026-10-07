@@ -27,6 +27,11 @@ const auditDoc = fs.readFileSync(
   'utf8',
 );
 
+const careAdminAtomic = fs.readFileSync(
+  path.join(root, 'src/services/care/care-admin-atomic.ts'),
+  'utf8',
+);
+
 describe('CARE-525 — territorial governance alignment audit', () => {
   it('implements explicit city/region coverage governance without changing the state machine', () => {
     expect(adminAi).toContain("['city', 'region'].includes(territory.level)");
@@ -276,6 +281,29 @@ describe('CARE-525 — territorial governance alignment audit', () => {
     expect(reviewRoute).not.toContain('wallet');
     expect(reviewRoute).not.toContain('payment');
     expect(reviewRoute).not.toContain('rides_v2.create');
+  });
+
+
+  it('makes regional governance writes atomic with mandatory audit', () => {
+    expect(adminAi).toContain('prisma.$transaction(async (tx)');
+    expect(adminAi).toContain("lockCareAdminRow(tx, 'territory'");
+    expect(adminAi).toContain("lockCareAdminRow(tx, 'neighborhood'");
+    expect(adminAi).toContain('writeCareAdminAuditTx(tx');
+    expect(careAdminAtomic).toContain(
+      "kind: 'regulation' | 'coverage' | 'enrollment' | 'driver' | 'neighborhood' | 'territory'",
+    );
+    expect(careAdminAtomic).toContain(
+      'SELECT id FROM operational_territories WHERE id = ${id} FOR UPDATE',
+    );
+  });
+
+  it('requires an active region with canonical municipality identity', () => {
+    expect(adminAi).toContain("territory.status !== 'active'");
+    expect(adminAi).toContain('COVERAGE_REGION_PARENT_INVALID');
+    expect(adminAi).toContain('COVERAGE_REGION_CITY_IDENTITY_INVALID');
+    expect(adminAi).toContain(
+      'Identidade municipal da região precisa coincidir com o município-pai.',
+    );
   });
 
 });
