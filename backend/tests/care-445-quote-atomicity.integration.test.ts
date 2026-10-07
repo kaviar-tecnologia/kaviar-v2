@@ -57,7 +57,7 @@ describe.skipIf(!disposable)('CARE-445 quote: official table names on disposable
         origin_neighborhood_id TEXT, origin_neighborhood TEXT, dest_neighborhood_id TEXT,
         dest_neighborhood TEXT, driver_neighborhood_id TEXT, driver_neighborhood TEXT,
         route_territory TEXT NOT NULL, driver_territory TEXT, settlement_territory TEXT,
-        distance_km NUMERIC NOT NULL,
+        distance_km NUMERIC NOT NULL, duration_min NUMERIC,
         base_fare_used NUMERIC NOT NULL, per_km_used NUMERIC NOT NULL,
         per_minute_used NUMERIC NOT NULL, minimum_fare_used NUMERIC NOT NULL,
         quoted_price NUMERIC NOT NULL, locked_price NUMERIC NOT NULL, final_price NUMERIC,
@@ -113,12 +113,12 @@ describe.skipIf(!disposable)('CARE-445 quote: official table names on disposable
     expect(await run(id)).toMatchObject({ quoted_price: 23, fee_percent: 18,
       fee_amount: 4.14, driver_earnings: 18.86 });
     const { rows } = await pool.query(
-      `SELECT s.quoted_price, s.locked_price, s.fee_amount, s.driver_earnings,
+      `SELECT s.duration_min, s.quoted_price, s.locked_price, s.fee_amount, s.driver_earnings,
        r.quoted_price AS cache_quote, r.locked_price AS cache_lock,
        r.platform_fee AS cache_fee, r.driver_earnings AS cache_earnings
        FROM ride_settlements s JOIN rides_v2 r ON r.id=s.ride_id WHERE s.ride_id=$1`, [id]);
     expect(rows).toHaveLength(1);
-    expect(Object.values(rows[0]).map(Number)).toEqual([23, 23, 4.14, 18.86, 23, 23, 4.14, 18.86]);
+    expect(Object.values(rows[0]).map(Number)).toEqual([10, 23, 23, 4.14, 18.86, 23, 23, 4.14, 18.86]);
   });
 
   it('rolls back the settlement if the operational cache write fails', async () => {
