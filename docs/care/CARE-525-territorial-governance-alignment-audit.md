@@ -524,3 +524,75 @@ No snapshot de produção auditado:
 - pelo menos Tijuquinha tem classificação de domínio KAVIAR como comunidade da Barra da Tijuca.
 
 Isso torna a correção factível, mas ela exige uma etapa explícita de modelagem/carga de comunidade antes de remover ou desativar o registro incorreto em `neighborhoods`.
+
+
+## Reavaliação arquitetural — escopo regional para o piloto CARE
+
+A evidência acumulada muda a recomendação inicial desta auditoria.
+
+O piloto CARE não precisa provar cobertura territorial de **todo o município do Rio de Janeiro** para operar apenas no escopo Barra da Tijuca. Obrigar `city.coverage_status=COMPLETE` faria 11 inconsistências de outras regiões bloquearem um piloto regional mesmo quando o ponto de origem, o bairro e a região do piloto estiverem corretamente revisados.
+
+Ao mesmo tempo, os resolvers CARE atuais já usam o `territory_id` diretamente ligado ao bairro. Para Itanhangá, isso é a região **Barra da Tijuca**.
+
+### Recomendação preferencial atual
+
+Preservar duas granularidades de governança, com semântica explícita:
+
+- `city.coverage_status`: completude municipal, usada para visão geral/planejamento da cidade;
+- `region.coverage_status`: completude operacional daquela região, utilizável como pré-requisito de um piloto regional CARE.
+
+Para o piloto Barra:
+
+`Itanhangá -> Barra da Tijuca (region)`
+
+o gate CARE deve continuar exigindo que:
+
+- Itanhangá esteja ativo e revisado;
+- a geofence de Itanhangá seja válida e cubra o ponto real;
+- Barra da Tijuca esteja ativa;
+- Barra da Tijuca tenha `coverage_status=COMPLETE` com revisão auditável;
+- regulação municipal CARE continue sendo verificada para Rio de Janeiro;
+- seguro CARE continue sendo vinculado ao escopo definido pelo contrato de seguro.
+
+### Mudança de conclusão em relação à hipótese anterior
+
+A proposta anterior de fazer o CARE herdar obrigatoriamente o `coverage_status` do ancestral municipal não é mais a opção preferencial para o piloto.
+
+Motivos:
+
+1. aumentaria desnecessariamente o blast radius do piloto;
+2. acoplaria Barra a inconsistências de Centro, Tijuca, Madureira e outras regiões;
+3. o schema já possui `coverage_status` em `operational_territories` independentemente do nível;
+4. o runtime CARE já trabalha com o território direto do bairro;
+5. a lacuna principal está no fluxo administrativo, que atualmente só permite governança por cidade.
+
+### Correção de código proposta para fase posterior
+
+A implementação deve preferir generalizar a governança de cobertura para um território explícito `city` ou `region`, sem alterar a máquina de estados.
+
+Requisitos mínimos:
+
+- SUPER_ADMIN;
+- `territory_id` explícito ou resolução inequívoca;
+- apenas territórios ativos em nível `city` ou `region`;
+- `expected_status` compare-and-set;
+- mesma máquina `NOT_LOADED -> AWAITING_REVIEW -> COMPLETE`;
+- contagem e validação de bairros restritas ao território solicitado;
+- para `region`, considerar apenas bairros vinculados àquela região;
+- `COMPLETE` deve exigir todos os bairros oficiais ativos do escopo com geofence válida SRID 4326 e revisão explícita;
+- auditoria deve registrar `territory_id`, nível e quantidade de bairros;
+- o frontend não deve inferir região a partir do nome da cidade.
+
+O fluxo atual de cobertura de gestores por cidade pode continuar existindo para planejamento municipal; uma ação regional deve ser explícita para não mudar silenciosamente a semântica já existente.
+
+### Próxima evidência necessária
+
+Antes de implementar qualquer alteração, auditar somente a região Barra da Tijuca:
+
+- total de bairros oficiais ativos diretamente vinculados à região;
+- lista nominal;
+- geofence presente/válida/SRID;
+- `is_verified`, `verified_at`, `verified_by`;
+- eventuais bairros sem geofence ou com geometria inválida.
+
+Se o escopo Barra estiver geometricamente íntegro, o CARE-525 poderá propor uma correção pequena e regional em vez de uma limpeza municipal completa como pré-condição do piloto.
