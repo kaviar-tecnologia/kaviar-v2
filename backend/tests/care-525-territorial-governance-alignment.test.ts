@@ -85,13 +85,13 @@ describe('CARE-525 — territorial governance alignment audit', () => {
     expect(auditDoc).toContain('0 bairros com `is_verified=true`');
     expect(auditDoc).toContain('item 12 — território + regulação: `NO-GO`');
     expect(auditDoc).toContain(
-      'não autoriza merge, deploy, alteração de banco de produção',
+      'sem autorização para merge, deploy, alteração de banco de produção',
     );
   });
 
   it('documents the authorized branch implementation without weakening fail-closed controls', () => {
     expect(auditDoc).toContain('Implementação autorizada na branch — 07/10/2026');
-    expect(auditDoc).toContain('revisão auditável de bairro/geofence');
+    expect(auditDoc).toContain('Revisão auditável de bairro/geofence');
     expect(auditDoc).toContain('Governança regional de coverage_status');
     expect(auditDoc).toContain('Os resolvers CARE não foram afrouxados');
     expect(auditDoc).toContain('não fazer merge');
