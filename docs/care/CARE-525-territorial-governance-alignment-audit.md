@@ -667,3 +667,39 @@ A sequência segura proposta é:
 - **regulação municipal CARE**: `NO-GO/PENDING`, nenhum registro estruturado positivo encontrado.
 
 Consequentemente, o item 12 do dry-run permanece `NO-GO`, mas o bloqueio territorial está agora bem delimitado e não depende dos 11 gaps fora da Barra.
+
+
+## Lacuna administrativa — revisão de bairros
+
+A inspeção da `main` atual encontrou UI e endpoint de revisão de **geofences de comunidades** em:
+
+- `frontend-app/src/pages/admin/GeofenceManagement.jsx`;
+- `PATCH /api/admin/communities/:id/geofence-review`.
+
+Esse fluxo trabalha com `communities/community_geofences`, não com `neighborhoods/neighborhood_geofences`.
+
+Não foi encontrado na `main` um fluxo administrativo equivalente que grave em `neighborhoods`:
+
+- `is_verified`;
+- `verified_at`;
+- `verified_by`.
+
+Portanto, para os 8 bairros da região Barra, não existe hoje um caminho administrativo canônico identificado para produzir a evidência que o gate CARE exige.
+
+### Implicação
+
+Não usar atualização SQL direta dos oito bairros como solução operacional.
+
+Uma implementação posterior deve criar um fluxo explícito de revisão de bairro/geofence, com:
+
+- SUPER_ADMIN;
+- validação de geometria existente;
+- `ST_IsValid`;
+- SRID 4326;
+- proveniência/source;
+- gravação atômica de `is_verified`, `verified_at`, `verified_by`;
+- audit log;
+- possibilidade de revogação/reabertura;
+- proteção contra marcar como verificado um registro sem geometria válida.
+
+Esse fluxo deve ser separado da revisão de `community_geofences` para não misturar os dois modelos territoriais.
