@@ -223,4 +223,18 @@ describe('CARE-525 — territorial governance alignment audit', () => {
     );
   });
 
+
+  it('records the missing administrative neighborhood review workflow', () => {
+    expect(auditDoc).toContain('Lacuna administrativa — revisão de bairros');
+    expect(auditDoc).toContain(
+      '`PATCH /api/admin/communities/:id/geofence-review`',
+    );
+    expect(auditDoc).toContain(
+      'não existe hoje um caminho administrativo canônico identificado',
+    );
+    expect(auditDoc).toContain(
+      'Não usar atualização SQL direta dos oito bairros como solução operacional',
+    );
+  });
+
 });
