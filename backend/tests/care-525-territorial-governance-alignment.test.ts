@@ -155,4 +155,22 @@ describe('CARE-525 — territorial governance alignment audit', () => {
     );
   });
 
+
+  it('records the production reference audit for the 11 Rio records', () => {
+    expect(auditDoc).toContain('Auditoria de referências dos 11 registros');
+    expect(auditDoc).toContain('Caju: 1');
+    expect(auditDoc).toContain('Castelo: 1');
+    expect(auditDoc).toContain('Cinelândia: 1');
+    expect(auditDoc).toContain('Freguesia: 1');
+    expect(auditDoc).toContain('Oswaldo Cruz: 1');
+    expect(auditDoc).toContain('Santana: 1');
+    expect(auditDoc).toContain('Turiaçu: 1');
+    expect(auditDoc).toContain(
+      'não possuem nenhuma referência por chave estrangeira nas tabelas auditadas',
+    );
+    expect(auditDoc).toContain(
+      'nenhuma migração de usuários ou corridas é necessária para esses 11 registros',
+    );
+  });
+
 });
