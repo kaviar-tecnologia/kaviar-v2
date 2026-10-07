@@ -108,4 +108,18 @@ describe('CARE-525 — territorial governance alignment audit', () => {
       'seguro CARE exato e vínculo do motorista continuam obrigatórios',
     );
   });
+
+  it('records the exact Rio gap classification without auto-fixing data', () => {
+    expect(auditDoc).toContain('10 registros sem linha em `neighborhood_geofences`');
+    expect(auditDoc).toContain('Caju | Centro | `GEOM_INVALID`');
+    expect(auditDoc).toContain('Tijuquinha | Tijuca | `NO_GEOFENCE_ROW`');
+    expect(auditDoc).toContain(
+      'alguns nomes hoje presentes como `BAIRRO_OFICIAL` foram tratados em outros fluxos como comunidades/localidades',
+    );
+    expect(auditDoc).toContain('não executar `ST_MakeValid` automaticamente em produção');
+    expect(auditDoc).toContain(
+      'inspecionar metadados e possíveis aliases/duplicatas dos 11 registros',
+    );
+  });
+
 });
