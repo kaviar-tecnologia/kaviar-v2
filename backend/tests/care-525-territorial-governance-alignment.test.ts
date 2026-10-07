@@ -265,8 +265,12 @@ describe('CARE-525 — territorial governance alignment audit', () => {
     expect(adminAi).toContain('expected_verified');
     expect(adminAi).toContain('COVERAGE_NOT_AWAITING_REVIEW');
     expect(adminAi).toContain('NEIGHBORHOOD_GEOFENCE_NOT_VERIFIABLE');
+    expect(adminAi).toContain('action: verified');
     expect(adminAi).toContain(
-      "action: verified\n          ? 'territory_neighborhood_geofence_verify'",
+      "'territory_neighborhood_geofence_verify'",
+    );
+    expect(adminAi).toContain(
+      "'territory_neighborhood_geofence_reopen'",
     );
     expect(adminAi).toContain('is_verified: expected_verified');
   });
