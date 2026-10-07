@@ -122,4 +122,24 @@ describe('CARE-525 — territorial governance alignment audit', () => {
     );
   });
 
+
+  it('records the official-source preliminary classification of the Rio gaps', () => {
+    expect(auditDoc).toContain('Bairros oficiais confirmados');
+    expect(auditDoc).toContain('**Caju**');
+    expect(auditDoc).toContain('**Oswaldo Cruz**');
+    expect(auditDoc).toContain('**Turiaçu**');
+    expect(auditDoc).toContain('Registro genérico ambíguo');
+    expect(auditDoc).toContain('**Freguesia**');
+    expect(auditDoc).toContain(
+      'Localidades/comunidades que não devem ser promovidas automaticamente a bairro oficial',
+    );
+    expect(auditDoc).toContain('**Tijuquinha**');
+    expect(auditDoc).toContain('**Morro do Banco**');
+    expect(auditDoc).toContain('**Mata Machado**');
+    expect(auditDoc).toContain('**Furnas**');
+    expect(auditDoc).toContain(
+      'Antes de qualquer reclassificação/desativação, é obrigatório medir todas as referências desses IDs',
+    );
+  });
+
 });
