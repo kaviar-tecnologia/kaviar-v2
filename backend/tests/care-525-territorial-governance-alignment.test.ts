@@ -208,4 +208,19 @@ describe('CARE-525 — territorial governance alignment audit', () => {
     );
   });
 
+
+  it('records Barra as geometrically complete but not administratively verified', () => {
+    expect(auditDoc).toContain('Evidência read-only — escopo regional Barra da Tijuca');
+    expect(auditDoc).toContain('Foram encontrados exatamente **8 bairros oficiais ativos**');
+    expect(auditDoc).toContain('com geofence válida: 8');
+    expect(auditDoc).toContain('geofences ausentes ou inválidas: 0');
+    expect(auditDoc).toContain('`is_verified=true`: 0/8');
+    expect(auditDoc).toContain(
+      'a Barra **ainda não está homologada**',
+    );
+    expect(auditDoc).toContain(
+      'o item 12 do dry-run permanece `NO-GO`',
+    );
+  });
+
 });
