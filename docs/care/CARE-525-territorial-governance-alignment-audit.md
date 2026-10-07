@@ -2,7 +2,7 @@
 
 ## Escopo autorizado
 
-Auditoria, testes de caracterização e proposta de correção da coerência entre:
+Auditoria, testes de caracterização, proposta e implementação isolada na branch CARE-525 da coerência entre:
 
 - governança de cobertura territorial;
 - bairro e geofence;
@@ -10,7 +10,7 @@ Auditoria, testes de caracterização e proposta de correção da coerência ent
 - `care-operational-evidence`;
 - `care-verified-scope-evidence`.
 
-Este trabalho não autoriza merge, deploy, alteração de banco de produção, ativação CARE, criação de corrida, dispatcher, oferta, aceite, pricing, wallet, cobrança, repasse ou pagamento.
+Em 07/10/2026 foi autorizada a implementação da correção **somente na branch/PR draft**. Continua sem autorização para merge, deploy, alteração de banco de produção, ativação CARE, criação de corrida, dispatcher, oferta, aceite, pricing, wallet, cobrança, repasse ou pagamento.
 
 ## Base auditada
 
@@ -161,11 +161,11 @@ A checagem de uma corrida CARE deve continuar usando a coordenada real de origem
 
 Não substituir por centro do bairro, raio fixo ou `ST_DWithin`.
 
-## Mudança de código proposta para fase posterior
+## Hipótese inicial de implementação — supersedida
 
-Nenhuma destas mudanças é implementada neste PR de auditoria.
+A hipótese abaixo foi registrada durante a fase de auditoria e foi posteriormente supersedida pela reavaliação regional documentada neste mesmo arquivo.
 
-Uma implementação futura deve preferencialmente:
+A hipótese inicial considerava:
 
 1. criar helper read-only para resolver cadeia territorial `neighborhood -> region? -> city`;
 2. rejeitar hierarquia quebrada, múltipla ou inativa;
@@ -215,27 +215,29 @@ Uma correção futura só poderá ser considerada apta quando testes provarem:
 - item 16 — rollback: `GO`;
 - item 17 — decisão final: `PENDING`.
 
-## Proibições desta branch
+## Limites da implementação autorizada
 
-Esta branch não pode:
+A branch pode conter código e testes para governança regional e revisão de bairros, mas **não pode executar essas mutações em produção**.
+
+Permanece proibido, sem nova autorização expressa:
 
 - alterar dados de produção;
-- marcar bairro como verificado;
-- alterar `coverage_status`;
-- criar registro municipal;
-- criar autorização;
-- criar cobertura de seguro;
-- alterar feature flag;
+- marcar bairro real de produção como verificado;
+- alterar `coverage_status` real de produção;
+- criar registro municipal real;
+- criar autorização real;
+- criar cobertura de seguro real;
+- alterar feature flag em produção;
 - habilitar CARE;
 - liberar corrida real;
-- chamar dispatcher;
-- ofertar ou aceitar corrida;
-- alterar pricing;
+- chamar dispatcher em fluxo real;
+- ofertar ou aceitar corrida real;
+- alterar pricing de produção;
 - movimentar wallet;
 - cobrar;
 - fazer repasse;
 - fazer deploy;
-- fazer merge sem nova autorização expressa.
+- fazer merge.
 
 ## Próxima evidência read-only necessária
 
@@ -703,3 +705,106 @@ Uma implementação posterior deve criar um fluxo explícito de revisão de bair
 - proteção contra marcar como verificado um registro sem geometria válida.
 
 Esse fluxo deve ser separado da revisão de `community_geofences` para não misturar os dois modelos territoriais.
+
+
+## Implementação autorizada na branch — 07/10/2026
+
+Após autorização expressa, o CARE-525 passou da fase exclusivamente documental para uma implementação isolada no PR draft, ainda sem merge/deploy.
+
+### 1. Prontidão de cobertura por território
+
+Foi adicionado:
+
+`GET /api/admin/ai/territory/coverage/:territoryId/readiness`
+
+Características:
+
+- exige `SUPER_ADMIN`;
+- aceita território explícito;
+- suporta `city` e `region`;
+- para região, conta somente bairros oficiais ativos diretamente vinculados;
+- retorna:
+  - `official_neighborhoods`;
+  - `valid_geofences`;
+  - `verified_neighborhoods`;
+  - `can_submit_review`;
+  - `can_complete`;
+- não altera dados.
+
+### 2. Revisão auditável de bairro/geofence
+
+Foi adicionado:
+
+`PATCH /api/admin/ai/territory/neighborhoods/:id/review`
+
+Características fail-closed:
+
+- exige `SUPER_ADMIN`;
+- exige `territory_id` explícito;
+- exige compare-and-set por `expected_verified`;
+- exige cobertura do território em `AWAITING_REVIEW`;
+- para verificar positivamente exige:
+  - bairro oficial ativo;
+  - vínculo exato ao território informado;
+  - território ativo;
+  - linha de geofence;
+  - `geom IS NOT NULL`;
+  - `ST_IsValid(geom)=true`;
+  - `ST_SRID(geom)=4326`;
+  - fonte de geofence não vazia;
+- grava:
+  - `is_verified`;
+  - `verified_at`;
+  - `verified_by`;
+- atualização de revisão usa compare-and-set;
+- registra auditoria administrativa;
+- reabertura exige motivo;
+- não ativa CARE.
+
+### 3. Governança regional de coverage_status
+
+A rota existente:
+
+`POST /api/admin/ai/territory/coverage/status`
+
+passou a aceitar `territory_id` explícito, mantendo compatibilidade com `city + uf`.
+
+Para `region`:
+
+- somente região ativa é elegível;
+- `NOT_LOADED -> AWAITING_REVIEW` exige:
+  - pelo menos um bairro oficial ativo;
+  - 100% dos bairros do escopo com geofence válida SRID 4326;
+- `AWAITING_REVIEW -> COMPLETE` exige adicionalmente:
+  - 100% dos bairros do escopo com revisão positiva válida;
+- compare-and-set de `coverage_status` foi preservado;
+- auditoria inclui nível do território e métricas do escopo;
+- a máquina de estados existente foi preservada.
+
+### 4. Runtime CARE
+
+Os resolvers CARE não foram afrouxados.
+
+Continuam exigindo:
+
+- bairro revisado;
+- território direto ativo e `COMPLETE`;
+- pickup coberto por `ST_Covers`;
+- regulação CARE estruturada;
+- seguro CARE estruturado;
+- demais gates existentes.
+
+Nenhuma flag CARE foi alterada.
+
+### 5. Estado de segurança
+
+A existência das novas rotas na branch **não constitui autorização operacional**.
+
+Até nova autorização:
+
+- PR permanece draft;
+- não fazer merge;
+- não fazer deploy;
+- não chamar as novas rotas contra produção;
+- item 12 permanece `NO-GO`;
+- CARE permanece fail-closed.
