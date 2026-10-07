@@ -481,3 +481,46 @@ Antes de reclassificar, desativar ou substituir qualquer um deles, ainda é nece
 6. preservar Caju como bairro oficial e corrigir apenas sua geometria/proveniência, sem apagar o registro.
 
 A ausência de referências em motorista/passageiro/corrida significa que nenhuma migração de usuários ou corridas é necessária para esses 11 registros no estado observado em 07/10/2026.
+
+
+## Auditoria de comunidades canônicas em produção
+
+Leitura read-only em produção procurou registros em `communities` pelos nomes:
+
+- Tijuquinha;
+- Morro do Banco;
+- Furnas;
+- Mata Machado.
+
+Resultado: **nenhum registro correspondente foi encontrado**.
+
+Portanto, a hipótese anterior de que já existiria uma comunidade canônica pronta para substituir os registros incorretos de `neighborhoods` não se confirmou.
+
+### Consequência arquitetural
+
+O schema atual separa `communities` de `neighborhoods`, mas não possui uma chave estrangeira direta de comunidade para bairro.
+
+O `territory-resolver.service.ts` resolve primeiro comunidade e depois bairro por interseção espacial independente:
+
+1. `community_geofences.geom` via `ST_Covers`;
+2. `neighborhood_geofences.geom` via `ST_Covers`.
+
+Assim, uma futura correção de Tijuquinha/Morro do Banco/Furnas/Mata Machado não deve simplesmente criar comunidades por nome. É preciso definir:
+
+- identidade canônica da comunidade;
+- geofence comunitária válida;
+- proveniência da geometria;
+- relação operacional esperada com o bairro-pai;
+- mecanismo auditável para impedir divergência espacial entre comunidade e bairro.
+
+### Estado atual desses quatro nomes
+
+No snapshot de produção auditado:
+
+- existem como registros de `neighborhoods`;
+- não possuem referências por FK em motoristas, passageiros ou corridas;
+- não possuem registros homônimos em `communities`;
+- não possuem geofence de bairro;
+- pelo menos Tijuquinha tem classificação de domínio KAVIAR como comunidade da Barra da Tijuca.
+
+Isso torna a correção factível, mas ela exige uma etapa explícita de modelagem/carga de comunidade antes de remover ou desativar o registro incorreto em `neighborhoods`.
