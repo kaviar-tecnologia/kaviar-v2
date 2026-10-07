@@ -596,3 +596,74 @@ Antes de implementar qualquer alteração, auditar somente a região Barra da Ti
 - eventuais bairros sem geofence ou com geometria inválida.
 
 Se o escopo Barra estiver geometricamente íntegro, o CARE-525 poderá propor uma correção pequena e regional em vez de uma limpeza municipal completa como pré-condição do piloto.
+
+
+## Evidência read-only — escopo regional Barra da Tijuca
+
+Auditoria read-only em produção da região `4094386a-6978-48c5-a07d-4cda238ff163` confirmou:
+
+- nome: Barra da Tijuca;
+- nível: `region`;
+- território ativo;
+- `coverage_status=NOT_LOADED`;
+- `coverage_reviewed_at=null`;
+- `coverage_reviewed_by=null`.
+
+Foram encontrados exatamente **8 bairros oficiais ativos** diretamente vinculados à região:
+
+1. Barra da Tijuca;
+2. Camorim;
+3. Grumari;
+4. Itanhangá;
+5. Joá;
+6. Recreio dos Bandeirantes;
+7. Vargem Grande;
+8. Vargem Pequena.
+
+### Integridade geométrica
+
+Resultado:
+
+- bairros no escopo: 8;
+- com geofence válida: 8;
+- geofences ausentes ou inválidas: 0;
+- todos os oito registros observados usam fonte `PCRJ OpenData`;
+- todas as geometrias observadas estão válidas;
+- todas têm SRID 4326.
+
+Isso significa que o **escopo geográfico bruto da região Barra está completo para os oito bairros atualmente vinculados**, sem depender dos 11 gaps existentes em outras regiões do Rio.
+
+### Revisão humana/auditável
+
+Apesar da integridade geométrica:
+
+- `is_verified=true`: 0/8;
+- `verified_at`: nulo em 8/8;
+- `verified_by`: nulo em 8/8.
+
+Portanto, a Barra **ainda não está homologada**. A evidência positiva é apenas de integridade técnica das geometrias, não de revisão administrativa.
+
+### Consequência para CARE-525
+
+O bloqueio territorial do piloto pode ser reduzido ao escopo Barra sem exigir saneamento prévio de todo o município, desde que uma implementação posterior forneça governança regional explícita e auditável.
+
+A sequência segura proposta é:
+
+1. adicionar suporte administrativo explícito a cobertura de `region`, preservando a máquina de estados atual;
+2. adicionar uma ação explícita de revisão/homologação de bairros/geofences dentro daquela região;
+3. impedir `region -> COMPLETE` enquanto qualquer bairro oficial ativo do escopo:
+   - não possuir geofence;
+   - possuir geometria inválida;
+   - tiver SRID diferente de 4326;
+   - não estiver revisado;
+4. preservar `ST_Covers` no runtime para o ponto real da corrida;
+5. manter regulação municipal CARE e seguro como gates independentes.
+
+### Estado do item 12 após esta evidência
+
+- **geometria do escopo Barra**: `GO` técnico, 8/8 válidas;
+- **revisão/homologação dos bairros**: `NO-GO`, 0/8 revisados;
+- **coverage_status da região**: `NO-GO`, ainda `NOT_LOADED`;
+- **regulação municipal CARE**: `NO-GO/PENDING`, nenhum registro estruturado positivo encontrado.
+
+Consequentemente, o item 12 do dry-run permanece `NO-GO`, mas o bloqueio territorial está agora bem delimitado e não depende dos 11 gaps fora da Barra.
