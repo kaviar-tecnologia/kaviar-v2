@@ -173,4 +173,19 @@ describe('CARE-525 — territorial governance alignment audit', () => {
     );
   });
 
+
+  it('records that the four suspect names have no canonical communities in production', () => {
+    expect(auditDoc).toContain('Auditoria de comunidades canônicas em produção');
+    expect(auditDoc).toContain('nenhum registro correspondente foi encontrado');
+    expect(auditDoc).toContain(
+      'não possui uma chave estrangeira direta de comunidade para bairro',
+    );
+    expect(auditDoc).toContain(
+      'resolve primeiro comunidade e depois bairro por interseção espacial independente',
+    );
+    expect(auditDoc).toContain(
+      'exige uma etapa explícita de modelagem/carga de comunidade',
+    );
+  });
+
 });
