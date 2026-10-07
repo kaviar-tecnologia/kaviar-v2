@@ -69,6 +69,11 @@ describe('CARE-445 quote writer — test first, existing CAR formula unchanged',
     expect(sql[1]).toContain('FOR UPDATE');
     expect(sql[2]).toContain('SELECT * FROM ride_settlements');
     expect(sql[3]).toContain('INSERT INTO ride_settlements');
+    expect(sql[3]).toContain('route_territory, distance_km, duration_min');
+    const insertCall = mocks.txQuery.mock.calls.find(
+      ([query]) => String(query).includes('INSERT INTO ride_settlements'),
+    );
+    expect(insertCall?.[1]?.[9]).toBe(10);
     expect(sql[4]).toContain('UPDATE rides_v2 SET');
     expect(sql[5]).toBe('COMMIT');
     expect(mocks.release).toHaveBeenCalledWith(false);
