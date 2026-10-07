@@ -13,7 +13,7 @@ export class CareAdminConflict extends Error {
  */
 export async function lockCareAdminRow(
   tx: Prisma.TransactionClient,
-  kind: 'regulation' | 'coverage' | 'enrollment' | 'driver' | 'neighborhood',
+  kind: 'regulation' | 'coverage' | 'enrollment' | 'driver' | 'neighborhood' | 'territory',
   id: string,
 ): Promise<void> {
   let rows: Array<{ id: string }>;
@@ -32,6 +32,9 @@ export async function lockCareAdminRow(
       break;
     case 'neighborhood':
       rows = await tx.$queryRaw`SELECT id FROM neighborhoods WHERE id = ${id} FOR UPDATE`;
+      break;
+    case 'territory':
+      rows = await tx.$queryRaw`SELECT id FROM operational_territories WHERE id = ${id} FOR UPDATE`;
       break;
   }
   if (rows.length !== 1) throw new CareAdminConflict();
