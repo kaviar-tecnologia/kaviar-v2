@@ -417,3 +417,67 @@ Consequências para a correção futura:
 - a correção não deve criar uma geofence de **bairro oficial** para Tijuquinha apenas para satisfazer o gate CARE;
 - antes de qualquer mutação, devem ser auditadas todas as referências ao ID atual e definido o registro canônico de comunidade/localidade sob Barra da Tijuca;
 - qualquer divergência entre a classificação operacional da KAVIAR e nomenclatura de fontes municipais deve ficar explícita no mapeamento, sem ser resolvida por inferência silenciosa.
+
+
+## Auditoria de referências dos 11 registros
+
+Leitura read-only das chaves estrangeiras para `neighborhoods(id)` em produção mostrou as seguintes tabelas relacionadas:
+
+- `community_leaders.neighborhood_id`;
+- `drivers.neighborhood_id`;
+- `kaviar_groups.neighborhood_id`;
+- `lab_maturity_snapshots.neighborhood_id`;
+- `match_logs.neighborhood_id`;
+- `neighborhood_geofences.neighborhood_id`;
+- `passengers.neighborhood_id`;
+- `rides_v2.origin_neighborhood_id`;
+- `rides_v2.dest_neighborhood_id`.
+
+### Referências efetivamente encontradas
+
+Foram encontradas referências somente em:
+
+- `lab_maturity_snapshots`:
+  - Caju: 1;
+  - Castelo: 1;
+  - Cinelândia: 1;
+  - Freguesia: 1;
+  - Oswaldo Cruz: 1;
+  - Santana: 1;
+  - Turiaçu: 1;
+- `neighborhood_geofences`:
+  - Caju: 1.
+
+Nenhum dos 11 IDs aparece atualmente como referência em:
+
+- `drivers`;
+- `passengers`;
+- `rides_v2.origin_neighborhood_id`;
+- `rides_v2.dest_neighborhood_id`;
+- `community_leaders`;
+- `kaviar_groups`;
+- `match_logs`.
+
+### Consequência operacional
+
+Isso reduz significativamente o risco de reconciliar os registros suspeitos, mas **não autoriza mutação ainda**.
+
+Em particular, os quatro registros:
+
+- Furnas;
+- Mata Machado;
+- Morro do Banco;
+- Tijuquinha;
+
+não possuem nenhuma referência por chave estrangeira nas tabelas auditadas.
+
+Antes de reclassificar, desativar ou substituir qualquer um deles, ainda é necessário:
+
+1. verificar se já existe registro canônico correspondente em `communities`/estrutura de comunidades;
+2. verificar geofence comunitária existente;
+3. confirmar parent/bairro canônico correto;
+4. procurar referências não protegidas por FK, incluindo campos textuais/JSON relevantes;
+5. definir tratamento dos `lab_maturity_snapshots` dos sete registros que possuem snapshot;
+6. preservar Caju como bairro oficial e corrigir apenas sua geometria/proveniência, sem apagar o registro.
+
+A ausência de referências em motorista/passageiro/corrida significa que nenhuma migração de usuários ou corridas é necessária para esses 11 registros no estado observado em 07/10/2026.
