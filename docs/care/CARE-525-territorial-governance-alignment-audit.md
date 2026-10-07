@@ -388,3 +388,17 @@ A estratégia recomendada é separar:
 4. **áreas/localidades do Centro a reconciliar**: Castelo, Cinelândia, Santana.
 
 Antes de qualquer reclassificação/desativação, é obrigatório medir todas as referências desses IDs em tabelas de motoristas, passageiros, corridas e demais chaves estrangeiras.
+
+
+## Proveniência histórica no Git para registros suspeitos
+
+A auditoria do histórico do repositório encontrou evidência adicional de que alguns nomes atuais de `neighborhoods` nasceram em fluxos antigos de teste/comunidade, não como cadastro canônico de bairro oficial:
+
+- commit `9d00e0948344b18d4f5a26958ff4b2002b26b658` — “FASE 4A: Admin funcional - Dashboard e Bairros implementados” — declara explicitamente **dados de teste** com cinco “bairros”, incluindo **Mata Machado** e **Furnas**;
+- commit `12dfcb43a5d25d915d8b7a09d8f6f81a5065fec3` repete esses nomes como **seeds de teste**;
+- commit `7d2a7ab93f21dcb2ff93d55731074e2d7d665a95` descreve **Furnas, Agrícola e Mata Machado** como `test communities`;
+- commit `de6f6a223622c6ba0226f99e3e0f62b77a671137` classifica explicitamente **Tijuquinha** entre “7 new communities”, enquanto os bairros adicionados separadamente eram Barra da Tijuca, Itanhangá, Anil, Jacarepaguá e Alto da Boa Vista.
+
+Essa evidência histórica não prova, sozinha, qual script gerou os registros atuais de `neighborhoods` em 13/06/2026, mas reforça que **Mata Machado, Furnas e Tijuquinha não devem ser promovidos automaticamente como BAIRRO_OFICIAL**.
+
+O fato de Furnas, Mata Machado, Morro do Banco e Tijuquinha terem exatamente o mesmo `created_at = 2026-06-13T02:30:26.724Z` no banco atual indica forte probabilidade de carga em lote. A origem exata dessa carga ainda deve ser identificada antes de qualquer mutação.
