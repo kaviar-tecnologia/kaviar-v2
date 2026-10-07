@@ -1,0 +1,249 @@
+# CARE-525 — auditoria de coerência territorial CARE
+
+## Escopo autorizado
+
+Auditoria, testes de caracterização e proposta de correção da coerência entre:
+
+- governança de cobertura territorial;
+- bairro e geofence;
+- hierarquia `city -> region -> neighborhood`;
+- `care-operational-evidence`;
+- `care-verified-scope-evidence`.
+
+Este trabalho não autoriza merge, deploy, alteração de banco de produção, ativação CARE, criação de corrida, dispatcher, oferta, aceite, pricing, wallet, cobrança, repasse ou pagamento.
+
+## Base auditada
+
+Base da branch: `6c48ab3e8a370f625556a5c7e3904bad5e3b2548`.
+
+### Evidência read-only de produção em 07/10/2026
+
+Candidato do piloto:
+
+- cidade: Rio de Janeiro/RJ;
+- território municipal ativo: `a69da815-b012-40b5-b888-b246151d6ce4`, nível `city`;
+- região: Barra da Tijuca, `4094386a-6978-48c5-a07d-4cda238ff163`, nível `region`;
+- bairro do motorista: Itanhangá, `c1b26451-9ff1-45f7-a5b0-6c7865f975f9`;
+- hierarquia observada: Rio de Janeiro `city` -> Barra da Tijuca `region` -> Itanhangá;
+- Rio ativo e Barra ativa;
+- `coverage_status=NOT_LOADED` tanto na cidade quanto na região;
+- Itanhangá `is_active=true`, `is_verified=false`;
+- geofence de Itanhangá existe, é válida e tem SRID 4326;
+- fonte observada da geofence de Itanhangá: `PCRJ OpenData`;
+- 172 bairros oficiais ativos na cidade;
+- 161 bairros com geofence válida;
+- 0 bairros com `is_verified=true`;
+- nenhum registro `municipal_regulations` CARE para Rio;
+- nenhuma `municipal_authorizations` CARE para o motorista candidato.
+
+A diferença de 11 entre bairros oficiais e geofences válidas precisa ser identificada antes de qualquer homologação municipal `COMPLETE`.
+
+## Achado principal
+
+Existem hoje dois contratos territoriais incompatíveis.
+
+### Contrato A — governança territorial administrativa
+
+A rota de governança em `backend/src/routes/admin-ai.ts`:
+
+1. resolve exclusivamente um território de nível `city`;
+2. conta bairros oficiais da cidade e de regiões filhas;
+3. permite transições:
+   - `NOT_LOADED -> AWAITING_REVIEW`;
+   - `AWAITING_REVIEW -> COMPLETE`;
+   - `COMPLETE -> AWAITING_REVIEW`;
+4. grava `coverage_status`, `coverage_reviewed_at` e `coverage_reviewed_by` no território municipal;
+5. hoje impede revisão/homologação somente quando o total de bairros oficiais é zero.
+
+Portanto, a unidade de homologação desse fluxo é municipal.
+
+### Contrato B — gate CARE
+
+Os resolvers CARE em:
+
+- `backend/src/services/care/care-operational-evidence.ts`;
+- `backend/src/services/care/care-verified-scope-evidence.ts`;
+
+leem o território diretamente relacionado ao bairro e exigem, para uma decisão positiva:
+
+- bairro ativo;
+- `neighborhood.is_verified=true`;
+- `verified_by` e `verified_at`;
+- território diretamente relacionado ao bairro ativo;
+- `territory.status='active'`;
+- `territory.coverage_status='COMPLETE'`;
+- `coverage_reviewed_by` e `coverage_reviewed_at`.
+
+No Rio observado, Itanhangá aponta para Barra da Tijuca, que é `region`, não para o território `city`.
+
+Assim, homologar apenas Rio de Janeiro/`city` pelo fluxo administrativo atual não satisfaz o gate CARE da região Barra.
+
+## Consequência
+
+O item 12 do checklist CARE permanece `NO-GO`.
+
+Não é aceitável resolver o problema por:
+
+- marcar regiões como `COMPLETE` manualmente sem um contrato explícito de governança;
+- marcar os 172 bairros como verificados em massa;
+- alterar somente os dados do piloto para atravessar o gate;
+- tratar a existência de uma geofence como equivalência automática a revisão humana;
+- remover as exigências fail-closed do CARE;
+- reutilizar permissão genérica de CAR como evidência CARE;
+- inventar registro municipal ou seguro.
+
+## Segundo achado — critério de COMPLETE insuficiente
+
+O fluxo administrativo atual só exige `officialNeighborhoods > 0` para permitir entrada em revisão ou homologação.
+
+Isso é insuficiente para uma cidade com cobertura parcial de geofences.
+
+No snapshot read-only do Rio:
+
+- bairros oficiais ativos: 172;
+- geofences válidas: 161;
+- diferença: 11.
+
+Logo, uma homologação municipal `COMPLETE` não deve ocorrer sem uma regra explícita para os 11 bairros faltantes.
+
+## Proposta de correção
+
+### Princípio 1 — manter a governança municipal
+
+`coverage_status` deve continuar sendo homologado no território `city`, porque o fluxo de governança, o painel territorial e a avaliação de completude trabalham no município.
+
+Não duplicar o mesmo estado administrativo em cada região filha.
+
+### Princípio 2 — resolver o ancestral municipal no CARE
+
+O CARE deve preservar o bairro/região para matching e geofence, mas obter a homologação de cobertura do território municipal ancestral ativo.
+
+Para um bairro ligado a uma região:
+
+`neighborhood -> region -> city`
+
+o gate deve exigir:
+
+- bairro ativo e revisado;
+- geofence exata válida;
+- região ativa;
+- cidade ancestral ativa;
+- cidade ancestral `coverage_status=COMPLETE`;
+- cidade ancestral com `coverage_reviewed_at/by` válidos.
+
+Para um bairro já ligado diretamente a `city`, o comportamento deve permanecer equivalente.
+
+Nenhum fallback por nome deve conceder autorização positiva em runtime CARE.
+
+### Princípio 3 — bairro continua sendo evidência específica
+
+O requisito de bairro revisado não deve desaparecer.
+
+A proposta é criar um fluxo explícito de revisão de bairro/geofence, auditável, em vez de inferir `is_verified=true` automaticamente porque `geom` existe.
+
+### Princípio 4 — COMPLETE deve ser fail-closed
+
+Antes de `city.coverage_status=COMPLETE`, a governança deve validar no mínimo:
+
+- existência de bairros oficiais ativos;
+- cada bairro oficial ativo incluído no escopo tem geofence;
+- geofence não nula;
+- `ST_IsValid(geom)=true`;
+- `ST_SRID(geom)=4326`;
+- política explícita para qualquer bairro sem geofence;
+- revisão humana/auditável da base.
+
+Enquanto houver 11 bairros sem geofence válida no Rio, o resultado recomendado é no máximo `AWAITING_REVIEW`.
+
+### Princípio 5 — preservar ST_Covers
+
+A checagem de uma corrida CARE deve continuar usando a coordenada real de origem e `ST_Covers` na geofence do bairro.
+
+Não substituir por centro do bairro, raio fixo ou `ST_DWithin`.
+
+## Mudança de código proposta para fase posterior
+
+Nenhuma destas mudanças é implementada neste PR de auditoria.
+
+Uma implementação futura deve preferencialmente:
+
+1. criar helper read-only para resolver cadeia territorial `neighborhood -> region? -> city`;
+2. rejeitar hierarquia quebrada, múltipla ou inativa;
+3. fazer os dois resolvers CARE consumirem a mesma resolução canônica;
+4. manter o `territoryId` de evidência coerente com a unidade utilizada por regulação e seguro;
+5. alinhar as rotas administrativas de seguro para a mesma resolução territorial;
+6. fortalecer a transição `AWAITING_REVIEW -> COMPLETE` com métricas de geofence;
+7. adicionar rota/ação auditável específica para revisão de bairro/geofence;
+8. adicionar regressão para bairro ligado diretamente a `city`;
+9. adicionar regressão para bairro ligado a `region` filha de `city`;
+10. manter fail-closed para geofence ausente, inválida ou SRID diferente de 4326.
+
+## Questão de identidade territorial para seguro/regulação
+
+Hoje `care-verified-scope-evidence` usa `origin.territory_id` como território de evidência e também como chave de `operational_insurance_coverages.territory_id`.
+
+Se a governança de cobertura é municipal, a implementação precisa decidir explicitamente se seguro CARE será cadastrado por:
+
+- município; ou
+- região.
+
+A decisão não pode ser implícita.
+
+Para o piloto RJ, a proposta preferencial é município como unidade regulatória/seguro, mantendo a região apenas como escopo operacional/matching, salvo exigência contratual expressa da seguradora.
+
+## Critérios de aceite para uma implementação posterior
+
+Uma correção futura só poderá ser considerada apta quando testes provarem:
+
+- cidade `COMPLETE` não basta se bairro não foi revisado;
+- bairro revisado não basta se geofence é inválida;
+- região `NOT_LOADED` não bloqueia por si só quando o contrato canônico é cobertura municipal e o ancestral `city` está corretamente homologado;
+- região inativa continua bloqueando;
+- cidade ancestral não homologada continua bloqueando;
+- hierarquia sem ancestral municipal continua bloqueando;
+- geofence precisa cobrir exatamente o ponto de origem;
+- regulação CARE exata continua obrigatória;
+- seguro CARE exato e vínculo do motorista continuam obrigatórios;
+- CAR_NORMAL/MOTO/Premium permanecem sem alteração.
+
+## Estado dos itens do dry-run após esta auditoria
+
+- item 14 — motorista + veículo: `GO` para CARE_ASSISTED simples, conforme evidência read-only e correção auditada de placa;
+- item 12 — território + regulação: `NO-GO`;
+- item 13 — seguro: `PENDING`;
+- item 6 — readiness operacional: `PENDING`;
+- item 16 — rollback: `GO`;
+- item 17 — decisão final: `PENDING`.
+
+## Proibições desta branch
+
+Esta branch não pode:
+
+- alterar dados de produção;
+- marcar bairro como verificado;
+- alterar `coverage_status`;
+- criar registro municipal;
+- criar autorização;
+- criar cobertura de seguro;
+- alterar feature flag;
+- habilitar CARE;
+- liberar corrida real;
+- chamar dispatcher;
+- ofertar ou aceitar corrida;
+- alterar pricing;
+- movimentar wallet;
+- cobrar;
+- fazer repasse;
+- fazer deploy;
+- fazer merge sem nova autorização expressa.
+
+## Próxima evidência read-only necessária
+
+Listar nominalmente os 11 bairros oficiais do Rio que não possuem geofence válida `SRID=4326`, classificando a causa:
+
+- sem linha em `neighborhood_geofences`;
+- `geom IS NULL`;
+- geometria inválida;
+- SRID diferente de 4326.
+
+Essa leitura não autoriza correção automática.
