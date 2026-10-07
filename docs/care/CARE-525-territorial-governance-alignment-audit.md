@@ -808,3 +808,36 @@ Até nova autorização:
 - não chamar as novas rotas contra produção;
 - item 12 permanece `NO-GO`;
 - CARE permanece fail-closed.
+
+
+## Hardening após revisão final do diff
+
+A revisão final da implementação identificou dois riscos que foram corrigidos ainda no PR draft.
+
+### Auditoria obrigatória e atomicidade
+
+A primeira versão da implementação usava o helper global `audit()`, que é best-effort e pode engolir falha de persistência. Isso não é suficiente para uma decisão que produz evidência CARE.
+
+A versão endurecida agora:
+
+- usa `prisma.$transaction`;
+- bloqueia `operational_territories` com `FOR UPDATE`;
+- na revisão de bairro, bloqueia também o registro de `neighborhoods`;
+- usa `writeCareAdminAuditTx`;
+- se o insert em `admin_audit_logs` falhar, a mutação de bairro ou `coverage_status` é revertida na mesma transação;
+- serializa revisão de bairros com homologação/reabertura regional, evitando que `COMPLETE` seja concedido sobre um snapshot concorrente.
+
+### Identidade municipal da região
+
+O runtime CARE exige que o território diretamente associado ao bairro tenha município e UF coerentes com o bairro.
+
+Por isso, governança positiva de uma `region` agora falha se:
+
+- a região não estiver `active`;
+- não existir município-pai ativo;
+- `region.city_name` estiver ausente ou divergir do município-pai;
+- `region.uf` estiver ausente ou divergir do município-pai.
+
+Isso impede homologar uma região que nunca conseguiria satisfazer o gate CARE em runtime.
+
+Esses endurecimentos não alteram dados de produção, não habilitam CARE e não mudam os requisitos de regulação/seguro.
