@@ -325,3 +325,66 @@ O Rio não pode ser homologado como `COMPLETE` enquanto:
 - a revisão dos bairros/geofences continuar em zero.
 
 A próxima etapa recomendada continua sendo somente leitura: inspecionar metadados e possíveis aliases/duplicatas dos 11 registros antes de qualquer correção de dados.
+
+
+## Classificação pública preliminar dos 11 gaps
+
+A classificação abaixo usa fontes oficiais da Prefeitura do Rio apenas para decidir **o que precisa ser investigado**. Ela não autoriza mutação do banco.
+
+### Bairros oficiais confirmados
+
+- **Caju** — aparece como bairro na abrangência oficial da GLF Centro e em camada oficial municipal de limites de bairros. Portanto o problema é geométrico, não de classificação.
+- **Oswaldo Cruz** — aparece como bairro na abrangência oficial da GLF Madureira.
+- **Turiaçu** — aparece como bairro na abrangência oficial da GLF Madureira.
+
+Tratamento proposto: obter/validar geometria oficial e preservar o registro como `BAIRRO_OFICIAL`.
+
+### Registro genérico ambíguo
+
+- **Freguesia** — o banco também contém `Freguesia (Ilha)` e `Freguesia (Jacarepaguá)`, ambos tratados como bairros em fontes oficiais da Prefeitura. O registro genérico sem território não deve receber geofence até ser reconciliado com um dos bairros canônicos ou classificado como legado/alias.
+
+Tratamento proposto: não criar polígono para o registro genérico; primeiro auditar referências e origem do registro.
+
+### Localidades/comunidades que não devem ser promovidas automaticamente a bairro oficial
+
+- **Tijuquinha** — a Prefeitura a descreve explicitamente como **comunidade da Tijuquinha, no Itanhangá**.
+- **Morro do Banco** — a Prefeitura o localiza **no Itanhangá** e o trata em contexto comunitário.
+- **Mata Machado** — fontes municipais a localizam **no Alto da Boa Vista**; documentação municipal de distribuição territorial também associa Mata Machado ao bairro Alto da Boa Vista.
+- **Furnas** — documentação municipal a associa ao **Alto da Boa Vista**, não como bairro municipal autônomo.
+
+Tratamento proposto: revisar `area_type`, bairro-pai canônico e referências antes de qualquer geofence de bairro oficial.
+
+### Áreas do Centro que não aparecem na lista oficial de bairros da GLF Centro
+
+- **Castelo**
+- **Cinelândia**
+- **Santana**
+
+A Prefeitura lista os bairros da GLF Centro sem esses três nomes. Em material institucional do programa Centro para Todos, **Castelo** e **Cinelândia** aparecem como áreas da região do Centro Histórico, e **Campo de Santana** é tratado como espaço/área no bairro Centro.
+
+Tratamento proposto: tratar os três como registros suspeitos de área/localidade/alias, não como bairros oficiais confirmados, até reconciliação com a camada canônica de limites municipais.
+
+### Fontes oficiais consultadas
+
+- Prefeitura do Rio / Desenvolvimento Urbano — Unidades de Licenciamento e Fiscalização: https://desenvolvimentourbano.prefeitura.rio/unidades-de-licenciamento-e-fiscalizacao-licenciamento-urbanistico/
+- Prefeitura do Rio / ArcGIS — camada municipal `Bairros_Censo_2022`: https://pgeo3.rio.rj.gov.br/arcgis/rest/services/Censo/Limites_administrativos_Censo_2022/MapServer/2
+- Prefeitura do Rio — Centro para Todos / áreas do Centro Histórico: https://www.rio.rj.gov.br/web/guest/exibeconteudo?id=6588718
+- Prefeitura do Rio — Tijuquinha no Itanhangá: https://prefeitura.rio/comlurb/comunidade-da-tijuquinha-recebeu-campanha-de-conscientizacao-da-comlurb-nesta-sexta-feira/
+- Prefeitura do Rio — regularização da Tijuquinha no Itanhangá: https://prefeitura.rio/habitacao/prefeitura-entrega-mais-de-150-termos-de-reconhecimento-de-moradia-na-tijuquinha-e-inicia-obras-nas-zonas-norte-e-oeste/
+- Prefeitura do Rio — Morro do Banco no Itanhangá: https://saude.prefeitura.rio/noticias/prefeitura-do-rio-inaugura-clinica-da-familia-no-morro-do-banco/
+- Prefeitura do Rio — Mata Machado no Alto da Boa Vista: https://prefeitura.rio/educacao/prefeitura-inaugura-novos-ginasios-experimentais-tecnologicos-no-alto-da-boa-vista-e-na-lagoa/
+- Prefeitura do Rio — Ecoponto Mata Machado / Alto da Boa Vista: https://prefeitura.rio/comlurb/comlurb-inaugura-o-ecoponto-de-mata-machado-na-estrada-de-furnas-no-alto-da-boa-vista/
+- Prefeitura do Rio / Assistência Social — Freguesia (Jacarepaguá) em lista de bairros: https://assistenciasocial.prefeitura.rio/cras/
+
+## Decisão técnica após a classificação preliminar
+
+O gap de 11 não deve ser resolvido como um lote único de importação.
+
+A estratégia recomendada é separar:
+
+1. **geometria oficial faltante/inválida**: Caju, Oswaldo Cruz, Turiaçu;
+2. **alias/duplicata a reconciliar**: Freguesia genérica;
+3. **comunidades/localidades a reclassificar**: Furnas, Mata Machado, Morro do Banco, Tijuquinha;
+4. **áreas/localidades do Centro a reconciliar**: Castelo, Cinelândia, Santana.
+
+Antes de qualquer reclassificação/desativação, é obrigatório medir todas as referências desses IDs em tabelas de motoristas, passageiros, corridas e demais chaves estrangeiras.
