@@ -247,3 +247,81 @@ Listar nominalmente os 11 bairros oficiais do Rio que não possuem geofence vál
 - SRID diferente de 4326.
 
 Essa leitura não autoriza correção automática.
+
+
+## Evidência detalhada dos 11 gaps do Rio
+
+Leitura read-only executada em produção em 07/10/2026 classificou exatamente 11 bairros oficiais ativos que não satisfazem o requisito de geofence válida SRID 4326:
+
+| Bairro | Território atual | Diagnóstico |
+| --- | --- | --- |
+| Caju | Centro | `GEOM_INVALID` |
+| Castelo | Centro | `NO_GEOFENCE_ROW` |
+| Cinelândia | Centro | `NO_GEOFENCE_ROW` |
+| Freguesia | sem território | `NO_GEOFENCE_ROW` |
+| Furnas | Tijuca | `NO_GEOFENCE_ROW` |
+| Mata Machado | Tijuca | `NO_GEOFENCE_ROW` |
+| Morro do Banco | Tijuca | `NO_GEOFENCE_ROW` |
+| Oswaldo Cruz | Madureira | `NO_GEOFENCE_ROW` |
+| Santana | Centro | `NO_GEOFENCE_ROW` |
+| Tijuquinha | Tijuca | `NO_GEOFENCE_ROW` |
+| Turiaçu | Madureira | `NO_GEOFENCE_ROW` |
+
+Resumo objetivo:
+
+- 10 registros sem linha em `neighborhood_geofences`;
+- 1 registro com geometria existente porém inválida: Caju;
+- nenhum caso desta lista foi classificado como `GEOM_NULL`;
+- nenhum caso desta lista apresentou SRID diferente de 4326.
+
+### Histórico já existente no repositório
+
+O documento `docs/GEOFENCE_GAP_REPORT_2026-02-06.md` já registrava seis bairros sem geofence:
+
+- Castelo;
+- Cinelândia;
+- Freguesia;
+- Oswaldo Cruz;
+- Santana;
+- Turiaçu.
+
+O mesmo relatório já registrava uma geometria inválida no conjunto de geofences do Rio. A leitura atual identifica Caju como o registro inválido.
+
+Portanto, estes sete problemas não devem ser tratados como falha transitória recém-criada.
+
+### Sinal de problema de classificação, não apenas de geometria
+
+O repositório contém evidência histórica de que alguns nomes hoje presentes como `BAIRRO_OFICIAL` foram tratados em outros fluxos como comunidades/localidades:
+
+- `backend/scripts/seed_rj_zone_oeste.js` lista Tijuquinha como comunidade sob Barra da Tijuca;
+- o mesmo script lista Mata Machado e Furnas como comunidades sob Alto da Boa Vista;
+- `backend/scripts/seed-local-operators-crm.ts` descreve Morro do Banco como comunidade de Itanhangá;
+- `backend/scripts/import-neighborhoods-rds.ts` usa `Freguesia (Jacarepaguá)` e `Freguesia (Ilha)`, não um bairro municipal genérico chamado apenas `Freguesia`.
+
+Isso não prova sozinho que os registros atuais estejam errados, mas torna inseguro preencher automaticamente geofences para esses nomes.
+
+Antes de qualquer importação ou homologação, deve ser decidido para cada registro se ele é:
+
+1. bairro oficial municipal;
+2. comunidade/localidade interna a um bairro oficial;
+3. alias/registro legado de outro bairro;
+4. duplicata que deve ser reconciliada.
+
+### Caju
+
+Para Caju, não executar `ST_MakeValid` automaticamente em produção como solução final.
+
+Uma correção geométrica automática pode tornar a geometria tecnicamente válida sem provar que o polígono resultante ainda representa o limite oficial correto.
+
+A correção deve comparar o polígono com a fonte oficial, registrar a proveniência e só então substituir a geometria de forma auditável.
+
+### Consequência para COMPLETE
+
+O Rio não pode ser homologado como `COMPLETE` enquanto:
+
+- os 10 registros sem geofence não forem classificados;
+- Caju não tiver geometria oficial válida/revisada;
+- não existir uma regra explícita para comunidades/localidades classificadas erroneamente como `BAIRRO_OFICIAL`;
+- a revisão dos bairros/geofences continuar em zero.
+
+A próxima etapa recomendada continua sendo somente leitura: inspecionar metadados e possíveis aliases/duplicatas dos 11 registros antes de qualquer correção de dados.
