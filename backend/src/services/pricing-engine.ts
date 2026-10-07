@@ -446,17 +446,17 @@ export async function quote(rideId: string, originLat: number, originLng: number
         ride_id, pricing_profile_id, pricing_profile_slug,
         origin_neighborhood_id, origin_neighborhood,
         dest_neighborhood_id, dest_neighborhood,
-        route_territory, distance_km,
+        route_territory, distance_km, duration_min,
         base_fare_used, per_km_used, per_minute_used, minimum_fare_used,
         quoted_price, locked_price,
         fee_percent, fee_amount, driver_earnings,
         quoted_at, locked_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
       [
         rideId, profile.id, profile.slug,
         resolvedOriginId, originRes.neighborhood?.name || null,
         resolvedDestId, destRes.neighborhood?.name || null,
-        route_territory, distance_km,
+        route_territory, distance_km, duration_min,
         profile.base_fare, profile.per_km, profile.per_minute, profile.minimum_fare,
         quoted_price, quoted_price, // V1: locked = quoted
         fee_percent, fee_amount, driver_earnings, now, now,
