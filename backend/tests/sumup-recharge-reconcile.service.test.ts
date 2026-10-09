@@ -13,6 +13,7 @@ type RechargeRow = {
 const mockQuery = vi.fn();
 const mockRelease = vi.fn();
 const mockGetSumUpCheckout = vi.fn();
+const mockRecoverReferral = vi.fn();
 
 let walletEnsureCalls = 0;
 let walletCreditCalls = 0;
@@ -158,6 +159,11 @@ vi.mock('../src/db', () => ({
   },
 }));
 
+vi.mock('../src/services/wallet-v2/referral-recovery.service', () => ({
+  recoverReferralQualification: (...args: any[]) =>
+    mockRecoverReferral(...args),
+}));
+
 vi.mock('../src/services/sumup-service', () => ({
   getSumUpCheckout: (...args: any[]) => mockGetSumUpCheckout(...args),
   SumUpError: class extends Error {
@@ -216,6 +222,7 @@ describe('sumup-recharge.service', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     mockRelease.mockReset();
+    mockRecoverReferral.mockResolvedValue(false);
     walletEnsureCalls = 0;
     walletCreditCalls = 0;
     walletCreditShouldThrow = false;
@@ -257,6 +264,71 @@ describe('sumup-recharge.service', () => {
     expect(second.credited).toBe(false);
     expect(walletCreditCalls).toBe(1);
     expect(mockGetSumUpCheckout).toHaveBeenCalledTimes(1);
+  });
+
+  it('indicação é processada após confirmação financeira', async () => {
+    seedRecharge({
+      id: 'rch-referral-1',
+      external_id: 'checkout-referral-1',
+    });
+
+    mockGetSumUpCheckout.mockResolvedValueOnce(
+      paidCheckout('checkout-referral-1', 'rch-referral-1')
+    );
+
+    const { reconcileSumUpRechargeById } =
+      await import('../src/services/wallet-v2/sumup-recharge.service');
+
+    const result = await reconcileSumUpRechargeById('rch-referral-1');
+
+    expect(result.final_status).toBe('confirmed');
+    expect(mockRecoverReferral).toHaveBeenCalledExactlyOnceWith('rch-referral-1');
+  });
+
+  it('falha na indicação preserva confirmação da recarga', async () => {
+    seedRecharge({
+      id: 'rch-referral-error',
+      external_id: 'checkout-referral-error',
+    });
+
+    mockGetSumUpCheckout.mockResolvedValueOnce(
+      paidCheckout('checkout-referral-error', 'rch-referral-error')
+    );
+
+    mockRecoverReferral.mockRejectedValueOnce(new Error('REFERRAL_ERROR'));
+
+    const { reconcileSumUpRechargeById } =
+      await import('../src/services/wallet-v2/sumup-recharge.service');
+
+    const result = await reconcileSumUpRechargeById('rch-referral-error');
+
+    expect(result.final_status).toBe('confirmed');
+    expect(result.credited).toBe(true);
+    expect(state.recharges['rch-referral-error'].status).toBe('confirmed');
+    expect(walletCreditCalls).toBe(1);
+  });
+
+  it('reconciliação repetida permite recuperar indicação sem duplicar crédito', async () => {
+    seedRecharge({
+      id: 'rch-referral-repeat',
+      external_id: 'checkout-referral-repeat',
+    });
+
+    mockGetSumUpCheckout.mockResolvedValue(
+      paidCheckout('checkout-referral-repeat', 'rch-referral-repeat')
+    );
+
+    const { reconcileSumUpRechargeById } =
+      await import('../src/services/wallet-v2/sumup-recharge.service');
+
+    await reconcileSumUpRechargeById('rch-referral-repeat');
+    await reconcileSumUpRechargeById('rch-referral-repeat');
+
+    // Primeira confirmação + tentativa de recuperação posterior.
+    expect(mockRecoverReferral).toHaveBeenCalledTimes(2);
+
+    // A movimentação financeira continua idempotente.
+    expect(walletCreditCalls).toBe(1);
   });
 
   it('3) FAILED expira sem crédito financeiro', async () => {

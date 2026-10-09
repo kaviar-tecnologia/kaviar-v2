@@ -32,7 +32,7 @@ describe('PendingDebitService', () => {
       .mockResolvedValueOnce({ rows: [] }) // BEGIN
       .mockResolvedValueOnce({ rows: [] }) // advisory lock
       .mockResolvedValueOnce({ rows: [{ id: '1', ride_id: 'r1', driver_id: 'd1', fee_pending_cents: '540', fee_collected_cents: '0', fee_amount_cents: '540', status: 'pending' }] }) // lock pending
-      .mockResolvedValueOnce({ rows: [{ ride_id: 'r1', driver_id: 'd1', territory_id: 't1', manager_id: 'm1', manager_assignment_id: 'a1', fee_amount_cents: '540', fee_collected_cents: '0', fee_pending_cents: '540', manager_commission_rate_bps: 4000, reference_month: '2026-07', collection_status: 'pending' }] }) // lock split
+      .mockResolvedValueOnce({ rows: [{ ride_id: 'r1', driver_id: 'd1', territory_id: 't1', manager_id: 'm1', manager_assignment_id: 'a1', fee_amount_cents: '540', fee_collected_cents: '0', fee_pending_cents: '540', fee_subsidized_cents: '0', manager_commission_rate_bps: 4000, reference_month: '2026-07', collection_status: 'pending' }] }) // lock split
       // After validation: executor, update pending, markCollected, load split for ledger, ledger insert, COMMIT
       .mockResolvedValueOnce({ rows: [] }) // UPDATE pending_debits
       .mockResolvedValueOnce({ rowCount: 1 }) // markCollectedInClient
@@ -74,7 +74,7 @@ describe('PendingDebitService', () => {
       .mockResolvedValueOnce({ rows: [] }) // BEGIN
       .mockResolvedValueOnce({ rows: [] }) // advisory lock
       .mockResolvedValueOnce({ rows: [{ id: '1', ride_id: 'r1', driver_id: 'd1', fee_pending_cents: '540', fee_collected_cents: '0', fee_amount_cents: '540', status: 'pending' }] })
-      .mockResolvedValueOnce({ rows: [{ ride_id: 'r1', driver_id: 'd1', territory_id: 't1', manager_id: 'm1', manager_assignment_id: 'a1', fee_amount_cents: '540', fee_collected_cents: '0', fee_pending_cents: '540', manager_commission_rate_bps: 4000, reference_month: '2026-07', collection_status: 'pending' }] })
+      .mockResolvedValueOnce({ rows: [{ ride_id: 'r1', driver_id: 'd1', territory_id: 't1', manager_id: 'm1', manager_assignment_id: 'a1', fee_amount_cents: '540', fee_collected_cents: '0', fee_pending_cents: '540', fee_subsidized_cents: '0', manager_commission_rate_bps: 4000, reference_month: '2026-07', collection_status: 'pending' }] })
       .mockResolvedValueOnce({ rows: [] }) // ROLLBACK
       .mockResolvedValueOnce({ rows: [] }); // update attempts
 
@@ -99,7 +99,7 @@ describe('PendingDebitService', () => {
       .mockResolvedValueOnce({ rows: [] }) // BEGIN
       .mockResolvedValueOnce({ rows: [] }) // advisory lock
       .mockResolvedValueOnce({ rows: [{ id: '2', ride_id: 'r2', driver_id: 'd1', fee_pending_cents: '360', fee_collected_cents: '0', fee_amount_cents: '360', status: 'pending' }] })
-      .mockResolvedValueOnce({ rows: [{ ride_id: 'r2', driver_id: 'd1', territory_id: null, manager_id: null, manager_assignment_id: null, fee_amount_cents: '360', fee_collected_cents: '0', fee_pending_cents: '360', manager_commission_rate_bps: 4000, reference_month: '2026-07', collection_status: 'pending' }] })
+      .mockResolvedValueOnce({ rows: [{ ride_id: 'r2', driver_id: 'd1', territory_id: null, manager_id: null, manager_assignment_id: null, fee_amount_cents: '360', fee_collected_cents: '0', fee_pending_cents: '360', fee_subsidized_cents: '0', manager_commission_rate_bps: 4000, reference_month: '2026-07', collection_status: 'pending' }] })
       .mockResolvedValueOnce({ rows: [] }) // UPDATE pending
       .mockResolvedValueOnce({ rowCount: 1 }) // markCollected
       .mockResolvedValueOnce({ rows: [] }); // COMMIT

@@ -219,7 +219,7 @@ describe('Territory ledger idempotency type checks', () => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await expect(svc.recordCollectedFeeInClient(client, territoryId, null, null, 1800n, 720n, rideId, '2026-07'))
+      await expect(svc.recordCollectedFeeInClient(client, territoryId, null, null, 1800n, 0n, rideId, '2026-07'))
         .rejects.toMatchObject({ code: 'TERRITORY_LEDGER_IDEMPOTENCY_MISMATCH' });
       await client.query('ROLLBACK');
     } finally { client.release(); }
@@ -235,7 +235,7 @@ describe('Territory ledger idempotency type checks', () => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await expect(svc.recordCollectedFeeInClient(client, territoryId, null, null, 1800n, 720n, rideId, '2026-07'))
+      await expect(svc.recordCollectedFeeInClient(client, territoryId, null, null, 1800n, 0n, rideId, '2026-07'))
         .rejects.toMatchObject({ code: 'TERRITORY_LEDGER_IDEMPOTENCY_MISMATCH' });
       await client.query('ROLLBACK');
     } finally { client.release(); }

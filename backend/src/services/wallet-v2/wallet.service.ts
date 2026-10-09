@@ -95,27 +95,73 @@ export class WalletService {
   }
 
   async reserve(driverId: string, amountCents: bigint, rideId: string): Promise<LedgerEntry> {
-    return this.withTransaction(async (client) => {
-      const key = `reserve:ride:${rideId}`;
-      const existing = await this.checkIdempotency(client, key);
-      if (existing) return existing;
+    return this.withTransaction(async (client) =>
+      this.reserveInClient(client, driverId, amountCents, rideId)
+    );
+  }
 
-      const wallet = await this.lockWallet(client, driverId);
-      const available = wallet.balance_cents - wallet.reserved_cents;
-      if (available < amountCents) throw new Error('INSUFFICIENT_BALANCE');
+  async reserveInClient(
+    client: PoolClient,
+    driverId: string,
+    amountCents: bigint,
+    rideId: string,
+    offerId?: string
+  ): Promise<LedgerEntry> {
+    if (amountCents < 0n) {
+      throw new Error('INVALID_WALLET_RESERVE_AMOUNT');
+    }
 
-      const newReserved = wallet.reserved_cents + amountCents;
-      await client.query(
-        'UPDATE driver_wallets SET reserved_cents = $2, updated_at = NOW() WHERE driver_id = $1',
-        [driverId, newReserved.toString()]
+    const attemptId = offerId ?? rideId;
+    const key = `reserve:ride:${attemptId}`;
+    const existing = await this.checkIdempotency(client, key);
+
+    if (existing) {
+      const { rows } = await client.query(
+        `SELECT driver_id, reserved_delta_cents, entry_type
+         FROM wallet_ledger
+         WHERE idempotency_key = $1`,
+        [key]
       );
 
-      return this.insertLedger(client, {
-        driverId, entryType: 'reserve', balanceDelta: BigInt(0), reservedDelta: amountCents,
-        balanceAfter: wallet.balance_cents, reservedAfter: newReserved,
-        referenceType: 'ride', referenceId: rideId,
-        actorType: 'system', actorId: 'dispatcher', reason: `reserve:ride:${rideId}`, key,
-      });
+      if (
+        rows.length !== 1 ||
+        rows[0].driver_id !== driverId ||
+        BigInt(rows[0].reserved_delta_cents) !== amountCents ||
+        rows[0].entry_type !== 'reserve'
+      ) {
+        throw new Error('WALLET_RESERVE_IDEMPOTENCY_MISMATCH');
+      }
+
+      return existing;
+    }
+
+    const wallet = await this.lockWallet(client, driverId);
+    const available = wallet.balance_cents - wallet.reserved_cents;
+
+    if (available < amountCents) {
+      throw new Error('INSUFFICIENT_BALANCE');
+    }
+
+    const newReserved = wallet.reserved_cents + amountCents;
+
+    await client.query(
+      'UPDATE driver_wallets SET reserved_cents = $2, updated_at = NOW() WHERE driver_id = $1',
+      [driverId, newReserved.toString()]
+    );
+
+    return this.insertLedger(client, {
+      driverId,
+      entryType: 'reserve',
+      balanceDelta: 0n,
+      reservedDelta: amountCents,
+      balanceAfter: wallet.balance_cents,
+      reservedAfter: newReserved,
+      referenceType: 'ride',
+      referenceId: rideId,
+      actorType: 'system',
+      actorId: 'dispatcher',
+      reason: `reserve:ride:${attemptId}`,
+      key,
     });
   }
 
@@ -319,6 +365,113 @@ export class WalletService {
   // ═══════════════════════════════════════════════════════════════════
   // PRIVATE
   // ═══════════════════════════════════════════════════════════════════
+
+
+  // Liberação financeira específica da oferta.
+  // Usa a transação do coordenador. Não altera o método legado.
+  async releaseOfferReserveInClient(
+    client: PoolClient,
+    driverId: string,
+    rideId: string,
+    offerId: string
+  ): Promise<bigint> {
+    if (!driverId || !rideId || !offerId) {
+      throw new Error('INVALID_CASH_RELEASE_IDENTITY');
+    }
+
+    const reserveKey = `reserve:ride:${offerId}`;
+    const releaseKey = `cancel_release:ride:${offerId}`;
+
+    const previous = await client.query(
+      `SELECT driver_id, reference_id
+       FROM wallet_ledger
+       WHERE idempotency_key = $1`,
+      [releaseKey]
+    );
+
+    if (previous.rows[0]) {
+      if (
+        previous.rows[0].driver_id !== driverId ||
+        previous.rows[0].reference_id !== rideId
+      ) {
+        throw new Error('CASH_RELEASE_IDENTITY_MISMATCH');
+      }
+      return 0n;
+    }
+
+    const reservation = await client.query(
+      `SELECT driver_id, reference_type, reference_id,
+              reserved_delta_cents
+       FROM wallet_ledger
+       WHERE idempotency_key = $1
+         AND entry_type = 'reserve'`,
+      [reserveKey]
+    );
+
+    if (!reservation.rows[0]) return 0n;
+
+    const original = reservation.rows[0];
+
+    if (
+      original.driver_id !== driverId ||
+      original.reference_type !== 'ride' ||
+      original.reference_id !== rideId
+    ) {
+      throw new Error('CASH_RESERVE_IDENTITY_MISMATCH');
+    }
+
+    const amount = BigInt(original.reserved_delta_cents);
+
+    if (amount <= 0n) {
+      throw new Error('CASH_RESERVE_INVARIANT');
+    }
+
+    const balance = await this.lockWallet(client, driverId);
+
+    // Consultar após bloquear a carteira para evitar corrida
+    // com uma liquidação que também bloqueia esse saldo.
+    const settled = await client.query(
+      `SELECT 1
+       FROM wallet_ledger
+       WHERE idempotency_key = $1
+       LIMIT 1`,
+      [`fee:ride:${rideId}`]
+    );
+
+    if (settled.rows.length > 0) {
+      throw new Error('CASH_RESERVE_ALREADY_SETTLED');
+    }
+
+    if (balance.reserved_cents < amount) {
+      throw new Error('CASH_RELEASE_INVARIANT');
+    }
+
+    const newReserved = balance.reserved_cents - amount;
+
+    await client.query(
+      `UPDATE driver_wallets
+       SET reserved_cents = $2, updated_at = NOW()
+       WHERE driver_id = $1`,
+      [driverId, newReserved.toString()]
+    );
+
+    await this.insertLedger(client, {
+      driverId,
+      entryType: 'cancel_release',
+      balanceDelta: 0n,
+      reservedDelta: -amount,
+      balanceAfter: balance.balance_cents,
+      reservedAfter: newReserved,
+      referenceType: 'ride',
+      referenceId: rideId,
+      actorType: 'system',
+      actorId: 'ride_cancel',
+      reason: releaseKey,
+      key: releaseKey,
+    });
+
+    return amount;
+  }
 
   private async withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();

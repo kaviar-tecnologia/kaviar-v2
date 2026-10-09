@@ -46,6 +46,7 @@ export interface FeeSplitSnapshot {
   managerCommissionRateBps: number;
   feeCollectedCents: bigint;
   feePendingCents: bigint;
+  feeSubsidizedCents: bigint;
   collectionStatus: string;
 }
 
@@ -63,6 +64,7 @@ export interface RecordSplitParams {
   managerCommissionRateBps: number;
   feeCollectedCents: bigint;
   feePendingCents: bigint;
+  feeSubsidizedCents?: bigint;
   collectionStatus: 'collected' | 'pending' | 'partial';
 }
 
@@ -88,7 +90,7 @@ export class FeeSplitService {
               fee_amount_cents, matrix_share_cents, manager_share_cents,
               reference_month, territory_id, manager_id, manager_assignment_id,
               recognized_at, platform_fee_rate_bps, manager_commission_rate_bps,
-              fee_collected_cents, fee_pending_cents, collection_status
+              fee_collected_cents, fee_pending_cents, fee_subsidized_cents, collection_status
        FROM ride_fee_splits WHERE ride_id = $1`,
       [rideId]
     );
@@ -110,7 +112,9 @@ export class FeeSplitService {
     const split = this.calculateSplit(feeBaseCents, params.platformFeeRateBps, params.managerCommissionRateBps);
     if (params.feeCollectedCents < 0n) throw new Error('INVARIANT: feeCollectedCents must be >= 0');
     if (params.feePendingCents < 0n) throw new Error('INVARIANT: feePendingCents must be >= 0');
-    if (params.feeCollectedCents + params.feePendingCents !== split.fee_amount_cents) {
+    const subsidized = params.feeSubsidizedCents ?? 0n;
+    if (subsidized < 0n) throw new Error('INVARIANT: negative subsidy');
+    if (params.feeCollectedCents + params.feePendingCents + subsidized !== split.fee_amount_cents) {
       throw new Error(`INVARIANT: feeCollected(${params.feeCollectedCents}) + feePending(${params.feePendingCents}) != feeAmount(${split.fee_amount_cents})`);
     }
     if (params.platformFeeRateBps < 0 || params.platformFeeRateBps > 10000) throw new Error('INVARIANT: platformFeeRateBps out of range');
@@ -122,7 +126,7 @@ export class FeeSplitService {
       throw new Error('INVARIANT: territory without manager cannot create manager share');
     }
 
-    if (params.collectionStatus === 'collected' && (params.feePendingCents !== 0n || params.feeCollectedCents !== split.fee_amount_cents)) {
+    if (params.collectionStatus === 'collected' && (params.feePendingCents !== 0n || params.feeCollectedCents + subsidized !== split.fee_amount_cents)) {
       throw new Error('INVARIANT: collected requires pending=0 and collected=total');
     }
     if (params.collectionStatus === 'pending' && params.feeCollectedCents !== 0n) {
@@ -138,7 +142,7 @@ export class FeeSplitService {
     const { rows: inserted } = await client.query(
       `INSERT INTO ride_fee_splits (
          ride_id, driver_id, final_price_cents,
-         fee_percent, fee_amount_cents, fee_collected_cents, fee_pending_cents,
+         fee_percent, fee_amount_cents, fee_collected_cents, fee_pending_cents, fee_subsidized_cents,
          matrix_share_percent, matrix_share_cents,
          manager_share_percent, manager_share_cents,
          territory_id, manager_id, manager_assignment_id,
@@ -148,7 +152,7 @@ export class FeeSplitService {
          idempotency_key
        ) VALUES (
          $1, $2, $3,
-         $18, $4, $5, $6,
+         $18, $4, $5, $6, $21,
          $19, $7,
          $20, $8,
          $9, $10, $11,
@@ -161,7 +165,7 @@ export class FeeSplitService {
                  fee_amount_cents, matrix_share_cents, manager_share_cents,
                  reference_month, territory_id, manager_id, manager_assignment_id,
                  recognized_at, platform_fee_rate_bps, manager_commission_rate_bps,
-                 fee_collected_cents, fee_pending_cents, collection_status`,
+                 fee_collected_cents, fee_pending_cents, fee_subsidized_cents, collection_status`,
       [
         params.rideId, params.driverId, params.finalPriceCents.toString(),
         split.fee_amount_cents.toString(), params.feeCollectedCents.toString(), params.feePendingCents.toString(),
@@ -175,6 +179,7 @@ export class FeeSplitService {
         basisPointsToPercentString(params.platformFeeRateBps),
         basisPointsToPercentString(10000 - params.managerCommissionRateBps),
         basisPointsToPercentString(params.managerCommissionRateBps),
+        subsidized.toString(),
       ]
     );
 
@@ -193,6 +198,7 @@ export class FeeSplitService {
       existing.driverId !== params.driverId ||
       existing.finalPriceCents !== params.finalPriceCents ||
       existing.feeAmountCents !== split.fee_amount_cents ||
+      existing.feeSubsidizedCents !== subsidized ||
       (existing.territoryId ?? null) !== (params.territoryId ?? null)
     ) {
       throw Object.assign(
@@ -210,7 +216,7 @@ export class FeeSplitService {
   async markCollectedInClient(client: PoolClient, rideId: string): Promise<void> {
     const { rowCount } = await client.query(
       `UPDATE ride_fee_splits
-       SET fee_collected_cents = fee_amount_cents, fee_pending_cents = 0,
+       SET fee_collected_cents = fee_amount_cents - fee_subsidized_cents, fee_pending_cents = 0,
            collection_status = 'collected'
        WHERE ride_id = $1 AND collection_status IN ('pending', 'partial')`,
       [rideId]
@@ -239,6 +245,7 @@ export class FeeSplitService {
       managerCommissionRateBps: row.manager_commission_rate_bps,
       feeCollectedCents: BigInt(row.fee_collected_cents),
       feePendingCents: BigInt(row.fee_pending_cents),
+      feeSubsidizedCents: BigInt(row.fee_subsidized_cents ?? 0),
       collectionStatus: row.collection_status,
     };
   }
