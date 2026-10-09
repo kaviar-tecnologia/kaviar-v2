@@ -27,7 +27,11 @@ const { prismaMock, authState, dispatchRideMock, pricingSettleMock, creditDeltaM
 }));
 
 vi.mock('../src/lib/prisma', () => ({ prisma: prismaMock }));
-vi.mock('../src/db', () => ({ pool: { query: vi.fn() } }));
+// Teste de regressão legado: a migração promocional não está instalada.
+// A consulta à existência da tabela deve responder como o PostgreSQL real.
+vi.mock('../src/db', () => ({
+  pool: { query: vi.fn().mockResolvedValue({ rows: [{ available: false }] }) },
+}));
 vi.mock('../src/config', () => ({ config: { wait: { enabled: true, ratePerMin: 0.50 } } }));
 vi.mock('../src/config/s3-upload', () => ({ getPresignedUrl: vi.fn() }));
 vi.mock('../src/modules/whatsapp', () => ({ whatsappEvents: {} }));
