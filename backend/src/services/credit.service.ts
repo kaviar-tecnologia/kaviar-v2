@@ -54,35 +54,6 @@ export async function applyCreditDelta(
 
     await client.query('COMMIT');
 
-    // Referral auto-qualification (isolated, never affects credits)
-    try {
-      const skipReasons = ['adjust', 'correction', 'refund', 'bonus', 'welcome'];
-      const isRealPurchase = delta > 0 && !skipReasons.some(s => reason.toLowerCase().includes(s));
-      if (isRealPurchase) {
-        const priorPurchases = await pool.query(
-          `SELECT COUNT(*) as cnt FROM driver_credit_ledger WHERE driver_id = $1 AND delta > 0 AND reason NOT ILIKE ANY(ARRAY['%adjust%','%correction%','%refund%','%bonus%','%welcome%'])`,
-          [driverId]
-        );
-        if (parseInt(priorPurchases.rows[0].cnt) === 1) {
-          const driver = await pool.query('SELECT phone, status FROM drivers WHERE id = $1', [driverId]);
-          if (driver.rows[0]?.status === 'approved' && driver.rows[0]?.phone) {
-            const ref = await pool.query(
-              `UPDATE referrals SET status = 'qualified', qualified_at = CURRENT_TIMESTAMP, driver_id = $1, updated_at = CURRENT_TIMESTAMP,
-                payment_status = CASE WHEN EXISTS (SELECT 1 FROM referral_agents WHERE id = referrals.agent_id AND pix_key IS NOT NULL) THEN 'pending_approval' ELSE payment_status END
-               WHERE (driver_id = $1 OR driver_phone = $2) AND status = 'pending' AND payment_status != 'paid'
-               RETURNING id`,
-              [driverId, driver.rows[0].phone]
-            );
-            if (ref.rows.length > 0) {
-              console.log(`[REFERRAL_QUALIFIED] referral=${ref.rows[0].id} driver=${driverId}`);
-            }
-          }
-        }
-      }
-    } catch (qualErr) {
-      console.error('[REFERRAL_QUALIFY_ERROR] Non-blocking:', qualErr);
-    }
-
     return { alreadyProcessed: false, balance: newBalance };
   } catch (error) {
     await client.query('ROLLBACK');

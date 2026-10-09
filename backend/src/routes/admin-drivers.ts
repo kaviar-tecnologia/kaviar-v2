@@ -12,6 +12,8 @@ import { ApprovalController } from '../modules/admin/approval-controller';
 import { config } from '../config';
 import { createAuditLog } from '../utils/audit';
 import { getDriverFinancialSummary } from '../services/financial-summary.service';
+import { recoverDriverReferralQualifications } from '../services/wallet-v2/referral-recovery.service';
+
 
 const router = Router();
 const approvalController = new ApprovalController();
@@ -894,6 +896,11 @@ router.patch('/drivers/:id/approve', requireSuperAdmin, async (req: Request, res
       }
     });
 
+    // Recuperação independente: não bloqueia aprovação.
+    void recoverDriverReferralQualifications(updated.id).catch(error => {
+      console.error('[REFERRAL_APPROVAL_RECOVERY_ERROR]', error);
+    });
+
     res.json({
       success: true,
       driver: { id: updated.id, status: updated.status }
@@ -927,6 +934,11 @@ router.patch('/drivers/:id/activate', requireSuperAdmin, async (req: Request, re
     const updated = await prisma.drivers.update({
       where: { id },
       data: updateData
+    });
+
+    // Recuperação independente: não bloqueia ativação.
+    void recoverDriverReferralQualifications(updated.id).catch(error => {
+      console.error('[REFERRAL_ACTIVATION_RECOVERY_ERROR]', error);
     });
 
     res.json({ success: true, driver: { id: updated.id, status: updated.status, activeSince: updated.active_since } });

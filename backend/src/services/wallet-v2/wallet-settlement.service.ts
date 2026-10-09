@@ -7,6 +7,8 @@ import { assertSettlementActive } from './settlement-gate';
 import { applyBasisPoints, PLATFORM_FEE_RATE_BPS, MANAGER_COMMISSION_RATE_BPS } from '../finance/territory/monetary';
 import { referenceMonthFromDate, COMPETENCE_TIMEZONE } from './fee-split.service';
 import { evaluateTerritorialManagerFinancialProfile } from '../contracts/territorial-manager-financial-eligibility';
+import { PromoWalletService } from './promo-wallet.service';
+import { allocatePromoFee } from './promo-fee-allocation';
 
 /** Interface for any service that can execute a fee debit */
 export interface FeeDebitExecutor {
@@ -21,6 +23,7 @@ export interface SettlementParams {
   feeBaseCents?: bigint; // optional locked fare; defaults to total for legacy no-wait callers
   reservedCents: bigint;
   territoryId?: string;
+  promoOfferId?: string;
 }
 
 export class WalletSettlementService {
@@ -33,6 +36,7 @@ export class WalletSettlementService {
     private territoryLedger: TerritoryLedgerService,
     private pendingDebit: PendingDebitService,
     feeDebitExecutor: FeeDebitExecutor,
+    private readonly promoWallet?: PromoWalletService,
   ) {
     this.feeDebitExecutor = feeDebitExecutor;
   }
@@ -172,6 +176,252 @@ export class WalletSettlementService {
         PLATFORM_FEE_RATE_BPS,
         effectiveManagerCommissionRateBps,
       );
+
+
+      // ═══ PROMOTIONAL SETTLEMENT — OPT-IN BY OFFER ═══
+      // No caller currently passes promoOfferId.
+      // Legacy settlement remains unchanged.
+      if (params.promoOfferId !== undefined) {
+        const offerId = params.promoOfferId;
+
+        if (!offerId.trim() || !this.promoWallet) {
+          throw new Error('PROMO_SETTLEMENT_CONFIGURATION_INVALID');
+        }
+
+        // Synchronize settlement with dual-wallet reserve/release.
+        await client.query(
+          'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+          [`dual-wallet-reserve:${params.rideId}`]
+        );
+
+        const { rows: promoRows } = await client.query(
+          `SELECT driver_id, reference_id, reference_type,
+                  entry_type, amount_cents
+           FROM driver_promo_ledger
+           WHERE idempotency_key = $1`,
+          [`promo_reserve:${offerId}`]
+        );
+
+        const { rows: cashRows } = await client.query(
+          `SELECT driver_id, reference_id, reference_type,
+                  entry_type, reserved_delta_cents
+           FROM wallet_ledger
+           WHERE idempotency_key = $1`,
+          [`reserve:ride:${offerId}`]
+        );
+
+        const promoReservation = promoRows[0];
+        const cashReservation = cashRows[0];
+
+        if (!promoReservation && !cashReservation) {
+          throw new Error('PROMO_SETTLEMENT_RESERVATION_MISSING');
+        }
+
+        for (const reservation of [
+          promoReservation,
+          cashReservation,
+        ]) {
+          if (!reservation) continue;
+
+          if (
+            reservation.driver_id !== params.driverId ||
+            reservation.reference_id !== params.rideId ||
+            reservation.reference_type !== 'ride' ||
+            reservation.entry_type !== 'reserve'
+          ) {
+            throw new Error('PROMO_SETTLEMENT_RESERVATION_MISMATCH');
+          }
+        }
+
+        const promoReserved = promoReservation
+          ? BigInt(promoReservation.amount_cents)
+          : 0n;
+
+        const cashReserved = cashReservation
+          ? BigInt(cashReservation.reserved_delta_cents)
+          : 0n;
+
+        if (
+          promoReserved < 0n ||
+          cashReserved < 0n ||
+          promoReserved + cashReserved <= 0n
+        ) {
+          throw new Error('PROMO_SETTLEMENT_INVALID_RESERVATION');
+        }
+
+        // Reject released or previously consumed offers.
+        const { rows: promoTerminal } = await client.query(
+          `SELECT 1 FROM driver_promo_ledger
+           WHERE idempotency_key IN ($1, $2)
+           LIMIT 1`,
+          [
+            `promo_release:${offerId}`,
+            `promo_consume:${offerId}`,
+          ]
+        );
+
+        const { rows: cashTerminal } = await client.query(
+          `SELECT 1 FROM wallet_ledger
+           WHERE idempotency_key IN ($1, $2)
+           LIMIT 1`,
+          [
+            `cancel_release:ride:${offerId}`,
+            `fee:ride:${params.rideId}`,
+          ]
+        );
+
+        if (
+          promoTerminal.length > 0 ||
+          cashTerminal.length > 0
+        ) {
+          throw new Error('PROMO_SETTLEMENT_OFFER_FINALIZED');
+        }
+
+        const allocation = allocatePromoFee(
+          split.fee_amount_cents,
+          promoReserved
+        );
+
+        // Consumes the actual subsidy and releases the entire
+        // promotional reservation, including unused credits.
+        if (promoReserved > 0n) {
+          await this.promoWallet.consumeInClient(
+            client,
+            params.driverId,
+            params.rideId,
+            allocation.promoCents,
+            offerId
+          );
+        }
+
+        let cashCollected = 0n;
+
+        if (allocation.cashCents > 0n || cashReserved > 0n) {
+          // A fully promotional offer may not have created
+          // a cash wallet yet. Create an empty one if needed.
+          await client.query(
+            `INSERT INTO driver_wallets
+               (driver_id, balance_cents, reserved_cents, updated_at)
+             VALUES ($1, 0, 0, NOW())
+             ON CONFLICT (driver_id) DO NOTHING`,
+            [params.driverId]
+          );
+
+          const lockedCash = await this.wallet.getLockedBalance(
+            client,
+            params.driverId
+          );
+
+          if (
+            lockedCash.balance_cents < lockedCash.reserved_cents ||
+            cashReserved > lockedCash.reserved_cents
+          ) {
+            throw new Error('PROMO_SETTLEMENT_CASH_RESERVE_MISMATCH');
+          }
+
+          const availableCash =
+            lockedCash.balance_cents -
+            lockedCash.reserved_cents +
+            cashReserved;
+
+          cashCollected = availableCash < allocation.cashCents
+            ? availableCash
+            : allocation.cashCents;
+
+          if (cashCollected > 0n) {
+            // Preserve annual incentive behavior:
+            // accrual is based on CASH actually debited.
+            await this.feeDebitExecutor.debitFeeInClient(
+              client,
+              params.driverId,
+              cashCollected,
+              cashReserved,
+              params.rideId
+            );
+          } else if (cashReserved > 0n) {
+            await this.wallet.releaseOfferReserveInClient(
+              client,
+              params.driverId,
+              params.rideId,
+              offerId
+            );
+          }
+        }
+
+        const pendingCents =
+          allocation.cashCents - cashCollected;
+
+        if (pendingCents < 0n) {
+          throw new Error('PROMO_SETTLEMENT_NEGATIVE_PENDING');
+        }
+
+        if (pendingCents > 0n) {
+          await this.pendingDebit.createInClient(client, {
+            rideId: params.rideId,
+            driverId: params.driverId,
+            finalPriceCents: params.finalPriceCents,
+            feeAmountCents: split.fee_amount_cents,
+            feeCollectedCents: cashCollected,
+            feeSubsidizedCents: allocation.promoCents,
+            reservedCents: cashReserved,
+          });
+        }
+
+        const recorded = await this.feeSplit.recordSplitInClient(
+          client,
+          {
+            rideId: params.rideId,
+            driverId: params.driverId,
+            finalPriceCents: params.finalPriceCents,
+            feeBaseCents,
+            territoryId: params.territoryId || null,
+            managerId,
+            managerAssignmentId,
+            recognizedAt,
+            referenceMonth,
+            platformFeeRateBps: PLATFORM_FEE_RATE_BPS,
+            managerCommissionRateBps:
+              effectiveManagerCommissionRateBps,
+            feeCollectedCents: cashCollected,
+            feeSubsidizedCents: allocation.promoCents,
+            feePendingCents: pendingCents,
+            collectionStatus:
+              pendingCents === 0n
+                ? 'collected'
+                : cashCollected > 0n
+                  ? 'partial'
+                  : 'pending',
+          }
+        );
+
+        if (recorded.territoryId) {
+          // Contractual share includes KAVIAR-funded subsidy.
+          // Platform collection includes CASH only.
+          const coveredCents =
+            recorded.feeAmountCents - pendingCents;
+
+          const managerRecognized =
+            applyBasisPoints(
+              coveredCents,
+              recorded.managerCommissionRateBps
+            );
+
+          await this.territoryLedger.recordCollectedFeeInClient(
+            client,
+            recorded.territoryId,
+            recorded.managerId,
+            recorded.managerAssignmentId,
+            cashCollected,
+            managerRecognized,
+            params.rideId,
+            recorded.referenceMonth
+          );
+        }
+
+        await client.query('COMMIT');
+
+        return { collected: pendingCents === 0n };
+      }
 
       // ═══ LOCK WALLET AND DECIDE ═══
       const locked = await this.wallet.getLockedBalance(client, params.driverId);

@@ -164,9 +164,43 @@ export class AdminService {
       return updated;
     });
 
-    // Reavaliar ativação da comunidade após aprovação
+    // Incentivo permanente de boas-vindas.
+    // Executar somente após a aprovação oficial confirmada.
+    if (process.env.DRIVER_PERMANENT_WELCOME_ENABLED === 'true') {
+      try {
+        const { pool } = await import('../../db');
+        const { DriverWelcomePromoService } = await import(
+          '../../services/wallet-v2/driver-welcome-promo.service'
+        );
+
+        await new DriverWelcomePromoService(pool).grantOnce(
+          updatedDriver.id
+        );
+      } catch (error) {
+        // A aprovação já foi confirmada: não tentar revertê-la.
+        // Registrar falha para permitir recuperação posterior.
+        console.error(
+          '[DRIVER_WELCOME_GRANT_FAILED]',
+          updatedDriver.id,
+          error instanceof Error ? error.message : 'UNKNOWN_ERROR'
+        );
+      }
+    }
+
+    // Reavaliar a comunidade apenas quando o serviço estiver disponível.
+    // A aprovação já foi confirmada no banco.
     if (driver.community_id) {
-      await this.communityActivation.evaluateCommunityActivation(driver.community_id, admin_id);
+      if (this.communityActivation?.evaluateCommunityActivation) {
+        await this.communityActivation.evaluateCommunityActivation(
+          driver.community_id,
+          admin_id
+        );
+      } else {
+        console.warn(
+          '[COMMUNITY_ACTIVATION_UNAVAILABLE_AFTER_APPROVAL]',
+          driver.community_id
+        );
+      }
     }
 
     return updatedDriver;

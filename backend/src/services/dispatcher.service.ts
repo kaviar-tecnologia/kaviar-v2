@@ -246,6 +246,14 @@ export class DispatcherService {
     const expiresAt = new Date(Date.now() + this.OFFER_TIMEOUT_SECONDS * 1000);
     
     const offer = await prisma.$transaction(async (tx) => {
+      // Serializa as tentativas de criar ofertas para a mesma corrida.
+      // A segunda transação aguarda a primeira terminar.
+      await tx.$queryRaw`
+        SELECT id FROM rides_v2
+        WHERE id = ${rideId}
+        FOR UPDATE
+      `;
+
       // Re-read in the existing offer transaction; an initial regular ride
       // must not become CARE (or leave the dispatchable state) mid-dispatch.
       // The conditional update below also checks identity/state at write time.
@@ -283,6 +291,19 @@ export class DispatcherService {
         throw new Error('PRICING_QUOTE_UNAVAILABLE');
       }
 
+      // Verificar novamente após adquirir o bloqueio da corrida.
+      const pendingOffer = await tx.ride_offers.findFirst({
+        where: {
+          ride_id: rideId,
+          status: 'pending'
+        },
+        select: { id: true }
+      });
+
+      if (pendingOffer) {
+        return null;
+      }
+
       const o = await tx.ride_offers.create({
         data: {
           ride_id: rideId,
@@ -305,6 +326,13 @@ export class DispatcherService {
       if (updatedRide.count !== 1) throw new Error('Ride offer state changed');
       return o;
     });
+
+    if (!offer) {
+      console.log(
+        `[DISPATCH_SKIPPED_PENDING_OFFER] ride_id=${rideId}`
+      );
+      return;
+    }
 
     console.log(`[OFFER_SENT] ride_id=${rideId} offer_id=${offer.id} driver_id=${bestCandidate.driver_id} tier=${matchTier} distance_km=${bestCandidate.distance_km.toFixed(1)} score=${bestCandidate.score}`);
 

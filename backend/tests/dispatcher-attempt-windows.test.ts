@@ -7,8 +7,9 @@ const { prismaMock } = vi.hoisted(() => ({
       update: vi.fn(),
       updateMany: vi.fn(),
     },
-    ride_offers: { updateMany: vi.fn(), create: vi.fn() },
+    ride_offers: { updateMany: vi.fn(), create: vi.fn(), findFirst: vi.fn() },
     $transaction: vi.fn(),
+    $queryRaw: vi.fn(),
     driver_status: {
       findMany: vi.fn(),
     },
@@ -90,6 +91,10 @@ function baseRide(overrides: Record<string, any> = {}) {
 describe('dispatcher attempt windows', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    prismaMock.rides_v2.findUnique.mockReset();
+    // Simula o lock do PostgreSQL e a ausência de oferta pendente.
+    prismaMock.$queryRaw.mockResolvedValue([{ id: 'ride-window' }]);
+    prismaMock.ride_offers.findFirst.mockResolvedValue(null);
     prismaMock.rides_v2.update.mockResolvedValue({});
     prismaMock.rides_v2.updateMany.mockResolvedValue({ count: 1 });
     prismaMock.ride_offers.updateMany.mockResolvedValue({ count: 0 });

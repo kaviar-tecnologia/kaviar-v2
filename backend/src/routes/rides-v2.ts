@@ -21,10 +21,13 @@ import { isWalletV2Enabled } from './driver-wallet-v2';
 import { getRouteDistance } from '../services/google-directions.service';
 import { getFloorForRoute } from '../services/territory-floor.service';
 import { WalletService } from '../services/wallet-v2/wallet.service';
+import { releaseRideReservation } from '../services/wallet-v2/ride-reservation-release.service';
 import { FeeSplitService } from '../services/wallet-v2/fee-split.service';
 import { TerritoryLedgerService } from '../services/wallet-v2/territory-ledger.service';
 import { PendingDebitService } from '../services/wallet-v2/pending-debit.service';
 import { WalletSettlementService } from '../services/wallet-v2/wallet-settlement.service';
+import { PromoWalletService } from '../services/wallet-v2/promo-wallet.service';
+import { findActiveDualWalletOffer } from '../services/wallet-v2/active-dual-wallet-offer.service';
 import { isSettlementPaused } from '../services/wallet-v2/settlement-gate';
 import { AnnualIncentiveLedgerService } from '../services/finance/annual-incentive-ledger.service';
 import { AnnualIncentiveShadowService } from '../services/finance/annual-incentive-shadow.service';
@@ -80,6 +83,50 @@ const getVehiclePhotoUrl = async (driverId: string | null | undefined): Promise<
   if (doc?.status !== 'VERIFIED' || !doc.file_url) return null;
   return toPhotoUrl(doc.file_url);
 };
+
+
+// Consulta o histórico financeiro, independentemente das flags atuais.
+// Não considera o bônus promocional como dinheiro arrecadado.
+async function hasRecordedRideWalletReservation(
+  rideId: string,
+  driverId: string
+): Promise<boolean> {
+  const { rows: relations } = await pool.query(
+    `SELECT
+       to_regclass('public.wallet_ledger') IS NOT NULL AS cash_exists,
+       to_regclass('public.driver_promo_ledger') IS NOT NULL AS promo_exists`
+  );
+
+  if (relations[0]?.cash_exists) {
+    const cash = await pool.query(
+      `SELECT 1 FROM wallet_ledger
+       WHERE driver_id = $1
+         AND reference_id = $2
+         AND reference_type = 'ride'
+         AND entry_type = 'reserve'
+       LIMIT 1`,
+      [driverId, rideId]
+    );
+
+    if (cash.rows.length > 0) return true;
+  }
+
+  if (relations[0]?.promo_exists) {
+    const promo = await pool.query(
+      `SELECT 1 FROM driver_promo_ledger
+       WHERE driver_id = $1
+         AND reference_id = $2
+         AND reference_type = 'ride'
+         AND entry_type = 'reserve'
+       LIMIT 1`,
+      [driverId, rideId]
+    );
+
+    if (promo.rows.length > 0) return true;
+  }
+
+  return false;
+}
 
 const router = Router();
 
@@ -917,15 +964,26 @@ router.post('/:ride_id/cancel', authenticatePassenger, async (req: Request, res:
     notifyRideCancelledToDriver(ride);
 
     // Wallet V2: release reserve if driver was assigned
-    if (ride.driver_id && ['accepted', 'arrived'].includes(ride.status) && await isWalletV2Enabled()) {
+    if (ride.driver_id && ['accepted', 'arrived'].includes(ride.status)) {
       try {
-        const estFee = estimateFeeCentsFromPrice(Number(ride.quoted_price || ride.locked_price || 0));
-        if (estFee > 0) {
-          const walletSvc = new WalletService(pool);
-          await walletSvc.releaseReserve(ride.driver_id, BigInt(estFee), ride_id);
-          console.log(`[WALLET_V2_RELEASE] ride=${ride_id} driver=${ride.driver_id} amount=${estFee}`);
+        const hasReservation = await hasRecordedRideWalletReservation(
+          ride_id, ride.driver_id
+        );
+
+        if (hasReservation) {
+          const releaseResult = await releaseRideReservation(pool, ride_id, ride.driver_id);
+          console.log(`[WALLET_V2_RELEASE] ride=${ride_id} driver=${ride.driver_id} result=${releaseResult}`);
         }
-      } catch (relErr: any) { console.error(`[WALLET_V2_RELEASE_FAIL] ride=${ride_id}`, relErr.message); }
+      } catch (relErr: any) {
+        console.error(
+          `[WALLET_V2_RELEASE_FAIL] ride=${ride_id}`,
+          relErr.message
+        );
+        return res.status(503).json({
+          success: false,
+          error: 'WALLET_RESERVATION_RELEASE_UNCONFIRMED'
+        });
+      }
     }
 
     res.json({ success: true });
@@ -979,17 +1037,7 @@ router.post('/:ride_id/driver-cancel', authenticateDriver, async (req: Request, 
       console.log(`[RIDE_REDISPATCH] ride_id=${ride_id} canceled_by=${driverId} reason=${reason || 'none'} attempt=${redispatchCount + 1}`);
       realTimeService.emitToRide(ride_id, { type: 'ride.redispatching', timestamp: new Date().toISOString() });
 
-      setImmediate(() => dispatcherService.dispatchRide(ride_id).catch(err => {
-        console.error(`[REDISPATCH_ERROR] ride_id=${ride_id}`, err);
-        prisma.rides_v2.updateMany({
-          where: { id: ride_id, status: 'requested', driver_id: null },
-          data: { status: 'canceled_by_driver', canceled_at: new Date() },
-        })
-          .then((updated) => {
-            if (updated.count === 1) notifyRideCancelledToPassenger({ id: ride_id, passenger_id: ride.passenger_id });
-          })
-          .catch(() => {});
-      }));
+
     } else {
       // Limite de redispatch atingido — cancelar normalmente
       await prisma.$transaction(async (tx) => {
@@ -1008,15 +1056,40 @@ router.post('/:ride_id/driver-cancel', authenticateDriver, async (req: Request, 
     }
 
     // Wallet V2: release reserve
-    if (await isWalletV2Enabled()) {
+    if (ride.driver_id === driverId) {
       try {
-        const estFee = estimateFeeCentsFromPrice(Number(ride.quoted_price || ride.locked_price || 0));
-        if (estFee > 0) {
-          const walletSvc = new WalletService(pool);
-          await walletSvc.releaseReserve(driverId, BigInt(estFee), ride_id);
-          console.log(`[WALLET_V2_RELEASE] ride=${ride_id} driver=${driverId} amount=${estFee}`);
+        const hasReservation = await hasRecordedRideWalletReservation(
+          ride_id, driverId
+        );
+
+        if (hasReservation) {
+          const releaseResult = await releaseRideReservation(pool, ride_id, driverId);
+          console.log(`[WALLET_V2_RELEASE] ride=${ride_id} driver=${driverId} result=${releaseResult}`);
         }
-      } catch (relErr: any) { console.error(`[WALLET_V2_RELEASE_FAIL] ride=${ride_id}`, relErr.message); }
+      } catch (relErr: any) {
+        console.error(
+          `[WALLET_V2_RELEASE_FAIL] ride=${ride_id}`,
+          relErr.message
+        );
+        return res.status(503).json({
+          success: false,
+          error: 'WALLET_RESERVATION_RELEASE_UNCONFIRMED'
+        });
+      }
+    }
+
+    if (canRedispatch) {
+      setImmediate(() => dispatcherService.dispatchRide(ride_id).catch(err => {
+        console.error(`[REDISPATCH_ERROR] ride_id=${ride_id}`, err);
+        prisma.rides_v2.updateMany({
+          where: { id: ride_id, status: 'requested', driver_id: null },
+          data: { status: 'canceled_by_driver', canceled_at: new Date() },
+        })
+          .then((updated) => {
+            if (updated.count === 1) notifyRideCancelledToPassenger({ id: ride_id, passenger_id: ride.passenger_id });
+          })
+          .catch(() => {});
+      }));
     }
 
     notifyRideCancelledToPassenger(ride);
@@ -1339,7 +1412,88 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
     // Credit/Fee consumption ANTES do WhatsApp
     let creditResult: { cost: number; matchType: string; balance: number } | null = null;
     if (settlement) {
-      const walletV2Active = await isWalletV2Enabled();
+
+      // Reservas já efetuadas devem ser liquidadas mesmo
+      // quando a utilização promocional estiver desligada.
+      let promoOfferId: string | undefined;
+
+      try {
+        const { rows: tables } = await pool.query(
+          `SELECT to_regclass('public.driver_promo_ledger')
+                  IS NOT NULL AS available`
+        );
+
+        if (tables[0]?.available) {
+          const activeOfferId =
+            await findActiveDualWalletOffer(
+              pool, ride_id, driverId
+            );
+
+          // Consultar também reservas já finalizadas.
+          // Isso permite repetir uma conclusão idempotente
+          // sem cair indevidamente no financeiro tradicional.
+          const { rows: history } = await pool.query(
+            `SELECT o.id AS offer_id
+             FROM driver_promo_ledger p
+             LEFT JOIN ride_offers o
+               ON p.idempotency_key =
+                  'promo_reserve:' || o.id
+              AND o.ride_id = p.reference_id
+              AND o.driver_id = p.driver_id
+             WHERE p.driver_id = $1
+               AND p.reference_id = $2
+               AND p.reference_type = 'ride'
+               AND p.entry_type = 'reserve'
+               AND p.idempotency_key LIKE 'promo_reserve:%'
+             LIMIT 2`,
+            [driverId, ride_id]
+          );
+
+          if (history.length > 1) {
+            throw new Error(
+              'PROMO_COMPLETION_MULTIPLE_OFFER_HISTORY'
+            );
+          }
+
+          if (history.length === 1 && !history[0].offer_id) {
+            throw new Error(
+              'PROMO_COMPLETION_OFFER_IDENTITY_MISSING'
+            );
+          }
+
+          const historicalOfferId: string | undefined =
+            history[0]?.offer_id;
+
+          if (
+            activeOfferId &&
+            historicalOfferId &&
+            activeOfferId !== historicalOfferId
+          ) {
+            throw new Error(
+              'PROMO_COMPLETION_OFFER_MISMATCH'
+            );
+          }
+
+          promoOfferId =
+            activeOfferId ?? historicalOfferId;
+        }
+      } catch (offerError: any) {
+        console.error(
+          '[PROMO_COMPLETION_OFFER_LOOKUP_FAILED]',
+          ride_id,
+          offerError?.message
+        );
+
+        return res.status(503).json({
+          success: false,
+          error: 'WALLET_RESERVATION_LOOKUP_UNCONFIRMED'
+        });
+      }
+
+      const walletV2Active =
+        (await isWalletV2Enabled()) ||
+        promoOfferId !== undefined;
+
 
       if (walletV2Active) {
         // Wallet V2: debitar taxa real via settlement service
@@ -1373,11 +1527,12 @@ router.post('/:ride_id/complete', authenticateDriver, async (req: Request, res: 
           const pendingSvc = new PendingDebitService(pool);
           const incentiveLedgerSvc = new AnnualIncentiveLedgerService(pool);
           const shadowSvc = new AnnualIncentiveShadowService(pool, walletSvc, incentiveLedgerSvc);
-          const settlementSvc = new WalletSettlementService(pool, walletSvc, feeSplitSvc, ledgerSvc, pendingSvc, shadowSvc);
+          const settlementSvc = new WalletSettlementService(pool, walletSvc, feeSplitSvc, ledgerSvc, pendingSvc, shadowSvc, promoOfferId ? new PromoWalletService(pool) : undefined);
 
           const result = await settlementSvc.settleRide({
             rideId: ride_id, driverId, finalPriceCents: BigInt(finalPriceCents),
             feeBaseCents: BigInt(feeBaseCents), reservedCents: BigInt(reservedCents), territoryId: territoryId || undefined,
+            promoOfferId,
           });
 
           const feeCents = calculateFeeCents(feeBaseCents);

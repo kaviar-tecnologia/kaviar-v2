@@ -8,35 +8,61 @@ import { FeeSplitService } from './fee-split.service';
 export class PendingDebitService {
   constructor(private pool: Pool) {}
 
-  async create(params: { rideId: string; driverId: string; finalPriceCents: bigint; feeAmountCents: bigint; reservedCents: bigint; feeCollectedCents?: bigint }): Promise<{ id: bigint; already_processed: boolean }> {
+  async create(params: { rideId: string; driverId: string; finalPriceCents: bigint; feeAmountCents: bigint; reservedCents: bigint; feeCollectedCents?: bigint; feeSubsidizedCents?: bigint }): Promise<{ id: bigint; already_processed: boolean }> {
     const key = `pending_debit:${params.rideId}`;
     const existing = await this.pool.query('SELECT id FROM pending_debits WHERE idempotency_key = $1', [key]);
     if (existing.rows[0]) return { id: BigInt(existing.rows[0].id), already_processed: true };
 
     const collected = params.feeCollectedCents ?? 0n;
-    const pending = params.feeAmountCents - collected;
+    const subsidized = params.feeSubsidizedCents ?? 0n;
+
+    if (
+      params.feeAmountCents < 0n ||
+      collected < 0n ||
+      subsidized < 0n ||
+      collected + subsidized > params.feeAmountCents
+    ) {
+      throw new Error('PENDING_DEBIT_INVALID_PROMO_AMOUNTS');
+    }
+
+    // pending_debits stores the cash obligation, excluding the subsidy.
+    const cashObligation = params.feeAmountCents - subsidized;
+    const pending = cashObligation - collected;
 
     const r = await this.pool.query(
       `INSERT INTO pending_debits (ride_id, driver_id, final_price_cents, fee_percent_snapshot, fee_amount_cents, fee_collected_cents, fee_pending_cents, reserved_amount_cents, reason, status, idempotency_key)
        VALUES ($1,$2,$3,18.00,$4,$5,$6,$7,'platform_fee','pending',$8) RETURNING id`,
-      [params.rideId, params.driverId, params.finalPriceCents.toString(), params.feeAmountCents.toString(), collected.toString(), pending.toString(), params.reservedCents.toString(), key]
+      [params.rideId, params.driverId, params.finalPriceCents.toString(), cashObligation.toString(), collected.toString(), pending.toString(), params.reservedCents.toString(), key]
     );
     return { id: BigInt(r.rows[0].id), already_processed: false };
   }
 
   /** Creates pending debit inside caller's transaction */
-  async createInClient(client: PoolClient, params: { rideId: string; driverId: string; finalPriceCents: bigint; feeAmountCents: bigint; reservedCents: bigint; feeCollectedCents?: bigint }): Promise<{ id: bigint; already_processed: boolean }> {
+  async createInClient(client: PoolClient, params: { rideId: string; driverId: string; finalPriceCents: bigint; feeAmountCents: bigint; reservedCents: bigint; feeCollectedCents?: bigint; feeSubsidizedCents?: bigint }): Promise<{ id: bigint; already_processed: boolean }> {
     const key = `pending_debit:${params.rideId}`;
     const existing = await client.query('SELECT id FROM pending_debits WHERE idempotency_key = $1', [key]);
     if (existing.rows[0]) return { id: BigInt(existing.rows[0].id), already_processed: true };
 
     const collected = params.feeCollectedCents ?? 0n;
-    const pending = params.feeAmountCents - collected;
+    const subsidized = params.feeSubsidizedCents ?? 0n;
+
+    if (
+      params.feeAmountCents < 0n ||
+      collected < 0n ||
+      subsidized < 0n ||
+      collected + subsidized > params.feeAmountCents
+    ) {
+      throw new Error('PENDING_DEBIT_INVALID_PROMO_AMOUNTS');
+    }
+
+    // pending_debits stores the cash obligation, excluding the subsidy.
+    const cashObligation = params.feeAmountCents - subsidized;
+    const pending = cashObligation - collected;
 
     const r = await client.query(
       `INSERT INTO pending_debits (ride_id, driver_id, final_price_cents, fee_percent_snapshot, fee_amount_cents, fee_collected_cents, fee_pending_cents, reserved_amount_cents, reason, status, idempotency_key)
        VALUES ($1,$2,$3,18.00,$4,$5,$6,$7,'platform_fee','pending',$8) RETURNING id`,
-      [params.rideId, params.driverId, params.finalPriceCents.toString(), params.feeAmountCents.toString(), collected.toString(), pending.toString(), params.reservedCents.toString(), key]
+      [params.rideId, params.driverId, params.finalPriceCents.toString(), cashObligation.toString(), collected.toString(), pending.toString(), params.reservedCents.toString(), key]
     );
     return { id: BigInt(r.rows[0].id), already_processed: false };
   }
@@ -101,7 +127,7 @@ export class PendingDebitService {
         const { rows: splitRows } = await client.query(
           `SELECT ride_id, driver_id, territory_id, manager_id, manager_assignment_id,
                   fee_amount_cents, fee_collected_cents, fee_pending_cents,
-                  manager_commission_rate_bps, reference_month, collection_status
+                  fee_subsidized_cents, manager_commission_rate_bps, reference_month, collection_status
            FROM ride_fee_splits WHERE ride_id = $1 FOR UPDATE`,
           [rideId]
         );
@@ -125,10 +151,28 @@ export class PendingDebitService {
           await client.query('ROLLBACK');
           throw Object.assign(new Error('Split fee_pending mismatch'), { code: 'PENDING_DEBIT_SPLIT_MISMATCH' });
         }
-        if (BigInt(split.fee_collected_cents) + BigInt(split.fee_pending_cents) !== BigInt(split.fee_amount_cents)) {
+        if (BigInt(split.fee_collected_cents) + BigInt(split.fee_pending_cents) + BigInt(split.fee_subsidized_cents) !== BigInt(split.fee_amount_cents)) {
           await client.query('ROLLBACK');
           throw Object.assign(new Error('Split collected+pending != total'), { code: 'PENDING_DEBIT_SPLIT_MISMATCH' });
         }
+        // Pending debit represents cash receivable, never promotional credit.
+        const cashObligation =
+          BigInt(split.fee_amount_cents) -
+          BigInt(split.fee_subsidized_cents);
+
+        if (
+          cashObligation < 0n ||
+          BigInt(lockedRow.fee_amount_cents) !== cashObligation ||
+          BigInt(lockedRow.fee_collected_cents) !==
+            BigInt(split.fee_collected_cents)
+        ) {
+          await client.query('ROLLBACK');
+          throw Object.assign(
+            new Error('Pending debit cash obligation mismatch'),
+            { code: 'PENDING_DEBIT_SPLIT_MISMATCH' }
+          );
+        }
+
         if (!['pending', 'partial'].includes(split.collection_status)) {
           await client.query('ROLLBACK');
           throw Object.assign(new Error(`Split status '${split.collection_status}' not resolvable`), { code: 'PENDING_DEBIT_SPLIT_MISMATCH' });
@@ -150,14 +194,26 @@ export class PendingDebitService {
         // Incremental territorial recognition using persisted snapshot
         if (split.territory_id) {
           const previouslyCollected = BigInt(split.fee_collected_cents);
-          const totalNowCollected = BigInt(split.fee_amount_cents);
+          const totalNowCollected = BigInt(split.fee_amount_cents) - BigInt(split.fee_subsidized_cents);
           const incrementalPlatformFee = totalNowCollected - previouslyCollected;
 
           if (incrementalPlatformFee > 0n) {
             const rateBps = split.manager_commission_rate_bps;
-            const targetManagerShare = applyBasisPoints(totalNowCollected, rateBps);
-            const previousManagerShare = applyBasisPoints(previouslyCollected, rateBps);
-            const incrementalManagerShare = targetManagerShare - previousManagerShare;
+            // Contrato: comissão sobre a taxa integral.
+            // O subsídio KAVIAR compõe a base contratual,
+            // mas não representa dinheiro arrecadado.
+            const subsidized = BigInt(split.fee_subsidized_cents);
+            const totalContractFee = BigInt(split.fee_amount_cents);
+            const previouslyCovered = previouslyCollected + subsidized;
+
+            const targetManagerShare = applyBasisPoints(
+              totalContractFee, rateBps
+            );
+            const previousManagerShare = applyBasisPoints(
+              previouslyCovered, rateBps
+            );
+            const incrementalManagerShare =
+              targetManagerShare - previousManagerShare;
 
             await territoryLedgerService.recordCollectedFeeInClient(
               client,

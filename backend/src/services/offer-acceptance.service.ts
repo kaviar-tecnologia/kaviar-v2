@@ -6,6 +6,8 @@ import * as pricingEngine from './pricing-engine';
 import { isWalletV2Enabled } from '../routes/driver-wallet-v2';
 import { WalletSettlementService } from './wallet-v2/wallet-settlement.service';
 import { WalletService } from './wallet-v2/wallet.service';
+import { PromoWalletService } from './wallet-v2/promo-wallet.service';
+import { DualWalletReservationService } from './wallet-v2/dual-wallet-reservation.service';
 import { FeeSplitService } from './wallet-v2/fee-split.service';
 import { TerritoryLedgerService } from './wallet-v2/territory-ledger.service';
 import { PendingDebitService } from './wallet-v2/pending-debit.service';
@@ -162,7 +164,50 @@ export async function acceptOfferInternal(offerId: string, driverId: string, adj
         // Attempt reserve; if it fails we must revert the acceptance to avoid
         // leaving the ride assigned without reserve.
         try {
-          await settlement.handleReserve(ride.id, driverId, BigInt(estimatedFee));
+          // Utilização promocional: desligada por padrão.
+          // Exige aprovação operacional expressa para ativação.
+          const promoUsageEnabled =
+            process.env.DRIVER_WELCOME_FEE_USAGE_ENABLED === 'true' &&
+            process.env.DRIVER_PERMANENT_WELCOME_ENABLED === 'true';
+
+          let useDualWallet = false;
+
+          if (promoUsageEnabled) {
+            const { rows } = await pool.query(
+              `SELECT 1
+               FROM driver_promo_wallets
+               WHERE driver_id = $1
+                 AND balance_cents > reserved_cents
+               LIMIT 1`,
+              [driverId]
+            );
+
+            useDualWallet = rows.length > 0;
+          }
+
+          if (useDualWallet) {
+            const promoWallet = new PromoWalletService(pool);
+
+            const dualWallet = new DualWalletReservationService(
+              pool,
+              walletSvc,
+              promoWallet
+            );
+
+            await dualWallet.reserve(
+              driverId,
+              ride.id,
+              BigInt(estimatedFee),
+              offerId
+            );
+          } else {
+            // Caminho financeiro tradicional preservado.
+            await settlement.handleReserve(
+              ride.id,
+              driverId,
+              BigInt(estimatedFee)
+            );
+          }
           await prisma.ride_offers.updateMany({
             where: { ride_id: ride.id, id: { not: offerId }, status: 'pending' },
             data: { status: 'canceled' }

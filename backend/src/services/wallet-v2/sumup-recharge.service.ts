@@ -7,6 +7,7 @@ import { TerritoryLedgerService } from './territory-ledger.service';
 import { PendingDebitService } from './pending-debit.service';
 import { AnnualIncentiveLedgerService } from '../finance/annual-incentive-ledger.service';
 import { AnnualIncentiveShadowService } from '../finance/annual-incentive-shadow.service';
+import { recoverReferralQualification } from './referral-recovery.service';
 
 const walletService = new WalletService(pool);
 const feeSplitService = new FeeSplitService(pool);
@@ -115,6 +116,15 @@ export async function reconcileSumUpRechargeById(rechargeId: string, expectedDri
     };
   }
 
+  if (row.status === 'confirmed') {
+    // Recuperação independente: nunca creditar a carteira novamente.
+    try {
+      await recoverReferralQualification(row.id);
+    } catch (error) {
+      console.error('[REFERRAL_RECOVERY_ERROR]', error);
+    }
+  }
+
   if (row.status !== 'pending' || !row.external_id) {
     return {
       recharge_id: row.id,
@@ -130,6 +140,7 @@ export async function reconcileSumUpRechargeById(rechargeId: string, expectedDri
 
   if (checkoutStatus === 'PAID') {
     const client = await pool.connect();
+    let committed = false;
     try {
       await client.query('BEGIN');
 
@@ -181,7 +192,26 @@ export async function reconcileSumUpRechargeById(rechargeId: string, expectedDri
       );
 
       await client.query('COMMIT');
-      await applyRechargePostConfirmation(lockedRow);
+      committed = true;
+
+      // Pós-confirmação independente da transação financeira.
+      // Uma falha aqui não pode desfazer a recarga confirmada.
+      try {
+        await applyRechargePostConfirmation(lockedRow);
+      } catch (postError) {
+        console.error('[SUMUP_POST_CONFIRMATION_ERROR]', postError);
+      }
+
+      // Indicação: processamento independente da confirmação financeira.
+      // Falhas não revertem a recarga já confirmada.
+      try {
+        await recoverReferralQualification(lockedRow.id);
+      } catch (referralError) {
+        console.error(
+          '[REFERRAL_QUALIFICATION_ERROR]',
+          referralError
+        );
+      }
 
       return {
         recharge_id: lockedRow.id,
@@ -191,7 +221,9 @@ export async function reconcileSumUpRechargeById(rechargeId: string, expectedDri
         credited: true,
       };
     } catch (err) {
-      await client.query('ROLLBACK');
+      if (!committed) {
+        await client.query('ROLLBACK');
+      }
       throw err;
     } finally {
       client.release();

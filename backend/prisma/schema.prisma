@@ -3743,6 +3743,7 @@ model ride_fee_splits {
   fee_amount_cents           BigInt
   fee_collected_cents        BigInt    @default(0)
   fee_pending_cents          BigInt    @default(0)
+  fee_subsidized_cents       BigInt    @default(0)
   matrix_share_percent       Decimal   @default(60.00) @db.Decimal(5, 2)
   matrix_share_cents         BigInt
   manager_share_percent      Decimal   @default(40.00) @db.Decimal(5, 2)
@@ -5766,4 +5767,34 @@ model care_vehicle_capabilities {
 
   @@index([status, inspection_valid_until])
   @@map("care_vehicle_capabilities")
+}
+
+// Saldo promocional separado do dinheiro efetivamente recebido.
+model driver_promo_wallets {
+  driver_id      String   @id
+  balance_cents  BigInt   @default(0)
+  reserved_cents BigInt   @default(0)
+  updated_at     DateTime @default(now())
+
+  @@map("driver_promo_wallets")
+}
+
+// Histórico imutável de concessões e utilização promocional.
+model driver_promo_ledger {
+  id                  BigInt   @id @default(autoincrement())
+  driver_id           String
+  entry_type          String
+  amount_cents        BigInt
+  balance_after_cents BigInt
+  reserved_delta_cents BigInt @default(0)
+  reserved_after_cents BigInt @default(0)
+  reference_type      String?
+  reference_id        String?
+  idempotency_key     String   @unique
+  metadata            Json?
+  created_at          DateTime @default(now())
+
+  @@index([driver_id, created_at(sort: Desc)])
+  @@index([reference_type, reference_id])
+  @@map("driver_promo_ledger")
 }
