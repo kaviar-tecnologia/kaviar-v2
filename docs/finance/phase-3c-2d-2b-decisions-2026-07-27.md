@@ -5,6 +5,14 @@
 **Escopo:** Remoção do aceite legado, gratificação anual, gestor, compensação, estrutura futura
 **Status:** APROVADAS
 
+> **Aditivo de 20/10/2026:** o prazo histórico de 48 horas das decisões
+> DEC-2707-13 e DEC-2707-32 foi substituído por um objetivo operacional de
+> **até 24 horas corridas**, contado do registro da solicitação e incluindo a
+> validação, **quando os pagamentos estiverem habilitados e validados**.
+> Enquanto os pagamentos estiverem desativados, a solicitação pode ficar
+> reservada e pendente, sem promessa de transferência nesse prazo.
+> O texto abaixo é mantido como registro fiel das decisões tomadas em julho.
+
 ---
 
 ## Contexto
