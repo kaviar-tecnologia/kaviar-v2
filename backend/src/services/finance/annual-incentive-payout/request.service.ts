@@ -29,7 +29,10 @@ import {
   TERMINAL_STATUSES,
 } from './types';
 
-const DEADLINE_HOURS = 48;
+// Operational payment target: up to 24 hours after request (includes validation).
+// When payment execution is disabled this is internal monitoring only, not a
+// promise of PIX settlement; the app displays the request as pending.
+const DEADLINE_HOURS = 24;
 
 export interface CreateRequestInput {
   driverId: string;
