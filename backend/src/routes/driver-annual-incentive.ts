@@ -274,6 +274,7 @@ router.post('/requests', async (req: Request, res: Response) => {
       PAYOUT_ERRORS.CPF_MISMATCH,
       PAYOUT_ERRORS.CPF_NOT_VERIFIED,
       PAYOUT_ERRORS.IDEMPOTENCY_CONFLICT,
+      PAYOUT_ERRORS.PROVIDER_CAPABILITY_NOT_CONFIRMED,
     ];
     if (knownErrors.includes(err.code)) {
       const statusCode = err.code === PAYOUT_ERRORS.IDEMPOTENCY_CONFLICT ? 409 : 400;
