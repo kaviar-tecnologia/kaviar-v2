@@ -66,9 +66,24 @@ async function cleanupAll() {
   try {
     await client.query('BEGIN');
     await client.query('LOCK TABLE annual_incentive_ledger IN ACCESS EXCLUSIVE MODE');
-    await client.query('ALTER TABLE annual_incentive_ledger DISABLE TRIGGER annual_incentive_ledger_immutable_trg');
+    // Prisma db push (disposable CI database) does not install raw SQL triggers.
+    // Keep the immutable trigger enabled after cleanup when it is present.
+    const { rows: triggers } = await client.query(
+      `SELECT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgrelid = 'annual_incentive_ledger'::regclass
+          AND tgname = 'annual_incentive_ledger_immutable_trg'
+          AND NOT tgisinternal
+      ) AS present`
+    );
+    const hasImmutableTrigger = triggers[0].present;
+    if (hasImmutableTrigger) {
+      await client.query('ALTER TABLE annual_incentive_ledger DISABLE TRIGGER annual_incentive_ledger_immutable_trg');
+    }
     await client.query('DELETE FROM annual_incentive_ledger WHERE driver_id = $1', [TEST_DRIVER_ID]);
-    await client.query('ALTER TABLE annual_incentive_ledger ENABLE TRIGGER annual_incentive_ledger_immutable_trg');
+    if (hasImmutableTrigger) {
+      await client.query('ALTER TABLE annual_incentive_ledger ENABLE TRIGGER annual_incentive_ledger_immutable_trg');
+    }
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
 }
