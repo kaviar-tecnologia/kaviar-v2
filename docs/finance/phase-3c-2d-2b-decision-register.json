@@ -155,7 +155,7 @@
         {
           "id": "BP-17",
           "part": "II",
-          "description": "Janela anual de solicitação: 1º de outubro a 31 de dezembro. O motorista pode realizar quantas solicitações desejar dentro da janela. Cada solicitação congela o valor solicitado. Prazo de pagamento: até 48 horas da solicitação. Valor não solicitado até 31 de dezembro é transportado ao ano seguinte."
+          "description": "Janela anual de solicitação: 1º de outubro a 31 de dezembro. O motorista pode realizar múltiplas solicitações dentro da janela, respeitando solicitação em aberto. Cada solicitação reserva o valor. Quando pagamentos estiverem habilitados e validados, o prazo operacional de pagamento PIX será de até 24 horas corridas desde o registro, incluindo a validação. Com pagamentos desativados, o pedido fica pendente sem promessa desse prazo. Valor não solicitado até 31 de dezembro é transportado ao ano seguinte."
         },
         {
           "id": "BP-18",
@@ -200,7 +200,7 @@
         {
           "id": "BP-26",
           "part": "II",
-          "description": "Solicitação enviada entre 1º de outubro e 31 de dezembro permanece válida. O prazo de pagamento é de até 48 horas contadas do momento da solicitação. Atrasos administrativos ou bancários não prejudicam o motorista."
+          "description": "Solicitação enviada entre 1º de outubro e 31 de dezembro permanece válida. Quando pagamentos estiverem habilitados e validados, a meta operacional é pagar via PIX em até 24 horas corridas da solicitação, incluindo a validação. Quando desativados, a solicitação permanece reservada e pendente, sem previsão assegurada de transferência. Atrasos não prejudicam o direito do motorista ao valor legítimo."
         },
         {
           "id": "BP-27",
