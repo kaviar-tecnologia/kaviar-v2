@@ -140,6 +140,7 @@ describe('Request Creation', () => {
       const replay = await createRequest(pool, ledgerService, input);
       expect(first.created).toBe(true);
       expect(first.request.status).toBe('RESERVED');
+      expect(first.request.deadlineAt.getTime() - octoberDate().getTime()).toBe(24 * 60 * 60 * 1000);
       expect(replay.created).toBe(false);
       expect(replay.request.id).toBe(first.request.id);
       expect(await getOpenRequest(pool, TEST_DRIVER_ID)).toMatchObject({ id: first.request.id });
