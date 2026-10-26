@@ -131,6 +131,49 @@ describe('aquisição territorial — prioridade da fonte oficial', () => {
     expect(calls[0]).toContain('/MapServer/1/query');
   });
 
+  it('Saquarema/RJ prioriza GeoSaquá sem bbox OSM e mantém verificação humana pendente', async () => {
+    const prisma = prismaFor({
+      id: 't-saquarema',
+      name: 'Saquarema',
+      city_name: 'Saquarema',
+      uf: 'RJ',
+      level: 'city',
+    });
+
+    const calls: string[] = [];
+    const fetchImpl = (async (url: string, init: any) => {
+      calls.push(url);
+      expect(init.method).toBe('GET');
+      return response({
+        type: 'FeatureCollection',
+        features: [{
+          type: 'Feature',
+          properties: { FID: 1, Name: 'Itaúna', dsdist: '1º Distrito' },
+          geometry: polygon(-42.49, -22.93),
+        }],
+      });
+    }) as unknown as typeof fetch;
+
+    const result = await acquireCityDataset({
+      territoryId: 't-saquarema',
+      prisma,
+      acquisitionOptions: { fetchImpl },
+      putObject: async () => {},
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.provenance.providerId).toBe('official-arcgis');
+    expect(result.stats.valid).toBe(1);
+    expect(prisma.__state.bboxQueries).toBe(0);
+    expect(prisma.__state.created.provider_id).toBe('official-arcgis');
+    expect(prisma.__state.created.is_official).toBe(true);
+    expect(prisma.__state.created.source_verified).toBe(false);
+    expect(prisma.__state.created.status).toBe('DRAFT');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain('/FeatureServer/0/query');
+  });
+
   it('falha da fonte oficial não faz downgrade silencioso para OSM', async () => {
     const prisma = prismaFor({
       id: 't-diadema',
