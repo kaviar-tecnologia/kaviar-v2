@@ -44,6 +44,10 @@ describe('OfficialArcGisProvider', () => {
     ).toBe(true);
 
     expect(
+      provider.supports({ city: 'Saquarema', uf: 'RJ' }),
+    ).toBe(true);
+
+    expect(
       provider.supports({ city: 'Cariacica', uf: 'ES' }),
     ).toBe(false);
   });
@@ -126,6 +130,50 @@ describe('OfficialArcGisProvider', () => {
     expect(
       result.featureCollection.features[0].properties.source_code,
     ).toBe(6);
+  });
+
+  it('Saquarema/RJ usa o campo Name e preserva o ID FID do GeoSaquá', async () => {
+    let calledUrl = '';
+    const fetchImpl = (async (url: string) => {
+      calledUrl = url;
+      return response({
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            properties: { FID: 11, Name: 'Itaúna', dsdist: '1º Distrito' },
+            geometry: polygon(-42.49, -22.93),
+          },
+          {
+            type: 'Feature',
+            properties: { FID: 12, Name: 'Jaconé', dsdist: '3º Distrito' },
+            geometry: polygon(-42.61, -22.94),
+          },
+        ],
+      });
+    }) as unknown as typeof fetch;
+
+    const result = await new OfficialArcGisProvider().fetchDataset(
+      { city: 'Saquarema', uf: 'RJ' },
+      { fetchImpl },
+    );
+
+    const url = new URL(calledUrl);
+    expect(url.pathname).toContain('/Limites_de_Bairros___Saquarema_WFL1_view/FeatureServer/0/query');
+    expect(url.searchParams.get('outFields')).toBe('FID,Name,dsdist');
+    expect(url.searchParams.get('f')).toBe('geojson');
+    expect(url.searchParams.get('outSR')).toBe('4326');
+    expect(result.stats).toEqual({ total: 2, valid: 2, invalid: 0, duplicates: 0, outOfBBox: 0 });
+    expect(result.featureCollection.features.map((f: any) => f.properties.name)).toEqual(['Itaúna', 'Jaconé']);
+    expect(result.featureCollection.features.map((f: any) => f.properties.area_type)).toEqual([
+      'BAIRRO_OFICIAL', 'BAIRRO_OFICIAL',
+    ]);
+    expect(result.provenance.sourceIds).toEqual([
+      'geosaqua-bairros:objectid:11',
+      'geosaqua-bairros:objectid:12',
+    ]);
+    expect(result.provenance.isOfficial).toBe(true);
+    expect(result.provenance.sourceUrl).toContain('services8.arcgis.com');
   });
 
   it('remove duplicidade e rejeita geometria inválida', async () => {
