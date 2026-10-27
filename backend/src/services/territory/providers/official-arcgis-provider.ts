@@ -228,7 +228,11 @@ export class OfficialArcGisProvider implements TerritorialDatasetProvider {
 
       const candidateFeatures = raw.features.map((feature: any) => {
         const props = feature?.properties ?? {};
-        const name = props[source.nameField];
+        const sourceName = props[source.nameField];
+        const correctedName = typeof sourceName === 'string'
+          ? source.nameOverrides?.[sourceName.trim()] ?? sourceName
+          : sourceName;
+        const name = typeof correctedName === 'string' ? correctedName : sourceName;
 
         return {
           type: 'Feature',
