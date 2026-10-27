@@ -176,6 +176,74 @@ describe('OfficialArcGisProvider', () => {
     expect(result.provenance.sourceUrl).toContain('services8.arcgis.com');
   });
 
+  it('Saquarema aplica somente cinco grafias legais e preserva os 46 polígonos e FIDs', async () => {
+    const namesByDistrict: Record<string, string[]> = {
+      Bacaxá: [
+        'Água Branca', 'Alvorada', 'Asfalto Velho', 'Aterrado', 'Bacaxá',
+        'Bairro de Fátima', 'Barreira', 'Bicuíba', 'Bonsucesso', "Caixa d' Água",
+        'Comum', 'Condado de Bacaxá', 'Engenho Grande', 'Madressilva',
+        'Morro dos Pregos', 'Palmital', 'Parque Marina', 'Porto da Roça II',
+        'Raia', 'Retiro', "Rio d' Areia", 'Rio Seco', 'São Geraldo', 'Verde Vale',
+      ],
+      'Sampaio Correia': [
+        'Basileia', 'Jaconé', 'Rio Mole', 'Sampaio Correia',
+        'Serra de Mato Grosso', 'Tinguí',
+      ],
+      Saquarema: [
+        'Areal', 'Barra Nova', 'Boqueirão', 'Centro', 'Coqueiral',
+        'Gravatá', 'Guarani', 'Ipitangas', 'Itaúna', 'Jardim',
+        'Jardim Ipitangas', 'Leigos', 'Mombaça', 'Porto da Roça I',
+        'Porto Novo', 'Vilatur',
+      ],
+    };
+    const overrides: Record<string, string> = {
+      "Caixa d' Água": 'Caixa d’Água',
+      "Rio d' Areia": 'Rio d’Areia',
+      Basileia: 'Basiléa',
+      'Serra de Mato Grosso': 'Serra do Mato Grosso',
+      Tinguí: 'Tingui',
+    };
+    const sourceRows = Object.entries(namesByDistrict).flatMap(
+      ([dsdist, names]) => names.map((Name) => ({ Name, dsdist })),
+    );
+    expect(sourceRows).toHaveLength(46);
+
+    const raw = {
+      type: 'FeatureCollection',
+      features: sourceRows.map(({ Name, dsdist }, index) => ({
+        type: 'Feature',
+        properties: { FID: index + 1, Name, dsdist },
+        geometry: polygon(-42.65 + index * 0.005, -22.92),
+      })),
+    };
+    const fetchImpl = (async () => response(raw)) as unknown as typeof fetch;
+    const result = await new OfficialArcGisProvider().fetchDataset(
+      { city: 'Saquarema', uf: 'RJ' }, { fetchImpl },
+    );
+
+    expect(result.stats).toEqual({
+      total: 46, valid: 46, invalid: 0, duplicates: 0, outOfBBox: 0,
+    });
+    expect(result.rawSource).toEqual(raw);
+    expect(result.provenance.sourceIds).toHaveLength(46);
+    expect(new Set(result.provenance.sourceIds).size).toBe(46);
+
+    result.featureCollection.features.forEach((feature: any, index: number) => {
+      const original = raw.features[index];
+      expect(feature.properties.name).toBe(overrides[original.properties.Name] ?? original.properties.Name);
+      expect(feature.properties.Name).toBe(original.properties.Name);
+      expect(feature.properties.FID).toBe(original.properties.FID);
+      expect(feature.properties.dsdist).toBe(original.properties.dsdist);
+      expect(feature.geometry).toEqual(original.geometry);
+    });
+    expect(result.featureCollection.features.find(
+      (feature: any) => feature.properties.Name === 'Barra Nova',
+    )?.properties.name).toBe('Barra Nova');
+    expect(new Set(result.featureCollection.features.map(
+      (feature: any) => feature.properties.name,
+    )).size).toBe(46);
+  });
+
   it('remove duplicidade e rejeita geometria inválida', async () => {
     const fetchImpl = (async () =>
       response({

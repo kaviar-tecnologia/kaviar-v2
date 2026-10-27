@@ -5,6 +5,8 @@ export interface ArcGisOfficialSource {
   layerUrl: string;
   source: string;
   nameField: string;
+  /** Correções documentadas para nome de exibição; mantém o campo da fonte intacto. */
+  nameOverrides?: Readonly<Record<string, string>>;
   codeField?: string;
   objectIdField?: string;
   outFields?: readonly string[];
@@ -42,6 +44,15 @@ export const OFFICIAL_ARCGIS_SOURCES: readonly ArcGisOfficialSource[] = [
       'https://services8.arcgis.com/5BwCrbm6qPzGdhUo/ArcGIS/rest/services/Limites_de_Bairros___Saquarema_WFL1_view/FeatureServer/0',
     source: 'Prefeitura de Saquarema — GeoSaquá / Secretaria Municipal de Urbanismo',
     nameField: 'Name',
+    // Art. 11 da Lei Municipal 2.405/2023 (Diário Oficial, edição 1192-5).
+    // Apenas grafia: sem mudança de FID, distrito ou geometria.
+    nameOverrides: {
+      "Caixa d' Água": 'Caixa d’Água',
+      "Rio d' Areia": 'Rio d’Areia',
+      Basileia: 'Basiléa',
+      'Serra de Mato Grosso': 'Serra do Mato Grosso',
+      Tinguí: 'Tingui',
+    },
     objectIdField: 'FID',
     outFields: ['FID', 'Name', 'dsdist'],
     areaType: 'BAIRRO_OFICIAL',
