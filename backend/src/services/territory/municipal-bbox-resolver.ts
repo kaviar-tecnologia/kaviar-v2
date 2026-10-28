@@ -24,6 +24,7 @@ import {
   OVERPASS_USER_AGENT,
 } from './providers/openstreetmap-provider';
 import { UF_TO_STATE_NAME } from './osm-geojson-normalizer';
+import { OFFICIAL_ARCGIS_SOURCES, type ArcGisOfficialSource } from './providers/official-territorial-sources';
 
 export type PrismaLike = any;
 
@@ -34,7 +35,7 @@ export type MunicipalBBoxCode =
 
 export interface MunicipalBBoxResult {
   bbox: CityBoundingBox | null;
-  source: 'osm_municipality' | 'existing_coverage' | 'none';
+  source: 'official_municipality' | 'osm_municipality' | 'existing_coverage' | 'none';
   code: MunicipalBBoxCode;
   details?: string;
   sourceUrl?: string;
@@ -84,6 +85,96 @@ function isValidBBox(b: CityBoundingBox): boolean {
   if (!(b.minLon < b.maxLon) || !(b.minLat < b.maxLat)) return false; // min < max
   if ((b.maxLon - b.minLon) > MAX_SPAN_DEG || (b.maxLat - b.minLat) > MAX_SPAN_DEG) return false; // absurdo
   return true;
+}
+
+
+/**
+ * Limite municipal OFICIAL configurado no catálogo. É uma consulta independente
+ * da camada de bairros e do normalized.geojson (sem validação circular).
+ * A identidade código IBGE + nome + UF deve bater com a cidade solicitada.
+ * Em falha não há downgrade para OSM: a aplicação permanece bloqueada.
+ */
+export async function bboxFromOfficialArcGisMunicipality(
+  boundary: NonNullable<ArcGisOfficialSource['municipalBoundary']>,
+  city: string,
+  uf: string,
+  opts: { fetchImpl?: typeof fetch; signal?: AbortSignal } = {},
+): Promise<{ bbox: CityBoundingBox | null; sourceUrl?: string }> {
+  const fetchImpl = opts.fetchImpl ?? (globalThis.fetch as typeof fetch);
+  if (typeof fetchImpl !== 'function' || opts.signal?.aborted) return { bbox: null };
+
+  let layerUrl: URL;
+  try { layerUrl = new URL(boundary.layerUrl); } catch { return { bbox: null }; }
+  if (layerUrl.protocol !== 'https:' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(boundary.codeField)
+    || !/^[0-9]{7}$/.test(boundary.municipalityCode)) return { bbox: null };
+  const url = new URL(boundary.layerUrl.replace(/\/+$/, '') + '/query');
+  url.searchParams.set('where', boundary.codeField + "='" + boundary.municipalityCode + "'");
+  url.searchParams.set('outFields', [boundary.codeField, boundary.nameField, boundary.ufField].join(','));
+  url.searchParams.set('returnGeometry', 'true');
+  url.searchParams.set('outSR', '4326');
+  url.searchParams.set('f', 'geojson');
+
+  const local = new AbortController();
+  const onAbort = () => local.abort();
+  opts.signal?.addEventListener('abort', onAbort, { once: true });
+  if (opts.signal?.aborted) local.abort();
+  const timer = setTimeout(() => local.abort(), 15_000);
+  try {
+    const response: any = await fetchImpl(url.toString(), {
+      method: 'GET',
+      headers: { Accept: 'application/geo+json, application/json', 'User-Agent': OVERPASS_USER_AGENT },
+      signal: local.signal,
+      redirect: 'manual',
+    } as any);
+    if (response.type === 'opaqueredirect' || response.status !== 200) return { bbox: null };
+    const contentType = String(response.headers?.get?.('content-type') ?? '').toLowerCase();
+    if (!contentType.includes('json')) return { bbox: null };
+    const size = Number(response.headers?.get?.('content-length') || 0);
+    if (size > MAX_BOUNDS_BYTES) return { bbox: null };
+    const body: string = await response.text();
+    if (Buffer.byteLength(body, 'utf8') > MAX_BOUNDS_BYTES) return { bbox: null };
+
+    const parsed = JSON.parse(body);
+    if (parsed?.type !== 'FeatureCollection' || parsed.features?.length !== 1) return { bbox: null };
+    if (parsed.crs && String(parsed.crs?.properties?.name).toUpperCase() !== 'EPSG:4326') return { bbox: null };
+    const feature = parsed.features[0];
+    const properties = feature?.properties || {};
+    const equals = (a: unknown, b: unknown) => String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+    if (!equals(properties[boundary.codeField], boundary.municipalityCode)
+      || !equals(properties[boundary.nameField], city)
+      || !equals(properties[boundary.ufField], uf)) return { bbox: null };
+    const geometry = feature?.geometry;
+    if (geometry?.type !== 'Polygon' && geometry?.type !== 'MultiPolygon') return { bbox: null };
+
+    const bbox: CityBoundingBox = { minLon: Infinity, minLat: Infinity, maxLon: -Infinity, maxLat: -Infinity };
+    let count = 0;
+    let invalid = false;
+    const scan = (node: any, depth: number): void => {
+      if (!Array.isArray(node) || depth > 5) { invalid = true; return; }
+      if (typeof node[0] === 'number') {
+        const lon = node[0], lat = node[1];
+        if (node.length < 2 || !Number.isFinite(lon) || !Number.isFinite(lat)) { invalid = true; return; }
+        bbox.minLon = Math.min(bbox.minLon, lon);
+        bbox.maxLon = Math.max(bbox.maxLon, lon);
+        bbox.minLat = Math.min(bbox.minLat, lat);
+        bbox.maxLat = Math.max(bbox.maxLat, lat);
+        if (++count > 100_000) invalid = true;
+        return;
+      }
+      for (const child of node) {
+        if (invalid) break;
+        scan(child, depth + 1);
+      }
+    };
+    scan(geometry.coordinates, 0);
+    if (invalid || count < 4 || !isValidBBox(bbox) || opts.signal?.aborted) return { bbox: null };
+    return { bbox, sourceUrl: url.toString() };
+  } catch {
+    return { bbox: null };
+  } finally {
+    clearTimeout(timer);
+    opts.signal?.removeEventListener('abort', onAbort);
+  }
 }
 
 /** 2) Fallback: envelope dos geofences do TERRITÓRIO (isolado por territory_id). */
@@ -241,7 +332,21 @@ export async function resolveMunicipalBBox(
 ): Promise<MunicipalBBoxResult> {
   const margin = opts.marginDeg ?? 0.05;
 
-  // 1) PRIMÁRIO: limite municipal OSM.
+  // Fonte oficial municipal configurada: precedência e falha fechada.
+  const official = OFFICIAL_ARCGIS_SOURCES.find((entry) =>
+    entry.municipalBoundary
+    && entry.city.trim().toLowerCase() === city.trim().toLowerCase()
+    && entry.uf.toUpperCase() === String(uf ?? '').toUpperCase(),
+  )?.municipalBoundary;
+  if (official) {
+    const result = await bboxFromOfficialArcGisMunicipality(official, city, String(uf), opts);
+    if (!result.bbox) {
+      return { bbox: null, source: 'none', code: 'MUNICIPAL_BBOX_UNAVAILABLE', details: 'limite municipal oficial indisponível ou inválido' };
+    }
+    return { bbox: expand(result.bbox, margin), source: 'official_municipality', code: 'OK', sourceUrl: result.sourceUrl };
+  }
+
+  // Sem limite oficial configurado: limite municipal OSM.
   const osm = await bboxFromOsmMunicipality(city, uf, opts);
   if (opts.signal?.aborted) return { bbox: null, source: 'none', code: 'MUNICIPAL_BBOX_UNAVAILABLE', details: 'cancelado' };
   if (osm.ambiguous) return { bbox: null, source: 'none', code: 'MUNICIPAL_BBOX_AMBIGUOUS' };
