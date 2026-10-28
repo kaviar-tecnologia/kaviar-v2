@@ -5,6 +5,14 @@ export interface ArcGisOfficialSource {
   layerUrl: string;
   source: string;
   nameField: string;
+  /** Camada independente de limite municipal, identificada por código IBGE. */
+  municipalBoundary?: {
+    layerUrl: string;
+    codeField: string;
+    municipalityCode: string;
+    nameField: string;
+    ufField: string;
+  };
   /** Correções documentadas para nome de exibição; mantém o campo da fonte intacto. */
   nameOverrides?: Readonly<Record<string, string>>;
   codeField?: string;
@@ -40,6 +48,13 @@ export const OFFICIAL_ARCGIS_SOURCES: readonly ArcGisOfficialSource[] = [
     id: 'geosaqua-bairros',
     city: 'Saquarema',
     uf: 'RJ',
+    municipalBoundary: {
+      layerUrl: 'https://services8.arcgis.com/5BwCrbm6qPzGdhUo/ArcGIS/rest/services/Limite_Municipal/FeatureServer/0',
+      codeField: 'CD_MUN',
+      municipalityCode: '3305505',
+      nameField: 'NM_MUN',
+      ufField: 'SIGLA',
+    },
     layerUrl:
       'https://services8.arcgis.com/5BwCrbm6qPzGdhUo/ArcGIS/rest/services/Limites_de_Bairros___Saquarema_WFL1_view/FeatureServer/0',
     source: 'Prefeitura de Saquarema — GeoSaquá / Secretaria Municipal de Urbanismo',

@@ -100,7 +100,7 @@ export interface ApplyParams {
    * (Fase 1). Recebe (prisma, city, uf, {territoryId, signal, fetchImpl}).
    */
   resolveBBox?: typeof resolveMunicipalBBox;
-  /** fetch injetável repassado ao resolvedor de bbox municipal (OSM/Overpass). */
+  /** fetch injetável repassado ao resolvedor de bbox municipal (oficial/OSM). */
   fetchImpl?: typeof fetch;
   /** Sinal externo de cancelamento (ex.: request HTTP fechado). */
   signal?: AbortSignal;
@@ -433,11 +433,11 @@ async function runApply(
   // ── 3b) BBOX MUNICIPAL CONFIÁVEL, resolvido ANTES da transação (read-only). ─
   //  NÃO usa o envelope do próprio normalized.geojson (validação circular não
   //  protege contra dataset da cidade errada). Reutiliza a infraestrutura da
-  //  Fase 1 (municipal-bbox-resolver): limite OSM admin_level=8 (primário) →
-  //  cobertura existente do território (fallback). Ambíguo/indisponível =>
-  //  fail-closed, ANTES de qualquer escrita. O bbox fica CONGELADO e é passado
-  //  à validação/transação (nenhuma chamada externa longa dentro da tx).
-  //  O `signal` é propagado ao resolvedor (cancela OSM/Overpass).
+  //  Fase 1 (municipal-bbox-resolver): limite municipal oficial configurado →
+  //  caso ausente, OSM admin_level=8 → cobertura existente do território.
+  //  Falha da fonte oficial não provoca downgrade silencioso. Sem bbox confiável,
+  //  fail-closed, ANTES de qualquer escrita. O bbox fica CONGELADO para a tx.
+  //  O `signal` cancela as consultas externas (oficial / OSM).
   const resolveBBox = params.resolveBBox ?? resolveMunicipalBBox;
   const bboxRes = await resolveBBox(prisma, city, uf, { territoryId, fetchImpl: params.fetchImpl, signal });
   if (bboxRes.code === 'MUNICIPAL_BBOX_AMBIGUOUS') {
