@@ -11,7 +11,7 @@
 const { spawnSync } = require('node:child_process');
 const { readdirSync } = require('node:fs');
 const { join } = require('node:path');
-const { Client } = require('pg');
+const { PrismaClient } = require('@prisma/client');
 
 const MIGRATION = '20261028203000_manager_neighborhood_scope_versions';
 const CONFIRMATION = 'RECOVER_MANAGER_SCOPE_P3018_20261028';
@@ -22,23 +22,28 @@ const EXPECTED_COLUMNS = [
   'agreement_reference', 'change_reason', 'created_by', 'created_at',
   'canceled_at', 'canceled_by', 'cancel_reason',
 ];
+let stage = 'startup';
 
 function assert(condition, code) {
   if (!condition) throw new Error(`RECOVERY_ABORT_${code}`);
 }
 
 async function withDatabase(task) {
-  const client = new Client({
-    connectionString: process.env.DATABASE_URL,
-    connectionTimeoutMillis: 15000,
-    query_timeout: 15000,
-    statement_timeout: 15000,
-  });
-  await client.connect();
+  // Use the same Prisma engine/connection settings that migrate deploy uses.
+  // A standalone node-postgres client can negotiate TLS differently on RDS.
+  const prisma = new PrismaClient();
+  stage = 'connect';
   try {
-    return await task(client);
+    await prisma.$connect();
+    let queryNumber = 0;
+    return await task({
+      query: async (sql, params = []) => {
+        stage = `read_query_${++queryNumber}`;
+        return { rows: await prisma.$queryRawUnsafe(sql, ...params) };
+      },
+    });
   } finally {
-    await client.end();
+    await prisma.$disconnect();
   }
 }
 
@@ -65,12 +70,12 @@ async function preflight(client) {
     'OTHER_UNAPPLIED_MIGRATIONS');
 
   const { rows: tables } = await client.query(
-    `SELECT to_regclass('public.territory_manager_neighborhood_scope_versions') AS name`,
+    `SELECT to_regclass('public.territory_manager_neighborhood_scope_versions')::text AS name`,
   );
   assert(tables[0]?.name !== null, 'PARTIAL_TABLE_MISSING');
 
   const { rows: columns } = await client.query(
-    `SELECT column_name FROM information_schema.columns
+    `SELECT column_name::text AS column_name FROM information_schema.columns
      WHERE table_schema = 'public' AND table_name = $1`,
     [TABLE],
   );
@@ -84,7 +89,7 @@ async function preflight(client) {
   assert(counts[0]?.total === 0, 'UNEXPECTED_SCOPE_ROWS');
 
   const { rows: indexes } = await client.query(
-    `SELECT idx.relname AS name, i.indisunique AS is_unique, i.indisprimary AS is_primary,
+    `SELECT idx.relname::text AS name, i.indisunique AS is_unique, i.indisprimary AS is_primary,
             pg_get_indexdef(i.indexrelid) AS definition
      FROM pg_index i
      JOIN pg_class idx ON idx.oid = i.indexrelid
@@ -98,7 +103,7 @@ async function preflight(client) {
   'EXPECTED_UNIQUE_INDEX_MISSING');
 
   const { rows: constraints } = await client.query(
-    `SELECT conname, contype FROM pg_constraint
+    `SELECT conname::text AS conname, contype::text AS contype FROM pg_constraint
      WHERE conrelid = 'public.territory_manager_neighborhood_scope_versions'::regclass`,
   );
   assert(constraints.length === 4 && !constraints.some((c) => c.contype === 'f'),
@@ -133,6 +138,7 @@ async function main() {
   await withDatabase(preflight);
 
   // Only Prisma's migration-history operation writes here; table and rows stay intact.
+  stage = 'resolve';
   const result = spawnSync('npx', ['prisma', 'migrate', 'resolve', '--rolled-back', MIGRATION], {
     stdio: 'inherit',
     env: process.env,
@@ -142,8 +148,17 @@ async function main() {
   await withDatabase(verifyResolution);
 }
 
-main().catch((error) => {
-  // Never print the connection URL or process.env in CI/ECS logs.
-  process.stderr.write(`${error.message.startsWith('RECOVERY_ABORT_') ? error.message : 'RECOVERY_ABORT_PREFLIGHT_ERROR'}\n`);
-  process.exitCode = 1;
-});
+module.exports = { preflight, verifyResolution };
+
+if (require.main === module) {
+  main().catch((error) => {
+    // Never print the connection URL or process.env in CI/ECS logs.
+    const code = String(error.code || error.meta?.code || 'UNKNOWN');
+    const safeCode = /^[a-zA-Z0-9_]{2,24}$/.test(code) ? code : 'UNKNOWN';
+    const detail = error.message?.startsWith('RECOVERY_ABORT_')
+      ? error.message
+      : `RECOVERY_ABORT_${stage.toUpperCase()}_ERROR code=${safeCode}`;
+    process.stderr.write(`${detail}\n`);
+    process.exitCode = 1;
+  });
+}

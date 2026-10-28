@@ -7,6 +7,7 @@
 - Erro PostgreSQL `42P07`, Prisma `P3018`: os nomes dos índices `...effective_from_key` e `...effective_from_idx` colidiram após o truncamento de identificadores a 63 bytes.
 - O workflow criou e validou um snapshot privado RDS **antes** da tentativa de migração. Confirmar ID e disponibilidade nos logs de #801/AWS antes da recuperação.
 - O PostgreSQL pode ter persistido a tabela e o primeiro índice antes do erro, mesmo que o Prisma tenha marcado a migração como falha.
+- Tentativa #802 (SHA `c653c5dadee711e9d4fb1f5e8853cf8cbcf9e350`): novo snapshot confirmado, mas `RECOVERY_ABORT_PREFLIGHT_ERROR` ocorreu antes do marcador de preflight validado. A task falhou e o backend **não** foi publicado; o `migrate resolve` não foi alcançado. Não reexecutar #802. Hotfix subsequente usa o mesmo motor de conexão Prisma do `migrate deploy` e registra apenas estágio/código seguros em caso de erro de leitura, sem expor credenciais.
 
 **Não executar** re-run de #801, `prisma migrate deploy`, `db push`, `migrate reset`, `DROP TABLE`, nem restore de snapshot sem inspeção e autorização específica. Não ativar operações remuneradas de Jorge Regis antes das demais condições de ativação.
 
