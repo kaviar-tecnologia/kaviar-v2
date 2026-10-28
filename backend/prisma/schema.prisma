@@ -3607,9 +3607,32 @@ model territory_manager_assignments {
   admin               admins                 @relation("tma_admin", fields: [admin_id], references: [id], onDelete: Restrict)
   creator             admins                 @relation("tma_creator", fields: [created_by], references: [id], onDelete: Restrict)
   shadow_results      wallet_shadow_results[]
+  neighborhood_scope_versions territory_manager_neighborhood_scope_versions[]
 
   @@index([territory_id])
   @@index([admin_id])
+}
+
+// Append-only, prospective versions of the neighborhoods eligible for a manager's
+// financial participation. No version means legacy full-territory coverage.
+// A canceled future version stays in the audit trail and is never applied.
+model territory_manager_neighborhood_scope_versions {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  assignment_id       String   @db.Uuid
+  neighborhood_ids    String[]
+  effective_from      DateTime @db.Timestamptz
+  agreement_reference String
+  change_reason       String
+  created_by          String
+  created_at          DateTime @default(now()) @db.Timestamptz
+  canceled_at         DateTime? @db.Timestamptz
+  canceled_by         String?
+  cancel_reason       String?
+
+  assignment territory_manager_assignments @relation(fields: [assignment_id], references: [id], onDelete: Restrict)
+
+  @@unique([assignment_id, effective_from])
+  @@index([assignment_id, effective_from(sort: Desc)])
 }
 
 model wallet_shadow_results {

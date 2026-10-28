@@ -5,6 +5,7 @@ import { ArrowBack, Edit, PersonAdd, Delete, Map } from '@mui/icons-material';
 import { API_BASE_URL } from '../../config/api';
 import MotoPassengerCompliance from '../../components/admin/MotoPassengerCompliance';
 import TerritorialDatasetSection from '../../components/admin/TerritorialDatasetSection';
+import ManagerNeighborhoodScope from '../../components/admin/ManagerNeighborhoodScope';
 import { formatDate } from '../../utils/formatDate';
 
 const STATUS_COLORS = { planning: '#6B7280', preparation: '#D97706', active: '#059669', inactive: '#DC2626' };
@@ -82,6 +83,7 @@ export default function TerritoryDetailPage() {
         <Tab label={`Parceiros (${t.territorial_partners?.length || 0})`} />
         <Tab label={`Admins (${t.admin_access?.length || 0})`} />
         <Tab label="Finance" />
+        {isSuperAdmin && <Tab label="Gestão de bairros" />}
       </Tabs>
 
       {tab === 0 && (
@@ -196,6 +198,8 @@ export default function TerritoryDetailPage() {
       )}
 
       {tab === 4 && <FinanceTab territoryId={id} token={token} />}
+
+      {tab === 5 && isSuperAdmin && <ManagerNeighborhoodScope territory={t} token={token} />}
 
       <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ color: '#C8A84E', fontWeight: 700 }}>Editar Território</DialogTitle>
