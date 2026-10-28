@@ -148,13 +148,17 @@ async function main() {
   await withDatabase(verifyResolution);
 }
 
-main().catch((error) => {
-  // Never print the connection URL or process.env in CI/ECS logs.
-  const code = String(error.code || error.meta?.code || 'UNKNOWN');
-  const safeCode = /^[a-zA-Z0-9_]{2,24}$/.test(code) ? code : 'UNKNOWN';
-  const detail = error.message?.startsWith('RECOVERY_ABORT_')
-    ? error.message
-    : `RECOVERY_ABORT_${stage.toUpperCase()}_ERROR code=${safeCode}`;
-  process.stderr.write(`${detail}\n`);
-  process.exitCode = 1;
-});
+module.exports = { preflight, verifyResolution };
+
+if (require.main === module) {
+  main().catch((error) => {
+    // Never print the connection URL or process.env in CI/ECS logs.
+    const code = String(error.code || error.meta?.code || 'UNKNOWN');
+    const safeCode = /^[a-zA-Z0-9_]{2,24}$/.test(code) ? code : 'UNKNOWN';
+    const detail = error.message?.startsWith('RECOVERY_ABORT_')
+      ? error.message
+      : `RECOVERY_ABORT_${stage.toUpperCase()}_ERROR code=${safeCode}`;
+    process.stderr.write(`${detail}\n`);
+    process.exitCode = 1;
+  });
+}
