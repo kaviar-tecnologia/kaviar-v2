@@ -15,6 +15,11 @@ on:
         description: "NO_PRISMA_CHANGES if none, or APPLY_PRISMA_MIGRATIONS if Prisma files changed"
         required: true
         type: string
+      migration_recovery_confirmation:
+        description: "Normally NONE. For #801 P3018 only: RECOVER_MANAGER_SCOPE_P3018_20261028"
+        required: false
+        default: "NONE"
+        type: string
 
 permissions:
   contents: read
@@ -359,11 +364,27 @@ jobs:
         env:
           PRISMA_CHANGED: ${{ needs.resolve-deploy-state.outputs.prisma_changed }}
           PRISMA_CONFIRMATION: ${{ inputs.prisma_confirmation }}
+          MIGRATION_RECOVERY_CONFIRMATION: ${{ inputs.migration_recovery_confirmation }}
         run: |
           set -euo pipefail
 
           echo "Prisma changed: ${PRISMA_CHANGED}"
           echo "Prisma confirmation: ${PRISMA_CONFIRMATION}"
+
+          case "${MIGRATION_RECOVERY_CONFIRMATION:-NONE}" in
+            NONE) ;;
+            RECOVER_MANAGER_SCOPE_P3018_20261028)
+              if [ "${PRISMA_CHANGED}" != "true" ]; then
+                echo "❌ RECOVERY_REQUIRES_PRISMA_CHANGES"
+                exit 1
+              fi
+              echo "✓ One-time #801 P3018 recovery explicitly requested"
+              ;;
+            *)
+              echo "❌ INVALID_MIGRATION_RECOVERY_CONFIRMATION"
+              exit 1
+              ;;
+          esac
 
           case "${PRISMA_CHANGED}" in
             false)
@@ -403,6 +424,7 @@ jobs:
     uses: ./.github/workflows/deploy-prisma-migrations.yml
     with:
       orchestrated_by_backend: true
+      migration_recovery_confirmation: ${{ inputs.migration_recovery_confirmation || 'NONE' }}
     secrets: inherit
 
   post-migration-revalidation:

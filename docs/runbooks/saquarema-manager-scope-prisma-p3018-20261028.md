@@ -14,6 +14,18 @@
 
 O hotfix remove o índice secundário redundante (a chave única já suporta leituras ordenadas) e torna a migração segura para instalação limpa **ou** para repetição sobre a tabela e o índice único parcialmente criados. Uma transação `BEGIN/COMMIT` mantém futuras execuções atômicas.
 
+## Caminho preferencial após aprovação: workflow protegido
+
+Após CI verde e merge do hotfix, disparar **Deploy Backend** no SHA exato da `main` com:
+
+- `confirmation`: `DEPLOY_PRODUCTION`
+- `prisma_confirmation`: `APPLY_PRISMA_MIGRATIONS`
+- `migration_recovery_confirmation`: `RECOVER_MANAGER_SCOPE_P3018_20261028`
+
+Este modo é autorizado exclusivamente pelo deploy principal, que exige `main` atualizado e cria/verifica novo snapshot privado. Antes de qualquer escrita, a task ECS inspeciona automaticamente o erro `P3018/42P07`, o registro falho único, as 11 colunas, 4 constraints, 2 índices e **zero linhas** na tabela parcialmente criada. Se uma condição não corresponder, interrompe sem executar `migrate resolve`. Somente se todas corresponderem, executa `migrate resolve --rolled-back`, verifica o registro e então executa `migrate deploy`. O workflow só publica o novo backend se a migração inteira terminar com sucesso.
+
+**Nunca** repetir a opção de recuperação por conveniência: após a regularização, os próximos deploys devem informar `NONE` (padrão). O comando manual abaixo é somente alternativa se o workflow protegido estiver indisponível, sujeito a nova revisão do estado.
+
 ## Procedimento autorizado de recuperação (operador com acesso auditável ao RDS)
 
 1. Confirmar que não existe outro deploy ou migração em execução e que o snapshot privado pré-#801 está `available`. Registrar o identificador e o commit exato do hotfix.
@@ -40,7 +52,7 @@ O hotfix remove o índice secundário redundante (a chave única já suporta lei
    ```
 
 3. **Parar e escalar** se o registro Prisma não estiver `failed`, se a tabela tiver linhas (alteração operacional inesperada), se a estrutura não corresponder à migração, se houver outro índice conflitante ou se o snapshot não estiver disponível. Não mascarar discrepâncias com `IF NOT EXISTS`.
-4. Com aprovação explícita do responsável e usando a imagem/credenciais confinadas à task ECS, apontadas ao **mesmo RDS**, executar apenas:
+4. Como alternativa manual excepcional, com aprovação explícita do responsável e usando a imagem/credenciais confinadas à task ECS, apontadas ao **mesmo RDS**, executar apenas:
 
    ```sh
    npx prisma migrate resolve --rolled-back 20261028203000_manager_neighborhood_scope_versions

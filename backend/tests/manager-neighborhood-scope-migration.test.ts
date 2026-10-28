@@ -7,6 +7,9 @@ const migration = readFileSync(
   'utf8',
 );
 const prismaSchema = readFileSync(join(__dirname, '../prisma/schema.prisma'), 'utf8');
+const recoveryScript = readFileSync(join(__dirname, '../scripts/repair-manager-scope-p3018.js'), 'utf8');
+const backendWorkflow = readFileSync(join(__dirname, '../../.github/workflows/deploy-backend.yml'), 'utf8');
+const migrationWorkflow = readFileSync(join(__dirname, '../../.github/workflows/deploy-prisma-migrations.yml'), 'utf8');
 
 describe('manager neighborhood scope migration safety', () => {
   it('does not create distinct indexes that PostgreSQL truncates to the same 63-byte name', () => {
@@ -25,5 +28,18 @@ describe('manager neighborhood scope migration safety', () => {
     expect(migration).toMatch(/CREATE TABLE IF NOT EXISTS/);
     expect(migration).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS/);
     expect(migration).toMatch(/pg_constraint/);
+  });
+
+  it('requires explicit backend workflow confirmation and strict read-only checks before Prisma repair', () => {
+    const marker = 'RECOVER_MANAGER_SCOPE_P3018_20261028';
+    expect(backendWorkflow).toContain('migration_recovery_confirmation:');
+    expect(backendWorkflow).toContain(marker);
+    expect(migrationWorkflow).toContain('orchestrated_by_backend');
+    expect(migrationWorkflow).toContain('node scripts/repair-manager-scope-p3018.js');
+    expect(migrationWorkflow).toContain(marker);
+    expect(recoveryScript).toContain(marker);
+    expect(recoveryScript).toContain("'UNEXPECTED_SCOPE_ROWS'");
+    expect(recoveryScript.indexOf('await withDatabase(preflight)'))
+      .toBeLessThan(recoveryScript.indexOf("spawnSync('npx'"));
   });
 });

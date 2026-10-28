@@ -7,6 +7,10 @@ on:
         required: false
         type: boolean
         default: false
+      migration_recovery_confirmation:
+        required: false
+        type: string
+        default: "NONE"
   workflow_dispatch:
 
 concurrency:
@@ -34,12 +38,17 @@ jobs:
       - name: Require backend-orchestrated migration invocation
         env:
           ORCHESTRATED_BY_BACKEND: ${{ inputs.orchestrated_by_backend }}
+          MIGRATION_RECOVERY_CONFIRMATION: ${{ inputs.migration_recovery_confirmation }}
         run: |
           set -euo pipefail
           if [ "$ORCHESTRATED_BY_BACKEND" != "true" ]; then
             echo "ABORT: PRISMA_MIGRATION_REQUIRES_BACKEND_ORCHESTRATION" >&2
             exit 1
           fi
+          case "${MIGRATION_RECOVERY_CONFIRMATION:-NONE}" in
+            NONE|RECOVER_MANAGER_SCOPE_P3018_20261028) ;;
+            *) echo "ABORT: INVALID_MIGRATION_RECOVERY_CONFIRMATION" >&2; exit 1 ;;
+          esac
           echo "✓ Migration called by backend deploy gate"
 
       - uses: actions/checkout@v5
@@ -190,6 +199,8 @@ jobs:
 
       - name: Register migration task definition
         id: migration-task
+        env:
+          INPUT_MIGRATION_RECOVERY_CONFIRMATION: ${{ inputs.migration_recovery_confirmation }}
         run: |
           set -euo pipefail
 
@@ -198,6 +209,7 @@ jobs:
           SECRET_ARN='${{ steps.rds.outputs.secret_arn }}'
           DB_HOST='${{ steps.rds.outputs.db_host }}'
           DB_PORT='${{ steps.rds.outputs.db_port }}'
+          RECOVERY_CONFIRMATION="${INPUT_MIGRATION_RECOVERY_CONFIRMATION:-NONE}"
 
           echo "Workflow SHA: ${GITHUB_SHA}"
           echo "Migration image (expected): ${MIGRATION_IMAGE}"
@@ -216,9 +228,13 @@ jobs:
             const db = process.env.MIGRATION_DB_NAME;
             const url = \"postgresql://\" + u + \":\" + p + \"@\" + h + \":\" + port + \"/\" + db;
             const {execSync} = require(\"child_process\");
+            const env = {...process.env, DATABASE_URL: url, MIGRATION_DB_USER: undefined, MIGRATION_DB_PASSWORD: undefined};
+            if (process.env.MIGRATION_RECOVERY_CONFIRMATION === \"RECOVER_MANAGER_SCOPE_P3018_20261028\") {
+              execSync(\"node scripts/repair-manager-scope-p3018.js\", {stdio: \"inherit\", env});
+            }
             execSync(\"npx prisma migrate deploy\", {
               stdio: \"inherit\",
-              env: {...process.env, DATABASE_URL: url, MIGRATION_DB_USER: undefined, MIGRATION_DB_PASSWORD: undefined}
+              env
             });
           "'
 
@@ -230,6 +246,7 @@ jobs:
             --arg dbHost "$DB_HOST" \
             --arg dbPort "$DB_PORT" \
             --arg dbName "$RDS_DATABASE" \
+            --arg recoveryConfirmation "$RECOVERY_CONFIRMATION" \
             --arg migrateCmd "$MIGRATE_CMD" '
               .taskDefinition
               | .family = $family
@@ -242,11 +259,12 @@ jobs:
                 ]
               | .containerDefinitions[0].environment = (
                   (.containerDefinitions[0].environment // [])
-                  | map(select(.name != "DATABASE_URL"))
+                  | map(select(.name != "DATABASE_URL" and .name != "MIGRATION_RECOVERY_CONFIRMATION"))
                   | . + [
                       { "name": "MIGRATION_DB_HOST", "value": $dbHost },
                       { "name": "MIGRATION_DB_PORT", "value": $dbPort },
-                      { "name": "MIGRATION_DB_NAME", "value": $dbName }
+                      { "name": "MIGRATION_DB_NAME", "value": $dbName },
+                      { "name": "MIGRATION_RECOVERY_CONFIRMATION", "value": $recoveryConfirmation }
                     ]
                 )
               | del(
