@@ -1,6 +1,7 @@
 import { pool } from '../db';
 import { PLATFORM_FEE_PERCENT } from './finance/territory/monetary';
 import { evaluateTerritorialManagerFinancialProfile } from './contracts/territorial-manager-financial-eligibility';
+import { neighborhoodInManagerFinancialScope } from './manager-neighborhood-scope';
 
 /**
  * Shadow calculation for the new 18% fee model.
@@ -94,6 +95,8 @@ export async function shadowCalculate(input: ShadowInput): Promise<void> {
               op.relationship_type, op.is_active, op.document_status,
               op.contract_status, op.terms_version, op.contract_url, op.pix_key,
               op.responsibility_terms_accepted_at, op.confidentiality_terms_accepted_at,
+              scope.id AS scope_version_id, scope.neighborhood_ids AS scope_neighborhood_ids,
+              r.origin_neighborhood_id,
               tfr.matrix_share_percent, tfr.regional_share_percent
        FROM rides_v2 r
        LEFT JOIN neighborhoods n ON n.id = r.origin_neighborhood_id
@@ -102,6 +105,13 @@ export async function shadowCalculate(input: ShadowInput): Promise<void> {
        LEFT JOIN admins a ON a.id = tma.admin_id
        LEFT JOIN operator_profiles op
          ON op.admin_id = tma.admin_id AND op.territory_id = n.territory_id
+       LEFT JOIN LATERAL (
+         SELECT v.id, v.neighborhood_ids
+         FROM territory_manager_neighborhood_scope_versions v
+         WHERE v.assignment_id = tma.id AND v.canceled_at IS NULL
+           AND v.effective_from <= NOW()
+         ORDER BY v.effective_from DESC LIMIT 1
+       ) scope ON TRUE
        LEFT JOIN territory_finance_rules tfr
          ON tfr.territory_id = n.territory_id AND tfr.is_active = true
        WHERE r.id = $1
@@ -119,11 +129,14 @@ export async function shadowCalculate(input: ShadowInput): Promise<void> {
     const profileEligibility = evaluateTerritorialManagerFinancialProfile(row);
     const adminEligible = row.admin_is_active === true && row.admin_role === 'TERRITORIAL_MANAGER';
     const profileBindingMatches = !row.operator_profile_id || row.operator_profile_id === row.profile_id;
+    const neighborhoodEligible = neighborhoodInManagerFinancialScope(
+      row.scope_version_id, row.scope_neighborhood_ids, row.origin_neighborhood_id,
+    );
     const financiallyEligible =
       assignmentStatus === 'active' &&
       adminEligible &&
       profileBindingMatches &&
-      profileEligibility.eligible;
+      profileEligibility.eligible && neighborhoodEligible;
 
     if (!territoryId || !assignmentId) {
       matrixPct = 100; managerPct = 0; allocationReason = 'no_manager';
@@ -132,7 +145,9 @@ export async function shadowCalculate(input: ShadowInput): Promise<void> {
     } else if (!financiallyEligible) {
       matrixPct = 100;
       managerPct = 0;
-      allocationReason = profileEligibility.reason
+      allocationReason = !neighborhoodEligible
+        ? 'manager_neighborhood_outside_scope'
+        : profileEligibility.reason
         ? `manager_ineligible_${profileEligibility.reason.toLowerCase()}`
         : 'manager_ineligible';
     } else {

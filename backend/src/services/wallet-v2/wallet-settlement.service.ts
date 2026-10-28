@@ -7,6 +7,7 @@ import { assertSettlementActive } from './settlement-gate';
 import { applyBasisPoints, PLATFORM_FEE_RATE_BPS, MANAGER_COMMISSION_RATE_BPS } from '../finance/territory/monetary';
 import { referenceMonthFromDate, COMPETENCE_TIMEZONE } from './fee-split.service';
 import { evaluateTerritorialManagerFinancialProfile } from '../contracts/territorial-manager-financial-eligibility';
+import { neighborhoodInManagerFinancialScope } from '../manager-neighborhood-scope';
 import { PromoWalletService } from './promo-wallet.service';
 import { allocatePromoFee } from './promo-fee-allocation';
 
@@ -128,18 +129,31 @@ export class WalletSettlementService {
              op.contract_url,
              op.pix_key,
              op.responsibility_terms_accepted_at,
-             op.confidentiality_terms_accepted_at
+             op.confidentiality_terms_accepted_at,
+             scope.id AS scope_version_id,
+             scope.neighborhood_ids AS scope_neighborhood_ids,
+             ride.origin_neighborhood_id
            FROM territory_manager_assignments tma
            JOIN admins a ON a.id = tma.admin_id
            LEFT JOIN operator_profiles op
              ON op.admin_id = tma.admin_id
             AND op.territory_id = tma.territory_id
+           LEFT JOIN LATERAL (
+             SELECT v.id, v.neighborhood_ids
+             FROM territory_manager_neighborhood_scope_versions v
+             WHERE v.assignment_id = tma.id
+               AND v.canceled_at IS NULL
+               AND v.effective_from <= $2
+             ORDER BY v.effective_from DESC
+             LIMIT 1
+           ) scope ON TRUE
+           LEFT JOIN rides_v2 ride ON ride.id = $3
            WHERE tma.territory_id = $1
              AND tma.status = 'active'
              AND tma.started_at <= $2
              AND (tma.ended_at IS NULL OR tma.ended_at > $2)
            FOR SHARE OF tma`,
-          [params.territoryId, recognizedAt]
+          [params.territoryId, recognizedAt, params.rideId]
         );
 
         if (assignments.length > 1) {
@@ -157,8 +171,13 @@ export class WalletSettlementService {
           const profileBindingMatches =
             !candidate.operator_profile_id ||
             candidate.operator_profile_id === candidate.profile_id;
+          const neighborhoodEligible = neighborhoodInManagerFinancialScope(
+            candidate.scope_version_id,
+            candidate.scope_neighborhood_ids,
+            candidate.origin_neighborhood_id,
+          );
 
-          if (adminEligible && profileBindingMatches && profileEligibility.eligible) {
+          if (adminEligible && profileBindingMatches && profileEligibility.eligible && neighborhoodEligible) {
             managerId = candidate.admin_id;
             managerAssignmentId = candidate.id;
           }
