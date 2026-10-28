@@ -3,8 +3,10 @@
  * de forma GENÉRICA (sem hardcode por cidade).
  *
  * PRIORIDADE (por segurança):
+ *   0) LIMITE MUNICIPAL de fonte oficial configurada por cidade/UF, com
+ *      conferência de código IBGE, nome e UF (falha fechada, sem OSM).
  *   1) LIMITE MUNICIPAL do OpenStreetMap (relação admin_level=8, cidade+UF) —
- *      proteção PRIMÁRIA. É o limite do município inteiro.
+ *      proteção para cidades sem fonte oficial configurada. É o limite do município inteiro.
  *   2) Fallback: envelope dos geofences JÁ EXISTENTES daquele TERRITÓRIO
  *      (isolado por neighborhoods.territory_id). Isto representa apenas a
  *      COBERTURA EXISTENTE — não necessariamente o limite municipal — e serve
@@ -42,7 +44,7 @@ export interface MunicipalBBoxResult {
 }
 
 const ALLOWED_HOSTS = new Set(OVERPASS_MIRRORS.map((u) => new URL(u).host));
-const MAX_BOUNDS_BYTES = 2 * 1024 * 1024;   // 2 MB (resposta 'out bb;' é pequena)
+const MAX_BOUNDS_BYTES = 2 * 1024 * 1024;   // 2 MB (OSM out bb / GeoJSON municipal oficial)
 const MAX_BOUNDS_ELEMENTS = 200;            // limite de elementos retornados
 // Extensão máxima plausível de um município (graus). Rejeita bounds absurdos.
 const MAX_SPAN_DEG = 3.0;
