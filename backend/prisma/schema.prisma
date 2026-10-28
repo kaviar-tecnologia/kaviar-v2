@@ -3632,7 +3632,6 @@ model territory_manager_neighborhood_scope_versions {
   assignment territory_manager_assignments @relation(fields: [assignment_id], references: [id], onDelete: Restrict)
 
   @@unique([assignment_id, effective_from])
-  @@index([assignment_id, effective_from(sort: Desc)])
 }
 
 model wallet_shadow_results {
