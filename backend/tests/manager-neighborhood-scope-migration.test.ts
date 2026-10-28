@@ -38,6 +38,8 @@ describe('manager neighborhood scope migration safety', () => {
     expect(migrationWorkflow).toContain('node scripts/repair-manager-scope-p3018.js');
     expect(migrationWorkflow).toContain(marker);
     expect(recoveryScript).toContain(marker);
+    expect(recoveryScript).toContain('new PrismaClient()');
+    expect(recoveryScript).not.toContain("require('pg')");
     expect(recoveryScript).toContain("'UNEXPECTED_SCOPE_ROWS'");
     expect(recoveryScript.indexOf('await withDatabase(preflight)'))
       .toBeLessThan(recoveryScript.indexOf("spawnSync('npx'"));
