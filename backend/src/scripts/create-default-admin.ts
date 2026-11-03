@@ -3,6 +3,13 @@ import bcrypt from 'bcryptjs';
 
 async function createDefaultAdmin() {
   try {
+    const defaultAdminEmail = process.env.ADMIN_DEFAULT_EMAIL || 'admin@kaviar.com';
+    const defaultAdminPassword = process.env.ADMIN_DEFAULT_PASSWORD;
+
+    if (!defaultAdminPassword) {
+      throw new Error('ADMIN_DEFAULT_PASSWORD deve estar configurada no ambiente');
+    }
+
     // Check if SUPER_ADMIN role exists
     let superAdminRole = await prisma.roles.findUnique({
       where: { name: 'SUPER_ADMIN' }
@@ -29,16 +36,16 @@ async function createDefaultAdmin() {
 
     // Check if default admin exists
     const existingAdmin = await prisma.admins.findUnique({
-      where: { email: 'admin@kaviar.com' }
+      where: { email: defaultAdminEmail }
     });
 
     if (!existingAdmin) {
-      const hashedPassword = await bcrypt.hash('admin123', 12);
+      const hashedPassword = await bcrypt.hash(defaultAdminPassword, 12);
       
       await prisma.admins.create({
         data: {
           name: 'Admin Kaviar',
-          email: 'admin@kaviar.com',
+          email: defaultAdminEmail,
           passwordHash: hashedPassword,
           roleId: superAdminRole.id,
           isActive: true,
@@ -46,8 +53,8 @@ async function createDefaultAdmin() {
       });
       
       console.log('✅ Admin padrão criado');
-      console.log('📧 Email: admin@kaviar.com');
-      console.log('🔑 Senha: admin123');
+      console.log(`📧 Email: ${defaultAdminEmail}`);
+      console.log('🔑 Senha: definida via ADMIN_DEFAULT_PASSWORD');
     } else {
       console.log('ℹ️  Admin padrão já existe');
     }

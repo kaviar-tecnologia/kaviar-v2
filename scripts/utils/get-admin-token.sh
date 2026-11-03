@@ -1,9 +1,18 @@
 #!/bin/bash
 # Script para obter token de admin
 
-API_URL="${1:-http://localhost:3003}"
-EMAIL="${2:-admin@kaviar.com}"
-PASSWORD="${3:-admin123}"
+API_URL="${1:-${API_URL:-http://localhost:3003}}"
+EMAIL="${2:-${ADMIN_EMAIL:-admin@kaviar.com}}"
+PASSWORD="${3:-${ADMIN_PASSWORD:-}}"
+
+if [ -z "$PASSWORD" ]; then
+  echo "❌ Informe a senha por argumento ou pela variável ADMIN_PASSWORD"
+  echo ""
+  echo "Exemplos:"
+  echo "  ADMIN_PASSWORD='sua-senha' $0"
+  echo "  $0 http://localhost:3003 admin@kaviar.com 'sua-senha'"
+  exit 1
+fi
 
 echo "🔑 Obtendo token de admin..."
 echo "API: $API_URL"
