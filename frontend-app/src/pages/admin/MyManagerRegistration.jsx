@@ -4,7 +4,7 @@ import {
   Alert, Box, Button, Card, CardContent, Checkbox, Chip, CircularProgress,
   FormControlLabel, MenuItem, TextField, Typography,
 } from '@mui/material';
-import { API_BASE_URL } from '../../config/api';
+import { managerPortalRequest } from '../../services/managerPortalApi';
 
 const GOLD = '#B8942E';
 const MISSING_LABELS = {
@@ -24,13 +24,8 @@ export default function MyManagerRegistration() {
   });
 
   const load = async () => {
-    const token = localStorage.getItem('kaviar_admin_token');
     try {
-      const res = await fetch(API_BASE_URL + '/api/admin/my-operator-profile/registration', {
-        headers: { Authorization: 'Bearer ' + token },
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'Não foi possível carregar o cadastro.');
+      const data = await managerPortalRequest('/api/admin/my-operator-profile/registration');
       setProfile(data.data);
       setForm(previous => ({
         ...previous, document_cpf: '', address: data.data.address || '',
@@ -52,14 +47,11 @@ export default function MyManagerRegistration() {
     if (!profile?.canEdit || saving) return;
     setError(''); setSuccess(''); setSaving(true);
     try {
-      const token = localStorage.getItem('kaviar_admin_token');
-      const res = await fetch(API_BASE_URL + '/api/admin/my-operator-profile/registration', {
+      const data = await managerPortalRequest('/api/admin/my-operator-profile/registration', {
         method: 'PATCH',
-        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'Não foi possível salvar o cadastro.');
       setProfile(data.data);
       setForm(previous => ({
         ...previous, document_cpf: '', address: data.data.address || '',

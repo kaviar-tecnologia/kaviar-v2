@@ -35,7 +35,8 @@ export async function authenticateAdmin(req: Request, res: Response, next: NextF
 
     const token = getBearerToken(req);
     if (!token) {
-      return res.status(401).json({ success: false, error: 'Token ausente' });
+      console.warn('[ADMIN_AUTH] rejected', { reason: 'missing_token', requestId: (req as any).requestId });
+      return res.status(401).json({ success: false, code: 'AUTH_TOKEN_MISSING', error: 'Token ausente' });
     }
 
     const decoded = jwt.verify(token, JWT_SECRET) as any;
@@ -43,11 +44,13 @@ export async function authenticateAdmin(req: Request, res: Response, next: NextF
     // Compatibilidade: token antigo pode ter adminId; novo usa userId
     const adminId = decoded.userId || decoded.adminId;
     if (!adminId) {
+      console.warn('[ADMIN_AUTH] rejected', { reason: 'missing_admin_id', requestId: (req as any).requestId });
       return res.status(401).json({ success: false, error: 'Token inválido' });
     }
 
     // Se vier userType e não for ADMIN, bloqueia
     if (decoded.userType && decoded.userType !== 'ADMIN') {
+      console.warn('[ADMIN_AUTH] rejected', { reason: 'wrong_user_type', requestId: (req as any).requestId });
       return res.status(403).json({ success: false, error: 'Acesso negado' });
     }
 
@@ -56,11 +59,13 @@ export async function authenticateAdmin(req: Request, res: Response, next: NextF
     });
     
     if (!admin || !admin.is_active) {
+      console.warn('[ADMIN_AUTH] rejected', { reason: 'inactive_or_missing_account', requestId: (req as any).requestId });
       return res.status(401).json({ success: false, error: 'Token inválido' });
     }
 
     // Invalidate sessions issued before password change
     if (isTokenStale(decoded.iat, admin.password_changed_at)) {
+      console.warn('[ADMIN_AUTH] rejected', { reason: 'password_changed', requestId: (req as any).requestId });
       return res.status(401).json({ success: false, error: 'Sessão expirada. Faça login novamente.' });
     }
 
@@ -75,8 +80,17 @@ export async function authenticateAdmin(req: Request, res: Response, next: NextF
 
     return next();
   } catch (err) {
-    console.error('❌ [AUTH] Erro ao verificar token');
-    return res.status(401).json({ success: false, error: 'Token inválido' });
+    if (err instanceof jwt.JsonWebTokenError) {
+      const expired = err instanceof jwt.TokenExpiredError;
+      console.warn('[ADMIN_AUTH] rejected', { reason: expired ? 'expired_token' : 'invalid_token', requestId: (req as any).requestId });
+      return res.status(401).json({
+        success: false,
+        code: expired ? 'AUTH_TOKEN_EXPIRED' : 'AUTH_TOKEN_INVALID',
+        error: expired ? 'Sessão expirada. Faça login novamente.' : 'Token inválido',
+      });
+    }
+    console.error('[ADMIN_AUTH] verification unavailable', { requestId: (req as any).requestId });
+    return res.status(503).json({ success: false, error: 'Não foi possível verificar a sessão. Tente novamente.' });
   }
 }
 

@@ -29,7 +29,7 @@ describe('KaviarAiPage — Chat KAVIAR', () => {
 
   it('sugestões adicionais existem como EXTRA_SUGGESTIONS', () => {
     expect(src).toContain('EXTRA_SUGGESTIONS');
-    expect(src).toContain('Quais e-mails novos chegaram?');
+    expect(src).toContain('Quantos e-mails novos chegaram?');
     expect(src).toContain('Há mensagens novas no WhatsApp?');
     expect(src).toContain('Quantos leads novos tivemos esta semana?');
     expect(src).toContain('Quais módulos existem na plataforma?');

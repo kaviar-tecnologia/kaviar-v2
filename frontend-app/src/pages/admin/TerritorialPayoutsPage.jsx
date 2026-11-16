@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Box, Typography, Tabs, Tab, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Chip, Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Alert, CircularProgress, Switch } from '@mui/material';
 import { API_BASE_URL } from '../../config/api';
 import { formatDate } from '../../utils/formatDate';
+import { resolveTerritorialRole } from '../../utils/territorialRole';
 
 const RECIPIENT_LABELS = { individual: 'Pessoa Física', company: 'Pessoa Jurídica', association: 'Associação' };
 const STATUS_COLORS = { calculated: '#D97706', requested: '#8B5CF6', approved: '#2563EB', paid: '#059669', received: '#047857', canceled: '#DC2626', pending: '#6B7280', verified: '#059669', rejected: '#DC2626' };
@@ -171,6 +172,7 @@ function ContractDataDiagnostic({ operatorId, token, headers }) {
       )}
       {warnings?.contractApplicabilityNote && <Alert severity="info" sx={{ mt: 1, '& .MuiAlert-message': { fontSize: 10 } }}>{warnings.contractApplicabilityNote}</Alert>}
       {warnings?.assignmentNote && <Alert severity="warning" sx={{ mt: 1, '& .MuiAlert-message': { fontSize: 10 } }}>{warnings.assignmentNote}</Alert>}
+      {warnings?.contractBlockReason && <Alert severity="warning" sx={{ mt: 1, '& .MuiAlert-message': { fontSize: 10 } }}>{warnings.contractBlockReason}</Alert>}
       {warnings?.financialActivation && <Alert severity="info" sx={{ mt: 1, '& .MuiAlert-message': { fontSize: 10 } }}>{warnings.financialActivation}</Alert>}
       <Box sx={{ mt: 1, display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
         {canGenerateContract ? (
@@ -183,7 +185,7 @@ function ContractDataDiagnostic({ operatorId, token, headers }) {
         ) : (
           <>
             <Alert severity="warning" sx={{ py: 0, flex: 1, '& .MuiAlert-message': { fontSize: 10 } }}>
-              Campos faltantes: {missingFields.join(', ')}
+              {missingFields.length ? `Campos faltantes: ${missingFields.join(', ')}` : 'Geração indisponível. Revise as informações acima.'}
             </Alert>
             <Button size="small" variant="outlined" onClick={() => { setForm({
               email: availableFields.email || '',
@@ -481,7 +483,7 @@ export default function TerritorialPayoutsPage() {
     if (d.success) {
       setOpForm(f => ({ ...f, admin_id: d.data.id, relationship_type: d.data.relationship_type || f.relationship_type }));
       setCreatedProfileId(d.data.operator_profile_id || null);
-      setTerritoryAdmins(prev => [...prev, { id: d.data.id, name: d.data.name, email: d.data.email, role: d.data.role || (roleType === 'manager' ? 'TERRITORIAL_MANAGER' : 'TERRITORIAL_OPERATOR'), is_active: true }]);
+      setTerritoryAdmins(prev => [...prev, { id: d.data.id, name: d.data.name, email: d.data.email, role: resolveTerritorialRole(d.data.role, roleType), is_active: true }]);
       setCreateAccess(false);
       setFeedback({ open: true, severity: 'success', message: roleType === 'manager' ? 'Acesso de Gestor criado. Complete os dados; contrato v1.2 permanece pendente e sem Ativação Financeira.' : 'Acesso de Operador criado. Complete os dados do perfil.' });
     } else setOpError(d.error || 'Erro ao criar acesso');

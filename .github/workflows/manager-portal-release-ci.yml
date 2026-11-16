@@ -1,0 +1,87 @@
+name: Manager Portal Release CI
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/manager-portal-release-ci.yml'
+      - 'backend/src/**'
+      - 'backend/prisma/**'
+      - 'backend/tests/manager-*.test.ts'
+      - 'frontend-app/src/**'
+
+permissions:
+  contents: read
+
+jobs:
+  manager-portal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgis/postgis:15-3.4
+        env:
+          POSTGRES_DB: manager_portal_test
+          POSTGRES_USER: manager_test
+          POSTGRES_PASSWORD: synthetic-ci
+          PGDATA: /files/manager-portal-test-pg
+        ports:
+          - 65432:5432
+        options: >-
+          --tmpfs /files
+          --health-cmd "pg_isready -U manager_test -d manager_portal_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://manager_test:synthetic-ci@127.0.0.1:65432/manager_portal_test
+      PGPASSWORD: synthetic-ci
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend-app/package-lock.json
+      - name: Install backend
+        working-directory: backend
+        run: npm ci
+      - name: Prepare disposable schema and uniqueness guards
+        working-directory: backend
+        run: |
+          npx prisma db push --skip-generate --accept-data-loss
+          psql -h 127.0.0.1 -p 65432 -U manager_test -d manager_portal_test -v ON_ERROR_STOP=1 \
+            -f prisma/migrations/20261116193000_manager_regularization_uniqueness/migration.sql
+          psql -h 127.0.0.1 -p 65432 -U manager_test -d manager_portal_test -v ON_ERROR_STOP=1 -c \
+            'CREATE TABLE IF NOT EXISTS admin_audit_logs (id SERIAL PRIMARY KEY, admin_id TEXT NOT NULL, admin_email TEXT, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, old_value JSONB, new_value JSONB, reason TEXT, ip_address TEXT, user_agent TEXT, created_at TIMESTAMPTZ DEFAULT NOW())'
+      - name: Test portal and regularization integration sequentially
+        working-directory: backend
+        env:
+          RUN_MANAGER_PORTAL_PG_INTEGRATION: '1'
+        run: |
+          npx vitest run tests/manager-portal-postgres.integration.test.ts
+          npx vitest run tests/manager-regularization-postgres.integration.test.ts
+      - name: Test backend regressions
+        working-directory: backend
+        run: >-
+          npx vitest run tests/manager-portal-isolated-flow.test.ts
+          tests/kaviar-ai-chat-access.test.ts tests/territorial-manager-profile-state.test.ts
+          tests/territorial-manager-contract-v1_2.test.ts
+      - name: Typecheck and build backend
+        working-directory: backend
+        run: |
+          npx tsc --noEmit -p tsconfig.build.json
+          npm run build
+      - name: Install frontend
+        working-directory: frontend-app
+        run: npm ci
+      - name: Test frontend regressions
+        working-directory: frontend-app
+        run: npm test
+      - name: Typecheck and build frontend
+        working-directory: frontend-app
+        run: |
+          npm run typecheck
+          npm run build

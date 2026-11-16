@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { resolveTerritorialRole } from '../utils/territorialRole';
 
 describe('ANGEL_VIEWER retirement — frontend guardrails', () => {
   const adminApp = readFileSync(resolve(__dirname, '../components/admin/AdminApp.jsx'), 'utf8');
@@ -29,7 +30,10 @@ describe('ANGEL_VIEWER retirement — frontend guardrails', () => {
   });
 
   it('não usa ANGEL_VIEWER como fallback de acesso territorial', () => {
-    expect(payouts).toContain("role: d.data.role || 'TERRITORIAL_OPERATOR'");
+    expect(payouts).toContain('role: resolveTerritorialRole(d.data.role, roleType)');
+    expect(resolveTerritorialRole(null, 'manager')).toBe('TERRITORIAL_MANAGER');
+    expect(resolveTerritorialRole(null, 'operator')).toBe('TERRITORIAL_OPERATOR');
+    expect(resolveTerritorialRole('TERRITORIAL_MANAGER', 'operator')).toBe('TERRITORIAL_MANAGER');
     expect(payouts).not.toContain("'ANGEL_VIEWER'");
   });
 

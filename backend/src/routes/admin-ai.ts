@@ -5,6 +5,7 @@ import {
   allowExecutiveConfirmedAction,
   allowExecutiveRegulatorySearch,
   allowExecutiveReadAccess,
+  requireRole,
   requireSuperAdmin,
 } from '../middlewares/auth';
 import { askKaviarAi } from '../services/ai/kaviar-ai.service';
@@ -116,7 +117,7 @@ const MAX_QUESTION_LENGTH = 1000;
 // Retorna undefined se OPENAI_API_KEY não estiver definida.
 const modelProvider = createOpenAiProviderIfConfigured();
 
-router.post('/chat', async (req: Request, res: Response) => {
+router.post('/chat', requireRole(['SUPER_ADMIN', 'FINANCE']), async (req: Request, res: Response) => {
   try {
     const admin = (req as any).admin;
 

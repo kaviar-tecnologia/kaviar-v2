@@ -28,6 +28,7 @@ export function requireTerritoryScope(req: Request, res: Response, next: NextFun
     if (!scope || (!hasTerritories && !hasNeighborhoods)) {
       return res.status(403).json({
         success: false,
+        code: 'TERRITORY_SCOPE_REQUIRED',
         error: 'Sem território vinculado. Acesso negado.',
       });
     }

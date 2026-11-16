@@ -29,6 +29,20 @@ function maskCpf(cpf: string | null): string | null {
   return '***' + cpf.slice(-4);
 }
 
+function managerTemplateBlockReason(profile: {
+  contract_status: string;
+  contract_url: string | null;
+  contract_signed_at: Date | null;
+}): string | null {
+  if (profile.contract_url || profile.contract_signed_at || profile.contract_status === 'signed') {
+    return 'Há registro contratual anterior. Preserve o histórico e solicite revisão antes de gerar uma nova minuta.';
+  }
+  if (!['pending', 'available', 'rejected'].includes(profile.contract_status)) {
+    return 'O estado contratual atual não permite gerar uma nova minuta.';
+  }
+  return null;
+}
+
 async function findManagerAssignmentsForContract(adminId: string, territoryId: string, operatorProfileId: string) {
   const now = new Date();
   return prisma.territory_manager_assignments.findMany({
@@ -1037,7 +1051,8 @@ router.get('/operators/:id/contract-data', async (req: Request, res: Response) =
     if (isTerritorialManager && managerAssignments.length === 0) missingFields.push('manager_assignment');
     if (isTerritorialManager && managerAssignments.length > 1) missingFields.push('manager_assignment_ambiguous');
 
-    const canGenerateContract = missingFields.length === 0 && Boolean(managerAssignment);
+    const contractBlockReason = managerTemplateBlockReason(operator);
+    const canGenerateContract = missingFields.length === 0 && Boolean(managerAssignment) && !contractBlockReason;
     const territoryVersion = operator.territory
       ? buildTerritorySnapshotVersion(operator.territory)
       : null;
@@ -1082,6 +1097,7 @@ router.get('/operators/:id/contract-data', async (req: Request, res: Response) =
           assignmentNote: isTerritorialManager && managerAssignments.length !== 1
             ? 'É necessário exatamente um assignment territorial vigente e compatível para gerar a minuta v1.2.'
             : null,
+          contractBlockReason,
           financialActivation: 'A geração/assinatura da minuta v1.2 não cria Ativação Financeira.',
         },
       },
@@ -1142,19 +1158,13 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
     }
     const managerAssignment = managerAssignments[0];
 
-    const hasFormalSignedContract =
-      operator.contract_status === 'signed' && Boolean(operator.contract_url);
-    if (hasFormalSignedContract) {
+    const contractBlockReason = managerTemplateBlockReason(operator);
+    if (contractBlockReason) {
       return res.status(409).json({
         success: false,
-        error: 'Contrato formal já assinado. Não é possível gerar novo modelo sem aditivo ou procedimento de substituição.',
+        error: contractBlockReason,
       });
     }
-
-    const legacyOnlineOnlySigned =
-      operator.relationship_type === 'territorial_manager' &&
-      operator.contract_status === 'signed' &&
-      !operator.contract_url;
 
     const email = operator.email || operator.admin.email || null;
     const telefone = operator.phone || operator.admin.phone || null;
@@ -1317,7 +1327,7 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
     const pdfBuffer = await pdfDone;
     const templateHash = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
 
-    const s3Key = `manager-contract-templates/${req.params.id}/${TERRITORIAL_MANAGER_CONTRACT_VERSION}/${Date.now()}.pdf`;
+    const s3Key = `manager-contract-templates/${req.params.id}/${TERRITORIAL_MANAGER_CONTRACT_VERSION}/${crypto.randomUUID()}.pdf`;
     await contractS3.send(new PutObjectCommand({
       Bucket: contractBucket,
       Key: s3Key,
@@ -1334,8 +1344,14 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
     }));
 
     const previousKey = operator.contract_template_url || null;
-    await prisma.operator_profiles.update({
-      where: { id: req.params.id },
+    const updated = await prisma.operator_profiles.updateMany({
+      where: {
+        id: req.params.id,
+        updated_at: operator.updated_at,
+        contract_status: operator.contract_status,
+        contract_url: null,
+        contract_signed_at: null,
+      },
       data: {
         contract_template_url: s3Key,
         contract_status: 'available',
@@ -1343,6 +1359,13 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
         updated_at: new Date(),
       },
     });
+
+    if (updated.count !== 1) {
+      return res.status(409).json({
+        success: false,
+        error: 'O cadastro contratual foi alterado durante a geração. Revise os dados antes de tentar novamente.',
+      });
+    }
 
     const ctx = auditCtx(req);
     audit({
@@ -1374,7 +1397,7 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
         },
         template_sha256: templateHash,
         financial_activation_created: false,
-        legacy_online_only_signed_migrated: legacyOnlineOnlySigned,
+        legacy_online_only_signed_migrated: false,
         method: 'auto_generate_canonical_v1_2',
       } as any,
       ipAddress: ctx.ip,
@@ -1411,7 +1434,7 @@ router.post('/operators/:id/generate-contract-template', async (req: Request, re
         assignment_id: input.territory.assignmentId,
         assignment_status: input.territory.assignmentStatus,
         financial_activation_created: false,
-        legacy_online_only_signed_migrated: legacyOnlineOnlySigned,
+        legacy_online_only_signed_migrated: false,
         whatsappSent,
         generated: true,
       },
