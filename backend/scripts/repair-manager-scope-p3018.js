@@ -9,12 +9,16 @@
 'use strict';
 
 const { spawnSync } = require('node:child_process');
-const { readdirSync } = require('node:fs');
+const { readdirSync, readFileSync } = require('node:fs');
+const { createHash } = require('node:crypto');
 const { join } = require('node:path');
 const { PrismaClient } = require('@prisma/client');
 
 const MIGRATION = '20261028203000_manager_neighborhood_scope_versions';
 const CONFIRMATION = 'RECOVER_MANAGER_SCOPE_P3018_20261028';
+const EMPTY_CONFIRMATION = 'RECOVER_MANAGER_SCOPE_EMPTY_20261028';
+const FAILED_CHECKSUM = 'bef0f3b23cf61ea503a79888660a96180e1636ded16bd6f471cca0af3c27cc85';
+const CORRECTED_CHECKSUM = '607ac2f7b56b2b8f1a33acec4d7ce72ba7dd835c2a93c7e81cfa30109455987b';
 const TABLE = 'territory_manager_neighborhood_scope_versions';
 const UNIQUE_INDEX = `${TABLE}_assignment_id_effective_from_key`.slice(0, 63);
 const EXPECTED_COLUMNS = [
@@ -36,27 +40,37 @@ async function withDatabase(task) {
   try {
     await prisma.$connect();
     let queryNumber = 0;
-    return await task({
-      query: async (sql, params = []) => {
-        stage = `read_query_${++queryNumber}`;
-        return { rows: await prisma.$queryRawUnsafe(sql, ...params) };
-      },
-    });
+    return await prisma.$transaction(async tx => {
+      await tx.$executeRawUnsafe('SET TRANSACTION READ ONLY');
+      return task({
+        query: async (sql, params = []) => {
+          stage = `read_query_${++queryNumber}`;
+          return { rows: await tx.$queryRawUnsafe(sql, ...params) };
+        },
+      });
+    }, { isolationLevel: 'RepeatableRead', timeout: 30000 });
   } finally {
     await prisma.$disconnect();
   }
 }
 
-async function preflight(client) {
+async function preflight(client, confirmation = CONFIRMATION) {
+  assert([CONFIRMATION, EMPTY_CONFIRMATION].includes(confirmation), 'EXPLICIT_CONFIRMATION_REQUIRED');
+  const migrationFile = readFileSync(join(__dirname, '../prisma/migrations', MIGRATION, 'migration.sql'));
+  assert(createHash('sha256').update(migrationFile).digest('hex') === CORRECTED_CHECKSUM,
+    'CORRECTED_MIGRATION_CHECKSUM_MISMATCH');
   const { rows: migrations } = await client.query(
-    `SELECT finished_at, rolled_back_at, logs
+    `SELECT finished_at, rolled_back_at, logs, checksum, applied_steps_count
      FROM public._prisma_migrations WHERE migration_name = $1`,
     [MIGRATION],
   );
   assert(migrations.length === 1, 'UNEXPECTED_MIGRATION_HISTORY');
   assert(migrations[0].finished_at === null && migrations[0].rolled_back_at === null,
     'MIGRATION_NOT_IN_FAILED_STATE');
-  assert(/42P07|P3018|already exists/.test(migrations[0].logs || ''),
+  assert(migrations[0].checksum === FAILED_CHECKSUM && migrations[0].applied_steps_count === 0,
+    'FAILED_MIGRATION_MISMATCH');
+  assert(/42P07/.test(migrations[0].logs || '') &&
+    /territory_manager_neighborhood_scope_versions_assignment_id_eff/.test(migrations[0].logs || ''),
     'FAILURE_CAUSE_DOES_NOT_MATCH');
 
   const { rows: appliedMigrations } = await client.query(
@@ -68,10 +82,31 @@ async function preflight(client) {
     .filter((entry) => entry.isDirectory()).map((entry) => entry.name);
   assert(diskMigrations.filter((name) => name !== MIGRATION && !appliedNames.has(name)).length === 0,
     'OTHER_UNAPPLIED_MIGRATIONS');
+  const { rows: failedOthers } = await client.query(
+    `SELECT migration_name FROM public._prisma_migrations
+     WHERE finished_at IS NULL AND rolled_back_at IS NULL AND migration_name <> $1`,
+    [MIGRATION],
+  );
+  assert(failedOthers.length === 0, 'OTHER_FAILED_MIGRATIONS');
 
   const { rows: tables } = await client.query(
     `SELECT to_regclass('public.territory_manager_neighborhood_scope_versions')::text AS name`,
   );
+  if (confirmation === EMPTY_CONFIRMATION) {
+    assert(tables.length === 1 && tables[0].name === null, 'EXPECTED_EMPTY_TABLE_MISSING');
+    const { rows: objects } = await client.query(
+      `SELECT c.relname::text AS name FROM pg_class c
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'public' AND c.relname LIKE 'territory_manager_neighborhood_scope_versions%'
+       UNION ALL
+       SELECT t.typname::text AS name FROM pg_type t
+       JOIN pg_namespace n ON n.oid = t.typnamespace
+       WHERE n.nspname = 'public' AND t.typname LIKE 'territory_manager_neighborhood_scope_versions%'`,
+    );
+    assert(objects.length === 0, 'UNEXPECTED_SCOPE_OBJECTS');
+    process.stdout.write('RECOVERY_PREFLIGHT_VALIDATED: failed checksum, absent scope objects, no other pending migrations\n');
+    return;
+  }
   assert(tables[0]?.name !== null, 'PARTIAL_TABLE_MISSING');
 
   const { rows: columns } = await client.query(
@@ -131,11 +166,11 @@ async function verifyResolution(client) {
 }
 
 async function main() {
-  assert(process.env.MIGRATION_RECOVERY_CONFIRMATION === CONFIRMATION,
+  assert([CONFIRMATION, EMPTY_CONFIRMATION].includes(process.env.MIGRATION_RECOVERY_CONFIRMATION),
     'EXPLICIT_CONFIRMATION_REQUIRED');
   assert(process.env.DATABASE_URL?.startsWith('postgresql://'), 'DATABASE_URL_MISSING');
 
-  await withDatabase(preflight);
+  await withDatabase(client => preflight(client, process.env.MIGRATION_RECOVERY_CONFIRMATION));
 
   // Only Prisma's migration-history operation writes here; table and rows stay intact.
   stage = 'resolve';
