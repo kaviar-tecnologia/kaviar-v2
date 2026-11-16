@@ -16,7 +16,7 @@ on:
         required: true
         type: string
       migration_recovery_confirmation:
-        description: "Normally NONE. For #801 P3018 only: RECOVER_MANAGER_SCOPE_P3018_20261028"
+        description: "Normally NONE. Recovery-only empty state: RECOVER_MANAGER_SCOPE_EMPTY_20261028"
         required: false
         default: "NONE"
         type: string
@@ -373,7 +373,7 @@ jobs:
 
           case "${MIGRATION_RECOVERY_CONFIRMATION:-NONE}" in
             NONE) ;;
-            RECOVER_MANAGER_SCOPE_P3018_20261028)
+            RECOVER_MANAGER_SCOPE_P3018_20261028|RECOVER_MANAGER_SCOPE_EMPTY_20261028)
               if [ "${PRISMA_CHANGED}" != "true" ]; then
                 echo "❌ RECOVERY_REQUIRES_PRISMA_CHANGES"
                 exit 1
@@ -587,6 +587,7 @@ jobs:
       - revalidate-target-commit
     if: |
       always() &&
+      inputs.migration_recovery_confirmation != 'RECOVER_MANAGER_SCOPE_EMPTY_20261028' &&
       needs.validate-inputs.result == 'success' &&
       needs.validate-target-commit.result == 'success' &&
       needs.resolve-production-state.result == 'success' &&

@@ -41,7 +41,9 @@ describe('manager neighborhood scope migration safety', () => {
     expect(recoveryScript).toContain('new PrismaClient()');
     expect(recoveryScript).not.toContain("require('pg')");
     expect(recoveryScript).toContain("'UNEXPECTED_SCOPE_ROWS'");
-    expect(recoveryScript.indexOf('await withDatabase(preflight)'))
+    expect(recoveryScript.indexOf('await withDatabase(client => preflight('))
       .toBeLessThan(recoveryScript.indexOf("spawnSync('npx'"));
+    expect(backendWorkflow).toContain("inputs.migration_recovery_confirmation != 'RECOVER_MANAGER_SCOPE_EMPTY_20261028'");
+    expect(migrationWorkflow).toContain('RECOVER_MANAGER_SCOPE_EMPTY_20261028');
   });
 });
