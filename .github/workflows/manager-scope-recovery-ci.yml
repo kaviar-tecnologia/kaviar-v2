@@ -1,0 +1,46 @@
+name: Manager Scope Recovery CI
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/manager-scope-recovery-ci.yml'
+      - '.github/workflows/deploy-backend.yml'
+      - '.github/workflows/deploy-prisma-migrations.yml'
+      - 'backend/scripts/repair-manager-scope-p3018.js'
+      - 'backend/prisma/migrations/20261028203000_manager_neighborhood_scope_versions/**'
+      - 'backend/tests/manager-neighborhood-*.test.ts'
+      - 'backend/tests/fixtures/manager-scope-original-migration.sql'
+
+permissions:
+  contents: read
+
+jobs:
+  recovery-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://ci@127.0.0.1:65433/scope_recovery_vitest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install dependencies and generate Prisma client
+        run: npm ci
+      - name: Test preflight, migration safety and settlement behavior
+        run: >-
+          npx vitest run
+          tests/manager-neighborhood-recovery-preflight.test.ts
+          tests/manager-neighborhood-scope-migration.test.ts
+          tests/manager-neighborhood-scope.test.ts
+          tests/manager-neighborhood-settlement.test.ts
+      - name: Typecheck backend
+        run: npx tsc --noEmit -p tsconfig.build.json
+      - name: Build backend
+        run: npm run build
