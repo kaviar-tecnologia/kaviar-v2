@@ -14,7 +14,8 @@ describe('TerritoryDetailPage regulatory notes field', () => {
   });
 
   it('syncs the current territory value into the field state and persists the latest value on blur', () => {
-    expect(src).toContain('setRegulatoryNotes(t.regulatory_notes || \'\')');
+    expect(src).toContain("setRegulatoryNotes(territory?.regulatory_notes || '')");
+    expect(src).toContain('[territory?.regulatory_notes]');
     expect(src).toContain('const nextValue = regulatoryNotes;');
     expect(src).toContain('regulatory_notes: nextValue');
     expect(src).toContain('setTerritory((prev) => prev ? { ...prev, regulatory_notes: updatedValue } : prev);');

@@ -26,7 +26,12 @@ export async function applyTerritoryScope(req: Request, _res: Response, next: Ne
     // TERRITORIAL_OPERATOR / TERRITORIAL_MANAGER: falha no resolver = scope vazio (deny-by-default)
     const admin = (req as any).admin;
     if (admin?.role === 'TERRITORIAL_OPERATOR' || admin?.role === 'TERRITORIAL_MANAGER') {
-      (req as any).territoryScope = { territoryIds: [], neighborhoodIds: [], accessLevel: 'none' };
+      console.error('[TERRITORY_SCOPE] resolution failed', { requestId: (req as any).requestId });
+      return _res.status(503).json({
+        success: false,
+        code: 'TERRITORY_SCOPE_UNAVAILABLE',
+        error: 'Não foi possível verificar o acesso territorial. Tente novamente.',
+      });
     } else {
       // Demais roles: fail-open para backward compat
       (req as any).territoryScope = null;

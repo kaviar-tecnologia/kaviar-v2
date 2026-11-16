@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Typography, Card, CardContent, Chip, Button, Alert, CircularProgress, Grid } from '@mui/material';
 import { CheckCircle, Block, ArrowBack } from '@mui/icons-material';
-import { API_BASE_URL } from '../../config/api';
 import { formatDate } from '../../utils/formatDate';
+import { managerPortalRequest } from '../../services/managerPortalApi';
 
 const GOLD = '#B8942E';
 
@@ -64,17 +64,26 @@ const LIMITS = [
 export default function MyContractPage() {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [profileError, setProfileError] = useState('');
+  const [sessionError, setSessionError] = useState(false);
   const [accepting, setAccepting] = useState(false);
-  const token = localStorage.getItem('kaviar_admin_token');
   const adminData = localStorage.getItem('kaviar_admin_data');
   const admin = adminData ? JSON.parse(adminData) : null;
 
-  const fetchProfile = () => {
-    fetch(`${API_BASE_URL}/api/admin/my-operator-profile`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(d => { if (d.success) setProfile(d.data); })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+  const fetchProfile = async () => {
+    setLoading(true);
+    setProfileError('');
+    setSessionError(false);
+    try {
+      const data = await managerPortalRequest('/api/admin/my-operator-profile');
+      setProfile(data.data);
+    } catch (error) {
+      setProfile(null);
+      setProfileError(error.message || 'Não foi possível consultar o perfil. Tente novamente.');
+      setSessionError(error.status === 401);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { fetchProfile(); }, []);
@@ -82,21 +91,30 @@ export default function MyContractPage() {
   const handleAccept = async () => {
     setAccepting(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/my-operator-profile/accept-terms`, {
-        method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      await managerPortalRequest('/api/admin/my-operator-profile/accept-terms', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
       });
-      const data = await res.json();
-      if (data.success) fetchProfile();
-    } catch {}
+      fetchProfile();
+    } catch (error) { alert(error.message || 'Não foi possível registrar o aceite.'); }
     setAccepting(false);
   };
 
   if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}><CircularProgress sx={{ color: GOLD }} /></Box>;
 
+  if (profileError) return (
+    <Box sx={{ mt: 4 }}>
+      <Typography variant="h5" sx={{ color: GOLD, fontWeight: 800, mb: 2 }}>📋 Meu Contrato</Typography>
+      <Alert severity="error">{profileError}</Alert>
+      {sessionError
+        ? <Button component={Link} to="/admin/login" state={{ from: { pathname: '/admin/meu-contrato' } }}>Entrar novamente</Button>
+        : <Button onClick={fetchProfile}>Tentar novamente</Button>}
+    </Box>
+  );
+
   if (!profile) return (
     <Box sx={{ mt: 4 }}>
       <Typography variant="h5" sx={{ color: GOLD, fontWeight: 800, mb: 2 }}>📋 Meu Contrato</Typography>
-      <Alert severity="info">Seu perfil de operador está sendo preparado. Tente novamente em instantes.</Alert>
+      <Alert severity="info">Nenhum perfil contratual foi encontrado. Solicite à central a revisão do seu cadastro e território.</Alert>
     </Box>
   );
 
@@ -170,11 +188,11 @@ export default function MyContractPage() {
             <Card sx={{ mb: 2, border: '1px solid #E8E5DE', borderRadius: 2 }}>
               <CardContent sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <Box>
-                  <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#1A1A1A' }}>Contrato formalizado</Typography>
+                  <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#1A1A1A' }}>{profile.contract_status === 'signed' ? 'Contrato formalizado' : 'Arquivo contratual anterior'}</Typography>
                   <Typography sx={{ fontSize: 11, color: '#6B7280' }}>PDF disponível para visualização</Typography>
                 </Box>
                 <Button variant="outlined" size="small" sx={{ borderColor: GOLD, color: GOLD, fontWeight: 600, '&:hover': { bgcolor: 'rgba(184,148,46,0.06)', borderColor: GOLD } }}
-                  onClick={async () => { try { const res = await fetch(`${API_BASE_URL}/api/admin/my-operator-profile/contract-url`, { headers: { Authorization: `Bearer ${token}` } }); const data = await res.json(); if (data.success && data.data?.url) window.open(data.data.url, '_blank'); else alert('Contrato não disponível.'); } catch { alert('Erro ao abrir contrato.'); } }}>
+                  onClick={async () => { try { const data = await managerPortalRequest('/api/admin/my-operator-profile/contract-url'); if (data.data?.url) window.open(data.data.url, '_blank'); else alert('Contrato não disponível.'); } catch (error) { alert(error.message || 'Erro ao abrir contrato.'); } }}>
                   Abrir contrato
                 </Button>
               </CardContent>
@@ -197,16 +215,16 @@ export default function MyContractPage() {
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
                   <Box>
                     <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#1A1A1A' }}>Modelo de contrato disponível</Typography>
-                    <Typography sx={{ fontSize: 11, color: '#6B7280' }}>Baixe a versão {profile.terms_version || 'v1.2'}, assine e envie o PDF assinado abaixo.</Typography>
+                    <Typography sx={{ fontSize: 11, color: '#6B7280' }}>{profile.contract_signed_at ? 'Registro contratual anterior: consulte a central antes de um novo envio.' : `Baixe a versão ${profile.terms_version || 'disponível'}, confira as condições e consulte a central antes da assinatura.`}</Typography>
                   </Box>
                   <Button variant="outlined" size="small" sx={{ borderColor: '#3B82F6', color: '#3B82F6' }}
-                    onClick={async () => { try { const res = await fetch(`${API_BASE_URL}/api/admin/my-operator-profile/contract-template-url`, { headers: { Authorization: `Bearer ${token}` } }); const data = await res.json(); if (data.success && data.data?.url) window.open(data.data.url, '_blank'); else alert('Modelo não disponível.'); } catch { alert('Erro ao abrir modelo.'); } }}>
+                    onClick={async () => { try { const data = await managerPortalRequest('/api/admin/my-operator-profile/contract-template-url'); if (data.data?.url) window.open(data.data.url, '_blank'); else alert('Modelo não disponível.'); } catch (error) { alert(error.message || 'Erro ao abrir modelo.'); } }}>
                     Baixar modelo
                   </Button>
                 </Box>
 
                 {/* Upload do PDF assinado */}
-                {['available', 'rejected'].includes(profile.contract_status) && (
+                {['available', 'rejected'].includes(profile.contract_status) && !profile.contract_signed_at && profile.terms_version === 'v1.2' && (
                   <Box sx={{ mt: 1.5, p: 1.5, bgcolor: '#F9FAFB', borderRadius: 1, border: '1px dashed #D1D5DB' }}>
                     <Typography sx={{ fontSize: 12, fontWeight: 600, color: '#374151', mb: 1 }}>Enviar contrato assinado</Typography>
                     {profile.contract_status === 'rejected' && profile.contract_rejection_reason && (
@@ -222,11 +240,9 @@ export default function MyContractPage() {
                       try {
                         const formData = new FormData();
                         formData.append('file', file);
-                        const res = await fetch(`${API_BASE_URL}/api/admin/my-operator-profile/submit-contract`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData });
-                        const data = await res.json();
-                        if (data.success) { alert('Contrato enviado com sucesso! Aguarde a análise.'); fetchProfile(); }
-                        else alert(data.error || 'Erro ao enviar contrato.');
-                      } catch { alert('Erro de conexão ao enviar contrato.'); }
+                        await managerPortalRequest('/api/admin/my-operator-profile/submit-contract', { method: 'POST', body: formData });
+                        alert('Contrato enviado com sucesso! Aguarde a análise.'); fetchProfile();
+                      } catch (error) { alert(error.message || 'Erro de conexão ao enviar contrato.'); }
                       e.target.value = '';
                     }} />
                     <Button variant="contained" size="small" sx={{ bgcolor: GOLD, '&:hover': { bgcolor: '#9A7B24' } }}

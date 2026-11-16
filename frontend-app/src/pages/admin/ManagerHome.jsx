@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Container, Typography, Box, Card, CardContent, Grid, Button, CircularProgress, Alert, TextField, MenuItem, Dialog, DialogTitle, DialogContent, DialogActions, Chip } from '@mui/material';
 import { DirectionsCar, Explore, Handshake, Apartment, Description, PersonAdd, AddBusiness, GroupAdd, AccountBalance, Star, Pets, Shield, Storefront, ChatBubble, BarChart, Public } from '@mui/icons-material';
 import { API_BASE_URL } from '../../config/api';
+import { managerPortalRequest } from '../../services/managerPortalApi';
 import { AR_PLACES_DASHBOARD_CARD, canAccessArPlaces } from './arPlacesPermissions';
 
 const GOLD = '#C99A16';
@@ -27,6 +28,9 @@ export default function ManagerHome() {
   const [territoryLoaded, setTerritoryLoaded] = useState(false);
   const [myTerritories, setMyTerritories] = useState([]);
   const [territoriesLoaded, setTerritoriesLoaded] = useState(false);
+  const [territoriesError, setTerritoriesError] = useState(false);
+  const [referralError, setReferralError] = useState('');
+  const [sessionError, setSessionError] = useState(false);
   const [myNeighborhoods, setMyNeighborhoods] = useState([]);
   const [referral, setReferral] = useState(null);
   const [drafts, setDrafts] = useState(null);
@@ -47,67 +51,76 @@ export default function ManagerHome() {
   useEffect(() => { fetchData(); }, []);
 
   const fetchData = async () => {
+    setLoading(true);
+    setError('');
+    setReferralError('');
+    setSessionError(false);
+    setTerritoriesLoaded(false);
+    setTerritoriesError(false);
+    setMyTerritories([]);
+    setMyNeighborhoods([]);
+    setReferral(null);
+    setMetrics(null);
+    setTerritoryData(null);
+    setDrafts(null);
+    setTeamStats(null);
+    setTeamMembers([]);
     try {
-      setLoading(true);
-      const [metricsRes, territoryRes, referralRes, draftsRes, teamStatsRes, teamRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/admin/dashboard/metrics`, { headers }),
-        fetch(`${API_BASE_URL}/api/admin/dashboard/territory`, { headers }),
-        fetch(`${API_BASE_URL}/api/admin/operator/referrals`, { headers }),
-        fetch(`${API_BASE_URL}/api/admin/manager/drafts`, { headers }),
-        fetch(`${API_BASE_URL}/api/admin/manager/finance/team-lead-stats`, { headers }),
-        fetch(`${API_BASE_URL}/api/admin/manager/finance/team`, { headers }),
-      ]);
-
-      if (metricsRes.status === 403) {
-        setError('Sem território vinculado. Solicite acesso ao administrador.');
-        return;
+      const paths = [
+        '/api/admin/dashboard/metrics',
+        '/api/admin/dashboard/territory',
+        '/api/admin/operator/referrals',
+        '/api/admin/manager/drafts',
+        '/api/admin/manager/finance/team-lead-stats',
+        '/api/admin/manager/finance/team',
+        '/api/admin/commerce/my-territories',
+        '/api/admin/my-operator-profile/territory-info',
+      ];
+      const results = await Promise.allSettled(paths.map(path => managerPortalRequest(path)));
+      const get = index => results[index].status === 'fulfilled' ? results[index].value : null;
+      const failures = results.filter(result => result.status === 'rejected').map(result => result.reason);
+      if (failures.some(failure => failure.status === 401)) {
+        setSessionError(true);
+        setError('Sessão inválida ou expirada. Entre novamente para consultar seus dados.');
+      } else if (failures.length) {
+        setError('Alguns dados do painel não puderam ser consultados. Tente novamente ou procure a central.');
       }
 
-      // Operational commerce lists active territories only. Include the manager's
-      // assigned planning territory for visibility without enabling operation.
-      try {
-        const [terrRes, ownRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/api/admin/commerce/my-territories`, { headers }),
-          fetch(`${API_BASE_URL}/api/admin/my-operator-profile/territory-info`, { headers }),
-        ]);
-        const terrData = await terrRes.json();
-        const ownData = await ownRes.json();
-        const territories = terrData.success && Array.isArray(terrData.data) ? [...terrData.data] : [];
-        const own = ownData.success ? ownData.data : null;
-        if (own?.territory_id && !territories.some(t => t.id === own.territory_id)) {
-          territories.push({
-            id: own.territory_id, name: own.territory_name,
-            status: own.territory_status, is_active: own.territory_active,
-          });
-        }
-        setMyTerritories(territories);
-        const tIds = territories.map(t => t.id);
-        if (tIds.length > 0) {
-          try {
-            const nbRes = await fetch(`${API_BASE_URL}/api/governance/neighborhoods`, { headers });
-            const nbData = await nbRes.json();
-            if (nbData.success && Array.isArray(nbData.data)) {
-              setMyNeighborhoods(nbData.data.filter(n => n.is_active && tIds.includes(n.territory_id)));
-            }
-          } catch {}
-        }
-      } catch {}
+      const metricsData = get(0);
+      if (metricsData) setMetrics(metricsData.metrics || metricsData);
+      if (get(1)) setTerritoryData(get(1).data);
+      if (get(2)) setReferral(get(2).data);
+      else setReferralError(results[2].reason?.message || 'Não foi possível consultar a indicação.');
+      if (get(3)) setDrafts(get(3).data);
+      if (get(4)) setTeamStats(get(4));
+      if (get(5)) setTeamMembers(get(5).data);
+
+      const commerce = get(6);
+      const own = get(7);
+      const territories = Array.isArray(commerce?.data) ? [...commerce.data] : [];
+      if (own?.data?.territory_id && !territories.some(t => t.id === own.data.territory_id)) {
+        territories.push({
+          id: own.data.territory_id, name: own.data.territory_name,
+          status: own.data.territory_status, is_active: own.data.territory_active,
+        });
+      }
+      setMyTerritories(territories);
+      setTerritoriesError(!commerce || !own);
       setTerritoriesLoaded(true);
-
-      const metricsData = await metricsRes.json();
-      const territoryData = await territoryRes.json();
-      const referralData = await referralRes.json();
-      const draftsData = await draftsRes.json();
-      const teamStatsData = await teamStatsRes.json();
-      const teamData = await teamRes.json();
-
-      if (metricsData.success !== false) setMetrics(metricsData.metrics || metricsData);
-      if (territoryData.success) setTerritoryData(territoryData.data);
-      if (referralData.success) setReferral(referralData.data);
-      if (draftsData.success) setDrafts(draftsData.data);
-      if (teamStatsData.success) setTeamStats(teamStatsData);
-      if (teamData.success) setTeamMembers(teamData.data);
-    } catch { setError('Erro ao carregar dados do território'); }
+      if (territories.length) {
+        const tIds = territories.map(t => t.id);
+        try {
+          const neighborhoods = await managerPortalRequest('/api/governance/neighborhoods');
+          if (Array.isArray(neighborhoods.data)) {
+            setMyNeighborhoods(neighborhoods.data.filter(n => n.is_active && tIds.includes(n.territory_id)));
+          }
+        } catch {
+          setError('Não foi possível consultar os bairros. Tente novamente ou procure a central.');
+        }
+      }
+    } catch {
+      setError('Não foi possível carregar o painel. Tente novamente ou procure a central.');
+    }
     finally { setLoading(false); }
   };
 
@@ -133,7 +146,7 @@ export default function ManagerHome() {
             <Typography variant="h6" sx={{ fontWeight: 700 }}>
               <span style={{ color: GOLD }}>KAVIAR</span> Gestor Territorial
             </Typography>
-            <Typography sx={{ color: TEXT_GRAY, fontSize: 12 }}>{admin?.name || 'Gestor'} — {myTerritories.length === 1 ? `Território: ${myTerritories[0].name}` : myTerritories.length > 1 ? `${myTerritories.length} territórios vinculados` : territoriesLoaded ? 'Território não vinculado' : 'Território: carregando...'}</Typography>
+            <Typography sx={{ color: TEXT_GRAY, fontSize: 12 }}>{admin?.name || 'Gestor'} — {myTerritories.length === 1 ? `Território: ${myTerritories[0].name}` : myTerritories.length > 1 ? `${myTerritories.length} territórios vinculados` : territoriesError ? 'Território: consulta indisponível' : territoriesLoaded ? 'Nenhum território retornado' : 'Território: carregando...'}</Typography>
           </Box>
           <Button onClick={handleLogout} variant="outlined" size="small" sx={{ borderColor: 'rgba(201,154,22,0.25)', color: TEXT_GRAY, '&:hover': { borderColor: GOLD, color: GOLD } }}>
             Sair
@@ -158,7 +171,7 @@ export default function ManagerHome() {
           </Box>
         )}
 
-        {error && <Alert severity="warning" sx={{ mb: 3 }}>{error}</Alert>}
+        {error && <Alert severity="warning" sx={{ mb: 3 }}>{error} {sessionError ? <Button component={Link} to="/admin/login" state={{ from: { pathname: '/admin' } }}>Entrar novamente</Button> : <Button onClick={fetchData}>Tentar novamente</Button>}</Alert>}
         {submitMsg && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSubmitMsg('')}>{submitMsg}</Alert>}
 
         {/* KPIs */}
@@ -234,7 +247,7 @@ export default function ManagerHome() {
         )}
 
         {/* Links de indicação */}
-        <ReferralLinksCard referral={referral} adminName={admin?.name} loading={loading} />
+        <ReferralLinksCard referral={referral} error={referralError} adminName={admin?.name} loading={loading} />
 
         {/* Equipe & Captação */}
         {teamMembers.length > 0 && (
@@ -500,7 +513,7 @@ function OperatorDraftDialog({ open, onClose, headers, onSuccess }) {
 }
 
 // ─── Referral Links Card ─────────────────────────────────────────────────────
-function ReferralLinksCard({ referral, adminName, loading }) {
+function ReferralLinksCard({ referral, error, adminName, loading }) {
   if (loading) return null;
 
   const rawCode = referral?.referral_code;
@@ -511,7 +524,7 @@ function ReferralLinksCard({ referral, adminName, loading }) {
       <Card sx={{ mb: 3, bgcolor: '#fff', border: '1px solid rgba(201,154,22,0.25)', borderRadius: 3, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
         <CardContent sx={{ p: 2 }}>
           <Typography sx={{ fontSize: 10, color: '#667085', textTransform: 'uppercase', letterSpacing: '0.04em', mb: 1 }}>Links de indicação KAVIAR</Typography>
-          <Typography sx={{ fontSize: 12, color: '#DC2626' }}>Código de indicação não encontrado. Fale com o suporte KAVIAR.</Typography>
+          <Typography sx={{ fontSize: 12, color: '#DC2626' }}>{error || (referral?.has_code === false ? (referral.message || 'Ainda não há código de indicação cadastrado. Procure a central KAVIAR.') : 'Não foi possível confirmar o código de indicação. Procure a central KAVIAR.')}</Typography>
         </CardContent>
       </Card>
     );

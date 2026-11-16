@@ -179,6 +179,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     res.json({ success: true, data: { ...profile, financial_activation: financialActivation } });
   } catch (error) {
+    console.error('[MY_OPERATOR_PROFILE] lookup failed', { requestId: (req as any).requestId });
     res.status(500).json({ success: false, error: 'Erro ao buscar perfil' });
   }
 });
@@ -221,13 +222,17 @@ router.post('/submit-contract', (req: Request, res: Response) => {
       const profile = await prisma.operator_profiles.findUnique({ where: { admin_id: admin.id } });
       if (!profile) return res.status(404).json({ success: false, error: 'Perfil não encontrado' });
 
+      if (profile.relationship_type === 'territorial_manager' && (profile.contract_url || profile.contract_signed_at)) {
+        return res.status(409).json({ success: false, error: 'Há registro contratual anterior. Solicite revisão da central antes de um novo envio.' });
+      }
+
       if (!['available', 'rejected'].includes(profile.contract_status)) {
         return res.status(409).json({ success: false, error: `Envio não permitido no estado '${profile.contract_status}'. Permitido: available, rejected.` });
       }
 
       if (
         profile.relationship_type === 'territorial_manager' &&
-        profile.terms_version !== TERRITORIAL_MANAGER_CONTRACT_VERSION
+        (profile.terms_version !== TERRITORIAL_MANAGER_CONTRACT_VERSION || !profile.contract_template_url)
       ) {
         return res.status(409).json({
           success: false,
@@ -262,7 +267,7 @@ router.post('/submit-contract', (req: Request, res: Response) => {
       // Upload para S3 com metadados probatórios não sensíveis
       const s3 = new S3Client({ region: process.env.AWS_REGION || 'us-east-2' });
       const bucket = process.env.AWS_S3_BUCKET || 'kaviar-uploads-847895361928';
-      const s3Key = `contract-submissions/${profile.id}/${Date.now()}.pdf`;
+      const s3Key = `contract-submissions/${profile.id}/${crypto.randomUUID()}.pdf`;
 
       await s3.send(new PutObjectCommand({
         Bucket: bucket,
@@ -276,35 +281,48 @@ router.post('/submit-contract', (req: Request, res: Response) => {
         },
       }));
 
-      // Supersede previous rejected submissions
-      await prisma.contract_submissions.updateMany({
-        where: { operator_profile_id: profile.id, status: 'rejected' },
-        data: { status: 'superseded', updated_at: now },
-      });
+      const submission = await prisma.$transaction(async tx => {
+        const updated = await tx.operator_profiles.updateMany({
+          where: {
+            id: profile.id,
+            admin_id: admin.id,
+            updated_at: profile.updated_at,
+            contract_status: profile.contract_status,
+            terms_version: profile.terms_version,
+            contract_template_url: profile.contract_template_url,
+            ...(profile.relationship_type === 'territorial_manager'
+              ? { contract_url: null, contract_signed_at: null }
+              : {}),
+          },
+          data: { contract_status: 'submitted', updated_at: now },
+        });
+        if (updated.count !== 1) return null;
 
-      // Create submission with audit trail
-      const submission = await prisma.contract_submissions.create({
-        data: {
-          operator_profile_id: profile.id,
-          submitted_by_admin_id: admin.id,
-          s3_key: s3Key,
-          status: 'submitted',
-          signer_name: signerName,
-          signer_email: profile.email || admin.email,
-          signer_document: signerDocument || null,
-          signer_ip: req.ip || req.socket?.remoteAddress || null,
-          signer_user_agent: (req.headers['user-agent'] || '').substring(0, 200) || null,
-          document_hash: documentHash,
-          contract_version: submissionContractVersion,
-          submitted_at: now,
-        },
+        await tx.contract_submissions.updateMany({
+          where: { operator_profile_id: profile.id, status: 'rejected' },
+          data: { status: 'superseded', updated_at: now },
+        });
+        return tx.contract_submissions.create({
+          data: {
+            operator_profile_id: profile.id,
+            submitted_by_admin_id: admin.id,
+            s3_key: s3Key,
+            status: 'submitted',
+            signer_name: signerName,
+            signer_email: profile.email || admin.email,
+            signer_document: signerDocument || null,
+            signer_ip: req.ip || req.socket?.remoteAddress || null,
+            signer_user_agent: (req.headers['user-agent'] || '').substring(0, 200) || null,
+            document_hash: documentHash,
+            contract_version: submissionContractVersion,
+            submitted_at: now,
+          },
+        });
       });
-
-      // Update operator_profiles.contract_status
-      await prisma.operator_profiles.update({
-        where: { admin_id: admin.id },
-        data: { contract_status: 'submitted', updated_at: now },
-      });
+      if (!submission) {
+        console.warn('[submit-contract] profile changed during upload', { requestId: (req as any).requestId });
+        return res.status(409).json({ success: false, error: 'O cadastro contratual foi alterado durante o envio. Atualize a página e tente novamente.' });
+      }
 
       // Audit log
       audit({

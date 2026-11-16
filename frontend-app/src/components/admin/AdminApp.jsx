@@ -795,7 +795,7 @@ export default function AdminApp() {
             </ProtectedAdminRoute>
           } />
           <Route path="/chat-kaviar" element={
-            <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'EXECUTIVE_ADMIN', 'FINANCE']}>
+            <ProtectedAdminRoute allowedRoles={['SUPER_ADMIN', 'FINANCE']}>
               <KaviarAiPage />
             </ProtectedAdminRoute>
           } />

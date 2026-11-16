@@ -31,6 +31,17 @@ router.get('/', applyTerritoryScope, requireTerritoryScope, async (req: Request,
         data: { has_code: false, message: 'Nenhum link de indicação gerado. Use "Gerar link" para ativar.' },
       });
     }
+    if (!agent.referral_code || !agent.is_active) {
+      return res.json({
+        success: true,
+        data: {
+          has_code: false,
+          message: agent.referral_code
+            ? 'O código de indicação está inativo. Solicite revisão à central.'
+            : 'O cadastro de indicação não possui código. Solicite revisão à central.',
+        },
+      });
+    }
 
     const referrals = await prisma.referrals.findMany({
       where: { agent_id: agent.id },
