@@ -36,10 +36,11 @@ export default function AnnualIncentiveRequest() {
       setDestination(dest);
       setRequests(reqs);
 
-      if (!sum.requestWindow.isOpen) {
-        setStep('closed');
-      } else if (sum.hasOpenRequest) {
+      if (sum.hasOpenRequest) {
+        // Existing requests remain visible even after December 31.
         setStep('history');
+      } else if (!sum.requestWindow.isOpen) {
+        setStep('closed');
       } else if (!dest) {
         setStep('destination');
       } else {
@@ -77,15 +78,16 @@ export default function AnnualIncentiveRequest() {
         idempotencyKey
       );
       Alert.alert(
-        'Solicitação enviada',
-        `Valor: ${formatStringCentsToBRL(result.requestedAmountCents)}\nPrazo de pagamento: até 48 horas.`
+        'Solicitação registrada',
+        `Valor reservado: ${formatStringCentsToBRL(result.requestedAmountCents)}\nPagamento pendente de liberação pela KAVIAR. Acompanhe o histórico.`
       );
       setStep('success');
     } catch (e: any) {
       const code = e.response?.data?.error;
-      if (code === 'WINDOW_CLOSED') Alert.alert('Janela fechada', 'O período de solicitação encerrou.');
-      else if (code === 'INSUFFICIENT_BALANCE') Alert.alert('Saldo insuficiente', 'Não há saldo disponível.');
-      else if (code === 'OPEN_REQUEST_EXISTS') { Alert.alert('Solicitação já existe', 'Você já possui uma solicitação em aberto.'); setStep('history'); }
+      if (code === 'ANNUAL_INCENTIVE_WINDOW_CLOSED') Alert.alert('Janela fechada', 'Solicitações disponíveis de 1º de outubro a 31 de dezembro.');
+      else if (code === 'ANNUAL_INCENTIVE_INSUFFICIENT_BALANCE') Alert.alert('Saldo insuficiente', 'Não há saldo disponível.');
+      else if (code === 'ANNUAL_INCENTIVE_OPEN_REQUEST_EXISTS') { Alert.alert('Solicitação já existe', 'Você já possui uma solicitação em aberto.'); setStep('history'); }
+      else if (code === 'PAYOUT_PROVIDER_CAPABILITY_NOT_CONFIRMED') Alert.alert('Solicitação indisponível', 'O serviço não está pronto para registrar solicitações neste momento.');
       else Alert.alert('Erro', e.response?.data?.message || 'Não foi possível criar a solicitação.');
     } finally { setSubmitting(false); }
   };
@@ -154,7 +156,7 @@ export default function AnnualIncentiveRequest() {
             </Text>
             <Text style={s.cardText}>Valor disponível para solicitação</Text>
             {destination && <Text style={[s.cardText, { fontSize: 12 }]}>PIX: {destination.pixKeyMasked}</Text>}
-            <Text style={[s.cardText, { fontSize: 12, color: COLORS.textMuted }]}>Prazo de pagamento: até 48 horas após a solicitação.</Text>
+            <Text style={[s.cardText, { fontSize: 12, color: COLORS.textMuted }]}>O pedido será registrado. O pagamento depende de liberação pela KAVIAR e não será automático.</Text>
             <TouchableOpacity style={s.btn} onPress={handleRequest} disabled={submitting}>
               {submitting ? <ActivityIndicator color="#fff" /> : <Text style={s.btnText}>Solicitar agora</Text>}
             </TouchableOpacity>
@@ -167,8 +169,8 @@ export default function AnnualIncentiveRequest() {
         {step === 'success' && (
           <View style={s.card}>
             <Ionicons name="checkmark-circle" size={48} color={COLORS.success} />
-            <Text style={[s.cardTitle, { marginTop: 12 }]}>Solicitação enviada!</Text>
-            <Text style={s.cardText}>Prazo de pagamento: até 48 horas.</Text>
+            <Text style={[s.cardTitle, { marginTop: 12 }]}>Solicitação registrada!</Text>
+            <Text style={s.cardText}>Pagamento pendente. Acompanhe o histórico da solicitação.</Text>
             <TouchableOpacity style={[s.btn, { marginTop: 16 }]} onPress={() => router.back()}>
               <Text style={s.btnText}>Voltar</Text>
             </TouchableOpacity>
@@ -182,9 +184,8 @@ export default function AnnualIncentiveRequest() {
             {requests.map(r => (
               <View key={r.id} style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 10 }}>
                 <Text style={{ fontWeight: '700', fontSize: 14, color: COLORS.textPrimary }}>{formatStringCentsToBRL(r.requestedAmountCents)}</Text>
-                <Text style={{ fontSize: 12, color: COLORS.textSecondary }}>Status: {r.status}</Text>
+                <Text style={{ fontSize: 12, color: COLORS.textSecondary }}>Status: {r.status === 'RESERVED' ? 'Registrada — pagamento pendente' : r.status}</Text>
                 <Text style={{ fontSize: 11, color: COLORS.textMuted }}>{r.destinationMasked}</Text>
-                {r.deadlineAt && <Text style={{ fontSize: 11, color: COLORS.textMuted }}>Prazo: {new Date(r.deadlineAt).toLocaleString('pt-BR')}</Text>}
               </View>
             ))}
           </View>

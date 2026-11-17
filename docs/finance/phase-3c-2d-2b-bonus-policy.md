@@ -3,7 +3,7 @@
 **Política:** `BONUS-POLICY-v1.3`<br>
 **Aprovado por:** Aparecido de Góes (Proprietário KAVIAR)<br>
 **Data de aprovação:** 2026-07-27T23:12:27Z<br>
-**Status:** Política vigente, congelada para a próxima implementação. Regras definitivas para o Commit 2.
+**Status:** Política vigente, com aditivo pontual de prazo aprovado em 20/10/2026 (24h). Demais regras da v1.3 preservadas.
 
 Gratificação Anual de Incentivo KAVIAR — 10% dos 18% efetivamente consumidos em operação elegível. Liquidação exclusivamente em dinheiro (PIX ou transferência). Aceite individual eliminado. Múltiplas solicitações Oct-Dez. Carry-over automático. Regras BP-11 a BP-29 integralmente substituídas em relação à v1.2.
 
@@ -77,7 +77,7 @@ Canal alternativo obrigatório para motorista removido solicitar gratificação 
 
 ### BP-17
 
-Janela anual de solicitação: 1º de outubro a 31 de dezembro. O motorista pode realizar quantas solicitações desejar dentro da janela. Cada solicitação congela o valor solicitado. Prazo de pagamento: até 48 horas da solicitação. Valor não solicitado até 31 de dezembro é transportado ao ano seguinte.
+Janela anual de solicitação: 1º de outubro a 31 de dezembro. O motorista pode realizar quantas solicitações desejar dentro da janela, observadas as regras de solicitação em aberto. Cada solicitação congela o valor solicitado. Na operação de pagamentos habilitada e validada, prazo máximo de liquidação: até 24 horas corridas contadas do registro da solicitação, incluindo a validação interna. Com os pagamentos desativados, a solicitação poderá ser registrada como pendente, sem promessa de transferência em 24 horas. Valor não solicitado até 31 de dezembro é transportado ao ano seguinte.
 
 ### BP-18
 
@@ -113,7 +113,7 @@ Operações elegíveis concluídas desde 1º de janeiro geram gratificação con
 
 ### BP-26
 
-Solicitação enviada entre 1º de outubro e 31 de dezembro permanece válida. O prazo de pagamento é de até 48 horas contadas do momento da solicitação. Atrasos administrativos ou bancários não prejudicam o motorista.
+Solicitação enviada entre 1º de outubro e 31 de dezembro permanece válida. Quando a liquidação estiver habilitada e validada, o objetivo operacional é pagar por PIX em até 24 horas corridas do registro, incluindo a validação, sem obrigar o motorista a esperar 24 horas. Com transferências desativadas, o pedido permanece reservado e visível como pendente, sem anúncio desse prazo como garantia. Atrasos administrativos ou bancários não prejudicam o direito do motorista ao valor legítimo.
 
 ### BP-27
 

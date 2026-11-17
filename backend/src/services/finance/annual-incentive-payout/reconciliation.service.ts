@@ -160,7 +160,7 @@ async function reconcileUnknownSubmissions(deps: ReconciliationDeps, report: Rec
 }
 
 /**
- * Checks for requests approaching or past their 48h deadline.
+ * Checks requests approaching or past their recorded deadline (24h for new requests).
  */
 async function checkDeadlineBreaches(deps: ReconciliationDeps, report: ReconciliationReport): Promise<void> {
   const { pool } = deps;

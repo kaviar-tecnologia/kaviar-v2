@@ -66,9 +66,24 @@ async function cleanupAll() {
   try {
     await client.query('BEGIN');
     await client.query('LOCK TABLE annual_incentive_ledger IN ACCESS EXCLUSIVE MODE');
-    await client.query('ALTER TABLE annual_incentive_ledger DISABLE TRIGGER annual_incentive_ledger_immutable_trg');
+    // Prisma db push (disposable CI database) does not install raw SQL triggers.
+    // Keep the immutable trigger enabled after cleanup when it is present.
+    const { rows: triggers } = await client.query(
+      `SELECT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgrelid = 'annual_incentive_ledger'::regclass
+          AND tgname = 'annual_incentive_ledger_immutable_trg'
+          AND NOT tgisinternal
+      ) AS present`
+    );
+    const hasImmutableTrigger = triggers[0].present;
+    if (hasImmutableTrigger) {
+      await client.query('ALTER TABLE annual_incentive_ledger DISABLE TRIGGER annual_incentive_ledger_immutable_trg');
+    }
     await client.query('DELETE FROM annual_incentive_ledger WHERE driver_id = $1', [TEST_DRIVER_ID]);
-    await client.query('ALTER TABLE annual_incentive_ledger ENABLE TRIGGER annual_incentive_ledger_immutable_trg');
+    if (hasImmutableTrigger) {
+      await client.query('ALTER TABLE annual_incentive_ledger ENABLE TRIGGER annual_incentive_ledger_immutable_trg');
+    }
     await client.query('COMMIT');
   } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
 }
@@ -107,6 +122,75 @@ function octoberDate(): Date {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('Request Creation', () => {
+  it('registers a pending request without any payout outbox when payment execution is disabled', async () => {
+    const previousWorker = process.env.ANNUAL_INCENTIVE_PAYOUT_WORKER_ENABLED;
+    process.env.ANNUAL_INCENTIVE_PAYOUT_ENGINE = 'disabled';
+    process.env.ANNUAL_INCENTIVE_PAYOUT_ENABLED = 'false';
+    process.env.ANNUAL_INCENTIVE_PAYOUT_WORKER_ENABLED = 'false';
+    process.env.ANNUAL_INCENTIVE_PAYOUT_PROVIDER = 'unavailable';
+    try {
+      await seedAccrual(2026, 5000n, 'request-only');
+      await setupDestination();
+      const key = `request-only-${Date.now()}`;
+      const input = {
+        driverId: TEST_DRIVER_ID, requestedAmountCents: 5000n,
+        idempotencyKey: key, now: octoberDate(),
+      };
+      const first = await createRequest(pool, ledgerService, input);
+      const replay = await createRequest(pool, ledgerService, input);
+      expect(first.created).toBe(true);
+      expect(first.request.status).toBe('RESERVED');
+      expect(first.request.deadlineAt.getTime() - octoberDate().getTime()).toBe(24 * 60 * 60 * 1000);
+      expect(replay.created).toBe(false);
+      expect(replay.request.id).toBe(first.request.id);
+      expect(await getOpenRequest(pool, TEST_DRIVER_ID)).toMatchObject({ id: first.request.id });
+      expect((await projectBalance(pool, TEST_DRIVER_ID)).totalAvailableCents).toBe(0n);
+      const legacyOutbox = await pool.query(
+        'SELECT COUNT(*)::int AS total FROM annual_incentive_payout_outbox WHERE driver_id = $1',
+        [TEST_DRIVER_ID]
+      );
+      expect(legacyOutbox.rows[0].total).toBe(0);
+      const genericOutbox = await pool.query(
+        `SELECT COUNT(*)::int AS total FROM financial_payout_outbox fpo
+         JOIN financial_payees fp ON fp.id = fpo.payee_id
+         WHERE fp.reference_id = $1`,
+        [TEST_DRIVER_ID]
+      );
+      expect(genericOutbox.rows[0].total).toBe(0);
+    } finally {
+      if (previousWorker === undefined) delete process.env.ANNUAL_INCENTIVE_PAYOUT_WORKER_ENABLED;
+      else process.env.ANNUAL_INCENTIVE_PAYOUT_WORKER_ENABLED = previousWorker;
+    }
+  });
+
+  it('fails closed if a payout execution flag is enabled while the engine is disabled', async () => {
+    process.env.ANNUAL_INCENTIVE_PAYOUT_ENGINE = 'disabled';
+    process.env.ANNUAL_INCENTIVE_PAYOUT_ENABLED = 'true';
+    await expect(createRequest(pool, ledgerService, {
+      driverId: TEST_DRIVER_ID, requestedAmountCents: 5000n,
+      idempotencyKey: `mismatch-${Date.now()}`, now: octoberDate(),
+    })).rejects.toMatchObject({ code: PAYOUT_ERRORS.PROVIDER_CAPABILITY_NOT_CONFIRMED });
+  });
+
+  it.each([
+    ['January 1', '2027-01-01T12:00:00-03:00'],
+    ['September 30', '2027-09-30T12:00:00-03:00'],
+  ])('rejects a pending-only request on %s outside the October-December window', async (_name, date) => {
+    const priorForce = process.env.ANNUAL_INCENTIVE_FORCE_WINDOW_OPEN;
+    process.env.ANNUAL_INCENTIVE_FORCE_WINDOW_OPEN = 'false';
+    process.env.ANNUAL_INCENTIVE_PAYOUT_ENGINE = 'disabled';
+    process.env.ANNUAL_INCENTIVE_PAYOUT_ENABLED = 'false';
+    try {
+      await expect(createRequest(pool, ledgerService, {
+        driverId: TEST_DRIVER_ID, requestedAmountCents: 5000n,
+        idempotencyKey: `closed-${Date.now()}`, now: new Date(date),
+      })).rejects.toMatchObject({ code: PAYOUT_ERRORS.WINDOW_CLOSED });
+    } finally {
+      if (priorForce === undefined) delete process.env.ANNUAL_INCENTIVE_FORCE_WINDOW_OPEN;
+      else process.env.ANNUAL_INCENTIVE_FORCE_WINDOW_OPEN = priorForce;
+    }
+  });
+
   it('creates request with full amount', async () => {
     await seedAccrual(2026, 5000n, 'full');
     await setupDestination();

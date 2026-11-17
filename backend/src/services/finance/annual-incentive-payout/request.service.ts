@@ -12,6 +12,7 @@
 import { Pool, PoolClient } from 'pg';
 import { AnnualIncentiveLedgerService } from '../annual-incentive-ledger.service';
 import { createPayoutProvider } from './providers';
+import { getAnnualIncentivePayoutEngine } from './engine-selection';
 
 type Queryable = Pick<Pool | PoolClient, 'query'>;
 import { projectBalance, allocateFifo } from './balance-projection';
@@ -28,7 +29,10 @@ import {
   TERMINAL_STATUSES,
 } from './types';
 
-const DEADLINE_HOURS = 48;
+// Operational payment target: up to 24 hours after request (includes validation).
+// When payment execution is disabled this is internal monitoring only, not a
+// promise of PIX settlement; the app displays the request as pending.
+const DEADLINE_HOURS = 24;
 
 export interface CreateRequestInput {
   driverId: string;
@@ -112,14 +116,28 @@ export async function createRequest(
     );
   }
 
-  // 2b. Validate provider capability BEFORE any financial operation
-  const provider = createPayoutProvider();
-  const providerAvail = await provider.validateAvailability();
-  if (!providerAvail.available) {
-    throw Object.assign(
-      new Error(providerAvail.reason ?? 'Payout provider capability not confirmed'),
-      { code: PAYOUT_ERRORS.PROVIDER_CAPABILITY_NOT_CONFIRMED }
-    );
+  // 2b. Request registration is independent of payout execution ONLY when
+  // the engine and both payout execution switches are explicitly disabled.
+  // This path reserves funds but never creates an outbound/legacy payment job.
+  const engine = getAnnualIncentivePayoutEngine();
+  if (engine === 'disabled') {
+    if (process.env.ANNUAL_INCENTIVE_PAYOUT_ENABLED === 'true' ||
+        process.env.ANNUAL_INCENTIVE_PAYOUT_WORKER_ENABLED === 'true') {
+      throw Object.assign(
+        new Error('Payout flags conflict with the disabled engine'),
+        { code: PAYOUT_ERRORS.PROVIDER_CAPABILITY_NOT_CONFIRMED }
+      );
+    }
+  } else {
+    // Existing execution paths remain fail-closed if the provider is unavailable.
+    const provider = createPayoutProvider();
+    const providerAvail = await provider.validateAvailability();
+    if (!providerAvail.available) {
+      throw Object.assign(
+        new Error(providerAvail.reason ?? 'Payout provider capability not confirmed'),
+        { code: PAYOUT_ERRORS.PROVIDER_CAPABILITY_NOT_CONFIRMED }
+      );
+    }
   }
 
   // 3. Check idempotency (outside transaction for early return)
@@ -267,9 +285,6 @@ export async function createRequest(
     }
 
     // 14. Create outbox entry (engine-dependent)
-    const { getAnnualIncentivePayoutEngine } = await import('./engine-selection');
-    const engine = getAnnualIncentivePayoutEngine();
-
     if (engine === 'outbound') {
       // Outbound engine: create financial_obligation + financial_payout_outbox
       // Find or create payee for this driver

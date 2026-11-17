@@ -108,6 +108,11 @@ jobs:
       - name: Seed E2E admins
         run: cd backend && E2E_SEED=1 npx tsx prisma/seed-e2e-admins.ts
 
+      - name: Run annual incentive request-only regression (disposable PostgreSQL)
+        run: |
+          cd backend
+          NODE_ENV=test npx vitest run tests/annual-incentive-payout/payout-requests.test.ts
+
       - name: Run SumUp Pix hardening tests
         run: |
           cd backend
