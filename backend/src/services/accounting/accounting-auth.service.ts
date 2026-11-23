@@ -56,6 +56,13 @@ export async function activateAccount(
 
   const accountant = invite.accountant;
 
+  // A token issued before an administrative suspension/revocation must never
+  // activate the account. Restoration explicitly returns the account to this
+  // state and issues a fresh invite.
+  if (accountant.status !== "INVITED") {
+    throw new AccountingAuthError("ACCOUNT_NOT_INVITED", "Este convite não está mais disponível", 401);
+  }
+
   // Validate password
   const validation = validatePassword(password, accountant.email, accountant.cpf);
   if (!validation.valid) {

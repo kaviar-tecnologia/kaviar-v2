@@ -26,6 +26,7 @@ import {
   updateAccountant,
   inviteAccountant,
   reinviteAccountant,
+  restoreAccountantInvite,
   revokeAccountantInvite,
 } from '../../../services/adminAccountingService';
 import AccountantFormDialog from '../../../components/admin/accounting/AccountantFormDialog';
@@ -145,6 +146,25 @@ export default function AccountantsTab() {
     } finally {
       setInviteLoading((prev) => ({ ...prev, [`reinvite-${id}`]: false }));
       actionRef.current[`reinvite-${id}`] = false;
+    }
+  };
+
+  const handleRestoreInvite = async (id) => {
+    const actionKey = "restore-" + id;
+    if (actionRef.current[actionKey]) return;
+    actionRef.current[actionKey] = true;
+    setInviteLoading((prev) => ({ ...prev, [actionKey]: true }));
+    setError("");
+    try {
+      await restoreAccountantInvite(id);
+      setSnackbarMsg("Convite restaurado. Agora gere e envie um novo convite.");
+      setSnackbarOpen(true);
+      fetchData();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setInviteLoading((prev) => ({ ...prev, [actionKey]: false }));
+      actionRef.current[actionKey] = false;
     }
   };
 
@@ -272,6 +292,16 @@ export default function AccountantsTab() {
                         onClick={() => handleOpenRevokeDialog(row)}
                       >
                         {inviteLoading[`revoke-${row.id}`] ? <CircularProgress size={16} /> : 'Revogar convite'}
+                      </Button>
+                    )}
+                    {row.can_restore_invite && (
+                      <Button
+                        size="small"
+                        color="primary"
+                        disabled={!!inviteLoading["restore-" + row.id]}
+                        onClick={() => handleRestoreInvite(row.id)}
+                      >
+                        {inviteLoading["restore-" + row.id] ? <CircularProgress size={16} /> : "Restaurar convite"}
                       </Button>
                     )}
                   </TableCell>

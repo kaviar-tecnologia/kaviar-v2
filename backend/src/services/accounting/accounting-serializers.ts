@@ -96,6 +96,11 @@ export function serializeAccountantListItem(accountant: any) {
     mfa_enabled: accountant.mfa_enabled,
     invited_at: toIso(accountant.invited_at),
     activated_at: toIso(accountant.activated_at),
+    can_restore_invite: accountant.status === "SUSPENDED" &&
+      !accountant.activated_at &&
+      !accountant.password_hash &&
+      !accountant.terms_accepted_at &&
+      !accountant.last_login_at,
     last_email_sent_at: toIso(accountant.invites?.[0]?.last_email_sent_at),
     last_email_status: accountant.invites?.[0]?.last_email_status ?? null,
     last_access_at: toIso(accountant.last_access_at),

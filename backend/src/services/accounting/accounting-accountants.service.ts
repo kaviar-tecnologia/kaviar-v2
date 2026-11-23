@@ -36,6 +36,13 @@ interface UpdateAccountantInput {
   is_active?: boolean;
 }
 
+export class AccountantInviteRestoreError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AccountantInviteRestoreError';
+  }
+}
+
 function resolveIsActive(status: string): boolean {
   return status === 'ACTIVE';
 }
@@ -153,6 +160,13 @@ export async function updateAccountant(id: string, data: UpdateAccountantInput, 
     if (existing) throw new EntityValidationError('E-mail já cadastrado por outro contador');
   }
 
+  // INVITED is an onboarding state, not a generic account status. Returning to
+  // it must go through restoreAccountantInvite, which verifies activation
+  // history and revokes stale tokens atomically.
+  if (data.status === 'INVITED' && accountant.status !== 'INVITED') {
+    throw new AccountantInviteRestoreError('Use a ação Restaurar convite para retornar o contador ao status INVITED');
+  }
+
   // Build update payload — enforce status/is_active coherence
   const updateData: any = { ...data };
 
@@ -182,6 +196,62 @@ export async function updateAccountant(id: string, data: UpdateAccountantInput, 
       entityId: id,
       oldValue: accountant,
       newValue: data,
+      ipAddress: ip,
+      userAgent,
+    });
+
+    return updated;
+  });
+}
+
+export async function restoreAccountantInvite(
+  id: string,
+  adminId: string,
+  ip?: string,
+  userAgent?: string,
+) {
+  return prisma.$transaction(async (tx) => {
+    const accountant = await tx.accountants.findUnique({ where: { id } });
+    if (!accountant) return null;
+
+    if (accountant.status !== "SUSPENDED") {
+      throw new AccountantInviteRestoreError("Somente contadores suspensos podem ter o convite restaurado");
+    }
+
+    const acceptedInviteCount = await tx.accountant_invites.count({
+      where: { accountant_id: id, status: "ACCEPTED" },
+    });
+    const hasActivationHistory = Boolean(
+      accountant.activated_at ||
+      accountant.password_hash ||
+      accountant.terms_accepted_at ||
+      accountant.last_login_at ||
+      acceptedInviteCount > 0
+    );
+
+    if (hasActivationHistory) {
+      throw new AccountantInviteRestoreError("Contas que já foram ativadas não podem retornar ao status INVITED");
+    }
+
+    // Any token issued before the suspension must not become valid again.
+    await tx.accountant_invites.updateMany({
+      where: { accountant_id: id, status: "PENDING" },
+      data: { status: "REVOKED", revoked_at: new Date() },
+    });
+
+    const updated = await tx.accountants.update({
+      where: { id },
+      data: { status: "INVITED", is_active: false },
+      include: { firm: true },
+    });
+
+    await writeAccountingAuditTx(tx, {
+      adminId,
+      action: "ACCOUNTANT_INVITE_RESTORE",
+      entityType: "accountant",
+      entityId: id,
+      oldValue: { status: "SUSPENDED" },
+      newValue: { status: "INVITED", stale_pending_invites_revoked: true },
       ipAddress: ip,
       userAgent,
     });
