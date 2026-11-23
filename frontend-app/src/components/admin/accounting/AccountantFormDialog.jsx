@@ -41,6 +41,24 @@ function emptyForm() {
   };
 }
 
+export function buildAccountantPayload(form, mode) {
+  const payload = {
+    nome_completo: form.nome_completo,
+    email: form.email,
+    crc: form.crc || null,
+    crc_uf: form.crc_uf || null,
+    job_title: form.job_title || null,
+    department: form.department || null,
+    is_responsible_accountant: form.is_responsible_accountant,
+  };
+  if (mode === "create") {
+    payload.accounting_firm_id = form.accounting_firm_id;
+    const cpfDigits = form.cpf.replace(/\D/g, "");
+    payload.cpf = cpfDigits || null;
+  }
+  return payload;
+}
+
 export default function AccountantFormDialog({ open, mode, accountantId, onClose, onSuccess }) {
   const [form, setForm] = useState(emptyForm());
   const [loading, setLoading] = useState(false);
@@ -101,21 +119,8 @@ export default function AccountantFormDialog({ open, mode, accountantId, onClose
     setLoading(true);
     setError('');
     try {
-      const payload = {
-        nome_completo: form.nome_completo,
-        email: form.email,
-        crc: form.crc || null,
-        crc_uf: form.crc_uf || null,
-        accounting_firm_id: form.accounting_firm_id || null,
-        job_title: form.job_title || null,
-        department: form.department || null,
-        is_responsible_accountant: form.is_responsible_accountant,
-      };
-      if (mode === 'create') {
-        const cpfDigits = form.cpf.replace(/\D/g, '');
-        payload.cpf = cpfDigits || null;
-      }
-      if (mode === 'edit') {
+      const payload = buildAccountantPayload(form, mode);
+      if (mode === "edit") {
         await updateAccountant(accountantId, payload);
         onSuccess('Membro atualizado com sucesso.');
       } else {
@@ -156,7 +161,7 @@ export default function AccountantFormDialog({ open, mode, accountantId, onClose
             </FormControl>
             <FormControl size="small">
               <InputLabel id="accountant-firm-label">Escritório</InputLabel>
-              <Select id="accountant-firm" labelId="accountant-firm-label" value={form.accounting_firm_id} label="Escritório" onChange={handleChange('accounting_firm_id')}>
+              <Select id="accountant-firm" labelId="accountant-firm-label" value={form.accounting_firm_id} label="Escritório" onChange={handleChange("accounting_firm_id")} disabled={mode === "edit"}>
                 <MenuItem value="">— Nenhum —</MenuItem>
                 {firms.map((f) => (
                   <MenuItem key={f.id} value={f.id}>{f.razao_social}</MenuItem>

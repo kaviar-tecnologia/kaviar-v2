@@ -176,6 +176,14 @@ export const revokeAccountantInvite = async (id) => {
   return data;
 };
 
+export const restoreAccountantInvite = async (id) => {
+  return performPost(
+    `${BASE_PATH}/accountants/${encodeURIComponent(id)}/restore-invite`,
+    {},
+    "Não foi possível restaurar o convite."
+  );
+};
+
 // ── Accountant Links ────────────────────────────────────────────────────────
 
 export const listAccountantLinks = async (params = {}) => {

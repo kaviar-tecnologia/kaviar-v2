@@ -113,7 +113,16 @@ describe('Accounting Auth - Activate Account', () => {
       .rejects.toThrow('Convite expirado');
   });
 
-  it('should reject weak passwords (too short)', async () => {
+  it("should reject a stale invite when the accountant is suspended", async () => {
+    const accountant = makeAccountant({ status: "SUSPENDED" });
+    mockPrisma.accountant_invites.findFirst.mockResolvedValue(makeInvite(accountant));
+
+    await expect(activateAccount("valid-token", validPassword, validPassword, ip, userAgent))
+      .rejects.toMatchObject({ code: "ACCOUNT_NOT_INVITED", statusCode: 401 });
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("should reject weak passwords (too short)", async () => {
     const accountant = makeAccountant();
     const invite = makeInvite(accountant);
 

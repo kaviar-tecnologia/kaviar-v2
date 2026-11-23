@@ -6,6 +6,7 @@ const { prismaMock, authState } = vi.hoisted(() => {
   const prismaMock: any = {
     admins: { findUnique: vi.fn() },
     accounting_firms: { findUnique: vi.fn() },
+    accountant_invites: { count: vi.fn(), updateMany: vi.fn() },
     accountants: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
@@ -74,6 +75,9 @@ const baseAccountant = {
   mfa_enabled: false,
   invited_at: new Date('2026-01-01T00:00:00.000Z'),
   activated_at: null,
+  password_hash: null,
+  terms_accepted_at: null,
+  last_login_at: null,
   last_access_at: null,
   created_at: new Date('2026-01-01T00:00:00.000Z'),
   updated_at: new Date('2026-01-02T00:00:00.000Z'),
@@ -94,6 +98,8 @@ beforeEach(() => {
   prismaMock.accountants.findUnique.mockResolvedValue(baseAccountant);
   prismaMock.accountants.create.mockResolvedValue(baseAccountant);
   prismaMock.accountants.update.mockResolvedValue(baseAccountant);
+  prismaMock.accountant_invites.count.mockResolvedValue(0);
+  prismaMock.accountant_invites.updateMany.mockResolvedValue({ count: 1 });
   prismaMock.accounting_firms.findUnique.mockResolvedValue(baseFirm);
 });
 
@@ -109,7 +115,21 @@ describe('GET /api/admin/accounting/accountants', () => {
     expect(res.body.pagination.total).toBe(1);
   });
 
-  it('should filter by status', async () => {
+  it("marks only never-activated suspended accountants as restorable", async () => {
+    prismaMock.accountants.findMany.mockResolvedValue([{
+      ...baseAccountant, status: "SUSPENDED", is_active: false,
+    }]);
+    const restorable = await request(app).get("/api/admin/accounting/accountants").expect(200);
+    expect(restorable.body.data[0].can_restore_invite).toBe(true);
+
+    prismaMock.accountants.findMany.mockResolvedValue([{
+      ...baseAccountant, status: "SUSPENDED", activated_at: new Date(), password_hash: "hash",
+    }]);
+    const activated = await request(app).get("/api/admin/accounting/accountants").expect(200);
+    expect(activated.body.data[0].can_restore_invite).toBe(false);
+  });
+
+  it("should filter by status", async () => {
     await request(app).get('/api/admin/accounting/accountants?status=ACTIVE').expect(200);
     expect(prismaMock.accountants.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ status: 'ACTIVE' }) }),
@@ -202,5 +222,76 @@ describe('PATCH /api/admin/accounting/accountants/:id', () => {
       .patch('/api/admin/accounting/accountants/missing')
       .send({ nome_completo: 'Test' })
       .expect(404);
+  });
+});
+
+describe("POST /api/admin/accounting/accountants/:id/restore-invite", () => {
+  it("restores a suspended never-activated accountant and revokes stale invites", async () => {
+    const suspended = { ...baseAccountant, status: "SUSPENDED", is_active: false };
+    const restored = { ...suspended, status: "INVITED", is_active: false };
+    prismaMock.accountants.findUnique.mockResolvedValue(suspended);
+    prismaMock.accountants.update.mockResolvedValue(restored);
+
+    const res = await request(app)
+      .post("/api/admin/accounting/accountants/" + ACCT_ID + "/restore-invite")
+      .send({})
+      .expect(200);
+
+    expect(res.body.data.status).toBe("INVITED");
+    expect(prismaMock.accountant_invites.updateMany).toHaveBeenCalledWith({
+      where: { accountant_id: ACCT_ID, status: "PENDING" },
+      data: { status: "REVOKED", revoked_at: expect.any(Date) },
+    });
+    expect(prismaMock.accountants.update).toHaveBeenCalledWith({
+      where: { id: ACCT_ID },
+      data: { status: "INVITED", is_active: false },
+      include: { firm: true },
+    });
+  });
+
+  it("rejects restoration when activation history exists", async () => {
+    prismaMock.accountants.findUnique.mockResolvedValue({
+      ...baseAccountant,
+      status: "SUSPENDED",
+      activated_at: new Date("2026-01-05T00:00:00.000Z"),
+      password_hash: "existing-hash",
+    });
+
+    const res = await request(app)
+      .post("/api/admin/accounting/accountants/" + ACCT_ID + "/restore-invite")
+      .send({})
+      .expect(400);
+
+    expect(res.body.error).toContain("já foram ativadas");
+    expect(prismaMock.accountants.update).not.toHaveBeenCalled();
+    expect(prismaMock.accountant_invites.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects restoration when an accepted invite exists", async () => {
+    prismaMock.accountants.findUnique.mockResolvedValue({
+      ...baseAccountant, status: "SUSPENDED", is_active: false,
+    });
+    prismaMock.accountant_invites.count.mockResolvedValue(1);
+
+    await request(app)
+      .post("/api/admin/accounting/accountants/" + ACCT_ID + "/restore-invite")
+      .send({})
+      .expect(400);
+
+    expect(prismaMock.accountants.update).not.toHaveBeenCalled();
+  });
+
+  it("does not allow bypassing restoration through the generic edit endpoint", async () => {
+    prismaMock.accountants.findUnique.mockResolvedValue({
+      ...baseAccountant, status: "SUSPENDED", activated_at: new Date(),
+    });
+
+    const res = await request(app)
+      .patch("/api/admin/accounting/accountants/" + ACCT_ID)
+      .send({ status: "INVITED" })
+      .expect(400);
+
+    expect(res.body.error).toContain("Restaurar convite");
+    expect(prismaMock.accountants.update).not.toHaveBeenCalled();
   });
 });

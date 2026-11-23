@@ -193,8 +193,28 @@ router.patch('/accountants/:id', async (req: Request, res: Response) => {
     res.json({ success: true, data: serializeAccountantDetail(accountant) });
   } catch (err: any) {
     if (err.name === 'ZodError') return res.status(400).json({ success: false, error: 'Dados inválidos', details: err.errors });
+    if (err instanceof accountantsService.AccountantInviteRestoreError) return res.status(400).json({ success: false, error: err.message });
     if (err instanceof EntityValidationError) return res.status(400).json({ success: false, error: err.message });
     res.status(500).json({ success: false, error: 'Erro interno' });
+  }
+});
+
+router.post("/accountants/:id/restore-invite", async (req: Request, res: Response) => {
+  try {
+    const admin = (req as any).admin;
+    const accountant = await accountantsService.restoreAccountantInvite(
+      req.params.id,
+      admin.id,
+      req.ip,
+      req.headers["user-agent"],
+    );
+    if (!accountant) return res.status(404).json({ success: false, error: "Contador não encontrado" });
+    res.json({ success: true, data: serializeAccountantDetail(accountant) });
+  } catch (err: any) {
+    if (err instanceof accountantsService.AccountantInviteRestoreError) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    res.status(500).json({ success: false, error: "Erro interno" });
   }
 });
 
