@@ -43,6 +43,19 @@ vi.mock('../src/config', () => ({
   },
 }));
 
+const { walletQuery, walletFlag } = vi.hoisted(() => ({
+  walletQuery: vi.fn(),
+  walletFlag: vi.fn(),
+}));
+
+vi.mock('../src/db', () => ({
+  pool: { query: walletQuery },
+}));
+
+vi.mock('../src/routes/driver-wallet-v2', () => ({
+  isWalletV2Enabled: walletFlag,
+}));
+
 import { DispatcherService } from '../src/services/dispatcher.service';
 
 function driver(
@@ -236,5 +249,81 @@ describe('dispatcher strict community matching', () => {
       'driver-neighborhood',
       'driver-outside',
     ]);
+  });
+});
+
+
+describe('dispatcher promotional wallet eligibility', () => {
+  it.each([
+    [0, 2000, true, 100, true],
+    [1000, 2000, true, 150, true],
+    [0, 2000, true, 150, false],
+    [0, 1500, true, 100, false],
+    [0, 2000, false, 100, false],
+    [2000, 0, false, 100, true],
+    [0, 0, true, 100, false],
+    [1800, 0, true, 100, true],
+  ])(
+    'cash=%s promo=%s enabled=%s price=%s allowed=%s',
+    async (cash, promo, enabled, price, allowed) => {
+      vi.stubEnv('CREDIT_GATE_ENABLED', 'true');
+      vi.stubEnv('DRIVER_PERMANENT_WELCOME_ENABLED', 'true');
+      vi.stubEnv('DRIVER_WELCOME_FEE_USAGE_ENABLED', String(enabled));
+      vi.stubEnv('FAVORITES_WEIGHT', '0');
+      vi.stubEnv('WOMEN_DRIVER_PREFERENCE_ENABLED', 'false');
+
+      try {
+        walletFlag.mockResolvedValue(true);
+        walletQuery.mockReset();
+        walletQuery.mockResolvedValue({
+          rows: [{
+            cash_available_cents: String(cash),
+            promo_available_cents: String(promo),
+          }],
+        });
+
+        prismaMock.driver_status.findMany.mockResolvedValue([
+          driver('promo-driver', 'origin-neighborhood', 'origin-community'),
+        ]);
+
+        const result = await (new DispatcherService() as any)
+          .findCandidates(ride({ quoted_price: price }));
+
+        expect(result).toHaveLength(allowed ? 1 : 0);
+
+        expect(walletQuery).toHaveBeenCalledWith(
+          expect.stringContaining('balance_cents - reserved_cents'),
+          ['promo-driver']
+        );
+
+        if (!enabled) {
+          expect(walletQuery.mock.calls[0][0])
+            .not.toContain('driver_promo_wallets');
+        }
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    }
+  );
+
+  it('bloqueia distribuicao quando consulta financeira falha', async () => {
+    vi.stubEnv('CREDIT_GATE_ENABLED', 'true');
+
+    try {
+      walletFlag.mockResolvedValue(true);
+      walletQuery.mockReset();
+      walletQuery.mockRejectedValue(new Error('DATABASE_UNAVAILABLE'));
+
+      prismaMock.driver_status.findMany.mockResolvedValue([
+        driver('promo-driver', 'origin-neighborhood', 'origin-community'),
+      ]);
+
+      const result = await (new DispatcherService() as any)
+        .findCandidates(ride({ quoted_price: 100 }));
+
+      expect(result).toEqual([]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

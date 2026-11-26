@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
@@ -15,20 +16,49 @@ describe('Offer acceptance wallet reserve handling', () => {
 
   beforeAll(async () => {
     uniqueSuffix = Date.now().toString().slice(-6);
-    const passenger = await prisma.passengers.create({ data: { name: `P ${uniqueSuffix}`, email: `p-${uniqueSuffix}@x`, status: 'approved' } });
+    const passenger = await prisma.passengers.create({ data: { id: randomUUID(), updated_at: new Date(), name: `P ${uniqueSuffix}`, email: `p-${uniqueSuffix}@x`, status: 'approved' } });
     testPassengerId = passenger.id;
-    const driverA = await prisma.drivers.create({ data: { name: `D1 ${uniqueSuffix}`, email: `d1-${uniqueSuffix}@x`, status: 'approved' } });
+    const driverA = await prisma.drivers.create({ data: { id: randomUUID(), updated_at: new Date(), name: `D1 ${uniqueSuffix}`, email: `d1-${uniqueSuffix}@x`, status: 'approved' } });
     testDriverId = driverA.id;
-    const driverB = await prisma.drivers.create({ data: { name: `D2 ${uniqueSuffix}`, email: `d2-${uniqueSuffix}@x`, status: 'approved' } });
+    const driverB = await prisma.drivers.create({ data: { id: randomUUID(), updated_at: new Date(), name: `D2 ${uniqueSuffix}`, email: `d2-${uniqueSuffix}@x`, status: 'approved' } });
     testDriverBId = driverB.id;
   });
 
   afterAll(async () => {
-    await prisma.ride_offers.deleteMany({ where: { driver_id: { in: [testDriverId, testDriverBId] } } });
-    await prisma.rides_v2.deleteMany({ where: { passenger_id: testPassengerId } });
-    await prisma.drivers.deleteMany({ where: { id: { in: [testDriverId, testDriverBId] } } });
-    await prisma.passengers.deleteMany({ where: { id: testPassengerId } });
-    await prisma.$disconnect();
+    const driverIds = [testDriverId, testDriverBId].filter(Boolean);
+
+    try {
+      if (driverIds.length > 0) {
+        await prisma.ride_offers.deleteMany({
+          where: { driver_id: { in: driverIds } }
+        });
+
+        await prisma.driver_status.deleteMany({
+          where: { driver_id: { in: driverIds } }
+        });
+      }
+
+      if (testPassengerId) {
+        await prisma.rides_v2.deleteMany({
+          where: { passenger_id: testPassengerId }
+        });
+      }
+
+      if (driverIds.length > 0) {
+        await prisma.drivers.deleteMany({
+          where: { id: { in: driverIds } }
+        });
+      }
+
+      if (testPassengerId) {
+        await prisma.passengers.deleteMany({
+          where: { id: testPassengerId }
+        });
+      }
+    } finally {
+      vi.restoreAllMocks();
+      await prisma.$disconnect();
+    }
   });
 
   it('reverts acceptance when reserve fails due to insufficient balance without canceling other pending offers', async () => {

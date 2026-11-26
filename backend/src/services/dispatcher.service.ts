@@ -2,6 +2,7 @@ import { prisma } from '../lib/prisma';
 import { Decimal } from '@prisma/client/runtime/library';
 import { rankDriversByFavorites } from './favorites-matching.service';
 import { getCreditBalance } from './credit.service';
+import { estimateFeeCentsFromPrice } from './wallet-v2/fee-helper';
 import { isFlatFeeEnabled } from './pricing-engine';
 import { canDriverOperateInMunicipality, mapServiceCategoryToMunicipalModality } from './municipal-regulation.service';
 import { resolveTerritory } from './territory-resolver.service';
@@ -528,20 +529,84 @@ export class DispatcherService {
       }
       withinDistanceCount++;
 
-      // Credit gate: driver must have sufficient balance
+      // Credit gate: align eligibility with the wallet used on acceptance.
       if (process.env.CREDIT_GATE_ENABLED === 'true') {
+        let walletV2Enabled: boolean;
+
         try {
-          const balance = await getCreditBalance(ds.driver_id);
-          const flatFee = await isFlatFeeEnabled();
-          const minRequired = flatFee
-            ? Number(ride.quoted_price || 0) * 0.18  // 18% do preço da corrida
-            : 2; // legado: 2 créditos
-          if (balance < minRequired) {
+          const { isWalletV2Enabled } = await import(
+            '../routes/driver-wallet-v2'
+          );
+          walletV2Enabled = await isWalletV2Enabled();
+        } catch {
+          droppedReasons.no_credits++;
+          continue;
+        }
+
+        if (walletV2Enabled) {
+          try {
+            const { pool } = await import('../db');
+
+            const promoEnabled =
+              process.env.DRIVER_PERMANENT_WELCOME_ENABLED === 'true' &&
+              process.env.DRIVER_WELCOME_FEE_USAGE_ENABLED === 'true';
+
+            const promoSql = promoEnabled
+              ? `COALESCE((
+                   SELECT balance_cents - reserved_cents
+                   FROM driver_promo_wallets
+                   WHERE driver_id = $1
+                 ), 0)`
+              : '0';
+
+            const result = await pool.query(
+              `SELECT
+                 COALESCE((
+                   SELECT balance_cents - reserved_cents
+                   FROM driver_wallets
+                   WHERE driver_id = $1
+                 ), 0) AS cash_available_cents,
+                 ${promoSql} AS promo_available_cents`,
+              [ds.driver_id]
+            );
+
+            const cash = BigInt(result.rows[0].cash_available_cents);
+            const promo = promoEnabled
+              ? BigInt(result.rows[0].promo_available_cents)
+              : 0n;
+
+            const price = Number(
+              ride.quoted_price || ride.locked_price || 0
+            );
+            const fee = estimateFeeCentsFromPrice(price);
+
+            if (!Number.isSafeInteger(fee) || fee < 0 ||
+                cash < 0n || promo < 0n ||
+                cash + promo < BigInt(fee)) {
+              droppedReasons.no_credits++;
+              continue;
+            }
+          } catch {
+            console.warn('[DISPATCHER_WALLET_V2_CHECK_FAILED]');
             droppedReasons.no_credits++;
             continue;
           }
-        } catch {
-          // If credit check fails, allow driver through (fail-open)
+        } else {
+          // Preserve legacy credit behavior when Wallet V2 is disabled.
+          try {
+            const balance = await getCreditBalance(ds.driver_id);
+            const flatFee = await isFlatFeeEnabled();
+            const minRequired = flatFee
+              ? Number(ride.quoted_price || 0) * 0.18
+              : 2;
+
+            if (balance < minRequired) {
+              droppedReasons.no_credits++;
+              continue;
+            }
+          } catch {
+            // Preserve existing legacy behavior.
+          }
         }
       }
 
