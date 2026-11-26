@@ -46,7 +46,7 @@ const formatStringCentsToBRL = (centsStr: string): string => {
 };
 export default function DriverCredits() {
   const router = useRouter();
-  const [balance, setBalance] = useState<{ balance_cents: number; reserved_cents: number; available_cents: number; balance_display: string } | null>(null);
+  const [balance, setBalance] = useState<Awaited<ReturnType<typeof driverApi.getWallet>> | null>(null);
   const [packages, setPackages] = useState<Package[]>([]);
   const [familyReturn, setFamilyReturn] = useState<FamilyReturn>(null);
   const [familyReturnData, setFamilyReturnData] = useState<FamilyReturnData>(null);
@@ -74,6 +74,25 @@ export default function DriverCredits() {
     if (pkg.amount_cents === 10000) return 'Mais tranquilidade';
     return null;
   };
+
+  const load = useCallback(async () => {
+    try {
+      const [wal, pkgs, led, fr] = await Promise.allSettled([
+        driverApi.getWallet(),
+        driverApi.getWalletPackages(),
+        driverApi.getWalletLedger(10, 0),
+        driverApi.getFamilyReturn(),
+      ]);
+      if (wal.status === 'fulfilled') setBalance(wal.value);
+      if (pkgs.status === 'fulfilled') { setPackages(pkgs.value.packages); setFamilyReturn(pkgs.value.family_return); }
+      if (led.status === 'fulfilled') setLedger(led.value.entries || []);
+      if (fr.status === 'fulfilled') setFamilyReturnData(fr.value);
+      setLoadError(wal.status !== 'fulfilled');
+    } catch (e) {
+      console.warn('[Wallet] load failed:', e);
+      setLoadError(true);
+    } finally { setLoading(false); setRefreshing(false); }
+  }, []);
 
   useEffect(() => {
     if (!sumupData) return;
@@ -103,24 +122,7 @@ export default function DriverCredits() {
     };
   }, [sumupData, load]);
 
-  const load = useCallback(async () => {
-    try {
-      const [wal, pkgs, led, fr] = await Promise.allSettled([
-        driverApi.getWallet(),
-        driverApi.getWalletPackages(),
-        driverApi.getWalletLedger(10, 0),
-        driverApi.getFamilyReturn(),
-      ]);
-      if (wal.status === 'fulfilled') setBalance(wal.value);
-      if (pkgs.status === 'fulfilled') { setPackages(pkgs.value.packages); setFamilyReturn(pkgs.value.family_return); }
-      if (led.status === 'fulfilled') setLedger(led.value.entries || []);
-      if (fr.status === 'fulfilled') setFamilyReturnData(fr.value);
-      setLoadError(wal.status !== 'fulfilled');
-    } catch (e) {
-      console.warn('[Wallet] load failed:', e);
-      setLoadError(true);
-    } finally { setLoading(false); setRefreshing(false); }
-  }, []);
+
 
   useEffect(() => { load(); }, [load]);
 
@@ -281,14 +283,40 @@ export default function DriverCredits() {
         <View style={s.balanceCard}>
           <Ionicons name="wallet-outline" size={28} color={COLORS.primary} />
           <Text style={s.balanceValue}>{balance?.balance_display ?? 'R$ 0,00'}</Text>
-          <Text style={s.balanceLabel}>saldo disponível</Text>
+          <Text style={s.balanceLabel}>Saldo financeiro</Text>
+
+          {(balance?.promo_balance_cents ?? 0) > 0 && (
+            <>
+              <Text style={[s.balanceLabel, { marginTop: 16 }]}>
+                Créditos promocionais não reservados
+              </Text>
+              <Text style={[s.balanceValue, { fontSize: 30 }]}>
+                {formatCentsToBRL(balance?.promo_available_cents ?? 0)}
+              </Text>
+              <Text style={s.infoText}>
+                {balance?.promo_usage_enabled
+                  ? 'Créditos exclusivos para taxas de corridas. Não sacáveis.'
+                  : 'Créditos promocionais temporariamente indisponíveis para uso.'}
+              </Text>
+            </>
+          )}
+
+          <Text style={[s.balanceLabel, { marginTop: 16 }]}>
+            Total disponível para taxas
+          </Text>
+          <Text style={[s.balanceValue, { fontSize: 30 }]}>
+            {formatCentsToBRL(
+              balance?.total_fee_available_cents ??
+              balance?.available_cents ?? 0
+            )}
+          </Text>
         </View>
 
-        {balance !== null && balance.available_cents < 1000 && (
-          <View style={[s.alert, balance.available_cents === 0 && { backgroundColor: '#fde8e8' }]}>
-            <Ionicons name={balance.available_cents === 0 ? 'alert-circle-outline' : 'warning-outline'} size={18} color={balance.available_cents === 0 ? COLORS.danger : COLORS.warning} />
-            <Text style={[s.alertText, { color: balance.available_cents === 0 ? COLORS.danger : COLORS.warning }]}>
-              {balance.available_cents === 0 ? 'Sem saldo disponível. Adicione saldo para receber corridas.' : 'Saldo baixo. Adicione saldo em breve.'}
+        {balance !== null && (balance.total_fee_available_cents ?? balance.available_cents) < 1000 && (
+          <View style={[s.alert, (balance.total_fee_available_cents ?? balance.available_cents) === 0 && { backgroundColor: '#fde8e8' }]}>
+            <Ionicons name={(balance.total_fee_available_cents ?? balance.available_cents) === 0 ? 'alert-circle-outline' : 'warning-outline'} size={18} color={(balance.total_fee_available_cents ?? balance.available_cents) === 0 ? COLORS.danger : COLORS.warning} />
+            <Text style={[s.alertText, { color: (balance.total_fee_available_cents ?? balance.available_cents) === 0 ? COLORS.danger : COLORS.warning }]}>
+              {(balance.total_fee_available_cents ?? balance.available_cents) === 0 ? 'Sem saldo disponível. Adicione saldo para receber corridas.' : 'Saldo baixo. Adicione saldo em breve.'}
             </Text>
           </View>
         )}

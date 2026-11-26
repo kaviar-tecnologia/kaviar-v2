@@ -325,7 +325,10 @@ export default function DriverOnline() {
         driverApi.getWallet(),
         apiClient.get('/api/v2/rides/history'),
       ]);
-      if (credRes.status === 'fulfilled') setCreditBalance(credRes.value.balance_cents / 100);
+      if (credRes.status === 'fulfilled') setCreditBalance(
+        (credRes.value.total_fee_available_cents ??
+          credRes.value.available_cents) / 100
+      );
       if (histRes.status === 'fulfilled') {
         const rides = histRes.value.data?.rides || histRes.value.data || [];
         const todayStr = new Date().toISOString().slice(0, 10);

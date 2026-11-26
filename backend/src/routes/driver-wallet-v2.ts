@@ -69,12 +69,49 @@ router.get('/', async (req: Request, res: Response) => {
     const driverId = (req as any).driverId;
     await walletService.ensureWallet(driverId);
     const balance = await walletService.getBalance(driverId);
+
+    const promoEnabled =
+      process.env.DRIVER_PERMANENT_WELCOME_ENABLED === 'true';
+
+    const promoUsageEnabled =
+      promoEnabled &&
+      process.env.DRIVER_WELCOME_FEE_USAGE_ENABLED === 'true' &&
+      await isWalletV2Enabled();
+
+    let promoBalance = 0n;
+    let promoReserved = 0n;
+
+    if (promoEnabled) {
+      const result = await pool.query(
+        `SELECT balance_cents, reserved_cents
+         FROM driver_promo_wallets
+         WHERE driver_id = $1`,
+        [driverId]
+      );
+
+      if (result.rows[0]) {
+        promoBalance = BigInt(result.rows[0].balance_cents);
+        promoReserved = BigInt(result.rows[0].reserved_cents);
+      }
+    }
+
+    const promoAvailable = promoBalance - promoReserved;
+
+    const totalFeeAvailable =
+      balance.available_cents +
+      (promoUsageEnabled ? promoAvailable : 0n);
+
     res.json({
       success: true,
       data: {
         balance_cents: Number(balance.balance_cents),
         reserved_cents: Number(balance.reserved_cents),
         available_cents: Number(balance.available_cents),
+        promo_balance_cents: Number(promoBalance),
+        promo_reserved_cents: Number(promoReserved),
+        promo_available_cents: Number(promoAvailable),
+        promo_usage_enabled: promoUsageEnabled,
+        total_fee_available_cents: Number(totalFeeAvailable),
         balance_display: `R$ ${(Number(balance.balance_cents) / 100).toFixed(2).replace('.', ',')}`,
       },
     });

@@ -151,6 +151,58 @@ describe('Wallet V2 Routes (sumup-only)', () => {
     expect(res.body.data.available_cents).toBe(4000);
   });
 
+  it.each([
+    [true, true, true, 2000, 0, 2000],
+    [true, true, true, 2000, 500, 1500],
+    [true, false, true, 2000, 0, 0],
+    [true, true, false, 2000, 0, 0],
+    [false, true, true, 0, 0, 0],
+  ])(
+    'GET /wallet respeita regras promocionais: %s %s %s',
+    async (promoEnabled, usageEnabled, walletEnabled, promo, reserved, expected) => {
+      vi.stubEnv('DRIVER_PERMANENT_WELCOME_ENABLED', String(promoEnabled));
+      vi.stubEnv('DRIVER_WELCOME_FEE_USAGE_ENABLED', String(usageEnabled));
+
+      try {
+        mockQuery.mockImplementation(async (sql: string) => {
+          if (sql.includes('INSERT INTO driver_wallets')) {
+            return { rows: [] };
+          }
+          if (sql.includes('FROM driver_wallets')) {
+            return { rows: [{ balance_cents: '0', reserved_cents: '0' }] };
+          }
+          if (sql.includes('FROM feature_flags')) {
+            return { rows: [{ enabled: walletEnabled }] };
+          }
+          if (sql.includes('FROM driver_promo_wallets')) {
+            return { rows: [{
+              balance_cents: String(promo),
+              reserved_cents: String(reserved),
+            }] };
+          }
+          throw new Error('Unexpected query: ' + sql);
+        });
+
+        const res = await request(app)
+          .get('/api/v2/drivers/me/wallet')
+          .set(auth);
+
+        expect(res.status).toBe(200);
+        expect(res.body.data.balance_cents).toBe(0);
+        expect(res.body.data.available_cents).toBe(0);
+        expect(res.body.data.promo_balance_cents).toBe(promo);
+        expect(res.body.data.promo_reserved_cents).toBe(reserved);
+        expect(res.body.data.promo_available_cents).toBe(promo - reserved);
+        expect(res.body.data.promo_usage_enabled).toBe(
+          promoEnabled && usageEnabled && walletEnabled
+        );
+        expect(res.body.data.total_fee_available_cents).toBe(expected);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    }
+  );
+
   it('POST /recharge sem auth retorna 401', async () => {
     const res = await request(app).post('/api/v2/drivers/me/wallet/recharge').send({ package_id: 'saldo-50' });
     expect(res.status).toBe(401);

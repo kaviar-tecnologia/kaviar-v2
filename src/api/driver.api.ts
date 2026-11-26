@@ -287,7 +287,17 @@ export const driverApi = {
   },
 
   // Wallet V2
-  getWallet: async (): Promise<{ balance_cents: number; reserved_cents: number; available_cents: number; balance_display: string }> => {
+  getWallet: async (): Promise<{
+    balance_cents: number;
+    reserved_cents: number;
+    available_cents: number;
+    balance_display: string;
+    promo_balance_cents?: number;
+    promo_reserved_cents?: number;
+    promo_available_cents?: number;
+    promo_usage_enabled?: boolean;
+    total_fee_available_cents?: number;
+  }> => {
     const { data } = await apiClient.get('/api/v2/drivers/me/wallet');
     return data.data;
   },
